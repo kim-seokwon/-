@@ -302,6 +302,16 @@ class BhasApp {
         this.requestRender();
     }
 
+    switchView(viewId) {
+        this.currentView = viewId;
+        this.render();
+    }
+    
+    toggleNotifications(e) {
+        if(e) e.preventDefault();
+        this.switchView('todo');
+    }
+
     render() {
         if (this._isRendering) return;
         this._isRendering = true;
