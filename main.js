@@ -67,6 +67,19 @@ class BhasApp {
             const localModal = document.getElementById('modal-container');
             if (localModal) localModal.style.display = 'none';
 
+            // 자동 로그인 로직 확인
+            const autoLogin = localStorage.getItem('bhas_auto_login') === 'true';
+            const savedSession = localStorage.getItem('bhas_session_user');
+            if (autoLogin && savedSession) {
+                try {
+                    this.currentUser = JSON.parse(savedSession);
+                    this.currentView = 'dashboard';
+                } catch(e) {
+                    console.error('Auto login session parse failed', e);
+                    this.currentUser = null;
+                }
+            }
+
             this.syncStagesData();
             this.requestRender();
         } catch (e) {
@@ -442,6 +455,14 @@ class BhasApp {
                             <input type="password" id="password" class="login-input" placeholder="비밀번호를 입력하세요" required>
                         </div>
                         <div id="login-error" class="login-error">이메일 또는 비밀번호가 올바르지 않습니다.</div>
+                        <div style="display: flex; gap: 15px; margin-bottom: 1.5rem; font-size: 0.85rem; color: var(--text-muted);">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="save-id-chk" style="accent-color: var(--primary);"> 아이디 저장
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="auto-login-chk" style="accent-color: var(--primary);"> 자동 로그인
+                            </label>
+                        </div>
                         <button type="submit" class="login-submit-btn" id="login-btn">로그인</button>
                     </form>
                 </div>
@@ -454,10 +475,26 @@ class BhasApp {
         const errorMsg = document.getElementById('login-error');
         if (!form || !loginBtn || !errorMsg) return;
 
+        // 저장된 아이디 및 자동 로그인 체크박스 상태 복원
+        const saveIdChk = document.getElementById('save-id-chk');
+        const autoLoginChk = document.getElementById('auto-login-chk');
+        const idInput = document.getElementById('username');
+        const savedId = localStorage.getItem('bhas_saved_id');
+        
+        if (savedId && idInput && saveIdChk) {
+            idInput.value = savedId;
+            saveIdChk.checked = true;
+        }
+        if (localStorage.getItem('bhas_auto_login') === 'true' && autoLoginChk) {
+            autoLoginChk.checked = true;
+        }
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             let identifier = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value.trim();
+            const saveIdChecked = document.getElementById('save-id-chk')?.checked;
+            const autoLoginChecked = document.getElementById('auto-login-chk')?.checked;
 
             // 아이디 형식인 경우 자동으로 @bhas.com 추가
             const email = identifier.includes('@') ? identifier : `${identifier}@bhas.com`;
@@ -496,6 +533,17 @@ class BhasApp {
                         this.currentUser.company_id = authData.user.id; // 폴백: 이 경우 RLS 위반 가능성 있음
                     }
 
+                    if (saveIdChecked) localStorage.setItem('bhas_saved_id', identifier);
+                    else localStorage.removeItem('bhas_saved_id');
+                    
+                    if (autoLoginChecked) {
+                        localStorage.setItem('bhas_auto_login', 'true');
+                        localStorage.setItem('bhas_session_user', JSON.stringify(this.currentUser));
+                    } else {
+                        localStorage.removeItem('bhas_auto_login');
+                        localStorage.removeItem('bhas_session_user');
+                    }
+
                     await this.loadInitialData();
                     this.setState({ currentView: 'dashboard' });
                     this.showToast('성공적으로 로그인되었습니다.');
@@ -518,6 +566,17 @@ class BhasApp {
                         company_id: mockUser.id,
                         brand_id: mockUser.brand_id
                     };
+                    
+                    if (saveIdChecked) localStorage.setItem('bhas_saved_id', identifier);
+                    else localStorage.removeItem('bhas_saved_id');
+                    
+                    if (autoLoginChecked) {
+                        localStorage.setItem('bhas_auto_login', 'true');
+                        localStorage.setItem('bhas_session_user', JSON.stringify(this.currentUser));
+                    } else {
+                        localStorage.removeItem('bhas_auto_login');
+                        localStorage.removeItem('bhas_session_user');
+                    }
                     
                     await this.loadInitialData();
                     this.setState({ currentView: 'dashboard' });
@@ -763,8 +822,11 @@ class BhasApp {
 
         const logoutBtn = document.getElementById('logout-btn');
         if (logoutBtn) {
-            logoutBtn.addEventListener('click', (e) => {
+            logoutBtn.addEventListener('click', async (e) => {
                 console.log('DEBUG: Logout Button Clicked! e.target:', e.target);
+                try { await this.supabase.auth.signOut(); } catch(err) {} 
+                localStorage.removeItem('bhas_session_user');
+                localStorage.removeItem('bhas_auto_login');
                 this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
             });
         }
