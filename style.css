@@ -1421,6 +1421,41 @@ body {
         width: 100% !important;
         box-sizing: border-box !important;
     }
+
+    /* Account Management Responsive Table */
+    .responsive-table thead {
+        display: none !important;
+    }
+    .responsive-table tr {
+        display: block !important;
+        margin-bottom: 20px !important;
+        border: 1px solid var(--card-border) !important;
+        border-radius: 16px !important;
+        padding: 16px !important;
+        background: rgba(255, 255, 255, 0.02) !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2) !important;
+    }
+    .responsive-table td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        padding: 12px 0 !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        min-height: 48px !important;
+    }
+    .responsive-table td:last-child {
+        border-bottom: none !important;
+        justify-content: center !important;
+        padding-top: 15px !important;
+        gap: 10px !important;
+    }
+    .responsive-table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        text-align: left;
+    }
 }
 
 /* Global viewport lock - prevents ANY horizontal overflow */

@@ -1415,8 +1415,8 @@ class BhasApp {
             const isActive = (p) => {
                 const stage = p.currentStage || 'consulting';
                 if (stage === 'shipping') return false; 
-                if (stage !== 'consulting') return true; 
-                return (p.stages_data?.consulting?.status === 'completed' || p.history?.length > 0 || (p.documents && p.documents.length > 0));
+                // 신규 프로젝트도 '진행 중'으로 표시하여 즉각적인 연동 확인이 가능하도록 수정
+                return true; 
             };
             
             const activeProducts = products.filter(p => isActive(p));
@@ -1499,7 +1499,26 @@ class BhasApp {
                                         <i class="ph ph-buildings"></i> ${groupName}
                                     </span>
                                 </h3>
-                                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">총 ${projects.length}개</span>
+                                <div style="display: flex; gap: 1.5rem;">
+                                    <div class="stat-item">
+                                        <div class="stat-label" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                            <i class="ph ph-rocket-launch" style="color: var(--primary);"></i> 진행 중
+                                        </div>
+                                        <div class="stat-value" style="font-size: 2rem; font-weight: 800; color: var(--primary);">${activeCount}</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-label" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                            <i class="ph ph-calendar-blank" style="color: #f59e0b;"></i> 예정
+                                        </div>
+                                        <div class="stat-value" style="font-size: 2rem; font-weight: 800; color: #f59e0b;">${scheduledCount}</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-label" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                            <i class="ph ph-check-circle" style="color: #10b981;"></i> 완료 됨
+                                        </div>
+                                        <div class="stat-value" style="font-size: 2rem; font-weight: 800; color: #10b981;">${completedCount}</div>
+                                    </div>
+                                </div>
                             </div>
                             <table style="width: 100%; border-collapse: collapse; text-align: left;">
                                 <thead>
@@ -2051,7 +2070,8 @@ class BhasApp {
                         <h2 style="display: flex; align-items: center; gap: 8px;"><i class="ph ph-user-plus"></i> 계정 관리</h2>
                         <button class="btn-primary" id="add-account-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">+ 계정 추가</button>
                     </div>
-                    <table style="width: 100%; border-collapse: collapse;">
+                    <div class="table-responsive-container">
+                        <table class="responsive-table" style="width: 100%; border-collapse: collapse;">
                         <thead>
                             <tr style="text-align: left; border-bottom: 1px solid var(--card-border); color: var(--text-muted); font-size: 0.8rem;">
                                 <th style="padding: 1rem;">성함</th>
