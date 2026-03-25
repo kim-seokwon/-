@@ -244,6 +244,25 @@ class BhasApp {
 
                 let query = this.supabase.from(table).delete();
                 
+                // 브랜드 삭제 시: 소속된 companies의 brand_id를 null로 먼저 해제
+                if (type === 'brand') {
+                    const { error: detachErr } = await this.supabase
+                        .from('companies')
+                        .update({ brand_id: null })
+                        .eq('brand_id', id);
+                    if (detachErr) {
+                        console.warn('Brand detach warning:', detachErr);
+                    }
+                    // products도 해제
+                    const { error: detachProdErr } = await this.supabase
+                        .from('products')
+                        .update({ brand_id: null })
+                        .eq('brand_id', id);
+                    if (detachProdErr) {
+                        console.warn('Product brand detach warning:', detachProdErr);
+                    }
+                }
+
                 // 사진 삭제의 경우 id가 URL일 수 있으므로 처리
                 if (type === 'photo' && (typeof id === 'string' && (id.startsWith('http') || id.includes('photos/')))) {
                     query = query.eq('url', id);
@@ -254,7 +273,11 @@ class BhasApp {
                 const { error } = await query;
                 if (error) {
                     console.error('Delete Error details:', error);
-                    this.showToast(`삭제 실패: ${error.message || '권한이 없거나 서버 오류입니다.'}`);
+                    let userMsg = error.message || '권한이 없거나 서버 오류입니다.';
+                    if (error.message && error.message.includes('foreign key')) {
+                        userMsg = '연결된 데이터(프로젝트/계정 등)가 있어 삭제할 수 없습니다. 연결 데이터를 먼저 제거해주세요.';
+                    }
+                    this.showToast(`삭제 실패: ${userMsg}`);
                     return;
                 }
                 
@@ -880,7 +903,7 @@ class BhasApp {
         const modal = document.getElementById('modal-container');
         modal.style.display = 'flex';
         modal.innerHTML = `
-            <div class="glass modal-content fade-in" style="width: 450px; padding: 2.5rem; border-radius: 30px;">
+            <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
                 <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-plus-circle"></i> 새 프로젝트 등록</h2>
                 <div class="login-field">
                     <label>프로젝트명</label>
@@ -1005,7 +1028,7 @@ class BhasApp {
         const modal = document.getElementById('modal-container');
         modal.style.display = 'flex';
         modal.innerHTML = `
-            <div class="glass modal-content fade-in" style="width: 450px; padding: 2.5rem; border-radius: 30px;">
+            <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
                 <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-list-plus"></i> ${isRequest ? '새 업무 요청 바로 등록' : '새 할 일 바로 등록'}</h2>
                 <div class="login-field">
                     <label>프로젝트 선택</label>
@@ -1079,7 +1102,7 @@ class BhasApp {
         const modal = document.getElementById('modal-container');
         modal.style.display = 'flex';
         modal.innerHTML = `
-            <div class="glass modal-content fade-in" style="width: 450px; padding: 2.5rem; border-radius: 30px;">
+            <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
                 <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-file-plus"></i> 새 문서 바로 등록</h2>
                 <div class="login-field">
                     <label>프로젝트 선택</label>
@@ -1589,7 +1612,7 @@ class BhasApp {
             const requestedTodos = filteredTodos.filter(t => t.created_by === userId && t.assignee !== userId);
 
             const renderTodoList = (todos, title, icon) => `
-                <div class="glass" style="padding: 1.5rem; border-radius: 20px; flex: 1; min-width: 300px;">
+                <div class="glass" style="padding: 1.5rem; border-radius: 20px; flex: 1; min-width: 0;">
                     <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 8px; font-size: 1.1rem;"><i class="${icon}"></i> ${title}</h3>
                     <ul class="todo-list" style="margin: 0; padding: 0; list-style: none;">
                         ${todos.map(todo => `
@@ -2408,9 +2431,11 @@ class BhasApp {
 
             if (insertError) {
                 console.error('Add Todo Error:', insertError);
-                let errMsg = '등록 실패: ' + insertError.message;
-                if (insertError.code === '42501') errMsg = '권한 부족(RLS): 데이터베이스에 쓸 권한이 없습니다.';
+                let errMsg = '등록 실패';
+                if (insertError.code === '42501') errMsg = '권한 부족: 데이터베이스에 쓸 권한이 없습니다.';
                 else if (insertError.code === '22P02') errMsg = '데이터 형식 오류: 유효한 ID가 아닙니다.';
+                else if (insertError.message && insertError.message.includes('foreign key')) errMsg = '선택한 프로젝트가 존재하지 않습니다. 페이지를 새로고침 후 다시 시도해주세요.';
+                else errMsg = '등록 실패: ' + insertError.message;
                 this.showToast(errMsg);
                 return false;
             }
@@ -2726,7 +2751,7 @@ class BhasApp {
         }
 
         modal.innerHTML = `
-            <div class="glass" style="width: 400px; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid var(--card-border);">
+            <div class="glass" style="width: 90%; max-width: 400px; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid var(--card-border);">
                 <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-user-plus"></i> 새 계정 추가</h2>
                 
                 <div class="login-field" style="margin-bottom: 1.5rem;">
@@ -2795,7 +2820,7 @@ class BhasApp {
         }
 
         modal.innerHTML = `
-            <div class="glass" style="width: 400px; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid var(--card-border);">
+            <div class="glass" style="width: 90%; max-width: 400px; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid var(--card-border);">
                 <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-shield-plus"></i> 새 브랜드(등급) 생성</h2>
                 
                 <div class="login-field" style="margin-bottom: 1.5rem;">
