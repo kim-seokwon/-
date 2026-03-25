@@ -1382,4 +1382,25 @@ body {
         margin: 0 !important;
         width: 100% !important;
     }
+
+    /* Force 1 column grids on mobile to prevent skew */
+    .project-grid, .dashboard-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .stat-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 8px !important;
+    }
+
+    .stat-item {
+        min-width: 0 !important;
+    }
+}
+
+html, body, #app {
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    position: relative;
 }

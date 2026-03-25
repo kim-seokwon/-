@@ -1596,12 +1596,14 @@ class BhasApp {
                             <li class="todo-item" data-todo-id="${todo.id}" data-project-id="${todo.product_id}" style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; background: rgba(255,255,255,0.03); margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); transition: 0.2s; cursor: pointer; position: relative;" onmouseover="this.style.background='rgba(255,255,255,0.08)';" onmouseout="this.style.background='rgba(255,255,255,0.03)';">
                                 <div class="todo-quick-check" data-id="${todo.id}" data-pid="${todo.product_id}" style="width: 20px; height: 20px; border: 2px solid var(--card-border); border-radius: 6px; display: flex; align-items: center; justify-content: center; background: transparent; flex-shrink: 0; cursor: pointer; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 0 5px var(--primary)';" onmouseout="this.style.borderColor='var(--card-border)'; this.style.boxShadow='none';">
                                 </div>
-                                <div style="flex: 1; display: flex; align-items: center; gap: 12px; overflow: hidden; white-space: nowrap;">
-                                    <span style="font-size: 0.85rem; font-weight: 500; flex-shrink: 0;"><strong style="color: var(--primary);">[${todo.companyName}]</strong> <span class="todo-project-link" style="color: var(--text-muted);">${todo.projectName}</span></span>
-                                    <span style="color: var(--text-muted); font-size: 0.8rem; flex-shrink: 0;">-</span>
-                                    <span style="font-size: 0.95rem; font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; flex: 1;">${todo.text}</span>
-                                    ${title === '요청한 일' ? `<span style="font-size: 0.8rem; color: #10b981; background: rgba(16,185,129,0.1); padding: 2px 6px; border-radius: 4px; flex-shrink: 0;"><i class="ph ph-user"></i> 담당: ${todo.assigneeName}</span>` : ''}
-                                    ${title === '내가 할 일' && todo.created_by !== userId ? `<span style="font-size: 0.8rem; color: #f59e0b; background: rgba(245,158,11,0.1); padding: 2px 6px; border-radius: 4px; flex-shrink: 0;"><i class="ph ph-paper-plane-tilt"></i> 요청자: ${todo.creatorName}</span>` : ''}
+                                <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; overflow: hidden; min-width: 0;">
+                                    <div style="font-size: 0.95rem; font-weight: 500; color: var(--text-main); line-height: 1.4; white-space: normal; word-break: break-all;">${todo.text}</div>
+                                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                        <span style="font-size: 0.8rem; font-weight: 600; color: var(--primary);">[${todo.companyName}]</span>
+                                        <span class="todo-project-link" style="color: var(--text-muted); font-size: 0.75rem;">${todo.projectName}</span>
+                                        ${title === '요청한 일' ? `<span style="font-size: 0.75rem; color: #10b981; background: rgba(16,185,129,0.1); padding: 2px 6px; border-radius: 4px;"><i class="ph ph-user"></i> 담당: ${todo.assigneeName}</span>` : ''}
+                                        ${title === '내가 할 일' && todo.created_by !== userId ? `<span style="font-size: 0.75rem; color: #f59e0b; background: rgba(245,158,11,0.1); padding: 2px 6px; border-radius: 4px;"><i class="ph ph-paper-plane-tilt"></i> 요청자: ${todo.creatorName}</span>` : ''}
+                                    </div>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
                                     <span style="font-size: 0.8rem; color: var(--text-muted); background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 6px;"><i class="ph ph-calendar-blank"></i> ${todo.due_date ? this.formatDateToUI(todo.due_date) : '일정'}</span>
@@ -1652,11 +1654,13 @@ class BhasApp {
                                                 ${groupedByCompany[cid].map(todo => `
                                                     <li class="todo-item" data-todo-id="${todo.id}" data-project-id="${todo.product_id}" style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: rgba(255,255,255,0.02); margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.04); transition: 0.2s; cursor: pointer;" onmouseover="this.style.background='rgba(255,255,255,0.06)';" onmouseout="this.style.background='rgba(255,255,255,0.02)';">
                                                         <div class="todo-quick-check" data-id="${todo.id}" data-pid="${todo.product_id}" style="width: 18px; height: 18px; border: 2px solid var(--card-border); border-radius: 5px; flex-shrink: 0;"></div>
-                                                        <div style="flex: 1; display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap;">
-                                                            <span style="font-size: 0.8rem; color: var(--text-muted); flex-shrink: 0; width: 120px; overflow: hidden; text-overflow: ellipsis;">${todo.projectName}</span>
-                                                            <span style="font-size: 0.9rem; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis;">${todo.text}</span>
+                                                        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; overflow: hidden; min-width: 0;">
+                                                            <div style="font-size: 0.9rem; font-weight: 500; color: var(--text-main); line-height: 1.4; white-space: normal; word-break: break-all;">${todo.text}</div>
+                                                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                                                <span style="font-size: 0.75rem; color: var(--text-muted);">${todo.projectName}</span>
+                                                                <span style="font-size: 0.7rem; color: var(--text-muted); background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">${todo.due_date ? this.formatDateToUI(todo.due_date) : '-'}</span>
+                                                            </div>
                                                         </div>
-                                                        <span style="font-size: 0.75rem; color: var(--text-muted); background: rgba(0,0,0,0.2); padding: 3px 6px; border-radius: 4px;">${todo.due_date ? this.formatDateToUI(todo.due_date) : '-'}</span>
                                                     </li>
                                                 `).join('')}
                                             </ul>
