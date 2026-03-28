@@ -606,7 +606,6 @@ class BhasApp {
                 });
 
                 if (!authError && authData.user) {
-                    console.log('Supabase Auth Success:', authData.user);
                     // 로그인 성공 후 기업 프로필 조회
                     const { data: companyProfile } = await this.supabase
                         .from('companies')
@@ -1007,8 +1006,6 @@ class BhasApp {
                 // stage 컬럼은 products 테이블에 존재하지 않으므로 제외
             };
 
-            console.log('Attempting to insert project:', newProject);
-
             try {
                 const { data, error } = await this.supabase
                     .from('products')
@@ -1021,8 +1018,6 @@ class BhasApp {
                 }
                 
                 if (!data || data.length === 0) throw new Error('데이터 저장 성공했으나 응답이 없습니다.');
-
-                console.log('Project inserted successfully:', data[0]);
 
                 // 히스토리 기록 시도 (비차단형)
                 try {
