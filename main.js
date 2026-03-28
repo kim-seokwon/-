@@ -313,22 +313,46 @@ class BhasApp {
 
                 let query = this.supabase.from(table).delete();
                 
-                // 브랜드 삭제 시: 소속 프로젝트 → 하위 데이터 → 계정 순서로 전부 삭제
+                // 브랜드 삭제 시: 하위 데이터 → 프로젝트 → 계정 → 전역문서 순서로 전부 삭제
                 if (type === 'brand') {
-                    const brandProducts = mockData.products.filter(p => p.brand_id === id);
-                    for (const p of brandProducts) {
-                        // 프로젝트 하위 데이터 삭제
-                        await this.supabase.from('todos').delete().eq('product_id', p.id);
-                        await this.supabase.from('photos').delete().eq('product_id', p.id);
-                        await this.supabase.from('documents').delete().eq('product_id', p.id);
-                        await this.supabase.from('memos').delete().eq('product_id', p.id);
-                        await this.supabase.from('product_stages').delete().eq('product_id', p.id);
-                        await this.supabase.from('history').delete().eq('product_id', p.id);
+                    try {
+                        const brandProducts = mockData.products.filter(p => p.brand_id === id);
+                        const brandCompanies = mockData.companies.filter(c => c.brand_id === id);
+
+                        // 1단계: 프로젝트별 하위 데이터 삭제
+                        for (const p of brandProducts) {
+                            await this.supabase.from('todos').delete().eq('product_id', p.id);
+                            await this.supabase.from('photos').delete().eq('product_id', p.id);
+                            await this.supabase.from('documents').delete().eq('product_id', p.id);
+                            await this.supabase.from('memos').delete().eq('product_id', p.id);
+                            await this.supabase.from('product_stages').delete().eq('product_id', p.id);
+                            await this.supabase.from('history').delete().eq('product_id', p.id);
+                        }
+
+                        // 2단계: 소속 프로젝트 삭제
+                        if (brandProducts.length > 0) {
+                            await this.supabase.from('products').delete().eq('brand_id', id);
+                        }
+
+                        // 3단계: 전역 문서 삭제
+                        await this.supabase.from('global_documents').delete().eq('brand_id', id);
+
+                        // 4단계: 소속 계정 삭제 (FK 참조 모두 제거된 후)
+                        if (brandCompanies.length > 0) {
+                            // 계정이 created_by로 참조되는 곳 해제
+                            for (const c of brandCompanies) {
+                                await this.supabase.from('products').update({ created_by: null }).eq('created_by', c.id);
+                                await this.supabase.from('documents').update({ created_by: null }).eq('created_by', c.id);
+                                await this.supabase.from('photos').update({ created_by: null }).eq('created_by', c.id);
+                                await this.supabase.from('memos').update({ created_by: null }).eq('created_by', c.id);
+                            }
+                            await this.supabase.from('companies').delete().eq('brand_id', id);
+                        }
+                    } catch (cascadeErr) {
+                        console.error('Brand cascade delete error:', cascadeErr);
+                        this.showToast('브랜드 하위 데이터 삭제 중 오류가 발생했습니다.');
+                        return;
                     }
-                    // 소속 프로젝트 삭제
-                    await this.supabase.from('products').delete().eq('brand_id', id);
-                    // 소속 계정 삭제
-                    await this.supabase.from('companies').delete().eq('brand_id', id);
                 }
 
                 // 사진 삭제의 경우 id가 URL일 수 있으므로 처리
