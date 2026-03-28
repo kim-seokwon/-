@@ -763,7 +763,7 @@ class BhasApp {
                                             <i class="ph ph-bell-ringing" style="font-size: 2.5rem; color: var(--primary);"></i>
                                             ${pendingCount > 0 ? `<span style="position: absolute; top: 10px; right: 12px; width: 14px; height: 14px; background: var(--accent-danger, #ef4444); border-radius: 50%; border: 2px solid var(--bg-dark); box-shadow: 0 0 10px var(--accent-danger);"></span>` : ''}
                                         </div>
-                                        <div id="notification-popup" class="glass fade-in" style="display: none; position: fixed; top: 100px; right: 40px; width: 380px; max-height: 70vh; overflow-y: auto; border-radius: 20px; z-index: 1001; padding: 1.5rem; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border: 1px solid var(--card-border); text-align: left;">
+                                        <div id="notification-popup" class="glass fade-in" style="display: none; position: fixed; top: 100px; right: 16px; width: calc(100vw - 32px); max-width: 380px; max-height: 70vh; overflow-y: auto; border-radius: 20px; z-index: 1001; padding: 1.5rem; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border: 1px solid var(--card-border); text-align: left; box-sizing: border-box;">
                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                                                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 1.1rem; color: white;"><i class="ph ph-bell"></i> 알림 (할 일)</h3>
                                                 <button onclick="document.getElementById('notification-popup').style.display='none'" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; transition: 0.2s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='var(--text-muted)'"><i class="ph ph-x" style="font-size: 1.2rem;"></i></button>
@@ -1191,7 +1191,7 @@ class BhasApp {
         const stageData = project.stages_data[stage.id] || { status: (project.documents.some(doc => doc.type === docType) ? 'completed' : 'before'), due_date: '', note: '' };
 
         sidebarContainer.innerHTML = `
-            <div class="todo-sidebar glass slide-in-right" style="width: 600px; max-width: 90vw; height: 100vh; background: var(--bg-dark); border-radius: 20px 0 0 20px; padding: 2rem; display: flex; flex-direction: column; overflow-y: auto; border-left: 1px solid var(--card-border);">
+            <div class="todo-sidebar glass slide-in-right" style="width: 600px; max-width: 100vw; height: 100vh; background: var(--bg-dark); border-radius: 20px 0 0 20px; padding: 1.5rem; display: flex; flex-direction: column; overflow-y: auto; border-left: 1px solid var(--card-border); box-sizing: border-box;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
                     <div>
                         <h2 style="font-size: 1.5rem; display: flex; align-items: center; gap: 10px; margin-bottom: 0.5rem; color: var(--text-main);">${stage.icon} ${stage.label} 상세 설정</h2>
@@ -1358,7 +1358,7 @@ class BhasApp {
         sidebarContainer.style.display = 'flex';
         // Add minimal slide-in animation directly in style
         sidebarContainer.innerHTML = `
-            <div class="sidebar-content" style="background: var(--bg-dark); width: 600px; padding: 3rem; border-radius: 30px 0 0 30px; border-left: 1px solid var(--card-border); box-shadow: -10px 0 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; height: 100%; box-sizing: border-box; animation: slideInRight 0.3s ease-out forwards;">
+            <div class="sidebar-content" style="background: var(--bg-dark); width: 600px; max-width: 100vw; padding: 1.5rem; border-radius: 30px 0 0 30px; border-left: 1px solid var(--card-border); box-shadow: -10px 0 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; height: 100%; box-sizing: border-box; animation: slideInRight 0.3s ease-out forwards;">
                 <style>
                     @keyframes slideInRight {
                         from { transform: translateX(100%); opacity: 0; }
@@ -1770,7 +1770,7 @@ class BhasApp {
                         <div style="display: flex; align-items: center; gap: 12px; width: ${isMobile ? '100%' : 'auto'}; flex-direction: ${isMobile ? 'column' : 'row'};">
                             <h2 style="display: flex; align-items: center; gap: 8px; font-size: 1.5rem; margin: 0; white-space: nowrap;"><i class="ph ph-folder-open"></i> 통합 문서 관리</h2>
                             ${(role === 'MASTER' || role === 'STAFF') ? `
-                                <select id="doc-global-company-filter" class="glass brand-select" style="margin-top: ${isMobile ? '5px' : '0'}; width: ${isMobile ? '100%' : 'auto'}; min-width: 200px; color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer;">
+                                <select id="doc-global-company-filter" class="glass brand-select" style="margin-top: ${isMobile ? '5px' : '0'}; width: ${isMobile ? '100%' : 'auto'}; min-width: ${isMobile ? '0' : '200px'}; max-width: 100%; color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; box-sizing: border-box;">
                                     <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드 보기</option>
                                     ${(mockData.brands || []).map(b => `
                                         <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
@@ -1894,11 +1894,11 @@ class BhasApp {
                             
                             <!-- Production Schedule Summary -->
                             <div class="schedule-summary glass" style="padding: 1.5rem; border-radius: 20px; margin-bottom: 1.5rem; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px;">
                                     <h3 style="margin: 0; font-size: 1.1rem; color: white;"><i class="ph ph-calendar-check" style="color: var(--primary);"></i> 생산 일정 요약</h3>
                                     <span style="font-size: 0.8rem; color: var(--text-muted);">현재 공정: <b style="color: var(--primary);">${product.status || '대기'}</b></span>
                                 </div>
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem;">
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem;">
                                     ${STAGES.slice(0, 4).map(stage => {
                                         const sData = (product.stages_data && (product.stages_data[stage.id] || product.stages_data[stage.docType])) || {};
                                         const isComp = isStageCompleted(product, stage);
@@ -1917,7 +1917,7 @@ class BhasApp {
                             <div style="width: 100%; height: 12px; background: rgba(0,0,0,0.3); border-radius: 6px; overflow: hidden; margin-bottom: 1.5rem; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
                                 <div style="width: ${progressPercent}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); transition: width 0.5s ease; border-radius: 6px;"></div>
                             </div>
-                            <div class="progress-checklist" style="display: flex; gap: 10px; overflow-x: auto; padding-top: 15px; margin-top: -15px; padding-bottom: 10px;">
+                            <div class="progress-checklist" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-top: 15px; margin-top: -15px; padding-bottom: 10px;">
                                 ${STAGES.map((stage, idx) => {
                                     const stageData = (product.stages_data && (product.stages_data[stage.id] || product.stages_data[stage.docType])) 
                                         ? (product.stages_data[stage.id] || product.stages_data[stage.docType]) 
@@ -1931,7 +1931,7 @@ class BhasApp {
                                     let filter = (isCompleted || inProgress) ? 'none' : 'grayscale(100%) opacity(0.5)';
 
                                     return `
-                                        <div style="flex: 1; min-width: 100px; display: flex; flex-direction: column; gap: 8px;">
+                                        <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
                                             <div class="check-item stage-item-trigger" data-type="${stage.docType}" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 5px; border-radius: 12px; background: ${bg}; border: 1px solid ${border}; transition: 0.3s; position: relative; cursor: pointer;" onmouseover="this.style.filter='brightness(1.2)';" onmouseout="this.style.filter='none';">
                                                 <div style="font-size: 1.2rem; color: ${iconColor}; filter: ${filter}; transition: 0.3s;">
                                                     ${stage.icon}
@@ -1995,7 +1995,7 @@ class BhasApp {
                                                 <div style="flex: 1; display: flex; align-items: center; gap: 10px; overflow: hidden;">
                                                     <span class="todo-text" style="flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${todo.text}</span>
                                                     <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                                                        <select class="todo-assignee-select glass" data-id="${todo.id}" style="padding: 2px 4px; border-radius: 4px; font-size: 0.7rem; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--card-border); width: 85px;" onclick="event.stopPropagation()">
+                                                        <select class="todo-assignee-select glass" data-id="${todo.id}" style="padding: 2px 4px; border-radius: 4px; font-size: 0.7rem; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--card-border); max-width: 85px; width: auto;" onclick="event.stopPropagation()">
                                                             <option value="">미지정</option>
                                                             ${mockData.companies.filter(c => c.role === 'MASTER' || c.role === 'STAFF' || c.id === product.company_id).map(c => `
                                                                 <option value="${c.id}" ${todo.assignee === c.id ? 'selected' : ''}>${c.name}</option>
