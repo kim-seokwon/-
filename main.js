@@ -92,6 +92,14 @@ class BhasApp {
                     localStorage.removeItem('bhas_session_user');
                     localStorage.removeItem('bhas_auto_login');
                 }
+            } else {
+                // 자동 로그인이 아니면 기존 세션 정리 → 항상 로그인 화면
+                this.currentUser = null;
+                this.currentView = 'login';
+                localStorage.removeItem('bhas_session_user');
+                if (this.supabase) {
+                    this.supabase.auth.signOut().catch(() => {});
+                }
             }
 
             this.syncStagesData();
