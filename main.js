@@ -3032,15 +3032,14 @@ class BhasApp {
                 }
             }
 
-            // 2. companies 테이블에 정보 저장 (brand_id 및 auth_user_id 포함)
-            const { error: dbError } = await this.supabase.from('companies').insert([{
-                name,
-                username,
-                role,
-                brand_id: brandId || null,
-                auth_user_id: authData?.user?.id || null,
-                created_at: new Date().toISOString()
-            }]);
+            // 2. companies 테이블에 정보 저장 (RPC로 RLS 우회)
+            const { error: dbError } = await this.supabase.rpc('create_company', {
+                p_name: name,
+                p_role: role,
+                p_username: username,
+                p_brand_id: brandId || null,
+                p_auth_user_id: authData?.user?.id || null
+            });
 
             if (dbError) throw dbError;
 
