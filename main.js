@@ -682,32 +682,29 @@ class BhasApp {
                 
                 <main class="main-content">
                     <header class="content-header mobile-responsive-header">
-                        ${this.currentView !== 'dashboard' ? `
-                            <div class="breadcrumb">
-                                <button class="breadcrumb-back-btn btn-secondary"><i class="ph ph-arrow-left"></i> 뒤로가기</button>
-                                <span>/</span>
-                                <span>${this.currentView === 'detail' ? '프로젝트 상세보기' : (menuItems.find(m => m.id === this.currentView)?.label || this.currentView)}</span>
+                        ${this.currentView === 'detail' ? (() => {
+                            const p = mockData.products.find(p => p.id === this.activeProjectId);
+                            const b = mockData.brands?.find(b => b.id === p?.brand_id);
+                            const bName = b ? b.name : '브랜드';
+                            const bColor = b ? (b.brand_color || 'var(--primary)') : 'var(--primary)';
+                            return `
+                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 0.5rem;">
+                                    <button class="breadcrumb-back-btn btn-secondary" style="padding: 6px 12px; border-radius: 8px; font-size: 0.85rem;"><i class="ph ph-arrow-left"></i> 뒤로</button>
+                                    <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                        ${p?.name || '상세보기'}
+                                        <span class="company-tag" style="border-color: ${bColor}; color: white; background: ${bColor}20; border-width: 2.5px; font-size: 0.8rem;">
+                                            <i class="ph ph-buildings"></i> ${bName}
+                                        </span>
+                                    </h1>
+                                </div>
+                            `;
+                        })() : this.currentView !== 'dashboard' ? `
+                            <div style="margin-bottom: 0.25rem;">
+                                <button class="breadcrumb-back-btn btn-secondary" style="padding: 6px 12px; border-radius: 8px; font-size: 0.85rem;"><i class="ph ph-arrow-left"></i> 뒤로</button>
                             </div>
                         ` : ''}
                         <div class="header-top-row">
-                            <div class="header-title-section">
-                                <h1 class="page-title ${this.currentView === 'detail' ? 'page-title-detail' : ''}" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                                    ${(() => {
-                                        if (this.currentView === 'detail') {
-                                            const p = mockData.products.find(p => p.id === this.activeProjectId);
-                                            const b = mockData.brands?.find(b => b.id === p?.brand_id);
-                                            const bName = b ? b.name : '브랜드';
-                                            const bColor = b ? (b.brand_color || 'var(--primary)') : 'var(--primary)';
-                                            return `
-                                                ${p?.name || '상세보기'}
-                                                <span class="company-tag" style="border-color: ${bColor}; color: white; background: ${bColor}20; border-width: 2.5px; margin-left: 8px;">
-                                                    <i class="ph ph-buildings"></i> ${bName}
-                                                </span>
-                                            `;
-                                        }
-                                        return menuItems.find(m => m.id === this.currentView)?.label || '현황';
-                                    })()}
-                                </h1>
+                            <div class="header-title-section" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                                 ${this.currentView === 'dashboard' ? `
                                     <div class="view-toggles">
                                         <button id="view-grid-btn" class="${this.dashboardViewType === 'table' ? '' : 'active'}" title="그리드 보기"><i class="ph ph-squares-four"></i></button>
