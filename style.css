@@ -1473,13 +1473,3 @@ body {
     max-width: 100% !important;
     overflow-x: hidden !important;
 }
-
-/* Spinner Animation */
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-.anim-spin {
-    animation: spin 1s linear infinite;
-    display: inline-block;
-}
