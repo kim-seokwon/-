@@ -458,11 +458,14 @@ class BhasApp {
             }
         } catch (e) {
             console.error('Render Error:', e);
-            // 최후의 수단으로 로그인 화면 시도
-            if (this.currentView !== 'login') {
-                this.currentView = 'login';
-                this.renderLogin();
-            }
+            // 에러 표시 (디버그용) - 로그인으로 보내지 않음
+            this.appContainer.innerHTML = `
+                <div style="padding: 2rem; color: white;">
+                    <h2 style="color: #ef4444;">렌더링 오류</h2>
+                    <p style="color: var(--text-muted);">${e.message}</p>
+                    <button onclick="app.setState({currentView:'login'})" style="margin-top:1rem; padding:8px 16px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer;">로그인으로 돌아가기</button>
+                </div>
+            `;
         } finally {
             this._isRendering = false;
         }
