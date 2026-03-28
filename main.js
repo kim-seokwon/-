@@ -657,8 +657,9 @@ class BhasApp {
 
                     // 먼저 화면 전환 후 데이터 로드 (로드 실패해도 로그인은 유지)
                     this.showToast('성공적으로 로그인되었습니다.');
-                    this.setState({ currentView: 'dashboard' });
-                    try { await this.loadInitialData(); this.requestRender(); } catch(e) {}
+                    this.currentView = 'dashboard';
+                    this.render();
+                    try { await this.loadInitialData(); this.render(); } catch(e) {}
                     return;
                 }
 
