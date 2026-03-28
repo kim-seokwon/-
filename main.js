@@ -42,20 +42,26 @@ class BhasApp {
     }
 
     showToast(message) {
+        // 전역 중복 알림 방지: 동일 메시지가 화면에 활성 상태이면 무시
+        if (!window.__BHAS_ACTIVE_TOASTS__) window.__BHAS_ACTIVE_TOASTS__ = new Set();
+        const cleanMsg = String(message).trim();
+        if (window.__BHAS_ACTIVE_TOASTS__.has(cleanMsg)) return;
+        window.__BHAS_ACTIVE_TOASTS__.add(cleanMsg);
+
         const container = document.getElementById('toast-container');
-        if (!container) return;
+        if (!container) { window.__BHAS_ACTIVE_TOASTS__.delete(cleanMsg); return; }
         const toast = document.createElement('div');
         toast.className = 'toast';
         toast.innerHTML = `<i class="ph ph-bell-ringing" style="font-size: 1.2rem; color: var(--primary);"></i> <span>${message}</span>`;
         container.appendChild(toast);
-        
+
         // Trigger reflow
         toast.offsetHeight;
         toast.classList.add('show');
-        
+
         setTimeout(() => {
             toast.classList.remove('show');
-            setTimeout(() => toast.remove(), 300);
+            setTimeout(() => { toast.remove(); window.__BHAS_ACTIVE_TOASTS__.delete(cleanMsg); }, 300);
         }, 3000);
     }
 
@@ -1274,14 +1280,13 @@ class BhasApp {
                 if (file) {
                     const nameInput = document.getElementById('stage-doc-name');
                     const customName = nameInput.value || file.name.split('.')[0];
-                    
-                    this.showToast('문서 업로드 중...');
+
+                    // handleFileUpload 내부에서 토스트를 처리하므로 여기서는 호출하지 않음
                     await this.handleFileUpload(project.id, file, docType, customName);
-                    
+
                     fileInput.value = '';
                     nameInput.value = '';
                     document.getElementById('stage-status-select').value = 'completed';
-                    this.showToast('문서가 업로드되었습니다.');
                 }
             };
         }
@@ -2723,10 +2728,10 @@ class BhasApp {
             });
         });
 
-        // 사진 추가 버튼 바인딩
+        // 사진 추가 버튼 바인딩 (onclick으로 중복 리스너 방지)
         const addPhotoBtn = document.getElementById('add-photo-btn');
         if (addPhotoBtn) {
-            addPhotoBtn.addEventListener('click', () => {
+            addPhotoBtn.onclick = () => {
                 let photoInput = document.getElementById('global-photo-input');
                 if (!photoInput) {
                     photoInput = document.createElement('input');
@@ -2736,17 +2741,18 @@ class BhasApp {
                     photoInput.style.display = 'none';
                     document.body.appendChild(photoInput);
                 }
-                
+
                 photoInput.onchange = async (e) => {
                     const file = e.target.files[0];
                     if (file) {
                         await this.handlePhotoUpload(this.activeProjectId, file);
-                        photoInput.value = ''; // 초기화
+                        photoInput.value = '';
                     }
                 };
-                
+
+                photoInput.value = '';
                 photoInput.click();
-            });
+            };
         }
 
         this.appContainer.querySelectorAll('.stage-quick-upload-btn').forEach(btn => {
