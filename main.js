@@ -29,6 +29,7 @@ class BhasApp {
         this.companies = [];
         this.scheduledExpanded = true;
         this.dashboardViewType = 'grid';
+        this.brandClosedExpanded = false;
         
         try {
             this.init();
@@ -269,10 +270,19 @@ class BhasApp {
             const hasPhotos = project?.photos && project.photos.length > 0;
             const hasDocs = project?.documents && project.documents.length > 0;
             const hasMemos = project?.memos && project.memos.length > 0;
-            
+
             if (hasPhotos || hasDocs || hasMemos) {
                 confirmMsg = `[주의] 이 프로젝트에는 업로드된 사진, 문서 또는 메모가 포함되어 있습니다.\n삭제 시 연동된 모든 데이터가 함께 영구히 삭제됩니다.\n\n정말 삭제하시겠습니까?`;
             }
+        }
+        if (type === 'brand') {
+            const brand = mockData.brands.find(b => b.id === id);
+            const brandProjects = mockData.products.filter(p => p.brand_id === id);
+            const brandUsers = mockData.companies.filter(c => c.brand_id === id);
+            confirmMsg = `[경고] 브랜드 "${brand?.name || ''}" 삭제 시 다음 데이터가 모두 영구 삭제됩니다:\n\n` +
+                `  - 소속 프로젝트: ${brandProjects.length}개 (사진, 문서, 메모 포함)\n` +
+                `  - 소속 계정: ${brandUsers.length}개\n\n` +
+                `이 작업은 절대 복구할 수 없습니다.\n정말 삭제하시겠습니까?`;
         }
 
         if (!await this.showConfirm(confirmMsg, '삭제 확인')) return;
@@ -303,23 +313,22 @@ class BhasApp {
 
                 let query = this.supabase.from(table).delete();
                 
-                // 브랜드 삭제 시: 소속된 companies의 brand_id를 null로 먼저 해제
+                // 브랜드 삭제 시: 소속 프로젝트 → 하위 데이터 → 계정 순서로 전부 삭제
                 if (type === 'brand') {
-                    const { error: detachErr } = await this.supabase
-                        .from('companies')
-                        .update({ brand_id: null })
-                        .eq('brand_id', id);
-                    if (detachErr) {
-                        console.warn('Brand detach warning:', detachErr);
+                    const brandProducts = mockData.products.filter(p => p.brand_id === id);
+                    for (const p of brandProducts) {
+                        // 프로젝트 하위 데이터 삭제
+                        await this.supabase.from('todos').delete().eq('product_id', p.id);
+                        await this.supabase.from('photos').delete().eq('product_id', p.id);
+                        await this.supabase.from('documents').delete().eq('product_id', p.id);
+                        await this.supabase.from('memos').delete().eq('product_id', p.id);
+                        await this.supabase.from('product_stages').delete().eq('product_id', p.id);
+                        await this.supabase.from('history').delete().eq('product_id', p.id);
                     }
-                    // products도 해제
-                    const { error: detachProdErr } = await this.supabase
-                        .from('products')
-                        .update({ brand_id: null })
-                        .eq('brand_id', id);
-                    if (detachProdErr) {
-                        console.warn('Product brand detach warning:', detachProdErr);
-                    }
+                    // 소속 프로젝트 삭제
+                    await this.supabase.from('products').delete().eq('brand_id', id);
+                    // 소속 계정 삭제
+                    await this.supabase.from('companies').delete().eq('brand_id', id);
                 }
 
                 // 사진 삭제의 경우 id가 URL일 수 있으므로 처리
@@ -2146,17 +2155,18 @@ class BhasApp {
                 </div>
             `;
         } else if (this.currentView === 'brand_management') {
-            return `
-                <div class="glass" style="padding: 2rem; border-radius: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-                        <h2 style="display: flex; align-items: center; gap: 8px;"><i class="ph ph-shield-check"></i> 브랜드(등급) 관리</h2>
-                        <button class="btn-primary" id="add-brand-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">+ 브랜드 생성</button>
-                    </div>
+            const allBrands = mockData.brands || [];
+            const activeBrands = allBrands.filter(b => b.status !== 'closed');
+            const closedBrands = allBrands.filter(b => b.status === 'closed');
+
+            const renderBrandTable = (brands, emptyMsg) => {
+                if (brands.length === 0) return `<div style="color: var(--text-muted); text-align: center; padding: 2rem; font-size: 0.9rem;">${emptyMsg}</div>`;
+                return `
                     <div class="table-responsive-container">
                         <table class="responsive-table" style="width: 100%; border-collapse: collapse;">
                             <thead>
                                 <tr style="border-bottom: 1px solid var(--card-border);">
-                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">브랜드 컬러</th>
+                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">컬러</th>
                                     <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">브랜드명</th>
                                     <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">프로젝트</th>
                                     <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">소속 계정</th>
@@ -2165,11 +2175,12 @@ class BhasApp {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${(mockData.brands || []).map(b => {
+                                ${brands.map(b => {
                                     const projectCount = mockData.products.filter(p => p.brand_id === b.id).length;
                                     const userCount = mockData.companies.filter(u => u.brand_id === b.id).length;
+                                    const isClosed = b.status === 'closed';
                                     return `
-                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: 0.2s; ${isClosed ? 'opacity: 0.5;' : ''}" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
                                         <td data-label="컬러" style="padding: 14px 12px;">
                                             <div style="width: 28px; height: 28px; border-radius: 8px; background: ${b.brand_color || 'var(--primary)'}; border: 2px solid rgba(255,255,255,0.1);"></div>
                                         </td>
@@ -2177,7 +2188,10 @@ class BhasApp {
                                         <td data-label="프로젝트" style="padding: 14px 12px; color: var(--text-muted); font-size: 0.9rem;">${projectCount}개</td>
                                         <td data-label="소속 계정" style="padding: 14px 12px; color: var(--text-muted); font-size: 0.9rem;">${userCount}명</td>
                                         <td data-label="상태" style="padding: 14px 12px;">
-                                            <span style="font-size: 0.75rem; background: rgba(16,185,129,0.1); padding: 3px 10px; border-radius: 10px; color: #10b981; font-weight: 600;">ACTIVE</span>
+                                            <span style="font-size: 0.75rem; padding: 3px 10px; border-radius: 10px; font-weight: 600; ${isClosed
+                                                ? 'background: rgba(148,163,184,0.1); color: #94a3b8;'
+                                                : 'background: rgba(16,185,129,0.1); color: #10b981;'
+                                            }">${isClosed ? '종료' : '진행 중'}</span>
                                         </td>
                                         <td data-label="관리" style="padding: 14px 12px; text-align: center;">
                                             <button class="btn-secondary edit-brand-btn" data-id="${b.id}" style="padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; margin-right: 4px;">수정</button>
@@ -2188,6 +2202,34 @@ class BhasApp {
                             </tbody>
                         </table>
                     </div>
+                `;
+            };
+
+            return `
+                <div class="glass" style="padding: 2rem; border-radius: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                        <h2 style="display: flex; align-items: center; gap: 8px;"><i class="ph ph-shield-check"></i> 브랜드(등급) 관리</h2>
+                        <button class="btn-primary" id="add-brand-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">+ 브랜드 생성</button>
+                    </div>
+
+                    <h3 style="font-size: 1rem; color: var(--text-muted); margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
+                        <i class="ph ph-rocket-launch"></i> 진행 중 (${activeBrands.length})
+                    </h3>
+                    ${renderBrandTable(activeBrands, '진행 중인 브랜드가 없습니다.')}
+
+                    ${closedBrands.length > 0 ? `
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 2rem; margin-bottom: 1rem; border-top: 1px solid var(--card-border); padding-top: 1.5rem;">
+                            <h3 style="font-size: 1rem; color: var(--text-muted); margin: 0; display: flex; align-items: center; gap: 8px;">
+                                <i class="ph ph-archive"></i> 종료됨 (${closedBrands.length})
+                            </h3>
+                            <button class="toggle-btn ${!this.brandClosedExpanded ? 'collapsed' : ''}" id="toggle-closed-brands-btn" title="토글">
+                                <i class="ph ph-caret-down" style="font-size: 1.2rem;"></i>
+                            </button>
+                        </div>
+                        <div class="collapsible-content ${!this.brandClosedExpanded ? 'collapsed' : ''}">
+                            ${renderBrandTable(closedBrands, '')}
+                        </div>
+                    ` : ''}
                 </div>
             `;
         }
@@ -2285,6 +2327,13 @@ class BhasApp {
                     this.showEditBrandModal(id);
                 };
             });
+            const toggleClosedBrandsBtn = document.getElementById('toggle-closed-brands-btn');
+            if (toggleClosedBrandsBtn) {
+                toggleClosedBrandsBtn.onclick = () => {
+                    this.brandClosedExpanded = !this.brandClosedExpanded;
+                    this.requestRender();
+                };
+            }
         }
     }
 
@@ -2371,15 +2420,18 @@ class BhasApp {
 
         const nameInput = document.getElementById('new-brand-name');
         const colorInput = document.getElementById('new-brand-color');
+        const statusInput = document.getElementById('new-brand-status');
         const saveBtn = document.getElementById('save-brand-btn');
 
         nameInput.value = brand.name || '';
         colorInput.value = brand.brand_color || '#3b82f6';
+        if (statusInput) statusInput.value = brand.status || 'active';
 
         saveBtn.innerText = '정보 수정';
         saveBtn.onclick = async () => {
             const newName = nameInput.value.trim();
             const newColor = colorInput.value;
+            const newStatus = statusInput?.value || 'active';
 
             if (!newName) return alert('브랜드 이름을 입력해주세요.');
 
@@ -2389,7 +2441,7 @@ class BhasApp {
             try {
                 const { error } = await this.supabase
                     .from('brands')
-                    .update({ name: newName, brand_color: newColor })
+                    .update({ name: newName, brand_color: newColor, status: newStatus })
                     .eq('id', brandId);
 
                 if (error) throw error;
@@ -2873,11 +2925,19 @@ class BhasApp {
                     <input type="text" id="new-brand-name" class="login-input" placeholder="브랜드명을 입력하세요 (예: Alpha Brand)">
                 </div>
                 
-                <div class="login-field" style="margin-bottom: 2rem;">
+                <div class="login-field" style="margin-bottom: 1.5rem;">
                     <label>브랜드 테마 컬러</label>
                     <input type="color" id="new-brand-color" value="#3b82f6" style="width: 100%; height: 40px; border-radius: 8px; border: none; background: transparent; cursor: pointer;">
                 </div>
-                
+
+                <div class="login-field" style="margin-bottom: 2rem;">
+                    <label>상태</label>
+                    <select id="new-brand-status" class="login-input" style="padding: 10px; border-radius: 8px; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--card-border);">
+                        <option value="active">진행 중</option>
+                        <option value="closed">종료됨</option>
+                    </select>
+                </div>
+
                 <div style="display: flex; gap: 10px;">
                     <button id="cancel-brand-btn" style="flex: 1; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer;">취소</button>
                     <button id="save-brand-btn" class="btn-primary" style="flex: 1; padding: 12px; border-radius: 12px;">브랜드 생성</button>
@@ -2894,6 +2954,7 @@ class BhasApp {
     async handleAddBrand() {
         const name = document.getElementById('new-brand-name').value.trim();
         const color = document.getElementById('new-brand-color').value;
+        const status = document.getElementById('new-brand-status')?.value || 'active';
 
         if (!name) return alert('브랜드 이름을 입력해주세요.');
 
@@ -2904,7 +2965,7 @@ class BhasApp {
         try {
             const { data, error } = await this.supabase
                 .from('brands')
-                .insert([{ name, brand_color: color }])
+                .insert([{ name, brand_color: color, status }])
                 .select();
 
             if (error) throw error;
