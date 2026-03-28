@@ -2142,23 +2142,41 @@ class BhasApp {
                         <h2 style="display: flex; align-items: center; gap: 8px;"><i class="ph ph-shield-check"></i> 브랜드(등급) 관리</h2>
                         <button class="btn-primary" id="add-brand-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">+ 브랜드 생성</button>
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;">
-                        ${(mockData.brands || []).map(b => `
-                            <div class="glass" style="padding: 1.5rem; border-radius: 16px; border-left: 4px solid ${b.brand_color || 'var(--primary)'}; position: relative;">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
-                                    <h3 style="margin: 0; font-size: 1.1rem;">${b.name}</h3>
-                                    <span style="font-size: 0.7rem; background: rgba(37,99,235,0.1); padding: 2px 8px; border-radius: 10px; color: var(--primary); font-weight: 600;">ACTIVE</span>
-                                </div>
-                                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 8px;">
-                                    <span><i class="ph ph-briefcase"></i> 등록된 프로젝트: ${mockData.products.filter(p => p.brand_id === b.id).length}개</span>
-                                    <span><i class="ph ph-users"></i> 소속된 계정: ${mockData.companies.filter(u => u.brand_id === b.id).length}개</span>
-                                </div>
-                                <div style="display: flex; gap: 8px;">
-                                    <button class="btn-secondary edit-brand-btn" data-id="${b.id}" style="flex: 1; font-size: 0.8rem; padding: 8px; border-radius: 8px;">브랜드 정보 수정</button>
-                                    <button class="btn-danger" onclick="app.handleDelete(event, 'brand', '${b.id}')" style="width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><i class="ph ph-trash"></i></button>
-                                </div>
-                            </div>
-                        `).join('')}
+                    <div class="table-responsive-container">
+                        <table class="responsive-table" style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--card-border);">
+                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">브랜드 컬러</th>
+                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">브랜드명</th>
+                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">프로젝트</th>
+                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">소속 계정</th>
+                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">상태</th>
+                                    <th style="text-align: center; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">관리</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${(mockData.brands || []).map(b => {
+                                    const projectCount = mockData.products.filter(p => p.brand_id === b.id).length;
+                                    const userCount = mockData.companies.filter(u => u.brand_id === b.id).length;
+                                    return `
+                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+                                        <td data-label="컬러" style="padding: 14px 12px;">
+                                            <div style="width: 28px; height: 28px; border-radius: 8px; background: ${b.brand_color || 'var(--primary)'}; border: 2px solid rgba(255,255,255,0.1);"></div>
+                                        </td>
+                                        <td data-label="브랜드명" style="padding: 14px 12px; font-weight: 600; font-size: 0.95rem;">${b.name}</td>
+                                        <td data-label="프로젝트" style="padding: 14px 12px; color: var(--text-muted); font-size: 0.9rem;">${projectCount}개</td>
+                                        <td data-label="소속 계정" style="padding: 14px 12px; color: var(--text-muted); font-size: 0.9rem;">${userCount}명</td>
+                                        <td data-label="상태" style="padding: 14px 12px;">
+                                            <span style="font-size: 0.75rem; background: rgba(16,185,129,0.1); padding: 3px 10px; border-radius: 10px; color: #10b981; font-weight: 600;">ACTIVE</span>
+                                        </td>
+                                        <td data-label="관리" style="padding: 14px 12px; text-align: center;">
+                                            <button class="btn-secondary edit-brand-btn" data-id="${b.id}" style="padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; margin-right: 4px;">수정</button>
+                                            <button class="btn-danger" onclick="app.handleDelete(event, 'brand', '${b.id}')" style="padding: 4px; border-radius: 6px;"><i class="ph ph-trash"></i></button>
+                                        </td>
+                                    </tr>
+                                `}).join('')}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             `;
