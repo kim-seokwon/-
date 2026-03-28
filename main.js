@@ -655,9 +655,10 @@ class BhasApp {
                         localStorage.removeItem('bhas_session_user');
                     }
 
-                    await this.loadInitialData();
-                    this.setState({ currentView: 'dashboard' });
+                    // 먼저 화면 전환 후 데이터 로드 (로드 실패해도 로그인은 유지)
                     this.showToast('성공적으로 로그인되었습니다.');
+                    this.setState({ currentView: 'dashboard' });
+                    try { await this.loadInitialData(); this.requestRender(); } catch(e) {}
                     return;
                 }
 
@@ -1015,38 +1016,25 @@ class BhasApp {
                  return this.showConfirm(`선택된 브랜드 ID(${brandId})가 유효한 UUID 형식이 아닙니다.\n데이터베이스 설정을 확인해주세요.`, '데이터 형식 오류');
             }
 
-            const newProject = {
-                company_id: company_id,
-                brand_id: brandId,
-                name: name,
-                deadline: this.formatDateToUI(deadline)
-                // stage 컬럼은 products 테이블에 존재하지 않으므로 제외
-            };
-
             try {
-                const { data, error } = await this.supabase
-                    .from('products')
-                    .insert([newProject])
-                    .select();
+                const { data: newId, error } = await this.supabase.rpc('create_product', {
+                    p_company_id: company_id,
+                    p_brand_id: brandId,
+                    p_name: name,
+                    p_deadline: this.formatDateToUI(deadline) || null
+                });
 
-                if (error) {
-                    console.error('Supabase Insert Error:', error);
-                    throw error;
-                }
-                
-                if (!data || data.length === 0) throw new Error('데이터 저장 성공했으나 응답이 없습니다.');
+                if (error) throw error;
 
                 // 히스토리 기록 시도 (비차단형)
                 try {
                     await this.supabase.from('history').insert([{
-                        product_id: data[0].id,
+                        product_id: newId,
                         stage_id: 'consulting',
                         status: '등록',
                         note: '프로젝트 생성: ' + name
                     }]);
-                } catch (hError) {
-                    console.warn('History recording failed (non-blocking):', hError);
-                }
+                } catch (hError) {}
 
                 await this.loadInitialData();
                 modal.style.display = 'none';
