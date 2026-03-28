@@ -1676,15 +1676,13 @@ class BhasApp {
 
             const showAllTodos = this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF';
 
-            const isMobileTodo = window.innerWidth <= 768;
-
             return `
-                <div class="${isMobileTodo ? '' : 'glass'}" style="${isMobileTodo ? '' : 'padding: 2rem; border-radius: 20px;'}">
+                <div class="glass" style="padding: 2rem; border-radius: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap;">
                         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                             <h2 style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 1.5rem; white-space: nowrap;"><i class="ph ph-list-checks"></i> 통합 할 일 관리</h2>
                             ${(this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF') ? `
-                                <select id="todo-brand-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; width: ${isMobileTodo ? '100%' : 'auto'}; box-sizing: border-box;">
+                                <select id="todo-brand-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; box-sizing: border-box;">
                                     <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드</option>
                                     ${(mockData.brands || []).map(b => `
                                         <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
@@ -1785,7 +1783,7 @@ class BhasApp {
             const isMobile = window.innerWidth <= 768;
 
             return `
-                <div class="${isMobile ? '' : 'glass'}" style="${isMobile ? '' : 'padding: 2rem; border-radius: 20px;'}">
+                <div class="glass" style="padding: 2rem; border-radius: 20px;">
                     <div class="mobile-responsive-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; gap: 1.5rem; flex-wrap: wrap;">
                         <div style="display: flex; align-items: center; gap: 12px; width: ${isMobile ? '100%' : 'auto'}; flex-direction: ${isMobile ? 'column' : 'row'};">
                             <h2 style="display: flex; align-items: center; gap: 8px; font-size: 1.5rem; margin: 0; white-space: nowrap;"><i class="ph ph-folder-open"></i> 통합 문서 관리</h2>
