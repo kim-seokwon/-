@@ -826,7 +826,7 @@ class BhasApp {
                                 const myTodosCount = filteredTodos.filter(t => t.assignee === (this.currentUser.company_id || this.currentUser.id)).length;
                                 const reqTodosCount = filteredTodos.filter(t => t.created_by === (this.currentUser.company_id || this.currentUser.id)).length;
                                 return `
-                                <div class="stat-item" style="grid-template-columns: repeat(2, 1fr);">
+                                <div class="stat-item" style="grid-template-columns: repeat(2, 1fr); gap: 12px;">
                                     <div class="glass stat-card my-todos">
                                         <span class="label"><i class="ph ph-user-focus"></i> 내가 할 일</span>
                                         <span class="value">${myTodosCount}</span>
