@@ -242,6 +242,27 @@ class BhasApp {
             e.stopPropagation();
         }
 
+        // 권한 체크: 관리자 전용 삭제 항목
+        if ((type === 'user' || type === 'brand') && this.currentUser?.role === 'CLIENT') {
+            this.showToast('권한이 없습니다.');
+            return;
+        }
+
+        // CLIENT: 본인 생성 항목만 삭제 가능
+        if (this.currentUser?.role === 'CLIENT') {
+            let item = null;
+            if (type === 'project') item = mockData.products.find(p => p.id === String(id));
+            else if (type === 'todo') item = mockData.products.flatMap(p => p.todos || []).find(t => t.id === id);
+            else if (type === 'document') item = mockData.products.flatMap(p => p.documents || []).find(d => d.id === id);
+            else if (type === 'memo') item = mockData.products.flatMap(p => p.memos || []).find(m => m.id === id);
+            else if (type === 'photo') item = mockData.products.flatMap(p => p.photos || []).find(ph => ph.id === id || ph.url === id);
+
+            if (item && item.created_by !== this.currentUser.id) {
+                this.showToast('본인이 생성한 항목만 삭제할 수 있습니다.');
+                return;
+            }
+        }
+
         let confirmMsg = '정말로 삭제하시겠습니까?\n(이 작업은 복구할 수 없습니다.)';
         if (type === 'project') {
             const project = mockData.products.find(p => p.id === String(id));
@@ -621,40 +642,6 @@ class BhasApp {
                     await this.loadInitialData();
                     this.setState({ currentView: 'dashboard' });
                     this.showToast('성공적으로 로그인되었습니다.');
-                    return;
-                }
-
-                // 2. Real Auth 실패 시 Mock Login 체크 (개발/테스트용 폴백)
-                const mockUser = mockData.companies.find(c => 
-                    (c.username === identifier || c.username === email.split('@')[0]) && 
-                    c.password === password
-                );
-
-                if (mockUser) {
-                    console.warn('Real Auth failed, falling back to Mock Login (DB writes will fail if RLS is enabled)');
-                    this.currentUser = {
-                        id: mockUser.id,
-                        email: mockUser.username + '@bhas.com',
-                        role: mockUser.role,
-                        name: mockUser.name,
-                        company_id: mockUser.id,
-                        brand_id: mockUser.brand_id
-                    };
-                    
-                    if (saveIdChecked) localStorage.setItem('bhas_saved_id', identifier);
-                    else localStorage.removeItem('bhas_saved_id');
-                    
-                    if (autoLoginChecked) {
-                        localStorage.setItem('bhas_auto_login', 'true');
-                        localStorage.setItem('bhas_session_user', JSON.stringify(this.currentUser));
-                    } else {
-                        localStorage.removeItem('bhas_auto_login');
-                        localStorage.removeItem('bhas_session_user');
-                    }
-                    
-                    await this.loadInitialData();
-                    this.setState({ currentView: 'dashboard' });
-                    this.showConfirm('테스트 모드(Mock)로 로그인되었습니다.\n할 일 등록 등 데이터베이스 쓰기 작업이 제한될 수 있습니다.', '테스트 모드 안내');
                     return;
                 }
 
