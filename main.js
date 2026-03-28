@@ -337,11 +337,14 @@ class BhasApp {
                         // 3단계: 전역 문서 삭제
                         await this.supabase.from('global_documents').delete().eq('brand_id', id);
 
-                        // 4단계: 소속 계정 삭제 (FK 참조 모두 제거된 후)
+                        // 4단계: 소속 계정의 모든 FK 참조 해제 후 삭제
                         if (brandCompanies.length > 0) {
-                            // 계정이 created_by로 참조되는 곳 해제
                             for (const c of brandCompanies) {
+                                // 이 계정을 참조하는 모든 테이블의 FK 해제
+                                await this.supabase.from('products').update({ company_id: null }).eq('company_id', c.id);
                                 await this.supabase.from('products').update({ created_by: null }).eq('created_by', c.id);
+                                await this.supabase.from('todos').update({ assignee_id: null }).eq('assignee_id', c.id);
+                                await this.supabase.from('todos').update({ created_by: null }).eq('created_by', c.id);
                                 await this.supabase.from('documents').update({ created_by: null }).eq('created_by', c.id);
                                 await this.supabase.from('photos').update({ created_by: null }).eq('created_by', c.id);
                                 await this.supabase.from('memos').update({ created_by: null }).eq('created_by', c.id);
