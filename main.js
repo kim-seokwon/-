@@ -726,9 +726,9 @@ class BhasApp {
                                         <button id="view-table-btn" class="${this.dashboardViewType === 'table' ? 'active' : ''}" title="리스트 보기"><i class="ph ph-list-dashes"></i></button>
                                     </div>
                                 ` : ''}
-                                ${(role === 'MASTER' || role === 'STAFF') && this.currentView !== 'detail' && this.currentView !== 'user_management' && this.currentView !== 'documents' && this.currentView !== 'brand_management' ? `
+                                ${(role === 'MASTER' || role === 'STAFF') && this.currentView === 'dashboard' ? `
                                     <select id="global-company-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer;">
-                                        <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드 보기</option>
+                                        <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드</option>
                                         ${(mockData.brands || []).map(b => `
                                             <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
                                         `).join('')}
@@ -1676,10 +1676,22 @@ class BhasApp {
 
             const showAllTodos = this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF';
 
+            const isMobileTodo = window.innerWidth <= 768;
+
             return `
-                <div style="display: flex; flex-direction: column; gap: 1.5rem; align-items: stretch;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                        <h2 style="margin: 0; display: flex; align-items: center; gap: 8px;"><i class="ph ph-list-checks"></i> 통합 할 일 관리</h2>
+                <div class="${isMobileTodo ? '' : 'glass'}" style="${isMobileTodo ? '' : 'padding: 2rem; border-radius: 20px;'}">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <h2 style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 1.5rem; white-space: nowrap;"><i class="ph ph-list-checks"></i> 통합 할 일 관리</h2>
+                            ${(this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF') ? `
+                                <select id="todo-brand-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; width: ${isMobileTodo ? '100%' : 'auto'}; box-sizing: border-box;">
+                                    <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드</option>
+                                    ${(mockData.brands || []).map(b => `
+                                        <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
+                                    `).join('')}
+                                </select>
+                            ` : ''}
+                        </div>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn-secondary" id="quick-request-todo-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem; border-radius: 20px;">요청하기</button>
                             <button class="btn-primary" id="quick-add-todo-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem; border-radius: 20px;">+ 새 할 일</button>
@@ -2369,17 +2381,25 @@ class BhasApp {
     }
 
     bindAllTodosEvents() {
+        const todoBrandFilter = document.getElementById('todo-brand-filter');
+        if (todoBrandFilter) {
+            todoBrandFilter.onchange = (e) => {
+                this.selectedCompanyId = e.target.value;
+                this.requestRender();
+            };
+        }
+
         this.appContainer.querySelectorAll('.todo-project-link').forEach(link => {
-            link.addEventListener('click', (e) => {
+            link.onclick = (e) => {
                 e.stopPropagation();
                 const product_id = e.target.closest('.todo-item').getAttribute('data-project-id');
                 this.setState({ currentView: 'detail', activeProjectId: product_id });
-            });
+            };
         });
 
         // 체크 버튼 클릭
         this.appContainer.querySelectorAll('.todo-quick-check').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
+            btn.onclick = async (e) => {
                 e.stopPropagation();
                 const todoId = e.currentTarget.getAttribute('data-id');
                 const pid = e.currentTarget.getAttribute('data-pid');
@@ -2394,7 +2414,7 @@ class BhasApp {
                         }
                     }
                 }
-            });
+            };
         });
 
         // 팝업 모달 클릭
