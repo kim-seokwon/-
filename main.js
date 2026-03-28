@@ -27,7 +27,8 @@ class BhasApp {
         
         this.products = [];
         this.companies = [];
-        this.scheduledExpanded = true; // 기본값 추가
+        this.scheduledExpanded = true;
+        this.dashboardViewType = 'grid';
         
         try {
             this.init();
@@ -78,16 +79,30 @@ class BhasApp {
             const savedSession = localStorage.getItem('bhas_session_user');
             if (autoLogin && savedSession) {
                 try {
-                    this.currentUser = JSON.parse(savedSession);
-                    this.currentView = 'dashboard';
+                    const parsed = JSON.parse(savedSession);
+                    if (parsed && parsed.role && parsed.name) {
+                        this.currentUser = parsed;
+                        this.currentView = 'dashboard';
+                    } else {
+                        throw new Error('Invalid session data');
+                    }
                 } catch(e) {
                     console.error('Auto login session parse failed', e);
                     this.currentUser = null;
+                    localStorage.removeItem('bhas_session_user');
+                    localStorage.removeItem('bhas_auto_login');
                 }
             }
 
             this.syncStagesData();
             this.requestRender();
+
+            // 자동 로그인 성공 시 데이터 로드 (렌더 후 비동기)
+            if (this.currentUser) {
+                this.loadInitialData().then(() => this.requestRender()).catch(err => {
+                    console.error('Auto-login data load failed:', err);
+                });
+            }
         } catch (e) {
             console.error('Init Error:', e);
             this.currentView = 'login';
@@ -711,7 +726,7 @@ class BhasApp {
                                         <button id="view-table-btn" class="${this.dashboardViewType === 'table' ? 'active' : ''}" title="리스트 보기"><i class="ph ph-list-dashes"></i></button>
                                     </div>
                                 ` : ''}
-                                ${(role === 'MASTER' || role === 'STAFF') && this.currentView !== 'detail' && this.currentView !== 'user_management' && this.currentView !== 'documents' ? `
+                                ${(role === 'MASTER' || role === 'STAFF') && this.currentView !== 'detail' && this.currentView !== 'user_management' && this.currentView !== 'documents' && this.currentView !== 'brand_management' ? `
                                     <select id="global-company-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer;">
                                         <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드 보기</option>
                                         ${(mockData.brands || []).map(b => `
@@ -835,12 +850,9 @@ class BhasApp {
         this.appContainer.innerHTML = dashboardHtml;
 
         // 이벤트 바인딩
-        const backBtn = this.appContainer.querySelector('.breadcrumb-back-btn');
-        if (backBtn) {
-            backBtn.addEventListener('click', () => {
-                this.setState({ currentView: 'dashboard' });
-            });
-        }
+        this.appContainer.querySelectorAll('.breadcrumb-back-btn').forEach(btn => {
+            btn.onclick = () => this.setState({ currentView: 'dashboard' });
+        });
         
         this.bindDashboardEvents();
         if (this.currentView === 'detail') this.bindDetailEvents();
@@ -848,20 +860,19 @@ class BhasApp {
 
         const logoutBtn = document.getElementById('logout-btn');
         if (logoutBtn) {
-            logoutBtn.addEventListener('click', async (e) => {
-                console.log('DEBUG: Logout Button Clicked! e.target:', e.target);
-                try { await this.supabase.auth.signOut(); } catch(err) {} 
+            logoutBtn.onclick = async () => {
+                try { await this.supabase.auth.signOut(); } catch(err) {}
                 localStorage.removeItem('bhas_session_user');
                 localStorage.removeItem('bhas_auto_login');
                 this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
-            });
+            };
         }
 
         const companyFilter = document.getElementById('global-company-filter');
         if (companyFilter) {
-            companyFilter.addEventListener('change', (e) => {
+            companyFilter.onchange = (e) => {
                 this.setState({ selectedCompanyId: e.target.value });
-            });
+            };
         }
 
         // 알림 팝업 이벤트 바인딩 (Consolidated)
@@ -2143,133 +2154,96 @@ class BhasApp {
     }
 
     bindDashboardEvents() {
-        // 사이드바 내비게이션
+        // 사이드바 내비게이션 (onclick으로 중복 방지)
         this.appContainer.querySelectorAll('.nav-links li[data-view]').forEach(li => {
-            li.addEventListener('click', () => {
+            li.onclick = () => {
                 const view = li.getAttribute('data-view');
                 this.setState({ currentView: view });
-            });
+            };
         });
 
         const viewGridBtn = document.getElementById('view-grid-btn');
-        if (viewGridBtn) viewGridBtn.addEventListener('click', () => { 
-            this.dashboardViewType = 'grid'; 
-            this.requestRender(); 
-        });
+        if (viewGridBtn) viewGridBtn.onclick = () => {
+            this.dashboardViewType = 'grid';
+            this.requestRender();
+        };
         const viewTableBtn = document.getElementById('view-table-btn');
-        if (viewTableBtn) viewTableBtn.addEventListener('click', () => { 
-            this.dashboardViewType = 'table'; 
-            this.requestRender(); 
-        });
+        if (viewTableBtn) viewTableBtn.onclick = () => {
+            this.dashboardViewType = 'table';
+            this.requestRender();
+        };
 
         const toggleBtn = document.getElementById('toggle-completed-btn');
         if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => {
+            toggleBtn.onclick = () => {
                 this.completedExpanded = !this.completedExpanded;
                 this.requestRender();
-            });
+            };
         }
-        
+
         const scheduledToggleBtn = document.getElementById('toggle-scheduled-btn');
         if (scheduledToggleBtn) {
-            scheduledToggleBtn.addEventListener('click', () => {
-                this.scheduledExpanded = this.scheduledExpanded === false ? true : false;
+            scheduledToggleBtn.onclick = () => {
+                this.scheduledExpanded = !this.scheduledExpanded;
                 this.requestRender();
-            });
+            };
         }
 
         if (this.currentView === 'dashboard') {
             const addProjectBtn = document.getElementById('add-project-btn');
-            if (addProjectBtn) {
-                addProjectBtn.addEventListener('click', () => {
-                    this.showProjectModal();
-                });
-            }
+            if (addProjectBtn) addProjectBtn.onclick = () => this.showProjectModal();
 
-            // 프로젝트 카드 클릭 (그리드 뷰)
             this.appContainer.querySelectorAll('.project-card').forEach(card => {
-                card.addEventListener('click', (e) => {
-                    // 삭제 버튼 클릭 시에는 상세 화면으로 이동하지 않음
+                card.onclick = (e) => {
                     if (e.target.closest('.btn-danger')) return;
-                    
-                    const pid = card.getAttribute('data-id');
-                    this.setState({ currentView: 'detail', activeProjectId: pid });
-                });
+                    this.setState({ currentView: 'detail', activeProjectId: card.getAttribute('data-id') });
+                };
             });
 
-            // 프로젝트 행 클릭 (테이블 뷰)
             this.appContainer.querySelectorAll('.project-row').forEach(row => {
-                row.addEventListener('click', (e) => {
-                    // 삭제 버튼 클릭 시에는 상세 화면으로 이동하지 않음
+                row.onclick = (e) => {
                     if (e.target.closest('.btn-danger')) return;
-
-                    const pid = row.getAttribute('data-id');
-                    console.log('DEBUG: Project Row Clicked:', pid);
-                    this.setState({ currentView: 'detail', activeProjectId: pid });
-                });
+                    this.setState({ currentView: 'detail', activeProjectId: row.getAttribute('data-id') });
+                };
             });
         }
-
 
         if (this.currentView === 'documents') {
             this.appContainer.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.addEventListener('click', () => { this.selectedDocCategory = btn.getAttribute('data-cat'); this.requestRender(); });
+                btn.onclick = () => { this.selectedDocCategory = btn.getAttribute('data-cat'); this.requestRender(); };
             });
             this.appContainer.querySelectorAll('.doc-row').forEach(row => {
-                row.addEventListener('click', () => {
+                row.onclick = () => {
                     const productId = row.getAttribute('data-product-id');
                     if (productId) this.setState({ activeProjectId: productId, currentView: 'detail' });
-                });
+                };
             });
 
             const quickAddDocBtn = document.getElementById('quick-add-doc-btn');
-            if (quickAddDocBtn) {
-                quickAddDocBtn.addEventListener('click', () => {
-                    this.showQuickAddDocModal();
-                });
-            }
+            if (quickAddDocBtn) quickAddDocBtn.onclick = () => this.showQuickAddDocModal();
         }
         if (this.currentView === 'all_todos') {
             const quickAddTodoBtn = document.getElementById('quick-add-todo-btn');
-            if (quickAddTodoBtn) {
-                quickAddTodoBtn.addEventListener('click', () => {
-                    this.showQuickAddTodoModal();
-                });
-            }
+            if (quickAddTodoBtn) quickAddTodoBtn.onclick = () => this.showQuickAddTodoModal();
             const quickRequestTodoBtn = document.getElementById('quick-request-todo-btn');
-            if (quickRequestTodoBtn) {
-                quickRequestTodoBtn.addEventListener('click', () => {
-                    this.showQuickAddTodoModal(true); // Pass true for request mode
-                });
-            }
+            if (quickRequestTodoBtn) quickRequestTodoBtn.onclick = () => this.showQuickAddTodoModal(true);
         }
         if (this.currentView === 'user_management') {
             const addAccountBtn = this.appContainer.querySelector('#add-account-btn');
-            if (addAccountBtn) {
-                addAccountBtn.addEventListener('click', () => {
-                    this.showAddUserModal();
-                });
-            }
+            if (addAccountBtn) addAccountBtn.onclick = () => this.showAddUserModal();
             this.appContainer.querySelectorAll('.edit-user-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const id = e.currentTarget.getAttribute('data-id');
-                    this.showEditUserModal(id);
-                });
+                btn.onclick = (e) => this.showEditUserModal(e.currentTarget.getAttribute('data-id'));
             });
         }
 
         if (this.currentView === 'brand_management') {
             const addBrandBtn = this.appContainer.querySelector('#add-brand-btn');
-            if (addBrandBtn) {
-                addBrandBtn.addEventListener('click', () => {
-                    this.showAddBrandModal();
-                });
-            }
+            if (addBrandBtn) addBrandBtn.onclick = () => this.showAddBrandModal();
             this.appContainer.querySelectorAll('.edit-brand-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
+                btn.onclick = (e) => {
                     const id = e.currentTarget.getAttribute('data-id');
                     this.showEditBrandModal(id);
-                });
+                };
             });
         }
     }
