@@ -103,13 +103,22 @@ class BhasApp {
             }
 
             this.syncStagesData();
-            this.requestRender();
 
-            // 자동 로그인 성공 시 데이터 로드 (렌더 후 비동기)
             if (this.currentUser) {
-                this.loadInitialData().then(() => this.requestRender()).catch(err => {
+                // 자동 로그인: 로딩 화면 표시 후 데이터 로드 완료 시 대시보드 렌더
+                this._isInitialLoading = true;
+                this.requestRender();
+                this.loadInitialData().then(() => {
+                    this._isInitialLoading = false;
+                    this.requestRender();
+                }).catch(err => {
                     console.error('Auto-login data load failed:', err);
+                    this._isInitialLoading = false;
+                    this.requestRender();
                 });
+            } else {
+                this._isInitialLoading = false;
+                this.requestRender();
             }
         } catch (e) {
             console.error('Init Error:', e);
@@ -380,10 +389,23 @@ class BhasApp {
     render() {
         if (this._isRendering) return;
         this._isRendering = true;
-        
+
         try {
             this.appContainer.innerHTML = '';
-            
+
+            // 데이터 로딩 중이면 로딩 화면 표시
+            if (this._isInitialLoading && this.currentUser) {
+                this.appContainer.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 1.5rem;">
+                        <div style="font-size: 2.5rem; font-weight: 900; color: var(--primary); letter-spacing: 3px;">BHAS</div>
+                        <div style="width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                        <span style="color: var(--text-muted); font-size: 0.9rem;">데이터를 불러오는 중...</span>
+                        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+                    </div>
+                `;
+                return;
+            }
+
             switch (this.currentView) {
                 case 'login':
                     this.renderLogin();
