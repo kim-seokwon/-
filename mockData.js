@@ -26,21 +26,6 @@ export const mockData = {
         CLIENT: ['dashboard', 'detail']
     },
     schedules: [], // 실시간 데이터 로드를 위해 비워둠 (Supabase 연동 우선)
-    products: [
-        {
-            id: '6de8a452-9642-4f32-8e10-9f172152a948',
-            company_id: '15336bb8-9083-4a86-81c5-cef77e39009b',
-            brand_id: '9def20d6-5c05-48bb-89f6-21d6c32a948f',
-            name: 'OOO 청바지',
-            current_stage: 'pattern',
-            deadline: '2026.03.25',
-            notes: '워싱 느낌 강조 요청. YKK 지퍼 사용 필수.',
-            created_by: 'f93868d6-10ee-40da-837a-965bb42f4e81',
-            todos: [],
-            photos: [],
-            documents: [],
-            history: []
-        }
-    ],
+    products: [],
     globalDocuments: []
 };

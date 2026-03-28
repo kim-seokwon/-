@@ -5,8 +5,17 @@ const SUPABASE_URL = 'https://czaykmmwzlcisozmbxpl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_JfMXgnspGcTtJKncR-l4gQ_XXzopFMk';
 const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 class BhasApp {
     constructor() {
+        if (window.__BHAS_APP_INSTANTIATED__ && window.app) return;
+        window.__BHAS_APP_INSTANTIATED__ = true;
+        window.app = this;
+
         this.currentUser = null;
         this.appContainer = document.getElementById('app');
         this.currentView = 'login'; // 'login', 'dashboard', 'detail'
@@ -20,14 +29,13 @@ class BhasApp {
         this._renderTimeout = null;
         this._isInitialLoading = true;
         
-        // 타임라인 관련 상태
-        
-        window.app = this; // 전역 참조 추가 (타임라인 등에서 필요)
         this.supabase = supabase;
         
         this.products = [];
         this.companies = [];
         this.scheduledExpanded = true; // 기본값 추가
+        this._isHandlingUpload = false;
+        this._isHandlingPhoto = false;
         
         try {
             this.init();
@@ -42,6 +50,17 @@ class BhasApp {
     }
 
     showToast(message) {
+        // 전역 중복 알림 방지: 동일 메시지가 현재 활성 상태이면 무시
+        if (!window.__BHAS_ACTIVE_TOASTS__) window.__BHAS_ACTIVE_TOASTS__ = new Set();
+
+        const cleanMsg = String(message).trim();
+
+        if (window.__BHAS_ACTIVE_TOASTS__.has(cleanMsg)) {
+            return;
+        }
+
+        window.__BHAS_ACTIVE_TOASTS__.add(cleanMsg);
+
         const container = document.getElementById('toast-container');
         if (!container) return;
         const toast = document.createElement('div');
@@ -55,7 +74,10 @@ class BhasApp {
         
         setTimeout(() => {
             toast.classList.remove('show');
-            setTimeout(() => toast.remove(), 300);
+            setTimeout(() => {
+                toast.remove();
+                window.__BHAS_ACTIVE_TOASTS__.delete(cleanMsg);
+            }, 300);
         }, 3000);
     }
 
@@ -135,7 +157,7 @@ class BhasApp {
             <div class="glass modal-content fade-in" style="width: 90%; max-width: 1000px; padding: 2rem; border-radius: 24px; position: relative; max-height: 90vh; display: flex; flex-direction: column;">
                 <button onclick="document.getElementById('global-modal-container').style.display='none'" style="position: absolute; top: 1.5rem; right: 1.5rem; background: rgba(255,255,255,0.1); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 100;"><i class="ph ph-x"></i></button>
                 <h2 style="margin-bottom: 1.5rem; font-size: 1.2rem; display: flex; align-items: center; gap: 10px;">
-                    <i class="${isImage ? 'ph ph-image' : 'ph ph-file-text'}"></i> ${name}
+                    <i class="${isImage ? 'ph ph-image' : 'ph ph-file-text'}"></i> ${escapeHtml(name)}
                 </h2>
                 <div style="flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 10px;">
                     ${isImage ? `
@@ -427,7 +449,7 @@ class BhasApp {
                     ...p,
                     currentStage: 'consulting',
                     stages_data: stagesData,
-                    todos: (todos || []).map(t => ({ ...t, assignee: t.assignee_id })), // assignee_id를 UI용 assignee로 매핑
+                    todos: todos || [],
                     photos: photos || [],
                     documents: documents || [],
                     memos: memos || []
@@ -718,7 +740,7 @@ class BhasApp {
                                 ` : ''}
                                 ${(() => {
                                     const userId = this.currentUser.company_id || this.currentUser.id;
-                                    const pendingCount = mockData.products.flatMap(p => p.todos || []).filter(t => !t.completed && t.assignee === userId).length;
+                                    const pendingCount = mockData.products.flatMap(p => p.todos || []).filter(t => !t.completed && t.assignee_id === userId).length;
                                     
                                     const allTodos = mockData.products.flatMap(p => {
                                         const company = mockData.companies.find(c => c.id === p.company_id);
@@ -728,8 +750,8 @@ class BhasApp {
                                     if (this.currentUser.role === 'CLIENT') {
                                         filteredTodos = filteredTodos.filter(t => t.company_id === this.currentUser.company_id);
                                     }
-                                    const myTodos = filteredTodos.filter(t => t.assignee === userId);
-                                    const requestedTodos = filteredTodos.filter(t => t.created_by === userId && t.assignee !== userId);
+                                    const myTodos = filteredTodos.filter(t => t.assignee_id === userId);
+                                    const requestedTodos = filteredTodos.filter(t => t.created_by === userId && t.assignee_id !== userId);
 
                                     const renderTodoList = (todos, title, icon) => `
                                         <div style="margin-bottom: 1rem;">
@@ -805,7 +827,7 @@ class BhasApp {
                                 const allTodos = products.flatMap(p => p.todos || []);
                                 let filteredTodos = allTodos.filter(t => !t.completed);
                                 if (role === 'CLIENT') filteredTodos = filteredTodos.filter(t => t.company_id === this.currentUser.company_id);
-                                const myTodosCount = filteredTodos.filter(t => t.assignee === (this.currentUser.company_id || this.currentUser.id)).length;
+                                const myTodosCount = filteredTodos.filter(t => t.assignee_id === (this.currentUser.company_id || this.currentUser.id)).length;
                                 const reqTodosCount = filteredTodos.filter(t => t.created_by === (this.currentUser.company_id || this.currentUser.id)).length;
                                 return `
                                 <div class="stat-item">
@@ -834,9 +856,9 @@ class BhasApp {
         // 이벤트 바인딩
         const backBtn = this.appContainer.querySelector('.breadcrumb-back-btn');
         if (backBtn) {
-            backBtn.addEventListener('click', () => {
+            backBtn.onclick = () => {
                 this.setState({ currentView: 'dashboard' });
-            });
+            };
         }
         
         this.bindDashboardEvents();
@@ -872,13 +894,24 @@ class BhasApp {
                     const todo = project.todos.find(t => t.id === todoId);
                     if (todo) {
                         if (await this.showConfirm('정말 완료 처리하시겠습니까? 완료 시 목록에서 숨겨집니다.', '완료 확인')) {
-                            todo.completed = !todo.completed;
-                            this.showToast('할 일이 완료 처리되었습니다.');
-                            this.requestRender();
-                            setTimeout(() => {
-                                const popup = document.getElementById('notification-popup');
-                                if(popup) popup.style.display = 'block';
-                            }, 10);
+                            const newCompleted = !todo.completed;
+                            try {
+                                const { error } = await this.supabase
+                                    .from('todos')
+                                    .update({ completed: newCompleted })
+                                    .eq('id', todoId);
+                                if (error) throw error;
+                                todo.completed = newCompleted;
+                                this.showToast('할 일이 완료 처리되었습니다.');
+                                this.requestRender();
+                                setTimeout(() => {
+                                    const popup = document.getElementById('notification-popup');
+                                    if(popup) popup.style.display = 'block';
+                                }, 10);
+                            } catch (error) {
+                                console.error('Update Todo Error:', error);
+                                alert('할 일 상태 수정 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+                            }
                         }
                     }
                 }
@@ -1148,10 +1181,8 @@ class BhasApp {
             saveBtn.innerText = '업로드 중...';
             try {
                 await this.handleFileUpload(pid, file, type, name);
-                this.showToast('새 문서가 등록되었습니다.');
+                // handleFileUpload 내부에서 이미 loadInitialData/requestRender/토스트를 처리함
                 modal.style.display = 'none';
-                await this.loadInitialData();
-                this.requestRender();
             } catch (err) {
                 console.error(err);
                 alert('업로드 중 오류가 발생했습니다.');
@@ -1228,8 +1259,8 @@ class BhasApp {
                         <!-- 연동된 문서 목록 노출 및 팝업 연동 -->
                         <div id="stage-linked-docs" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
                             ${project.documents.filter(d => d.type === docType).map(doc => `
-                                <div class="glass" style="padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="app.showFileModal('${doc.url}', '${doc.name}')">
-                                    <span><i class="ph ph-file-text"></i> ${doc.name}</span>
+                                <div class="glass" style="padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="app.showFileModal('${escapeHtml(doc.url)}', '${escapeHtml(doc.name)}')">
+                                    <span><i class="ph ph-file-text"></i> ${escapeHtml(doc.name)}</span>
                                     <i class="ph ph-magnifying-glass" style="color: var(--primary);"></i>
                                 </div>
                             `).join('')}
@@ -1258,35 +1289,73 @@ class BhasApp {
             }, 300);
         };
 
-        sidebarContainer.addEventListener('click', (e) => {
+        sidebarContainer.onclick = (e) => {
             if (e.target === sidebarContainer) closeSidebar();
-        });
+        };
 
-        document.getElementById('close-sidebar-btn').addEventListener('click', closeSidebar);
+        document.getElementById('close-sidebar-btn').onclick = closeSidebar;
 
         const fileInput = document.getElementById('stage-file-input');
         const fileSelectBtn = document.getElementById('stage-file-select-btn');
 
         if (fileSelectBtn && fileInput) {
-            fileSelectBtn.onclick = () => fileInput.click();
-            fileInput.onchange = async (e) => {
-                const file = e.target.files[0];
-                if (file) {
+            const self = this;
+
+            const bindFileHandler = () => {
+                fileInput.onchange = async (e) => {
+                    // 즉시 핸들러 제거하여 중복 호출 원천 차단
+                    fileInput.onchange = null;
+
+                    const file = e.target.files[0];
+                    if (!file || window.__BHAS_UPLOADING__) {
+                        bindFileHandler(); // 실패 시 핸들러 복원
+                        return;
+                    }
+
                     const nameInput = document.getElementById('stage-doc-name');
                     const customName = nameInput.value || file.name.split('.')[0];
-                    
-                    this.showToast('문서 업로드 중...');
-                    await this.handleFileUpload(project.id, file, docType, customName);
-                    
-                    fileInput.value = '';
-                    nameInput.value = '';
-                    document.getElementById('stage-status-select').value = 'completed';
-                    this.showToast('문서가 업로드되었습니다.');
-                }
+
+                    if (confirm(`'${customName}' 문서를 업로드하시겠습니까?`)) {
+                        window.__BHAS_UPLOADING__ = true;
+                        fileSelectBtn.disabled = true;
+                        fileSelectBtn.style.pointerEvents = 'none';
+                        fileSelectBtn.innerHTML = '<i class="ph ph-spinner-gap anim-spin"></i> 업로드 중...';
+                        fileInput.disabled = true;
+
+                        try {
+                            await self.handleFileUpload(project.id, file, docType, customName);
+                            fileInput.value = '';
+                            nameInput.value = '';
+                            document.getElementById('stage-status-select').value = 'completed';
+                        } finally {
+                            window.__BHAS_UPLOADING__ = false;
+                            fileSelectBtn.disabled = false;
+                            fileSelectBtn.style.pointerEvents = 'auto';
+                            fileSelectBtn.innerHTML = '<i class="ph ph-file-plus"></i> 클릭하여 파일 선택 및 즉시 업로드';
+                            fileInput.disabled = false;
+                            bindFileHandler(); // 완료 후 핸들러 복원
+                        }
+                    } else {
+                        fileInput.value = '';
+                        bindFileHandler(); // 취소 시 핸들러 복원
+                    }
+                };
             };
+
+            fileSelectBtn.onclick = () => {
+                if (window.__BHAS_UPLOADING__) {
+                    self.showToast('이미 업로드를 처리 중입니다.');
+                    return;
+                }
+                fileInput.value = '';
+                fileInput.click();
+            };
+
+            bindFileHandler();
         }
 
-        document.getElementById('save-stage-btn').addEventListener('click', async () => {
+        const saveStageBtn = document.getElementById('save-stage-btn');
+        saveStageBtn.onclick = async () => {
             const status = document.getElementById('stage-status-select').value;
             const dateVal = document.getElementById('stage-date-input').value;
             const note = document.getElementById('stage-note-input').value;
@@ -1305,19 +1374,25 @@ class BhasApp {
                         updated_at: new Date().toISOString()
                     }, { onConflict: 'product_id,stage_id' });
 
-                if (stageError) throw stageError;
+                if (stageError) {
+                    console.error('Upsert Error:', stageError);
+                    if (stageError.message && (stageError.message.includes('uuid') || stageError.message.includes('foreign key'))) {
+                        throw new Error('이 프로젝트는 데이터베이스에 등록되지 않은 샘플 데이터입니다. 실제 프로젝트를 생성 후 이용해주세요.');
+                    }
+                    throw stageError;
+                }
 
                 if (status === 'completed') {
                     // products 테이블에 stage 컬럼이 없으므로 업데이트 생략
                     // 대신 product_stages를 통해 상태가 관리됨
                 }
 
-                const now = new Date().toISOString().split('T')[0];
+                // 2. 히스토리 기록
                 const { error: historyError } = await this.supabase.from('history').insert([{
                     product_id: String(project.id),
-                    action: `${stage.label} 공정 세부 설정 갱신`,
-                    date: now,
-                    user: this.currentUser.name
+                    stage_id: stage.id,
+                    status: '수정',
+                    note: `${stage.label} 공정 세부 설정 갱신`
                 }]);
                 if (historyError) console.error('History Insert Warning:', historyError);
 
@@ -1326,9 +1401,9 @@ class BhasApp {
                 await closeSidebar();
             } catch (error) {
                 console.error('Save Stage Error:', error);
-                alert('설정 저장 중 오류가 발생했습니다.');
+                alert(error.message || '설정 저장 중 오류가 발생했습니다.');
             }
-        });
+        };
     }
 
     openTodoModal(product_id, todoId) {
@@ -1380,11 +1455,22 @@ class BhasApp {
         `;
 
         document.getElementById('todo-cancel').onclick = () => { sidebarContainer.style.display = 'none'; };
-        document.getElementById('todo-save').onclick = () => {
-            todo.memo = document.getElementById('todo-memo-text').value;
-            sidebarContainer.style.display = 'none';
-            this.showToast('할 일 메모가 저장되었습니다.');
-            this.requestRender();
+        document.getElementById('todo-save').onclick = async () => {
+            const memo = document.getElementById('todo-memo-text').value;
+            try {
+                const { error } = await this.supabase
+                    .from('todos')
+                    .update({ memo: memo })
+                    .eq('id', todo.id);
+                if (error) throw error;
+                todo.memo = memo;
+                sidebarContainer.style.display = 'none';
+                this.showToast('할 일 메모가 저장되었습니다.');
+                this.requestRender();
+            } catch (error) {
+                console.error('Update Todo Memo Error:', error);
+                alert('메모 저장 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+            }
         };
     }
 
@@ -1627,8 +1713,8 @@ class BhasApp {
             }
 
             const userId = this.currentUser.company_id || this.currentUser.id;
-            const myTodos = filteredTodos.filter(t => t.assignee === userId);
-            const requestedTodos = filteredTodos.filter(t => t.created_by === userId && t.assignee !== userId);
+            const myTodos = filteredTodos.filter(t => t.assignee_id === userId);
+            const requestedTodos = filteredTodos.filter(t => t.created_by === userId && t.assignee_id !== userId);
 
             const renderTodoList = (todos, title, icon) => `
                 <div class="glass" style="padding: 1.5rem; border-radius: 20px; flex: 1; min-width: 0;">
@@ -1797,7 +1883,7 @@ class BhasApp {
                                     const product = mockData.products.find(p => p.id === doc.productId);
                                     const brand = product ? mockData.brands?.find(b => b.id === product.brand_id) : null;
                                     return `
-                                        <div class="doc-mobile-card glass" onclick="app.showFileModal('${doc.url}', '${doc.name}')">
+                                        <div class="doc-mobile-card glass" onclick="app.showFileModal('${escapeHtml(doc.url)}', '${escapeHtml(doc.name)}')">
                                             <div class="doc-card-top">
                                                 <div class="doc-card-info">
                                                     <span class="doc-card-brand">${brand ? brand.name : '-'}</span>
@@ -1840,7 +1926,7 @@ class BhasApp {
                                         const brand = product ? mockData.brands?.find(b => b.id === product.brand_id) : null;
                                         return `
                                             <tr class="table-row doc-row" style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; cursor: pointer;" 
-                                                onclick="app.showFileModal('${doc.url}', '${doc.name}')">
+                                                onclick="app.showFileModal('${escapeHtml(doc.url)}', '${escapeHtml(doc.name)}')">
                                                 <td style="padding: 12px; color: var(--text-muted);">${doc.date || '-'}</td>
                                                 <td style="padding: 12px;">${brand ? brand.name : '-'}</td>
                                                 <td style="padding: 12px; color: var(--primary);">${product ? product.name : '알 수 없음'}</td>
@@ -1873,6 +1959,10 @@ class BhasApp {
             `;
         } else if (this.currentView === 'detail') {
             const product = mockData.products.find(p => p.id === this.activeProjectId);
+            if (!product) {
+                this.setState({ currentView: 'sub' });
+                return '<div class="fade-in" style="text-align:center; padding:3rem; color:var(--text-muted);">프로젝트를 찾을 수 없습니다.</div>';
+            }
             const brand = mockData.brands?.find(b => b.id === product.brand_id);
             const company = mockData.companies.find(c => c.id === product.company_id);
             const brandName = brand ? brand.name : (company ? company.name : '알 수 없는 브랜드');
@@ -1993,7 +2083,7 @@ class BhasApp {
                                                         <select class="todo-assignee-select glass" data-id="${todo.id}" style="padding: 2px 4px; border-radius: 4px; font-size: 0.7rem; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--card-border); width: 85px;" onclick="event.stopPropagation()">
                                                             <option value="">미지정</option>
                                                             ${mockData.companies.filter(c => c.role === 'MASTER' || c.role === 'STAFF' || c.id === product.company_id).map(c => `
-                                                                <option value="${c.id}" ${todo.assignee === c.id ? 'selected' : ''}>${c.name}</option>
+                                                                <option value="${c.id}" ${todo.assignee_id === c.id ? 'selected' : ''}>${c.name}</option>
                                                             `).join('')}
                                                         </select>
                                                         <div style="font-size: 0.7rem; color: var(--text-muted); border: 1px solid var(--card-border); border-radius: 4px; padding: 2px 6px; background: rgba(0,0,0,0.2); cursor: pointer; display: flex; align-items: center; gap: 4px; position: relative; min-width: 60px; box-sizing: border-box;" onclick="event.stopPropagation(); this.querySelector('input').showPicker();">
@@ -2026,7 +2116,7 @@ class BhasApp {
                                         ${(product.photos || []).map(photo => {
                                             const photoObj = typeof photo === 'string' ? {url: photo} : photo;
                                             return `
-                                            <div class="photo-item" style="position: relative; cursor: pointer;" onclick="app.showFileModal('${photoObj.url}', '제작 사진')">
+                                            <div class="photo-item" style="position: relative; cursor: pointer;" onclick="app.showFileModal('${escapeHtml(photoObj.url)}', '제작 사진')">
                                                 <img src="${photoObj.url}" alt="제작 사진">
                                                 ${this.canDelete(photoObj) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'photo', '${photoObj.id || photoObj.url}', '${product.id}')" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 4px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(0,0,0,0.5)'; this.style.borderColor='rgba(255,255,255,0.2)'"><i class="ph ph-x"></i></button>` : ''}
                                             </div>
@@ -2412,9 +2502,20 @@ class BhasApp {
                     const todo = project.todos.find(t => t.id === todoId);
                     if (todo) {
                         if (await this.showConfirm('정말 완료 처리하시겠습니까? 완료 시 목록에서 숨겨집니다.', '완료 확인')) {
-                            todo.completed = !todo.completed;
-                            this.showToast('할 일이 완료 처리되었습니다.');
-                            this.requestRender();
+                            const newCompleted = !todo.completed;
+                            try {
+                                const { error } = await this.supabase
+                                    .from('todos')
+                                    .update({ completed: newCompleted })
+                                    .eq('id', todoId);
+                                if (error) throw error;
+                                todo.completed = newCompleted;
+                                this.showToast('할 일이 완료 처리되었습니다.');
+                                this.requestRender();
+                            } catch (error) {
+                                console.error('Update Todo Error:', error);
+                                alert('할 일 상태 수정 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+                            }
                         }
                     }
                 }
@@ -2487,10 +2588,10 @@ class BhasApp {
         if (!product) return;
 
         this.appContainer.querySelectorAll('.stage-item-trigger').forEach(item => {
-            item.addEventListener('click', () => {
+            item.onclick = () => {
                 const docType = item.getAttribute('data-type');
                 this.openStageSidebar(this.activeProjectId, docType);
-            });
+            };
         });
 
         // Inline Todo Input & Mention Logic
@@ -2701,7 +2802,7 @@ class BhasApp {
         this.appContainer.querySelectorAll('.todo-date-input').forEach(input => {
             input.addEventListener('change', async (e) => {
                 const todoId = e.target.getAttribute('data-id');
-                const due_date = val || null; // YYYY-MM-DD 형식 그대로 사용
+                const due_date = e.target.value || null; // YYYY-MM-DD 형식 그대로 사용
 
                 try {
                     const { error } = await this.supabase
@@ -2723,10 +2824,11 @@ class BhasApp {
             });
         });
 
-        // 사진 추가 버튼 바인딩
+        // 사진 추가 버튼 바인딩 (onclick으로 중복 리스너 방지)
         const addPhotoBtn = document.getElementById('add-photo-btn');
         if (addPhotoBtn) {
-            addPhotoBtn.addEventListener('click', () => {
+            addPhotoBtn.onclick = () => {
+                if (this._isHandlingPhoto) return;
                 let photoInput = document.getElementById('global-photo-input');
                 if (!photoInput) {
                     photoInput = document.createElement('input');
@@ -2736,25 +2838,26 @@ class BhasApp {
                     photoInput.style.display = 'none';
                     document.body.appendChild(photoInput);
                 }
-                
+
                 photoInput.onchange = async (e) => {
                     const file = e.target.files[0];
                     if (file) {
                         await this.handlePhotoUpload(this.activeProjectId, file);
-                        photoInput.value = ''; // 초기화
+                        photoInput.value = '';
                     }
                 };
-                
+
+                photoInput.value = '';
                 photoInput.click();
-            });
+            };
         }
 
         this.appContainer.querySelectorAll('.stage-quick-upload-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.onclick = (e) => {
                 e.stopPropagation();
-                const type = e.target.getAttribute('data-type');
+                const type = btn.getAttribute('data-type');
                 this.openStageSidebar(this.activeProjectId, type);
-            });
+            };
         });
     }
 
@@ -3002,7 +3105,16 @@ class BhasApp {
     }
 
     async handlePhotoUpload(product_id, file) {
-        if (!file) return;
+        if (!file || this._isHandlingPhoto) return;
+        
+        // 유효성 검사 추가
+        const pid = String(product_id);
+        if (!pid || pid === 'null' || pid === 'undefined') {
+            console.error('Invalid product_id for photo upload:', product_id);
+            return;
+        }
+
+        this._isHandlingPhoto = true;
         this.showToast('사진 최적화 및 업로드 중...');
 
         try {
@@ -3037,7 +3149,7 @@ class BhasApp {
                 .insert([{
                     product_id: pid,
                     url: publicUrl,
-                    created_by: this.currentUser.company_id || this.currentUser.id
+                    created_by: this.currentUser.id // Auth User ID로 통일하여 FK 제약 조건 충돌 방지
                 }]);
 
             if (dbError) throw dbError;
@@ -3060,11 +3172,23 @@ class BhasApp {
         } catch (error) {
             console.error('Photo Upload Error:', error);
             alert(`사진 업로드 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`);
+        } finally {
+            this._isHandlingPhoto = false;
         }
     }
 
     async handleFileUpload(product_id, file, docType, customName) {
-        if (!file) return;
+        if (!file || this._isHandlingUpload || window.__BHAS_FILE_LOCK__) return;
+        window.__BHAS_FILE_LOCK__ = true;
+        
+        // 유효성 검사 추가
+        const pid = String(product_id);
+        if (!pid || pid === 'null' || pid === 'undefined') {
+            console.error('Invalid product_id for upload:', product_id);
+            return;
+        }
+
+        this._isHandlingUpload = true;
         this.showToast('문서 업로드 중...');
 
         try {
@@ -3096,10 +3220,16 @@ class BhasApp {
                     url: publicUrl,
                     type: docType,
                     status: 'completed',
-                    created_by: this.currentUser.company_id || this.currentUser.id
+                    created_by: this.currentUser?.company_id || this.currentUser?.id
                 }]);
 
-            if (dbError) throw dbError;
+            if (dbError) {
+                console.error('DB Insert Error:', dbError);
+                if (dbError.message && (dbError.message.includes('uuid') || dbError.message.includes('foreign key'))) {
+                    throw new Error('이 프로젝트는 데이터베이스에 등록되지 않은 샘플 데이터입니다. 실제 프로젝트를 생성 후 이용해주세요.');
+                }
+                throw dbError;
+            }
 
             // 히스토리 기록 시도 (비차단형)
             try {
@@ -3117,6 +3247,7 @@ class BhasApp {
             await this.loadInitialData();
             this.requestRender();
             this.showToast('문서가 성공적으로 업로드되었습니다.');
+            return true;
         } catch (error) {
             console.error('File Upload Error:', error);
             if (error.message === 'The resource was not found' || error.statusCode === '404') {
@@ -3125,10 +3256,19 @@ class BhasApp {
             } else {
                 this.showToast(`업로드 실패: ${error.message}`);
             }
+            return false;
+        } finally {
+            this._isHandlingUpload = false;
+            window.__BHAS_FILE_LOCK__ = false;
         }
     }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-    window.app = new BhasApp();
-});
+// 전역 인스턴스 초기화 (중복 방지)
+if (!window.app) {
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', () => { if (!window.app) window.app = new BhasApp(); });
+    } else {
+        window.app = new BhasApp();
+    }
+}
