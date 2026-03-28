@@ -497,6 +497,7 @@ class BhasApp {
                 const { data: photos } = await this.supabase.from('photos').select('*').eq('product_id', p.id);
                 const { data: documents } = await this.supabase.from('documents').select('*').eq('product_id', p.id);
                 const { data: stageEntries } = await this.supabase.from('product_stages').select('*').eq('product_id', p.id);
+                const { data: history } = await this.supabase.from('history').select('*').eq('product_id', p.id).order('created_at', { ascending: false });
                 
                 // memos 테이블이 없는 경우 (404)를 대비해 안전하게 처리
                 const { data: memos, error: mError } = await this.supabase.from('memos').select('*').eq('product_id', p.id).order('created_at', { ascending: true });
@@ -516,10 +517,11 @@ class BhasApp {
                     ...p,
                     currentStage: 'consulting',
                     stages_data: stagesData,
-                    todos: (todos || []).map(t => ({ ...t, assignee: t.assignee_id })), // assignee_id를 UI용 assignee로 매핑
+                    todos: (todos || []).map(t => ({ ...t, assignee: t.assignee_id })),
                     photos: photos || [],
                     documents: documents || [],
-                    memos: memos || []
+                    memos: memos || [],
+                    history: history || []
                 };
             }));
 
@@ -1467,7 +1469,7 @@ class BhasApp {
                 
                 const lastCompletedStage = STAGES.slice().reverse().find(s => isStageCompleted(product, s));
                 const currentStageObj = lastCompletedStage || STAGES[0];
-                const statusLabel = lastCompletedStage ? lastCompletedStage.label : (progress === 0 && product.history.length > 1 ? '상담 진행' : '시작 전');
+                const statusLabel = lastCompletedStage ? lastCompletedStage.label : (progress === 0 && (product.history || []).length > 1 ? '상담 진행' : '시작 전');
                 return `
                     <div class="project-card glass fade-in" data-id="${product.id}" style="cursor: pointer; border: 1px solid ${brandColor}20;">
                         <div class="card-header" style="margin-bottom: 12px;">
@@ -1565,7 +1567,7 @@ class BhasApp {
                                     ${projects.map(product => {
                                         const progress = getProgress(product);
                                         const lastCompletedStage = STAGES.slice().reverse().find(s => isStageCompleted(product, s));
-                                        const statusLabel = lastCompletedStage ? lastCompletedStage.label : (progress === 0 && product.history.length > 1 ? '상담 진행' : '시작 전');
+                                        const statusLabel = lastCompletedStage ? lastCompletedStage.label : (progress === 0 && (product.history || []).length > 1 ? '상담 진행' : '시작 전');
                                         
                                         return `
                                             <tr class="project-row" data-id="${product.id}" style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: 0.2s; cursor: pointer;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
@@ -1778,7 +1780,7 @@ class BhasApp {
                     const photoUrl = typeof photo === 'string' ? photo : photo.url;
                     aggregatedDocs.push({
                         id: typeof photo === 'object' ? photo.id : `auto-photo-${p.id}-${idx}`,
-                        date: p.history[0]?.date || '2024.03.01',
+                        date: (p.history || [])[0]?.date || '2024.03.01',
                         name: `${p.name} 제작 사진 ${idx + 1}`,
                         category: '참고이미지',
                         productId: p.id,
