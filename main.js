@@ -298,16 +298,12 @@ class BhasApp {
             else if (type === 'brand') table = 'brands';
 
             if (table) {
-                // 유저 삭제 시 Auth 계정도 삭제 시도
+                // 유저 삭제 시 Auth 계정도 삭제
                 if (type === 'user') {
                     const user = mockData.companies.find(c => c.id === id);
-                    const authUserId = user?.auth_user_id;
-
-                    if (authUserId) {
-                        const { error: rpcError } = await this.supabase.rpc('delete_user_by_id', { user_uuid: authUserId });
-                        if (rpcError) console.error('Auth User Delete Error (RPC):', rpcError);
-                    } else if (user?.username) {
-                        console.warn('Auth ID mismatch, attempting manual check if needed.');
+                    if (user?.username) {
+                        const email = user.username.includes('@') ? user.username : `${user.username}@bhas.com`;
+                        await this.supabase.rpc('delete_auth_user_by_email', { user_email: email });
                     }
                 }
 
