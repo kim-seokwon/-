@@ -313,53 +313,17 @@ class BhasApp {
 
                 let query = this.supabase.from(table).delete();
                 
-                // 브랜드 삭제 시: 하위 데이터 → 프로젝트 → 계정 → 전역문서 순서로 전부 삭제
+                // 브랜드 삭제: DB 서버에서 연쇄 삭제 (RLS 우회)
                 if (type === 'brand') {
-                    const _del = async (tbl, col, val) => {
-                        const { error } = await this.supabase.from(tbl).delete().eq(col, val);
-                        if (error) console.error(`CASCADE DELETE ${tbl}.${col}=${val}:`, error.message);
-                        return error;
-                    };
-                    const _null = async (tbl, col, val) => {
-                        const { error } = await this.supabase.from(tbl).update({ [col]: null }).eq(col, val);
-                        if (error) console.error(`CASCADE NULLIFY ${tbl}.${col}=${val}:`, error.message);
-                        return error;
-                    };
-
-                    const brandProducts = mockData.products.filter(p => p.brand_id === id);
-                    const brandCompanies = mockData.companies.filter(c => c.brand_id === id);
-
-                    // 1단계: 소속 계정의 모든 FK 참조를 먼저 해제
-                    for (const c of brandCompanies) {
-                        await _null('products', 'company_id', c.id);
-                        await _null('products', 'created_by', c.id);
-                        await _null('todos', 'assignee_id', c.id);
-                        await _null('todos', 'created_by', c.id);
-                        await _null('documents', 'created_by', c.id);
-                        await _null('photos', 'created_by', c.id);
-                        await _null('memos', 'created_by', c.id);
+                    const { error: rpcErr } = await this.supabase.rpc('delete_brand_cascade', { brand_uuid: id });
+                    if (rpcErr) {
+                        this.showToast(`브랜드 삭제 실패: ${rpcErr.message}`);
+                        return;
                     }
-
-                    // 2단계: 소속 계정 삭제 (참조 해제 완료 후)
-                    for (const c of brandCompanies) {
-                        await _del('companies', 'id', c.id);
-                    }
-
-                    // 3단계: 프로젝트별 하위 데이터 삭제
-                    for (const p of brandProducts) {
-                        await _del('todos', 'product_id', p.id);
-                        await _del('photos', 'product_id', p.id);
-                        await _del('documents', 'product_id', p.id);
-                        await _del('memos', 'product_id', p.id);
-                        await _del('product_stages', 'product_id', p.id);
-                        await _del('history', 'product_id', p.id);
-                    }
-
-                    // 4단계: 소속 프로젝트 삭제
-                    await _del('products', 'brand_id', id);
-
-                    // 5단계: 전역 문서 삭제
-                    await _del('global_documents', 'brand_id', id);
+                    this.showToast('브랜드와 소속 데이터가 모두 삭제되었습니다.');
+                    await this.loadInitialData();
+                    this.requestRender();
+                    return;
                 }
 
                 // 사진 삭제의 경우 id가 URL일 수 있으므로 처리
