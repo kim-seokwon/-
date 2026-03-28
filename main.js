@@ -1947,7 +1947,7 @@ class BhasApp {
                             <div style="width: 100%; height: 12px; background: rgba(0,0,0,0.3); border-radius: 6px; overflow: hidden; margin-bottom: 1.5rem; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
                                 <div style="width: ${progressPercent}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); transition: width 0.5s ease; border-radius: 6px;"></div>
                             </div>
-                            <div class="progress-checklist" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-top: 15px; margin-top: -15px; padding-bottom: 10px;">
+                            <div class="progress-checklist" style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; padding-top: 15px; margin-top: -15px; padding-bottom: 10px;">
                                 ${STAGES.map((stage, idx) => {
                                     const stageData = (product.stages_data && (product.stages_data[stage.id] || product.stages_data[stage.docType])) 
                                         ? (product.stages_data[stage.id] || product.stages_data[stage.docType]) 
