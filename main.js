@@ -317,7 +317,7 @@ class BhasApp {
                 if (type === 'brand') {
                     const { error: rpcErr } = await this.supabase.rpc('delete_brand_cascade', { brand_uuid: id });
                     if (rpcErr) {
-                        this.showToast(`브랜드 삭제 실패: ${rpcErr.message}`);
+                        alert(`[브랜드 삭제 오류]\n\nCode: ${rpcErr.code}\nMessage: ${rpcErr.message}\nDetails: ${rpcErr.details || 'none'}\nHint: ${rpcErr.hint || 'none'}\n\nBrand ID: ${id}`);
                         return;
                     }
                     this.showToast('브랜드와 소속 데이터가 모두 삭제되었습니다.');
