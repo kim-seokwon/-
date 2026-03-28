@@ -311,13 +311,11 @@ class BhasApp {
                     }
                 }
 
-                let query = this.supabase.from(table).delete();
-                
                 // 브랜드 삭제: DB 서버에서 연쇄 삭제 (RLS 우회)
                 if (type === 'brand') {
                     const { error: rpcErr } = await this.supabase.rpc('delete_brand_cascade', { brand_uuid: id });
                     if (rpcErr) {
-                        alert(`[브랜드 삭제 오류]\n\nCode: ${rpcErr.code}\nMessage: ${rpcErr.message}\nDetails: ${rpcErr.details || 'none'}\nHint: ${rpcErr.hint || 'none'}\n\nBrand ID: ${id}`);
+                        this.showToast(`브랜드 삭제 실패: ${rpcErr.message}`);
                         return;
                     }
                     this.showToast('브랜드와 소속 데이터가 모두 삭제되었습니다.');
@@ -325,6 +323,25 @@ class BhasApp {
                     this.requestRender();
                     return;
                 }
+
+                // 프로젝트 삭제: DB 서버에서 연쇄 삭제 (RLS 우회)
+                if (type === 'project') {
+                    const { error: rpcErr } = await this.supabase.rpc('delete_project_cascade', { project_uuid: id });
+                    if (rpcErr) {
+                        this.showToast(`프로젝트 삭제 실패: ${rpcErr.message}`);
+                        return;
+                    }
+                    this.showToast('프로젝트가 삭제되었습니다.');
+                    await this.loadInitialData();
+                    if (this.activeProjectId === String(id)) {
+                        this.setState({ currentView: 'dashboard', activeProjectId: null });
+                    } else {
+                        this.requestRender();
+                    }
+                    return;
+                }
+
+                let query = this.supabase.from(table).delete();
 
                 // 사진 삭제의 경우 id가 URL일 수 있으므로 처리
                 if (type === 'photo' && (typeof id === 'string' && (id.startsWith('http') || id.includes('photos/')))) {
