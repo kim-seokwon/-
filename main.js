@@ -753,20 +753,20 @@ class BhasApp {
                             </div>
                         ` : ''}
                         <div class="header-top-row">
-                            <div class="header-title-section" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                                ${this.currentView === 'dashboard' ? `
-                                    <div class="view-toggles">
-                                        <button id="view-grid-btn" class="${this.dashboardViewType === 'table' ? '' : 'active'}" title="그리드 보기"><i class="ph ph-squares-four"></i></button>
-                                        <button id="view-table-btn" class="${this.dashboardViewType === 'table' ? 'active' : ''}" title="리스트 보기"><i class="ph ph-list-dashes"></i></button>
-                                    </div>
-                                ` : ''}
+                            <div class="header-title-section" style="display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;">
                                 ${(role === 'MASTER' || role === 'STAFF') && this.currentView === 'dashboard' ? `
-                                    <select id="global-company-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer;">
+                                    <select id="global-company-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 10px; outline: none; cursor: pointer; font-size: 0.85rem; flex: 1; min-width: 0;">
                                         <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드</option>
                                         ${(mockData.brands || []).map(b => `
                                             <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
                                         `).join('')}
                                     </select>
+                                ` : ''}
+                                ${this.currentView === 'dashboard' ? `
+                                    <div class="view-toggles" style="flex-shrink: 0;">
+                                        <button id="view-grid-btn" class="${this.dashboardViewType === 'table' ? '' : 'active'}" title="그리드 보기"><i class="ph ph-squares-four"></i></button>
+                                        <button id="view-table-btn" class="${this.dashboardViewType === 'table' ? 'active' : ''}" title="리스트 보기"><i class="ph ph-list-dashes"></i></button>
+                                    </div>
                                 ` : ''}
                                 ${(() => {
                                     const userId = this.currentUser.company_id || this.currentUser.id;
@@ -892,15 +892,16 @@ class BhasApp {
         if (this.currentView === 'detail') this.bindDetailEvents();
         if (this.currentView === 'all_todos') this.bindAllTodosEvents();
 
+        const doLogout = async () => {
+            try { await this.supabase.auth.signOut(); } catch(err) {}
+            localStorage.removeItem('bhas_session_user');
+            localStorage.removeItem('bhas_auto_login');
+            this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
+        };
         const logoutBtn = document.getElementById('logout-btn');
-        if (logoutBtn) {
-            logoutBtn.onclick = async () => {
-                try { await this.supabase.auth.signOut(); } catch(err) {}
-                localStorage.removeItem('bhas_session_user');
-                localStorage.removeItem('bhas_auto_login');
-                this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
-            };
-        }
+        if (logoutBtn) logoutBtn.onclick = doLogout;
+        const mobileLogoutBtn = document.getElementById('mobile-logout-btn');
+        if (mobileLogoutBtn) mobileLogoutBtn.onclick = doLogout;
 
         const companyFilter = document.getElementById('global-company-filter');
         if (companyFilter) {
@@ -1630,6 +1631,13 @@ class BhasApp {
                     </div>
                     <div class="collapsible-content ${!this.completedExpanded ? 'collapsed' : ''}" id="completed-section">
                         ${renderSection(completedProducts, isTable, '완료된 프로젝트가 없습니다.')}
+                    </div>
+
+                    <div class="mobile-logout-area" style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--card-border); text-align: center;">
+                        <button id="mobile-logout-btn" style="padding: 12px 2rem; border-radius: 12px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: #ef4444; font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.2)'" onmouseout="this.style.background='rgba(239,68,68,0.1)'">
+                            <i class="ph ph-sign-out" style="font-size: 1.1rem;"></i> 로그아웃
+                        </button>
+                        <div style="margin-top: 1rem; font-size: 0.7rem; color: var(--text-muted);">${this.currentUser.name} (${this.currentUser.role})</div>
                     </div>
                 </div>
             `;

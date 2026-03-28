@@ -1549,3 +1549,13 @@ body {
     max-width: 100% !important;
     overflow-x: hidden !important;
 }
+
+/* Mobile logout - hide on desktop (sidebar has logout) */
+.mobile-logout-area {
+    display: none;
+}
+@media screen and (max-width: 768px) {
+    .mobile-logout-area {
+        display: block !important;
+    }
+}
