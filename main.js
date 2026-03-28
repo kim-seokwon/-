@@ -691,7 +691,7 @@ class BhasApp {
                         ` : ''}
                         <div class="header-top-row">
                             <div class="header-title-section">
-                                <h1 class="page-title" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                                <h1 class="page-title ${this.currentView === 'detail' ? 'page-title-detail' : ''}" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                                     ${(() => {
                                         if (this.currentView === 'detail') {
                                             const p = mockData.products.find(p => p.id === this.activeProjectId);
@@ -707,13 +707,13 @@ class BhasApp {
                                         }
                                         return menuItems.find(m => m.id === this.currentView)?.label || '현황';
                                     })()}
-                                    ${this.currentView === 'dashboard' ? `
-                                        <div class="view-toggles">
-                                            <button id="view-grid-btn" class="${this.projectViewMode === 'grid' ? 'active' : ''}" title="그리드 보기"><i class="ph ph-squares-four"></i></button>
-                                            <button id="view-table-btn" class="${this.projectViewMode === 'table' ? 'active' : ''}" title="리스트 보기"><i class="ph ph-list-dashes"></i></button>
-                                        </div>
-                                    ` : ''}
                                 </h1>
+                                ${this.currentView === 'dashboard' ? `
+                                    <div class="view-toggles">
+                                        <button id="view-grid-btn" class="${this.dashboardViewType === 'table' ? '' : 'active'}" title="그리드 보기"><i class="ph ph-squares-four"></i></button>
+                                        <button id="view-table-btn" class="${this.dashboardViewType === 'table' ? 'active' : ''}" title="리스트 보기"><i class="ph ph-list-dashes"></i></button>
+                                    </div>
+                                ` : ''}
                                 ${(role === 'MASTER' || role === 'STAFF') && this.currentView !== 'detail' && this.currentView !== 'user_management' && this.currentView !== 'documents' ? `
                                     <select id="global-company-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer;">
                                         <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드 보기</option>
@@ -814,7 +814,7 @@ class BhasApp {
                                 const myTodosCount = filteredTodos.filter(t => t.assignee === (this.currentUser.company_id || this.currentUser.id)).length;
                                 const reqTodosCount = filteredTodos.filter(t => t.created_by === (this.currentUser.company_id || this.currentUser.id)).length;
                                 return `
-                                <div class="stat-item">
+                                <div class="stat-item" style="grid-template-columns: repeat(2, 1fr);">
                                     <div class="glass stat-card my-todos">
                                         <span class="label"><i class="ph ph-user-focus"></i> 내가 할 일</span>
                                         <span class="value">${myTodosCount}</span>
