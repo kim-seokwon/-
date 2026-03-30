@@ -1859,9 +1859,14 @@ class BhasApp {
                                                     ${doc.category || '기타'}
                                                 </span>
                                             </div>
-                                            <div class="doc-card-name">
+                                            <div class="doc-card-name" style="display: flex; align-items: center; gap: 6px;">
                                                 <i class="ph ph-file-text"></i>
-                                                <span style="font-weight: 600;">${doc.name || '이름 없음'}</span>
+                                                <input type="text" class="inline-docname-input"
+                                                       data-doc-id="${doc.id}"
+                                                       data-p-id="${doc.productId || ''}"
+                                                       value="${(doc.name || '').replace(/"/g, '&quot;')}"
+                                                       style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(255,255,255,0.1); font-weight: 600; font-size: 0.85rem;"
+                                                       onclick="event.stopPropagation()">
                                             </div>
                                             <div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
                                                 <div style="display: flex; flex-direction: column; gap: 4px;">
@@ -1897,10 +1902,17 @@ class BhasApp {
                                                 <td style="padding: 12px;">${brand ? brand.name : '-'}</td>
                                                 <td style="padding: 12px; color: var(--primary);">${product ? product.name : '알 수 없음'}</td>
                                                 <td style="padding: 12px; font-weight: 600;">
-                                                    <span class="badge badge-${doc.category || '기타'}" style="padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; margin-right: 8px; vertical-align: middle;">
-                                                        ${doc.category || '기타'}
-                                                    </span>
-                                                    ${doc.name || '이름 없음'}
+                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                        <span class="badge badge-${doc.category || '기타'}" style="padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; vertical-align: middle;">
+                                                            ${doc.category || '기타'}
+                                                        </span>
+                                                        <input type="text" class="inline-docname-input"
+                                                               data-doc-id="${doc.id}"
+                                                               data-p-id="${doc.productId || ''}"
+                                                               value="${(doc.name || '').replace(/"/g, '&quot;')}"
+                                                               style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(255,255,255,0.1); font-weight: 600;"
+                                                               onclick="event.stopPropagation()">
+                                                    </div>
                                                 </td>
                                                 <td style="padding: 12px; font-size: 0.8rem;" class="memo-cell">
                                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
@@ -2311,6 +2323,46 @@ class BhasApp {
 
             const quickAddDocBtn = document.getElementById('quick-add-doc-btn');
             if (quickAddDocBtn) quickAddDocBtn.onclick = () => this.showQuickAddDocModal();
+
+            // 문서 이름 인라인 수정
+            this.appContainer.querySelectorAll('.inline-docname-input').forEach(input => {
+                const saveDocName = async () => {
+                    const docId = input.getAttribute('data-doc-id');
+                    const pId = input.getAttribute('data-p-id');
+                    const newName = input.value.trim();
+                    if (!newName) return;
+                    try {
+                        const { error } = await this.supabase.from('documents').update({ name: newName }).eq('id', docId);
+                        if (error) throw error;
+                        const product = mockData.products.find(p => p.id === pId);
+                        if (product) {
+                            const doc = product.documents.find(d => d.id === docId);
+                            if (doc) doc.name = newName;
+                        }
+                        this.showToast('문서 이름이 수정되었습니다.');
+                    } catch (err) {
+                        this.showToast('문서 이름 수정 중 오류가 발생했습니다.');
+                    }
+                };
+                input.addEventListener('blur', saveDocName);
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+            });
+
+            // 메모 인라인 수정
+            this.appContainer.querySelectorAll('.inline-memo-input').forEach(input => {
+                const saveMemo = async () => {
+                    const docId = input.getAttribute('data-doc-id');
+                    const newMemo = input.value.trim();
+                    try {
+                        const { error } = await this.supabase.from('documents').update({ memo: newMemo }).eq('id', docId);
+                        if (error) throw error;
+                    } catch (err) {
+                        this.showToast('메모 수정 중 오류가 발생했습니다.');
+                    }
+                };
+                input.addEventListener('blur', saveMemo);
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+            });
         }
         if (this.currentView === 'all_todos') {
             const quickAddTodoBtn = document.getElementById('quick-add-todo-btn');
