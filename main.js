@@ -1525,6 +1525,19 @@ class BhasApp {
                     
                     const projects = grouped[groupId].sort((a, b) => a.name.localeCompare(b.name));
 
+                    const isActive = (p) => {
+                        const stage = p.currentStage || 'consulting';
+                        if (stage === 'shipping') return false;
+                        if (stage !== 'consulting') return true;
+                        return (p.stages_data?.consulting?.status === 'completed' || p.history?.length > 0 || (p.documents && p.documents.length > 0));
+                    };
+                    const activeCount = projects.filter(p => isActive(p)).length;
+                    const scheduledCount = projects.filter(p => {
+                        const stage = p.currentStage || 'consulting';
+                        return stage !== 'shipping' && !isActive(p);
+                    }).length;
+                    const completedCount = projects.filter(p => (p.currentStage || 'consulting') === 'shipping').length;
+
                     return `
                         <div class="glass" style="border-radius: 16px; overflow: hidden; margin-bottom: 2rem; border: 1px solid ${brandColor}30;">
                             <div style="background: ${brandColor}10; padding: 12px 16px; border-bottom: 1px solid ${brandColor}20; display: flex; align-items: center; justify-content: space-between;">
@@ -2784,7 +2797,7 @@ class BhasApp {
         this.appContainer.querySelectorAll('.todo-date-input').forEach(input => {
             input.addEventListener('change', async (e) => {
                 const todoId = e.target.getAttribute('data-id');
-                const due_date = val || null; // YYYY-MM-DD 형식 그대로 사용
+                const due_date = e.target.value || null; // YYYY-MM-DD 형식 그대로 사용
 
                 try {
                     const { error } = await this.supabase
