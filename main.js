@@ -34,13 +34,10 @@ class BhasApp {
         try {
             this.init();
             window.onerror = (msg, url, lineNo, columnNo, error) => {
-                console.error('GLOBAL_ERROR:', msg, error);
                 this.showToast('시스템 오류가 발생했습니다. 담당자에게 문의하세요.');
                 return false;
             };
-        } catch (e) {
-            console.error('App Initialization Error:', e);
-        }
+        } catch (e) { /* init error */ }
     }
 
     showToast(message) {
@@ -88,7 +85,7 @@ class BhasApp {
                         throw new Error('Invalid session data');
                     }
                 } catch(e) {
-                    console.error('Auto login session parse failed', e);
+                    // 세션 파싱 실패 - 재로그인 유도
                     this.currentUser = null;
                     localStorage.removeItem('bhas_session_user');
                     localStorage.removeItem('bhas_auto_login');
@@ -110,7 +107,7 @@ class BhasApp {
                     this._isInitialLoading = false;
                     this.requestRender();
                 }).catch(err => {
-                    console.error('Auto-login data load failed:', err);
+                    // 데이터 로드 실패
                     this._isInitialLoading = false;
                     this.requestRender();
                 });
@@ -119,7 +116,7 @@ class BhasApp {
                 this.requestRender();
             }
         } catch (e) {
-            console.error('Init Error:', e);
+            // 초기화 실패
             this.currentView = 'login';
             this.requestRender();
         }
@@ -345,7 +342,6 @@ class BhasApp {
 
                 const { error } = await query;
                 if (error) {
-                    console.error('Delete Error details:', error);
                     let userMsg = error.message || '권한이 없거나 서버 오류입니다.';
                     if (error.message && error.message.includes('foreign key')) {
                         userMsg = '연결된 데이터(프로젝트/계정 등)가 있어 삭제할 수 없습니다. 연결 데이터를 먼저 제거해주세요.';
@@ -363,8 +359,7 @@ class BhasApp {
                 }
             }
         } catch (error) {
-            console.error('Delete Error:', error);
-            alert('삭제 중 오류가 발생했습니다.');
+            this.showToast('삭제 중 오류가 발생했습니다.');
         }
     }
 
@@ -448,7 +443,6 @@ class BhasApp {
                 default:
                     // currentUser가 없을 경우 상시 login으로 유도
                     if (!this.currentUser && this.currentView !== 'login') {
-                        console.warn('Redirecting to login: currentUser is missing');
                         this.currentView = 'login';
                         this.renderLogin();
                     } else {
@@ -457,12 +451,10 @@ class BhasApp {
                     break;
             }
         } catch (e) {
-            console.error('Render Error:', e);
-            // 에러 표시 (디버그용) - 로그인으로 보내지 않음
             this.appContainer.innerHTML = `
                 <div style="padding: 2rem; color: white;">
-                    <h2 style="color: #ef4444;">렌더링 오류</h2>
-                    <p style="color: var(--text-muted);">${e.message}</p>
+                    <h2 style="color: #ef4444;">오류가 발생했습니다</h2>
+                    <p style="color: var(--text-muted);">페이지를 새로고침하거나 다시 로그인해주세요.</p>
                     <button onclick="app.setState({currentView:'login'})" style="margin-top:1rem; padding:8px 16px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer;">로그인으로 돌아가기</button>
                 </div>
             `;
@@ -501,7 +493,7 @@ class BhasApp {
                 
                 // memos 테이블이 없는 경우 (404)를 대비해 안전하게 처리
                 const { data: memos, error: mError } = await this.supabase.from('memos').select('*').eq('product_id', p.id).order('created_at', { ascending: true });
-                if (mError && mError.code === 'PGRST205') console.warn('Memos table not found, skipping memo load');
+                // memos 테이블 없으면 무시
 
                 // product_stages 데이터를 UI 형식으로 변환
                 const stagesData = {};
@@ -547,7 +539,7 @@ class BhasApp {
 
             this.syncStagesData();
         } catch (error) {
-            console.error('Data Loading Error:', error);
+            // 데이터 로드 실패
             this.showToast('데이터를 불러오는 중 오류가 발생했습니다.');
         }
     }
@@ -668,7 +660,7 @@ class BhasApp {
                 if (authError) throw authError;
 
             } catch (error) {
-                console.error('Login Error:', error);
+                // 로그인 실패
                 errorMsg.innerText = '아이디 또는 비밀번호를 확인해주세요.';
                 errorMsg.style.display = 'block';
             } finally {
@@ -1045,7 +1037,6 @@ class BhasApp {
                 this.requestRender();
                 this.showToast('새 프로젝트가 등록되었습니다.');
             } catch (error) {
-                console.error('Add Project Error Details:', error);
                 let errorMsg = error.message || '알 수 없는 오류';
                 if (error.code === '42501') errorMsg = '데이터베이스 권한(RLS)이 없습니다.';
                 if (error.code === '22P02') errorMsg = '데이터 형식(UUID 등)이 맞지 않습니다.';
@@ -1114,7 +1105,7 @@ class BhasApp {
             const assigneeSelect = document.getElementById('quick-todo-assignee');
             const assigneeId = assigneeSelect ? assigneeSelect.value : null;
 
-            if (!pid || !text) return alert('프로젝트와 내용을 입력해주세요.');
+            if (!pid || !text) { this.showToast('프로젝트와 내용을 입력해주세요.'); return; }
 
             saveBtn.disabled = true;
             try {
@@ -1125,8 +1116,7 @@ class BhasApp {
                     modal.style.display = 'none';
                 }
             } catch (err) {
-                console.error(err);
-                alert('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 서버 오류'));
+                this.showToast('저장 중 오류가 발생했습니다.');
             } finally {
                 saveBtn.disabled = false;
             }
@@ -1177,7 +1167,7 @@ class BhasApp {
             const name = document.getElementById('quick-doc-name').value.trim();
             const file = document.getElementById('quick-doc-file').files[0];
 
-            if (!pid || !name || !file) return alert('모든 항목을 입력하고 파일을 선택해주세요.');
+            if (!pid || !name || !file) { this.showToast('모든 항목을 입력하고 파일을 선택해주세요.'); return; }
 
             saveBtn.disabled = true;
             saveBtn.innerText = '업로드 중...';
@@ -1188,8 +1178,7 @@ class BhasApp {
                 await this.loadInitialData();
                 this.requestRender();
             } catch (err) {
-                console.error(err);
-                alert('업로드 중 오류가 발생했습니다.');
+                this.showToast('업로드 중 오류가 발생했습니다.');
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.innerText = '업로드';
@@ -1353,14 +1342,13 @@ class BhasApp {
                     date: now,
                     user: this.currentUser.name
                 }]);
-                if (historyError) console.error('History Insert Warning:', historyError);
+                // history insert 실패는 무시
 
                 await this.loadInitialData();
                 this.showToast(`${stage.label} 상세 설정이 저장되었습니다.`);
                 await closeSidebar();
             } catch (error) {
-                console.error('Save Stage Error:', error);
-                alert('설정 저장 중 오류가 발생했습니다.');
+                this.showToast('설정 저장 중 오류가 발생했습니다.');
             }
         });
     }
@@ -2389,8 +2377,8 @@ class BhasApp {
             const newRole = roleSelect.value;
             const newBrandId = brandSelect.value;
 
-            if (!newName) return alert('이름을 입력해주세요.');
-            if (newPw && newPw.length < 6) return alert('비밀번호는 최소 6자 이상이어야 합니다.');
+            if (!newName) { this.showToast('이름을 입력해주세요.'); return; }
+            if (newPw && newPw.length < 6) { this.showToast('비밀번호는 최소 6자 이상이어야 합니다.'); return; }
 
             saveBtn.disabled = true;
             saveBtn.innerText = '수정 중...';
@@ -2401,7 +2389,7 @@ class BhasApp {
                     // 참고: 현재 세션이 MASTER이므로 타 사용자 PW 변경은 Admin API 필요할 수 있음. 
                     // 여기서는 단순 DB 정보 업데이트 위주로 처리하거나 알림.
                     const { error: authError } = await this.supabase.auth.updateUser({ password: newPw });
-                    if (authError) console.warn('Auth PW update requires active session of the user or Admin API');
+                    // Admin API 필요 시 무시
                 }
 
                 // 2. DB 업데이트
@@ -2421,8 +2409,7 @@ class BhasApp {
                 await this.loadInitialData();
                 this.requestRender();
             } catch (error) {
-                console.error('Update User Error:', error);
-                alert('계정 수정 중 오류가 발생했습니다.');
+                this.showToast('계정 수정 중 오류가 발생했습니다.');
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.innerText = '정보 수정';
@@ -2453,7 +2440,7 @@ class BhasApp {
             const newColor = colorInput.value;
             const newStatus = statusInput?.value || 'active';
 
-            if (!newName) return alert('브랜드 이름을 입력해주세요.');
+            if (!newName) { this.showToast('브랜드 이름을 입력해주세요.'); return; }
 
             saveBtn.disabled = true;
             saveBtn.innerText = '수정 중...';
@@ -2471,8 +2458,7 @@ class BhasApp {
                 await this.loadInitialData();
                 this.requestRender();
             } catch (error) {
-                console.error('Update Brand Error:', error);
-                alert('브랜드 수정 중 오류가 발생했습니다.');
+                this.showToast('브랜드 수정 중 오류가 발생했습니다.');
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.innerText = '정보 수정';
@@ -2546,7 +2532,6 @@ class BhasApp {
                 }]);
 
             if (insertError) {
-                console.error('Add Todo Error:', insertError);
                 let errMsg = '등록 실패';
                 if (insertError.code === '42501') errMsg = '권한 부족: 데이터베이스에 쓸 권한이 없습니다.';
                 else if (insertError.code === '22P02') errMsg = '데이터 형식 오류: 유효한 ID가 아닙니다.';
@@ -2565,7 +2550,7 @@ class BhasApp {
                     note: isRequest ? '업무 요청 추가' : '할 일 추가'
                 }]);
             } catch (hError) {
-                console.warn('History entry failed (non-blocking):', hError);
+                // 히스토리 실패 무시
             }
 
             await this.loadInitialData();
@@ -2573,7 +2558,6 @@ class BhasApp {
             this.showToast(isRequest ? '업무 요청이 등록되었습니다.' : '할 일이 추가되었습니다.');
             return true;
         } catch (error) {
-            console.error('Add Todo Unexpected Error:', error);
             this.showToast('알 수 없는 오류가 발생했습니다.');
         }
     }
@@ -2653,8 +2637,7 @@ class BhasApp {
                         // handleNewTodoProcess에서 이미 토스트를 띄우므로 중복 제거
                     }
                 } catch (err) {
-                    console.error('Quick Add Error:', err);
-                    alert('처리 중 오류가 발생했습니다.');
+                    this.showToast('처리 중 오류가 발생했습니다.');
                 }
             };
 
@@ -2714,7 +2697,7 @@ class BhasApp {
                             note: '메모 추가: ' + (text.length > 20 ? text.substring(0, 20) + '...' : text)
                         }]);
                     } catch (hErr) {
-                        console.warn('History entry failed (non-blocking):', hErr);
+                        // 히스토리 실패 무시
                     }
 
                     await this.loadInitialData();
@@ -2725,8 +2708,7 @@ class BhasApp {
                         if(feed) feed.scrollTop = feed.scrollHeight;
                     }, 10);
                 } catch (error) {
-                    console.error('Add Memo Error:', error);
-                    alert('메모 저장 중 오류가 발생했습니다.');
+                    this.showToast('메모 저장 중 오류가 발생했습니다.');
                 } finally {
                     memoBtn.disabled = false;
                 }
@@ -2752,9 +2734,8 @@ class BhasApp {
                     todoItem.classList.toggle('completed', completed);
                     this.showToast(completed ? '할 일을 완료했습니다.' : '할 일을 취소했습니다.');
                 } catch (error) {
-                    console.error('Update Todo Error:', error);
-                    e.target.checked = !completed; // UI 복구
-                    alert('할 일 상태 수정 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+                    e.target.checked = !completed;
+                    this.showToast('할 일 상태 수정 중 오류가 발생했습니다.');
                 }
             });
             // 모달 열기와 충돌 방지
@@ -2788,8 +2769,7 @@ class BhasApp {
                     this.requestRender();
                     this.showToast('담당자가 업데이트되었습니다.');
                 } catch (error) {
-                    console.error('Update Assignee Error:', error);
-                    alert('담당자 지정 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+                    this.showToast('담당자 지정 중 오류가 발생했습니다.');
                 }
             });
         });
@@ -2813,8 +2793,7 @@ class BhasApp {
                         this.requestRender(); // 날짜 표시 업데이트를 위해 렌더링
                     }
                 } catch (error) {
-                    console.error('Update DueDate Error:', error);
-                    alert('마감일 수정 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+                    this.showToast('마감일 수정 중 오류가 발생했습니다.');
                 }
             });
         });
@@ -2976,7 +2955,7 @@ class BhasApp {
         const color = document.getElementById('new-brand-color').value;
         const status = document.getElementById('new-brand-status')?.value || 'active';
 
-        if (!name) return alert('브랜드 이름을 입력해주세요.');
+        if (!name) { this.showToast('브랜드 이름을 입력해주세요.'); return; }
 
         const saveBtn = document.getElementById('save-brand-btn');
         saveBtn.disabled = true;
@@ -2995,8 +2974,7 @@ class BhasApp {
             await this.loadInitialData();
             this.requestRender();
         } catch (error) {
-            console.error('Add Brand Error:', error);
-            alert('브랜드 생성 중 오류가 발생했습니다.');
+            this.showToast('브랜드 생성 중 오류가 발생했습니다.');
         } finally {
             saveBtn.disabled = false;
             saveBtn.innerText = '브랜드 생성';
@@ -3010,18 +2988,18 @@ class BhasApp {
         const role = document.getElementById('new-user-role').value;
 
         if (!name || !username || !password) {
-            return alert('모든 정보를 입력해주세요.');
+            { this.showToast('모든 정보를 입력해주세요.'); return; }
         }
 
         if (password.length < 6) {
-            return alert('비밀번호는 최소 6자 이상이어야 합니다.');
+            { this.showToast('비밀번호는 최소 6자 이상이어야 합니다.'); return; }
         }
 
         const brandId = document.getElementById('new-user-brand').value;
         const brand = mockData.brands?.find(b => b.id === brandId);
 
         if (role === 'CLIENT' && !brandId) {
-            return alert('고객사(CLIENT) 계정은 반드시 브랜드를 선택해야 합니다.');
+            { this.showToast('고객사(CLIENT) 계정은 반드시 브랜드를 선택해야 합니다.'); return; }
         }
 
         const email = `${username}@bhas.com`;
@@ -3061,8 +3039,7 @@ class BhasApp {
             this.requestRender();
 
         } catch (error) {
-            console.error('Add User Error:', error);
-            alert(`계정 생성 중 오류가 발생했습니다: ${error.message}`);
+            this.showToast('계정 생성 중 오류가 발생했습니다.');
         } finally {
             saveBtn.disabled = false;
             saveBtn.innerText = '계정 생성';
@@ -3156,15 +3133,14 @@ class BhasApp {
                     note: '사진 추가: ' + file.name
                 }]);
             } catch (hError) {
-                console.warn('History entry failed (non-blocking):', hError);
+                // 히스토리 실패 무시
             }
 
             await this.loadInitialData();
             this.requestRender();
             this.showToast('사진이 성공적으로 업로드되었습니다.');
         } catch (error) {
-            console.error('Photo Upload Error:', error);
-            alert(`사진 업로드 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`);
+            this.showToast('사진 업로드 중 오류가 발생했습니다.');
         }
     }
 
@@ -3216,19 +3192,17 @@ class BhasApp {
                     note: `${stageLabel} 관련 문서 '${customName || file.name}' 업로드`
                 }]);
             } catch (hError) {
-                console.warn('History entry failed (non-blocking):', hError);
+                // 히스토리 실패 무시
             }
 
             await this.loadInitialData();
             this.requestRender();
             this.showToast('문서가 성공적으로 업로드되었습니다.');
         } catch (error) {
-            console.error('File Upload Error:', error);
             if (error.message === 'The resource was not found' || error.statusCode === '404') {
-                this.showToast('오류: Supabase에 "bhas" 스토리지 버킷이 없습니다.');
-                alert('Supabase Dashboard에서 "bhas"라는 이름의 public 버킷을 생성해 주세요.');
+                this.showToast('오류: 스토리지 버킷이 설정되지 않았습니다. 관리자에게 문의하세요.');
             } else {
-                this.showToast(`업로드 실패: ${error.message}`);
+                this.showToast('문서 업로드 중 오류가 발생했습니다.');
             }
         }
     }
