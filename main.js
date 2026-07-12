@@ -1,4 +1,9 @@
 import { mockData, STAGES } from './mockData.js';
+import {
+    defaultSampleConfig, configForType, renderSampleMaker,
+    garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
+    newPlacement,
+} from './sampleMaker.js';
 
 // Supabase 설정 (사용자 정보 입력 필요)
 const SUPABASE_URL = 'https://czaykmmwzlcisozmbxpl.supabase.co';
@@ -9,12 +14,14 @@ class BhasApp {
     constructor() {
         this.currentUser = null;
         this.appContainer = document.getElementById('app');
+        if (localStorage.getItem('bhas_theme') !== 'dark') document.body.classList.add('light'); // 기본 라이트(토스st)
         this.currentView = 'login'; // 'login', 'dashboard', 'detail'
         this.activeProjectId = null;
         this.selectedDocCategory = '전체';
         this.selectedCompanyId = 'all'; 
         this.completedExpanded = false;
         this.currentTodoFilter = 'all'; // all, my, requested
+        this.sampleConfig = defaultSampleConfig(); // 샘플 제작 도구 상태
         
         // 렌더링 최적화용 변수
         this._renderTimeout = null;
@@ -65,6 +72,18 @@ class BhasApp {
     }
 
     init() {
+        // ===== [임시] 샘플 제작 미리보기용 인증 우회 (Supabase 일시중단 중) =====
+        // 원복: 아래 DEV_PREVIEW_SAMPLE = false 로만 바꾸면 됨.
+        const DEV_PREVIEW_SAMPLE = true;
+        if (DEV_PREVIEW_SAMPLE) {
+            this.currentUser = { id: 'dev', name: '미리보기', role: 'MASTER', company_id: 'dev' };
+            this.currentView = 'sample_maker';
+            this._isInitialLoading = false;
+            this.syncStagesData();
+            this.requestRender();
+            return;
+        }
+        // ====================================================================
         try {
             // 모든 모달 초기화 (숨김)
             const globalModal = document.getElementById('global-modal-container');
@@ -150,6 +169,166 @@ class BhasApp {
         return cleanDate;
     }
 
+    // ===================================================================
+    // 강화 기능 공용 헬퍼 (읽기 전용 계산 — DB 쓰기/스키마 변경 없음)
+    // 타임라인 / 마감·멘션 알림 / 통합 검색 / KPI 위젯이 공유한다.
+    // ===================================================================
+
+    // 날짜 문자열 → Date 객체 (자정 기준)
+    _parseDate(dateStr) {
+        const db = this.formatDateToDB(dateStr); // YYYY-MM-DD
+        if (!db) return null;
+        const parts = db.split('-');
+        if (parts.length !== 3) return null;
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    // 오늘 기준 남은 일수 (음수=지연). null이면 날짜 없음
+    _daysUntil(dateStr) {
+        const d = this._parseDate(dateStr);
+        if (!d) return null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        d.setHours(0, 0, 0, 0);
+        return Math.round((d - today) / 86400000);
+    }
+
+    // 마감 상태 메타: overdue(지연) / soon(3일내) / normal / none
+    _deadlineMeta(dateStr) {
+        const days = this._daysUntil(dateStr);
+        if (days === null) return { level: 'none', days: null, label: '' };
+        if (days < 0) return { level: 'overdue', days, label: `${Math.abs(days)}일 지연` };
+        if (days === 0) return { level: 'soon', days, label: '오늘 마감' };
+        if (days <= 3) return { level: 'soon', days, label: `D-${days}` };
+        return { level: 'normal', days, label: `D-${days}` };
+    }
+
+    // 프로젝트 진행률(%) — renderSubView의 isStageCompleted 로직과 동일
+    computeProgress(p) {
+        const sd = p.stages_data || {};
+        const done = STAGES.filter(s => {
+            if (sd[s.id] && sd[s.id].status === 'completed') return true;
+            if (sd[s.docType] && sd[s.docType].status === 'completed') return true;
+            if (p.documents && p.documents.some(d => d.type === s.docType || d.type === s.id)) return true;
+            return false;
+        }).length;
+        return Math.round((done / STAGES.length) * 100);
+    }
+
+    // 현재 사용자 식별자 (todo.assignee / created_by 와 매칭)
+    _myId() {
+        return this.currentUser ? (this.currentUser.company_id || this.currentUser.id) : null;
+    }
+
+    // 프로젝트별 브랜드명
+    _brandName(p) {
+        const brand = (mockData.brands || []).find(b => b.id === p.brand_id);
+        const company = (mockData.companies || []).find(c => c.id === p.company_id);
+        return brand ? brand.name : (company ? company.name : '');
+    }
+
+    // 권한 반영된 가시 프로젝트 목록 (CLIENT는 본인 회사만)
+    _visibleProducts() {
+        const list = mockData.products || [];
+        if (this.currentUser && this.currentUser.role === 'CLIENT') {
+            return list.filter(p => p.company_id === this.currentUser.company_id);
+        }
+        return list;
+    }
+
+    // 컨텍스트가 붙은 전체 todo 목록
+    getAllTodosWithContext() {
+        return this._visibleProducts().flatMap(p => (p.todos || []).map(t => ({
+            ...t,
+            projectName: p.name,
+            product_id: p.id,
+            brand_id: p.brand_id,
+            company_id: p.company_id,
+            brandName: this._brandName(p)
+        })));
+    }
+
+    // 나에게 배정된 미완료 할일 중 임박/지연 건
+    getDeadlineAlerts() {
+        const myId = this._myId();
+        return this.getAllTodosWithContext()
+            .filter(t => !t.completed && t.assignee === myId && t.due_date)
+            .map(t => ({ ...t, meta: this._deadlineMeta(t.due_date) }))
+            .filter(t => t.meta.level === 'overdue' || t.meta.level === 'soon')
+            .sort((a, b) => (a.meta.days ?? 999) - (b.meta.days ?? 999));
+    }
+
+    // 나를 @멘션한 항목 (todo 본문 + memo 본문 스캔)
+    getMyMentions() {
+        const myName = this.currentUser ? this.currentUser.name : '';
+        if (!myName) return [];
+        const token = '@' + myName;
+        const myId = this._myId();
+        const results = [];
+        this._visibleProducts().forEach(p => {
+            (p.todos || []).forEach(t => {
+                if (t.text && t.text.includes(token) && t.assignee !== myId) {
+                    results.push({ type: 'todo', text: t.text, projectName: p.name, product_id: p.id, id: t.id, due_date: t.due_date });
+                }
+            });
+            (p.memos || []).forEach(m => {
+                if (m.text && m.text.includes(token)) {
+                    results.push({ type: 'memo', text: m.text, projectName: p.name, product_id: p.id, id: m.id });
+                }
+            });
+        });
+        return results;
+    }
+
+    // 대시보드 KPI 집계
+    getDashboardKPIs(products) {
+        const list = products || [];
+        const active = list.filter(p => (p.currentStage || 'consulting') !== 'shipping');
+        const avgProgress = active.length
+            ? Math.round(active.reduce((s, p) => s + this.computeProgress(p), 0) / active.length)
+            : 0;
+        const delayed = active.filter(p => {
+            const days = this._daysUntil(p.deadline);
+            return days !== null && days < 0;
+        }).length;
+        const dueThisWeek = active.filter(p => {
+            const days = this._daysUntil(p.deadline);
+            return days !== null && days >= 0 && days <= 7;
+        }).length;
+        const openTodos = list.flatMap(p => p.todos || []).filter(t => !t.completed).length;
+        return { activeCount: active.length, avgProgress, delayed, dueThisWeek, openTodos };
+    }
+
+    // 통합 검색 — 프로젝트/할일/문서/메모/브랜드 가로질러 매칭
+    runGlobalSearch(query) {
+        const q = (query || '').trim().toLowerCase();
+        if (!q) return [];
+        const results = [];
+        this._visibleProducts().forEach(p => {
+            const bName = this._brandName(p);
+            if ((p.name || '').toLowerCase().includes(q) || (bName || '').toLowerCase().includes(q)) {
+                results.push({ kind: '프로젝트', icon: 'ph-folder', title: p.name, sub: bName, product_id: p.id });
+            }
+            (p.todos || []).forEach(t => {
+                if ((t.text || '').toLowerCase().includes(q)) {
+                    results.push({ kind: '할일', icon: 'ph-check-square', title: t.text, sub: `${bName} · ${p.name}`, product_id: p.id, done: t.completed });
+                }
+            });
+            (p.documents || []).forEach(d => {
+                if ((d.name || '').toLowerCase().includes(q)) {
+                    results.push({ kind: '문서', icon: 'ph-file', title: d.name, sub: `${bName} · ${p.name}`, product_id: p.id });
+                }
+            });
+            (p.memos || []).forEach(m => {
+                if ((m.text || '').toLowerCase().includes(q)) {
+                    results.push({ kind: '메모', icon: 'ph-note', title: m.text, sub: `${bName} · ${p.name}`, product_id: p.id });
+                }
+            });
+        });
+        return results.slice(0, 40);
+    }
+
     // 렌더링 최적화: 디바운싱 적용
     requestRender() {
         if (this._renderTimeout) clearTimeout(this._renderTimeout);
@@ -166,7 +345,7 @@ class BhasApp {
         
         container.innerHTML = `
             <div class="glass modal-content fade-in" style="width: 90%; max-width: 1000px; padding: 2rem; border-radius: 24px; position: relative; max-height: 90vh; display: flex; flex-direction: column;">
-                <button onclick="document.getElementById('global-modal-container').style.display='none'" style="position: absolute; top: 1.5rem; right: 1.5rem; background: rgba(255,255,255,0.1); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 100;"><i class="ph ph-x"></i></button>
+                <button onclick="document.getElementById('global-modal-container').style.display='none'" style="position: absolute; top: 1.5rem; right: 1.5rem; background: rgba(var(--tint),0.1); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 100;"><i class="ph ph-x"></i></button>
                 <h2 style="margin-bottom: 1.5rem; font-size: 1.2rem; display: flex; align-items: center; gap: 10px;">
                     <i class="${isImage ? 'ph ph-image' : 'ph ph-file-text'}"></i> ${name}
                 </h2>
@@ -410,10 +589,16 @@ class BhasApp {
         this.currentView = viewId;
         this.render();
     }
+
+    toggleTheme() {
+        const isLight = document.body.classList.toggle('light');
+        localStorage.setItem('bhas_theme', isLight ? 'light' : 'dark');
+        this.requestRender();
+    }
     
     toggleNotifications(e) {
         if(e) e.preventDefault();
-        this.switchView('todo');
+        this.switchView('all_todos');
     }
 
     render() {
@@ -427,8 +612,8 @@ class BhasApp {
             if (this._isInitialLoading && this.currentUser) {
                 this.appContainer.innerHTML = `
                     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 1.5rem;">
-                        <div style="font-size: 2.5rem; font-weight: 900; color: var(--primary); letter-spacing: 3px;">BHAS</div>
-                        <div style="width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                        <div style="font-size: 2.5rem; font-weight: 900; color: var(--primary); letter-spacing: 3px;">2179</div>
+                        <div style="width: 40px; height: 40px; border: 3px solid rgba(var(--tint),0.1); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
                         <span style="color: var(--text-muted); font-size: 0.9rem;">데이터를 불러오는 중...</span>
                         <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
                     </div>
@@ -548,7 +733,7 @@ class BhasApp {
         const loginHtml = `
             <div class="login-container fade-in">
                 <div class="glass login-card">
-                    <h1>BHAS</h1>
+                    <h1>2179</h1>
                     <p style="color: var(--text-muted); margin-bottom: 2rem;">Production Management System</p>
                     
                     <form class="login-form" id="login-form">
@@ -675,12 +860,28 @@ class BhasApp {
         const perms = mockData.permissions[role] || [];
         
         const menuItems = [
-            { id: 'dashboard', label: '프로젝트 현황', icon: '<i class="ph ph-chart-bar"></i>', visible: perms.includes('dashboard') },
-            { id: 'documents', label: '문서 관리', icon: '<i class="ph ph-folder-open"></i>', visible: perms.includes('documents') },
-            { id: 'all_todos', label: '할일 모아보기', icon: '<i class="ph ph-list-checks"></i>', visible: true },
-            { id: 'user_management', label: '계정 관리', icon: '<i class="ph ph-user-plus"></i>', visible: perms.includes('user_management') },
-            { id: 'brand_management', label: '브랜드 관리', icon: '<i class="ph ph-shield-check"></i>', visible: perms.includes('user_management') }
+            { id: 'dashboard', label: '프로젝트', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
+            { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
+            { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
+            { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'pages', label: '페이지', icon: '<i class="ph ph-note-pencil"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'kanban', label: '보드', icon: '<i class="ph ph-kanban"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'calendar', label: '캘린더', icon: '<i class="ph ph-calendar-dots"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'table', label: '표', icon: '<i class="ph ph-table"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'all_todos', label: '할일', icon: '<i class="ph ph-list-checks"></i>', group: 'work', visible: true },
+            { id: 'documents', label: '문서', icon: '<i class="ph ph-folder-open"></i>', group: 'work', visible: perms.includes('documents') },
+            { id: 'user_management', label: '계정', icon: '<i class="ph ph-user-plus"></i>', group: 'admin', visible: perms.includes('user_management') },
+            { id: 'brand_management', label: '브랜드', icon: '<i class="ph ph-shield-check"></i>', group: 'admin', visible: perms.includes('user_management') }
         ];
+        const navGroups = [
+            { id: 'prod', label: '생산관리' },
+            { id: 'stock', label: '재고·판매' },
+            { id: 'work', label: '업무관리' },
+            { id: 'admin', label: '관리' }
+        ];
+        this.navCollapsed = this.navCollapsed || {};
+        const isLight = document.body.classList.contains('light');
 
         let products = mockData.products;
         if (role === 'CLIENT') {
@@ -693,8 +894,11 @@ class BhasApp {
         const dashboardHtml = `
             <div class="dashboard fade-in">
                 <div class="mobile-top-bar">
-                    <div class="top-bar-logo">BHAS</div>
+                    <div class="top-bar-logo">2179</div>
                     <div class="top-bar-actions">
+                        <div class="noti-trigger" id="mobile-search-btn" title="검색">
+                            <i class="ph ph-magnifying-glass"></i>
+                        </div>
                         <div class="noti-trigger" onclick="app.toggleNotifications(event)">
                             <i class="ph ph-bell"></i>
                             ${(() => {
@@ -706,7 +910,7 @@ class BhasApp {
                     </div>
                 </div>
                 <nav class="glass sidebar">
-                    <div class="nav-logo">BHAS</div>
+                    <div class="nav-logo">2179</div>
                     <div class="nav-user">
                         <div class="avatar">${name[0]}</div>
                         <div class="user-info">
@@ -714,13 +918,36 @@ class BhasApp {
                             <span class="role">${role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사')}</span>
                         </div>
                     </div>
+                    <div class="nav-search" id="open-search-btn" title="통합 검색 (단축키 /)">
+                        <i class="ph ph-magnifying-glass"></i>
+                        <span>프로젝트·할일·문서 검색</span>
+                        <kbd>/</kbd>
+                    </div>
                     <ul class="nav-links">
-                        ${menuItems.filter(item => item.visible).map(item => `
-                            <li class="${this.currentView === item.id ? 'active' : ''}" data-view="${item.id}">
-                                <div style="display: flex; align-items: center; gap: 8px; font-size: 1.1rem;">${item.icon} <span style="font-size: 1rem;">${item.label}</span></div>
-                            </li>
-                        `).join('')}
-                        <li id="logout-btn" style="display: flex; align-items: center; gap: 8px;"><i class="ph ph-power" style="font-size: 1.2rem;"></i> 로그아웃</li>
+                        ${navGroups.map(g => {
+                            const items = menuItems.filter(i => i.group === g.id && i.visible);
+                            if (!items.length) return '';
+                            const collapsed = !!this.navCollapsed[g.id];
+                            return `
+                                <li class="nav-group-header" data-group="${g.id}" style="display:flex; align-items:center; justify-content:space-between; padding:12px 8px 6px; cursor:pointer; color:var(--text-main); font-size:0.92rem; font-weight:700; user-select:none;">
+                                    <span style="display:flex; align-items:center; gap:8px;"><i class="ph ${collapsed ? 'ph-folder-simple' : 'ph-folder-open'}" style="font-size:1.15rem; color:var(--primary);"></i> ${g.label}</span>
+                                    <i class="ph ph-caret-${collapsed ? 'right' : 'down'}" style="font-size:0.9rem; color:var(--text-muted);"></i>
+                                </li>
+                                ${collapsed ? '' : items.map(item => `
+                                    <li class="${this.currentView === item.id ? 'active' : ''}" data-view="${item.id}" style="padding:7px 14px 7px 24px; margin-bottom:2px;">
+                                        <div style="display: flex; align-items: center; gap: 8px; font-size: 0.95rem;">${item.icon} <span style="font-size: 0.86rem;">${item.label}</span></div>
+                                    </li>
+                                `).join('')}
+                            `;
+                        }).join('')}
+                        <li class="nav-bottom" style="margin-top:auto; display:flex; align-items:center; justify-content:space-between; padding:12px 14px; margin-bottom:0; cursor:default;">
+                            <span id="logout-btn" style="display:flex; align-items:center; gap:8px; color:#ef4444; cursor:pointer; padding:0; margin:0;"><i class="ph ph-power" style="font-size:1.2rem;"></i> 로그아웃</span>
+                            <button id="theme-toggle" title="라이트/다크 전환" style="position:relative; width:50px; height:26px; border-radius:999px; border:none; cursor:pointer; flex-shrink:0; background:${isLight ? '#cbd5e1' : 'var(--primary)'}; transition:background 0.25s;">
+                                <span style="position:absolute; top:3px; left:${isLight ? '3px' : '27px'}; width:20px; height:20px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; transition:left 0.25s; box-shadow:0 1px 3px rgba(0,0,0,0.25);">
+                                    <i class="ph ${isLight ? 'ph-sun' : 'ph-moon'}" style="font-size:0.72rem; color:${isLight ? '#f59e0b' : '#3b82f6'};"></i>
+                                </span>
+                            </button>
+                        </li>
                     </ul>
                 </nav>
                 
@@ -750,7 +977,7 @@ class BhasApp {
                         <div class="header-top-row">
                             <div class="header-title-section" style="display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;">
                                 ${(role === 'MASTER' || role === 'STAFF') && this.currentView === 'dashboard' ? `
-                                    <select id="global-company-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 10px; outline: none; cursor: pointer; font-size: 0.85rem; flex: 1; min-width: 0;">
+                                    <select id="global-company-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(var(--tint),0.1); border-radius: 8px; padding: 6px 10px; outline: none; cursor: pointer; font-size: 0.85rem; flex: 1; min-width: 0;">
                                         <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드</option>
                                         ${(mockData.brands || []).map(b => `
                                             <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
@@ -778,12 +1005,48 @@ class BhasApp {
                                     const myTodos = filteredTodos.filter(t => t.assignee === userId);
                                     const requestedTodos = filteredTodos.filter(t => t.created_by === userId && t.assignee !== userId);
 
+                                    // 강화: 마감 임박/지연 + @멘션
+                                    const deadlineAlerts = this.getDeadlineAlerts();
+                                    const mentions = this.getMyMentions();
+                                    const overdueCount = deadlineAlerts.filter(t => t.meta.level === 'overdue').length;
+                                    const alertDot = overdueCount > 0 ? '#ef4444' : (deadlineAlerts.length > 0 ? '#f59e0b' : (pendingCount > 0 ? 'var(--primary)' : null));
+
+                                    const renderAlertList = (items) => items.map(t => `
+                                        <li class="noti-todo-item" data-todo-id="${t.id}" data-project-id="${t.product_id}" style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:10px; background:rgba(var(--tint),0.03); margin-bottom:6px; border:1px solid ${t.meta.level === 'overdue' ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.3)'}; cursor:pointer;" onmouseover="this.style.background='rgba(var(--tint),0.08)';" onmouseout="this.style.background='rgba(var(--tint),0.03)';">
+                                            <i class="ph ${t.meta.level === 'overdue' ? 'ph-warning-circle' : 'ph-clock-countdown'}" style="font-size:1.1rem; margin-top:2px; color:${t.meta.level === 'overdue' ? '#ef4444' : '#f59e0b'};"></i>
+                                            <div style="flex:1; display:flex; flex-direction:column; gap:4px; overflow:hidden;">
+                                                <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+                                                    <span style="font-size:0.75rem; color:var(--primary); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>[${t.brandName}]</strong> <span style="color:var(--text-muted);">${t.projectName}</span></span>
+                                                    <span style="font-size:0.72rem; font-weight:700; flex-shrink:0; padding:2px 7px; border-radius:5px; color:#fff; background:${t.meta.level === 'overdue' ? '#ef4444' : '#f59e0b'};">${t.meta.label}</span>
+                                                </div>
+                                                <span style="font-size:0.9rem; color:#fff; line-height:1.3;">${t.text}</span>
+                                            </div>
+                                        </li>
+                                    `).join('');
+
+                                    const renderMentionList = (items) => items.map(m => `
+                                        <li class="noti-todo-item" data-project-id="${m.product_id}" style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:10px; background:rgba(99,102,241,0.06); margin-bottom:6px; border:1px solid rgba(99,102,241,0.25); cursor:pointer;" onmouseover="this.style.background='rgba(99,102,241,0.12)';" onmouseout="this.style.background='rgba(99,102,241,0.06)';">
+                                            <i class="ph ph-at" style="font-size:1.1rem; margin-top:2px; color:#818cf8;"></i>
+                                            <div style="flex:1; display:flex; flex-direction:column; gap:4px; overflow:hidden;">
+                                                <span style="font-size:0.75rem; color:var(--text-muted);">${m.type === 'todo' ? '할일' : '메모'} · ${m.projectName}</span>
+                                                <span style="font-size:0.9rem; color:#fff; line-height:1.3;">${m.text}</span>
+                                            </div>
+                                        </li>
+                                    `).join('');
+
+                                    const sectionWrap = (title, icon, color, count, body) => `
+                                        <div style="margin-bottom:1rem;">
+                                            <h4 style="margin-bottom:0.6rem; display:flex; align-items:center; gap:6px; font-size:0.95rem; color:${color};"><i class="${icon}"></i> ${title} ${count > 0 ? `<span style="font-size:0.72rem; background:${color}; color:#fff; padding:1px 7px; border-radius:10px;">${count}</span>` : ''}</h4>
+                                            <ul style="margin:0; padding:0; list-style:none;">${body || '<div style="text-align:center; padding:0.8rem 0; color:var(--text-muted); font-size:0.8rem;">없음</div>'}</ul>
+                                        </div>
+                                    `;
+
                                     const renderTodoList = (todos, title, icon) => `
                                         <div style="margin-bottom: 1rem;">
                                             <h4 style="margin-bottom: 0.8rem; display: flex; align-items: center; gap: 6px; font-size: 0.95rem; color: var(--text-main);"><i class="${icon}"></i> ${title}</h4>
                                             <ul style="margin: 0; padding: 0; list-style: none;">
                                                 ${todos.map(todo => `
-                                                    <li class="noti-todo-item" data-todo-id="${todo.id}" data-project-id="${todo.product_id}" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.03); margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.08)';" onmouseout="this.style.background='rgba(255,255,255,0.03)';">
+                                                    <li class="noti-todo-item" data-todo-id="${todo.id}" data-project-id="${todo.product_id}" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(var(--tint),0.03); margin-bottom: 6px; border: 1px solid rgba(var(--tint),0.05); cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(var(--tint),0.08)';" onmouseout="this.style.background='rgba(var(--tint),0.03)';">
                                                         <div class="noti-quick-check" data-id="${todo.id}" data-pid="${todo.product_id}" style="width: 16px; height: 16px; border: 2px solid var(--card-border); border-radius: 4px; display: flex; align-items: center; justify-content: center; margin-top: 3px; background: transparent; flex-shrink: 0; cursor: pointer; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 0 5px var(--primary)';" onmouseout="this.style.borderColor='var(--card-border)'; this.style.boxShadow='none';"></div>
                                                         <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; overflow: hidden;">
                                                             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -802,13 +1065,16 @@ class BhasApp {
                                     return `
                                         <div class="notification-bell" style="position: fixed; top: 30px; right: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 50%; background: rgba(37,99,235,0.15); box-shadow: 0 0 20px rgba(37,99,235,0.2); transition: 0.3s; z-index: 1000;" onmouseover="this.style.background='rgba(37,99,235,0.25)'; this.style.transform='scale(1.05)';" onmouseout="this.style.background='rgba(37,99,235,0.15)'; this.style.transform='scale(1)';" onclick="const popup = document.getElementById('notification-popup'); popup.style.display = popup.style.display === 'none' ? 'block' : 'none';" title="알림 (할 일)">
                                             <i class="ph ph-bell-ringing" style="font-size: 2.5rem; color: var(--primary);"></i>
-                                            ${pendingCount > 0 ? `<span style="position: absolute; top: 10px; right: 12px; width: 14px; height: 14px; background: var(--accent-danger, #ef4444); border-radius: 50%; border: 2px solid var(--bg-dark); box-shadow: 0 0 10px var(--accent-danger);"></span>` : ''}
+                                            ${alertDot ? `<span style="position: absolute; top: 10px; right: 12px; min-width: 16px; height: 16px; padding: 0 4px; display:flex; align-items:center; justify-content:center; font-size:0.65rem; font-weight:700; color:#fff; background: ${alertDot}; border-radius: 8px; border: 2px solid var(--bg-dark); box-shadow: 0 0 10px ${alertDot};">${deadlineAlerts.length > 0 ? deadlineAlerts.length : ''}</span>` : ''}
                                         </div>
                                         <div id="notification-popup" class="glass fade-in" style="display: none; position: fixed; top: 100px; right: 16px; width: calc(100vw - 32px); max-width: 380px; max-height: 70vh; overflow-y: auto; border-radius: 20px; z-index: 1001; padding: 1.5rem; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border: 1px solid var(--card-border); text-align: left; box-sizing: border-box;">
                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                                                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 1.1rem; color: white;"><i class="ph ph-bell"></i> 알림 (할 일)</h3>
                                                 <button onclick="document.getElementById('notification-popup').style.display='none'" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; transition: 0.2s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='var(--text-muted)'"><i class="ph ph-x" style="font-size: 1.2rem;"></i></button>
                                             </div>
+                                            ${sectionWrap('마감 임박 · 지연', 'ph ph-alarm', '#ef4444', deadlineAlerts.length, renderAlertList(deadlineAlerts))}
+                                            ${mentions.length > 0 ? sectionWrap('나를 멘션', 'ph ph-at', '#818cf8', mentions.length, renderMentionList(mentions)) : ''}
+                                            <div style="border-top:1px solid var(--card-border); margin:0.5rem 0 1rem;"></div>
                                             ${renderTodoList(myTodos, '내가 할 일', 'ph ph-user-focus')}
                                             ${renderTodoList(requestedTodos, '요청한 일', 'ph ph-paper-plane-tilt')}
                                         </div>
@@ -873,7 +1139,20 @@ class BhasApp {
                     ${this.renderSubView(products)}
                 </main>
             </div>
-            
+
+            <div id="global-search-overlay" class="search-overlay" style="display: none;">
+                <div class="search-panel glass">
+                    <div class="search-input-row">
+                        <i class="ph ph-magnifying-glass"></i>
+                        <input id="global-search-input" type="text" placeholder="프로젝트 · 할일 · 문서 · 메모 검색..." autocomplete="off" />
+                        <button id="close-search-btn" title="닫기 (Esc)"><i class="ph ph-x"></i></button>
+                    </div>
+                    <div id="global-search-results" class="search-results">
+                        <div class="search-hint"><i class="ph ph-keyboard"></i> 검색어를 입력하세요. 결과를 클릭하면 해당 프로젝트로 이동합니다.</div>
+                    </div>
+                </div>
+            </div>
+
             <div id="modal-container" class="modal-overlay" style="display: none;"></div>
         `;
         this.appContainer.innerHTML = dashboardHtml;
@@ -1384,7 +1663,7 @@ class BhasApp {
                 </style>
                 <div style="flex: 1; overflow-y: auto;">
                     <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-note-pencil"></i> 할 일 기록</h2>
-                    <div style="margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-muted); padding-bottom: 1rem; border-bottom: 1px dashed rgba(255,255,255,0.1);">
+                    <div style="margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-muted); padding-bottom: 1rem; border-bottom: 1px dashed rgba(var(--tint),0.1);">
                         <div style="margin-bottom: 5px;"><strong>프로젝트:</strong> ${project.name}</div>
                         <div style="margin-bottom: 5px;"><strong>할 일:</strong> <span style="color: white;">${todo.text}</span></div>
                         <div style="margin-bottom: 5px;"><strong>마감일:</strong> ${todo.due_date ? this.formatDateToUI(todo.due_date) : '일정'}</div>
@@ -1394,7 +1673,7 @@ class BhasApp {
                         <textarea id="todo-memo-text" class="login-input" placeholder="이 할 일에 대한 메모나 진행 상황을 우측 화면에서 넓게 확인하고 기입하세요." style="min-height: 300px; resize: vertical; line-height: 1.6; font-size: 0.95rem;">${todo.memo || ''}</textarea>
                     </div>
                 </div>
-                <div style="display: flex; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <div style="display: flex; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(var(--tint),0.1);">
                     <button id="todo-cancel" class="btn-secondary" style="flex: 1; padding: 1rem; border-radius: 12px; border: 1px solid var(--card-border);">닫기</button>
                     <button id="todo-save" class="btn-primary" style="flex: 1; padding: 1rem; border-radius: 12px;">저장</button>
                 </div>
@@ -1478,7 +1757,7 @@ class BhasApp {
                         <div class="card-footer" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                             <div style="display: flex; align-items: center; gap: 4px;"><i class="ph ph-clock"></i> 마감: ${this.formatDateToUI(product.deadline)}</div>
                             <div style="display: flex; gap: 6px;">
-                                ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="프로젝트 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(255,255,255,0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="프로젝트 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                             </div>
                         </div>
                     </div>
@@ -1571,7 +1850,7 @@ class BhasApp {
                                         const statusLabel = lastCompletedStage ? lastCompletedStage.label : (progress === 0 && (product.history || []).length > 1 ? '상담 진행' : '시작 전');
                                         
                                         return `
-                                            <tr class="project-row" data-id="${product.id}" style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: 0.2s; cursor: pointer;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+                                            <tr class="project-row" data-id="${product.id}" style="border-bottom: 1px solid rgba(var(--tint),0.05); transition: 0.2s; cursor: pointer;" onmouseover="this.style.background='rgba(var(--tint),0.02)'" onmouseout="this.style.background='transparent'">
                                                 <td style="padding: 12px 16px; font-weight: 600;">
                                                     <div style="display: flex; align-items: center; gap: 8px;">
                                                         <i class="ph ph-briefcase" style="color: ${brandColor}; opacity: 0.7;"></i>
@@ -1581,7 +1860,7 @@ class BhasApp {
                                                 <td style="padding: 12px 16px; font-size: 0.85rem; color: var(--text-muted);">${this.formatDateToUI(product.deadline)}</td>
                                                 <td style="padding: 12px 16px;">
                                                     <div style="display: flex; align-items: center; gap: 10px;">
-                                                        <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; max-width: 100px;">
+                                                        <div style="flex: 1; height: 6px; background: rgba(var(--tint),0.05); border-radius: 3px; overflow: hidden; max-width: 100px;">
                                                             <div style="width: ${progress}%; height: 100%; background: ${brandColor}; box-shadow: 0 0 10px ${brandColor}44;"></div>
                                                         </div>
                                                         <span style="font-size: 0.75rem; color: ${progress > 0 ? 'white' : 'var(--text-muted)'};">${statusLabel} (${progress}%)</span>
@@ -1589,7 +1868,7 @@ class BhasApp {
                                                 </td>
                                                 <td style="padding: 12px 16px; text-align: center;">
                                                     <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                                        ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="프로젝트 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(255,255,255,0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                                        ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="프로젝트 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -1609,8 +1888,35 @@ class BhasApp {
 
             const isTable = this.dashboardViewType === 'table';
 
+            const kpi = this.getDashboardKPIs(products);
+            const kpiStrip = `
+                <div class="kpi-strip">
+                    <div class="glass kpi-card">
+                        <span class="kpi-ico"><i class="ph ph-rocket-launch"></i></span>
+                        <div class="kpi-body"><span class="kpi-num">${kpi.activeCount}</span><span class="kpi-label">진행 프로젝트</span></div>
+                    </div>
+                    <div class="glass kpi-card">
+                        <span class="kpi-ico"><i class="ph ph-chart-line-up"></i></span>
+                        <div class="kpi-body"><span class="kpi-num">${kpi.avgProgress}<small>%</small></span><span class="kpi-label">평균 진행률</span></div>
+                    </div>
+                    <div class="glass kpi-card ${kpi.delayed > 0 ? 'kpi-danger' : ''}">
+                        <span class="kpi-ico"><i class="ph ph-warning-circle"></i></span>
+                        <div class="kpi-body"><span class="kpi-num">${kpi.delayed}</span><span class="kpi-label">지연 프로젝트</span></div>
+                    </div>
+                    <div class="glass kpi-card ${kpi.dueThisWeek > 0 ? 'kpi-warn' : ''}">
+                        <span class="kpi-ico"><i class="ph ph-clock-countdown"></i></span>
+                        <div class="kpi-body"><span class="kpi-num">${kpi.dueThisWeek}</span><span class="kpi-label">7일내 마감</span></div>
+                    </div>
+                    <div class="glass kpi-card">
+                        <span class="kpi-ico"><i class="ph ph-list-checks"></i></span>
+                        <div class="kpi-body"><span class="kpi-num">${kpi.openTodos}</span><span class="kpi-label">미완료 할일</span></div>
+                    </div>
+                </div>
+            `;
+
             return `
                 <div class="dashboard-sections">
+                    ${kpiStrip}
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-rocket-launch"></i> 진행 중인 프로젝트</h2>
                         ${this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF' ? `<button id="add-project-btn" class="btn-primary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.9rem;"><i class="ph ph-plus"></i> 새 프로젝트</button>` : ''}
@@ -1677,7 +1983,7 @@ class BhasApp {
                     <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 8px; font-size: 1.1rem;"><i class="${icon}"></i> ${title}</h3>
                     <ul class="todo-list" style="margin: 0; padding: 0; list-style: none;">
                         ${todos.map(todo => `
-                            <li class="todo-item" data-todo-id="${todo.id}" data-project-id="${todo.product_id}" style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; background: rgba(255,255,255,0.03); margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); transition: 0.2s; cursor: pointer; position: relative;" onmouseover="this.style.background='rgba(255,255,255,0.08)';" onmouseout="this.style.background='rgba(255,255,255,0.03)';">
+                            <li class="todo-item" data-todo-id="${todo.id}" data-project-id="${todo.product_id}" style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; background: rgba(var(--tint),0.03); margin-bottom: 8px; border: 1px solid rgba(var(--tint),0.05); transition: 0.2s; cursor: pointer; position: relative;" onmouseover="this.style.background='rgba(var(--tint),0.08)';" onmouseout="this.style.background='rgba(var(--tint),0.03)';">
                                 <div class="todo-quick-check" data-id="${todo.id}" data-pid="${todo.product_id}" style="width: 20px; height: 20px; border: 2px solid var(--card-border); border-radius: 6px; display: flex; align-items: center; justify-content: center; background: transparent; flex-shrink: 0; cursor: pointer; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 0 5px var(--primary)';" onmouseout="this.style.borderColor='var(--card-border)'; this.style.boxShadow='none';">
                                 </div>
                                 <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; overflow: hidden; min-width: 0;">
@@ -1694,7 +2000,7 @@ class BhasApp {
                                     <div style="display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 1.1rem; pointer-events: none;">
                                         <i class="ph ph-cursor-click"></i>
                                     </div>
-                                    ${this.canDelete(todo) ? `<button onclick="app.handleDelete(event, 'todo', '${todo.id}', '${todo.product_id}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(255,255,255,0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                    ${this.canDelete(todo) ? `<button onclick="app.handleDelete(event, 'todo', '${todo.id}', '${todo.product_id}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                 </div>
                             </li>
                         `).join('')}
@@ -1711,7 +2017,7 @@ class BhasApp {
                         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                             <h2 style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 1.5rem; white-space: nowrap;"><i class="ph ph-list-checks"></i> 통합 할 일 관리</h2>
                             ${(this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF') ? `
-                                <select id="todo-brand-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; box-sizing: border-box;">
+                                <select id="todo-brand-filter" class="glass brand-select" style="color: white; border: 1px solid rgba(var(--tint),0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; box-sizing: border-box;">
                                     <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드</option>
                                     ${(mockData.brands || []).map(b => `
                                         <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
@@ -1746,7 +2052,7 @@ class BhasApp {
                                             </div>
                                             <ul class="todo-list" style="margin: 0; padding: 0; list-style: none;">
                                                 ${groupedByCompany[cid].map(todo => `
-                                                    <li class="todo-item" data-todo-id="${todo.id}" data-project-id="${todo.product_id}" style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: rgba(255,255,255,0.02); margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.04); transition: 0.2s; cursor: pointer;" onmouseover="this.style.background='rgba(255,255,255,0.06)';" onmouseout="this.style.background='rgba(255,255,255,0.02)';">
+                                                    <li class="todo-item" data-todo-id="${todo.id}" data-project-id="${todo.product_id}" style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: rgba(var(--tint),0.02); margin-bottom: 6px; border: 1px solid rgba(var(--tint),0.04); transition: 0.2s; cursor: pointer;" onmouseover="this.style.background='rgba(var(--tint),0.06)';" onmouseout="this.style.background='rgba(var(--tint),0.02)';">
                                                         <div class="todo-quick-check" data-id="${todo.id}" data-pid="${todo.product_id}" style="width: 18px; height: 18px; border: 2px solid var(--card-border); border-radius: 5px; flex-shrink: 0;"></div>
                                                         <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; overflow: hidden; min-width: 0;">
                                                             <div style="font-size: 0.9rem; font-weight: 500; color: var(--text-main); line-height: 1.4; white-space: normal; word-break: break-all;">${todo.text}</div>
@@ -1817,7 +2123,7 @@ class BhasApp {
                         <div style="display: flex; align-items: center; gap: 12px; width: ${isMobile ? '100%' : 'auto'}; flex-direction: ${isMobile ? 'column' : 'row'};">
                             <h2 style="display: flex; align-items: center; gap: 8px; font-size: 1.5rem; margin: 0; white-space: nowrap;"><i class="ph ph-folder-open"></i> 통합 문서 관리</h2>
                             ${(role === 'MASTER' || role === 'STAFF') ? `
-                                <select id="doc-global-company-filter" class="glass brand-select" style="margin-top: ${isMobile ? '5px' : '0'}; width: ${isMobile ? '100%' : 'auto'}; min-width: ${isMobile ? '0' : '200px'}; max-width: 100%; color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; box-sizing: border-box;">
+                                <select id="doc-global-company-filter" class="glass brand-select" style="margin-top: ${isMobile ? '5px' : '0'}; width: ${isMobile ? '100%' : 'auto'}; min-width: ${isMobile ? '0' : '200px'}; max-width: 100%; color: white; border: 1px solid rgba(var(--tint),0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; box-sizing: border-box;">
                                     <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드 보기</option>
                                     ${(mockData.brands || []).map(b => `
                                         <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
@@ -1833,7 +2139,7 @@ class BhasApp {
                                             style="padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: 0.3s;
                                                    white-space: nowrap; flex-shrink: 0;
                                                    color: ${this.selectedDocCategory === cat ? 'white' : 'var(--text-muted)'};
-                                                   background: ${this.selectedDocCategory === cat ? 'var(--primary)' : 'rgba(255,255,255,0.05)'};">
+                                                   background: ${this.selectedDocCategory === cat ? 'var(--primary)' : 'rgba(var(--tint),0.05)'};">
                                         ${cat}
                                     </button>
                                 `).join('')}
@@ -1865,7 +2171,7 @@ class BhasApp {
                                                        data-doc-id="${doc.id}"
                                                        data-p-id="${doc.productId || ''}"
                                                        value="${(doc.name || '').replace(/"/g, '&quot;')}"
-                                                       style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(255,255,255,0.1); font-weight: 600; font-size: 0.85rem;"
+                                                       style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(var(--tint),0.1); font-weight: 600; font-size: 0.85rem;"
                                                        onclick="event.stopPropagation()">
                                             </div>
                                             <div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
@@ -1896,7 +2202,7 @@ class BhasApp {
                                         const product = mockData.products.find(p => p.id === doc.productId);
                                         const brand = product ? mockData.brands?.find(b => b.id === product.brand_id) : null;
                                         return `
-                                            <tr class="table-row doc-row" style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; cursor: pointer;" 
+                                            <tr class="table-row doc-row" style="border-bottom: 1px solid rgba(var(--tint),0.05); font-size: 0.85rem; cursor: pointer;" 
                                                 onclick="app.showFileModal('${doc.url}', '${doc.name}')">
                                                 <td style="padding: 12px; color: var(--text-muted);">${doc.date || '-'}</td>
                                                 <td style="padding: 12px;">${brand ? brand.name : '-'}</td>
@@ -1910,7 +2216,7 @@ class BhasApp {
                                                                data-doc-id="${doc.id}"
                                                                data-p-id="${doc.productId || ''}"
                                                                value="${(doc.name || '').replace(/"/g, '&quot;')}"
-                                                               style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(255,255,255,0.1); font-weight: 600;"
+                                                               style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(var(--tint),0.1); font-weight: 600;"
                                                                onclick="event.stopPropagation()">
                                                     </div>
                                                 </td>
@@ -1920,9 +2226,9 @@ class BhasApp {
                                                                data-doc-id="${doc.id}" 
                                                                data-p-id="${doc.productId || ''}"
                                                                value="${doc.memo || ''}" 
-                                                               style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(255,255,255,0.1);"
+                                                               style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(var(--tint),0.1);"
                                                                onclick="event.stopPropagation()">
-                                                        ${this.canDelete(doc) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'document', '${doc.id}', '${doc.productId || ''}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(255,255,255,0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                                        ${this.canDelete(doc) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'document', '${doc.id}', '${doc.productId || ''}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -1952,7 +2258,7 @@ class BhasApp {
                             </div>
                             
                             <!-- Production Schedule Summary -->
-                            <div class="schedule-summary glass" style="padding: 1.5rem; border-radius: 20px; margin-bottom: 1.5rem; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05);">
+                            <div class="schedule-summary glass" style="padding: 1.5rem; border-radius: 20px; margin-bottom: 1.5rem; background: rgba(0,0,0,0.2); border: 1px solid rgba(var(--tint),0.05);">
                                 <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px;">
                                     <h3 style="margin: 0; font-size: 1.1rem; color: white;"><i class="ph ph-calendar-check" style="color: var(--primary);"></i> 생산 일정 요약</h3>
                                     <span style="font-size: 0.8rem; color: var(--text-muted);">현재 공정: <b style="color: var(--primary);">${product.status || '대기'}</b></span>
@@ -1962,7 +2268,7 @@ class BhasApp {
                                         const sData = (product.stages_data && (product.stages_data[stage.id] || product.stages_data[stage.docType])) || {};
                                         const isComp = isStageCompleted(product, stage);
                                         return `
-                                            <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.02); border: 1px solid ${isComp ? 'rgba(37,99,235,0.2)' : 'rgba(255,255,255,0.05)'};">
+                                            <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 12px; background: rgba(var(--tint),0.02); border: 1px solid ${isComp ? 'rgba(37,99,235,0.2)' : 'rgba(var(--tint),0.05)'};">
                                                 <span style="font-size: 0.75rem; color: var(--text-muted);">${stage.label}</span>
                                                 <span style="font-size: 0.85rem; font-weight: 700; color: ${isComp ? 'var(--primary)' : 'white'};">
                                                     ${sData.due_date || '일정 미정'}
@@ -1985,8 +2291,8 @@ class BhasApp {
                                     const inProgress = stageData.status === 'progress' || stageData.status === 'processing';
                                     
                                     let iconColor = isCompleted ? 'var(--primary)' : (inProgress ? '#f59e0b' : 'var(--text-muted)');
-                                    let bg = isCompleted ? 'rgba(37, 99, 235, 0.1)' : (inProgress ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.02)');
-                                    let border = isCompleted ? 'var(--primary)' : (inProgress ? '#f59e0b' : 'rgba(255,255,255,0.05)');
+                                    let bg = isCompleted ? 'rgba(37, 99, 235, 0.1)' : (inProgress ? 'rgba(245, 158, 11, 0.1)' : 'rgba(var(--tint),0.02)');
+                                    let border = isCompleted ? 'var(--primary)' : (inProgress ? '#f59e0b' : 'rgba(var(--tint),0.05)');
                                     let filter = (isCompleted || inProgress) ? 'none' : 'grayscale(100%) opacity(0.5)';
 
                                     return `
@@ -2017,7 +2323,7 @@ class BhasApp {
                     <div class="detail-grid">
                         <div class="notepad-card glass" style="display: flex; flex-direction: column;">
                             <h3 style="display: flex; align-items: center; gap: 8px;"><i class="ph ph-notepad"></i> 메모장</h3>
-                            <div class="notepad-content" style="flex: 1; display: flex; flex-direction: column; background: rgba(255,255,255,0.02); border-radius: 12px; padding: 10px; overflow: visible; min-height: 300px;">
+                            <div class="notepad-content" style="flex: 1; display: flex; flex-direction: column; background: rgba(var(--tint),0.02); border-radius: 12px; padding: 10px; overflow: visible; min-height: 300px;">
                                 <div id="memo-feed" style="flex: 1; overflow-y: auto; padding-right: 5px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px;">
                                     ${(product.memos || (product.notes ? [{id:0, text: product.notes, created_by: null, created_at: ''}] : [])).map(m => {
                                         // text에서 [작성자] 형식 파싱
@@ -2030,9 +2336,9 @@ class BhasApp {
                                         <div style="display: flex; flex-direction: column; align-items: ${isMine ? 'flex-end' : 'flex-start'}; width: 100%;">
                                             <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; padding: 0 4px;">${memoAuthor} ${memoDate ? `· ${memoDate}` : ''}</div>
                                             <div style="display: flex; align-items: flex-end; gap: 6px; max-width: 90%;">
-                                                ${isMine && this.canDelete(m) ? `<button onclick="app.handleDelete(event, 'memo', '${m.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; padding: 0; flex-shrink: 0;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(255,255,255,0.1)'"><i class="ph ph-x"></i></button>` : ''}
-                                                <div style="background: ${isMine ? 'var(--primary)' : 'rgba(255,255,255,0.1)'}; color: white; padding: 10px 14px; border-radius: 16px; font-size: 0.95rem; word-break: break-word; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.5; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">${memoText}</div>
-                                                ${!isMine && this.canDelete(m) ? `<button onclick="app.handleDelete(event, 'memo', '${m.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; padding: 0; flex-shrink: 0;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(255,255,255,0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                                ${isMine && this.canDelete(m) ? `<button onclick="app.handleDelete(event, 'memo', '${m.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 6px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; padding: 0; flex-shrink: 0;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                                <div style="background: ${isMine ? 'var(--primary)' : 'rgba(var(--tint),0.1)'}; color: white; padding: 10px 14px; border-radius: 16px; font-size: 0.95rem; word-break: break-word; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.5; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">${memoText}</div>
+                                                ${!isMine && this.canDelete(m) ? `<button onclick="app.handleDelete(event, 'memo', '${m.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 6px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; padding: 0; flex-shrink: 0;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                             </div>
                                         </div>
                                     `; }).join('')}
@@ -2049,7 +2355,7 @@ class BhasApp {
                             <div class="notepad-content" style="overflow: visible;">
                                     <ul class="todo-list">
                                         ${(product.todos || []).map(todo => `
-                                            <li class="todo-item ${todo.completed ? 'completed' : ''}" data-todo-id="${todo.id}" style="display: flex; align-items: center; gap: 12px; cursor: pointer; transition: 0.2s; position: relative; padding: 8px 12px; border-radius: 12px;" onmouseover="this.style.background='rgba(255,255,255,0.05)';" onmouseout="this.style.background='transparent';">
+                                            <li class="todo-item ${todo.completed ? 'completed' : ''}" data-todo-id="${todo.id}" style="display: flex; align-items: center; gap: 12px; cursor: pointer; transition: 0.2s; position: relative; padding: 8px 12px; border-radius: 12px;" onmouseover="this.style.background='rgba(var(--tint),0.05)';" onmouseout="this.style.background='transparent';">
                                                 <input type="checkbox" class="todo-checkbox-left" ${todo.completed ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer; flex-shrink: 0;">
                                                 <div style="flex: 1; display: flex; align-items: center; gap: 10px; overflow: hidden;">
                                                     <span class="todo-text" style="flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${todo.text}</span>
@@ -2066,15 +2372,15 @@ class BhasApp {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                ${this.canDelete(todo) ? `<button onclick="app.handleDelete(event, 'todo', '${todo.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(255,255,255,0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                                ${this.canDelete(todo) ? `<button onclick="app.handleDelete(event, 'todo', '${todo.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                             </li>
                                         `).join('')}
-                                        <li class="todo-item inline-add-row" style="margin-top: 15px; background: rgba(255,255,255,0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 8px 12px; position: relative; display: flex; align-items: center; gap: 10px;">
+                                        <li class="todo-item inline-add-row" style="margin-top: 15px; background: rgba(var(--tint),0.03); border: 1px dashed var(--card-border); border-radius: 12px; padding: 8px 12px; position: relative; display: flex; align-items: center; gap: 10px;">
                                             <i class="ph ph-plus" style="color: var(--text-muted); font-size: 1.1rem;"></i>
                                             <input type="text" id="inline-todo-input" placeholder="새 할 일 입력 (@이름으로 담당자 지정)..." style="flex: 1; background: transparent; border: none; color: white; outline: none; font-size: 0.9rem;">
                                             <div style="display: flex; gap: 6px; flex-shrink: 0;">
                                                 <button id="inline-add-todo-btn" class="btn-primary" style="padding: 6px 10px; border-radius: 8px; font-size: 0.75rem; border: none; display: flex; align-items: center; gap: 4px;"><i class="ph ph-plus-circle"></i> 할 일</button>
-                                                <button id="inline-add-request-btn" class="btn-secondary" style="padding: 6px 10px; border-radius: 8px; font-size: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; cursor: pointer; display: flex; align-items: center; gap: 4px;"><i class="ph ph-paper-plane-tilt"></i> 요청</button>
+                                                <button id="inline-add-request-btn" class="btn-secondary" style="padding: 6px 10px; border-radius: 8px; font-size: 0.75rem; background: rgba(var(--tint),0.1); border: 1px solid rgba(var(--tint),0.2); color: white; cursor: pointer; display: flex; align-items: center; gap: 4px;"><i class="ph ph-paper-plane-tilt"></i> 요청</button>
                                             </div>
                                             <div id="mention-list" class="mention-popup glass" style="display: none; position: absolute; bottom: 100%; left: 0; width: 100%; max-height: 150px; overflow-y: auto; z-index: 1000; margin-bottom: 5px; border-radius: 8px; border: 1px solid var(--primary); background: #1a1a1a;"></div>
                                         </li>
@@ -2092,7 +2398,7 @@ class BhasApp {
                                             return `
                                             <div class="photo-item" style="position: relative; cursor: pointer;" onclick="app.showFileModal('${photoObj.url}', '제작 사진')">
                                                 <img src="${photoObj.url}" alt="제작 사진">
-                                                ${this.canDelete(photoObj) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'photo', '${photoObj.id || photoObj.url}', '${product.id}')" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 4px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(0,0,0,0.5)'; this.style.borderColor='rgba(255,255,255,0.2)'"><i class="ph ph-x"></i></button>` : ''}
+                                                ${this.canDelete(photoObj) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'photo', '${photoObj.id || photoObj.url}', '${product.id}')" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 4px; background: rgba(0,0,0,0.5); border: 1px solid rgba(var(--tint),0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(0,0,0,0.5)'; this.style.borderColor='rgba(var(--tint),0.2)'"><i class="ph ph-x"></i></button>` : ''}
                                             </div>
                                         `}).join('')}
                                         <div class="add-photo-btn" id="add-photo-btn">
@@ -2109,14 +2415,14 @@ class BhasApp {
                                     <div class="doc-list" style="display: flex; flex-direction: column; gap: 10px;">
                                         ${(product.documents || []).length === 0 ? '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px;">첨부된 문서가 없습니다.</div>' : ''}
                                         ${(product.documents || []).map(doc => `
-                                            <div class="doc-item glass" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-radius: 12px; border: 1px solid var(--card-border); background: rgba(255,255,255,0.02);">
+                                            <div class="doc-item glass" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-radius: 12px; border: 1px solid var(--card-border); background: rgba(var(--tint),0.02);">
                                                 <div style="display: flex; align-items: center; gap: 10px; overflow: hidden; flex: 1;">
                                                     <i class="ph ph-file-text" style="font-size: 1.2rem; color: var(--primary);"></i>
                                                     <span style="font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.name}</span>
                                                 </div>
                                                 <div style="display: flex; gap: 8px; align-items: center;">
                                                     <a href="${doc.url}" target="_blank" style="padding: 4px 8px; border-radius: 6px; background: rgba(37,99,235,0.1); color: var(--primary); font-size: 0.75rem; text-decoration: none;" onmouseover="this.style.background='rgba(37,99,235,0.2)'" onmouseout="this.style.background='rgba(37,99,235,0.1)'">열기</a>
-                                                    ${this.canDelete(doc) ? `<button onclick="app.handleDelete(event, 'document', '${doc.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(255,255,255,0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                                    ${this.canDelete(doc) ? `<button onclick="app.handleDelete(event, 'document', '${doc.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                                 </div>
                                             </div>
                                         `).join('')}
@@ -2149,7 +2455,7 @@ class BhasApp {
                             ${mockData.companies.filter(c => c.username).map(c => {
                                 const brand = mockData.brands?.find(b => b.id === c.brand_id);
                                 return `
-                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem;">
+                                <tr style="border-bottom: 1px solid rgba(var(--tint),0.05); font-size: 0.85rem;">
                                     <td style="padding: 1rem; font-weight: 500;">${c.name}</td>
                                     <td style="padding: 1rem; color: var(--text-muted);">${c.username}</td>
                                     <td style="padding: 1rem;">
@@ -2158,7 +2464,7 @@ class BhasApp {
                                         </span>
                                     </td>
                                     <td style="padding: 1rem;">
-                                        <span style="background: ${c.role === 'MASTER' ? 'rgba(37,99,235,0.2)' : (c.role === 'STAFF' ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.05)')}; 
+                                        <span style="background: ${c.role === 'MASTER' ? 'rgba(37,99,235,0.2)' : (c.role === 'STAFF' ? 'rgba(16,185,129,0.1)' : 'rgba(var(--tint),0.05)')}; 
                                               color: ${c.role === 'MASTER' ? 'var(--primary)' : (c.role === 'STAFF' ? '#10b981' : '#ccc')}; 
                                               padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700;">
                                             ${c.role}
@@ -2200,9 +2506,9 @@ class BhasApp {
                                     const userCount = mockData.companies.filter(u => u.brand_id === b.id).length;
                                     const isClosed = b.status === 'closed';
                                     return `
-                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: 0.2s; ${isClosed ? 'opacity: 0.5;' : ''}" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+                                    <tr style="border-bottom: 1px solid rgba(var(--tint),0.04); transition: 0.2s; ${isClosed ? 'opacity: 0.5;' : ''}" onmouseover="this.style.background='rgba(var(--tint),0.03)'" onmouseout="this.style.background='transparent'">
                                         <td data-label="컬러" style="padding: 14px 12px;">
-                                            <div style="width: 28px; height: 28px; border-radius: 8px; background: ${b.brand_color || 'var(--primary)'}; border: 2px solid rgba(255,255,255,0.1);"></div>
+                                            <div style="width: 28px; height: 28px; border-radius: 8px; background: ${b.brand_color || 'var(--primary)'}; border: 2px solid rgba(var(--tint),0.1);"></div>
                                         </td>
                                         <td data-label="브랜드명" style="padding: 14px 12px; font-weight: 600; font-size: 0.95rem;">${b.name}</td>
                                         <td data-label="프로젝트" style="padding: 14px 12px; color: var(--text-muted); font-size: 0.9rem;">${projectCount}개</td>
@@ -2252,10 +2558,1479 @@ class BhasApp {
                     ` : ''}
                 </div>
             `;
+        } else if (this.currentView === 'timeline') {
+            // 생산 타임라인: 프로젝트별 8단계 공정을 마감순으로 한눈에
+            const stageState = (p, s) => {
+                const sd = (p.stages_data && (p.stages_data[s.id] || p.stages_data[s.docType])) || null;
+                const docMatch = p.documents && p.documents.some(d => d.type === s.docType || d.type === s.id);
+                const due = sd ? sd.due_date : null;
+                if ((sd && sd.status === 'completed') || docMatch) return { state: 'done', due };
+                if (sd && sd.status && sd.status !== 'not_started') return { state: 'doing', due };
+                return { state: 'todo', due };
+            };
+
+            const sorted = [...products].sort((a, b) => {
+                const da = this._daysUntil(a.deadline);
+                const db = this._daysUntil(b.deadline);
+                if (da === null && db === null) return 0;
+                if (da === null) return 1;
+                if (db === null) return -1;
+                return da - db;
+            });
+
+            const rows = sorted.map(p => {
+                const meta = this._deadlineMeta(p.deadline);
+                const progress = this.computeProgress(p);
+                const isDone = (p.currentStage || 'consulting') === 'shipping';
+                const brand = (mockData.brands || []).find(b => b.id === p.brand_id);
+                const bColor = brand ? (brand.brand_color || 'var(--primary)') : 'var(--primary)';
+
+                const track = STAGES.map(s => {
+                    const st = stageState(p, s);
+                    const dueLabel = st.due ? this.formatDateToUI(st.due).slice(2) : '';
+                    return `
+                        <div class="tl-stage tl-${st.state}" title="${s.label}${st.due ? ' · ' + this.formatDateToUI(st.due) : ''}">
+                            <span class="tl-stage-ico">${s.icon}</span>
+                            <span class="tl-stage-name">${s.label}</span>
+                            ${dueLabel ? `<span class="tl-stage-due">${dueLabel}</span>` : ''}
+                        </div>
+                    `;
+                }).join('<div class="tl-connector"></div>');
+
+                const deadlineChip = isDone
+                    ? `<span class="tl-deadline tl-dl-done"><i class="ph ph-check-circle"></i> 출고 완료</span>`
+                    : (meta.level === 'overdue' || meta.level === 'soon')
+                        ? `<span class="tl-deadline tl-dl-${meta.level}"><i class="ph ph-flag"></i> ${this.formatDateToUI(p.deadline)} · ${meta.label}</span>`
+                        : (p.deadline
+                            ? `<span class="tl-deadline"><i class="ph ph-flag"></i> ${this.formatDateToUI(p.deadline)} · ${meta.label}</span>`
+                            : `<span class="tl-deadline tl-dl-none"><i class="ph ph-flag"></i> 마감 미정</span>`);
+
+                return `
+                    <div class="tl-row ${isDone ? 'tl-row-done' : ''}" data-id="${p.id}">
+                        <div class="tl-row-head">
+                            <div class="tl-row-title">
+                                <span class="tl-pname">${p.name}</span>
+                                <span class="company-tag tl-brand" style="border-color:${bColor}; color:#fff; background:${bColor}22;"><i class="ph ph-buildings"></i> ${this._brandName(p)}</span>
+                            </div>
+                            <div class="tl-row-meta">
+                                ${deadlineChip}
+                                <span class="tl-progress"><span class="tl-progress-bar" style="width:${progress}%"></span><span class="tl-progress-num">${progress}%</span></span>
+                            </div>
+                        </div>
+                        <div class="tl-track">${track}</div>
+                    </div>
+                `;
+            }).join('');
+
+            const overdue = sorted.filter(p => { const d = this._daysUntil(p.deadline); return d !== null && d < 0 && (p.currentStage || 'consulting') !== 'shipping'; }).length;
+            const soon = sorted.filter(p => { const d = this._daysUntil(p.deadline); return d !== null && d >= 0 && d <= 7 && (p.currentStage || 'consulting') !== 'shipping'; }).length;
+
+            return `
+                <div class="timeline-view fade-in">
+                    <div class="tl-legend glass">
+                        <span class="tl-legend-item"><span class="tl-dot tl-done"></span> 완료</span>
+                        <span class="tl-legend-item"><span class="tl-dot tl-doing"></span> 진행중</span>
+                        <span class="tl-legend-item"><span class="tl-dot tl-todo"></span> 예정</span>
+                        <span class="tl-legend-sep"></span>
+                        <span class="tl-legend-item" style="color:#ef4444;"><i class="ph ph-warning-circle"></i> 지연 ${overdue}건</span>
+                        <span class="tl-legend-item" style="color:#f59e0b;"><i class="ph ph-clock-countdown"></i> 7일내 마감 ${soon}건</span>
+                    </div>
+                    ${rows || '<p style="color: var(--text-muted); padding: 2rem 0;">표시할 프로젝트가 없습니다.</p>'}
+                </div>
+            `;
+        } else if (this.currentView === 'sample_maker') {
+            return renderSampleMaker(this.sampleConfig);
+        } else if (this.currentView === 'orders') {
+            return this.renderOrders();
+        } else if (this.currentView === 'inventory') {
+            return this.renderInventory();
+        } else if (this.currentView === 'pages') {
+            return this.renderPagesView();
+        } else if (this.currentView === 'kanban') {
+            return this.renderKanban();
+        } else if (this.currentView === 'calendar') {
+            return this.renderCalendar();
+        } else if (this.currentView === 'table') {
+            return this.renderTableView();
+        }
+    }
+
+    // ============================================================
+    //  공용: 뷰 진입 시 데이터 lazy-load 디스패처
+    // ============================================================
+    ensureViewData() {
+        const v = this.currentView;
+        if ((v === 'orders' || v === 'inventory') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
+        if (v === 'orders' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
+        if (v === 'inventory' && !this._invLoaded && !this._invLoading) this.loadInventory();
+        if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
+        if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
+    }
+
+    _actor() { return this.currentUser?.username || this.currentUser?.name || 'system'; }
+    _brandNameById(id) { const b = (mockData.brands || []).find(b => b.id === id); return b ? b.name : '-'; }
+    _brandOptions(selected) {
+        return `<option value="" style="background:#0f172a">브랜드 없음</option>` +
+            (mockData.brands || []).map(b => `<option value="${b.id}" style="background:#0f172a" ${b.id === selected ? 'selected' : ''}>${b.name}</option>`).join('');
+    }
+    closeGlobalModal() { const c = document.getElementById('global-modal-container'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }
+
+    // ============================================================
+    //  멀티몰 (브랜드별 카페24몰)
+    // ============================================================
+    async loadMalls() {
+        this._mallsLoading = true;
+        try {
+            const { data } = await this.supabase.from('malls').select('*').order('created_at', { ascending: true });
+            this.malls = data || [];
+            this._mallsLoaded = true;
+        } catch (e) { this.malls = []; this._mallsLoaded = true; }
+        this._mallsLoading = false;
+        this.requestRender();
+    }
+    _mallLabel(key) { const m = (this.malls || []).find(m => m.mall_key === key); return m ? m.label : (key || '-'); }
+    _mallOptions(selected) {
+        return `<option value="" style="background:#0f172a">몰 선택 안 함</option>` +
+            (this.malls || []).map(m => `<option value="${m.mall_key}" style="background:#0f172a" ${m.mall_key === selected ? 'selected' : ''}>${m.label}</option>`).join('');
+    }
+    _oauthUrl(mallKey) { return `${SUPABASE_URL}/functions/v1/cafe24-oauth?mall=${encodeURIComponent(mallKey)}`; }
+
+    // ============================================================
+    //  주문/배송 통합관리 (OMS) — 카페24
+    // ============================================================
+    async loadOrders() {
+        this._ordersLoading = true;
+        try {
+            const [ordersRes, itemsRes] = await Promise.all([
+                this.supabase.from('channel_orders').select('*').order('order_date', { ascending: false }).limit(500),
+                this.supabase.from('channel_order_items').select('*')
+            ]);
+            const byOrder = {};
+            (itemsRes.data || []).forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
+            this.orders = (ordersRes.data || []).map(o => ({ ...o, items: byOrder[o.id] || [] }));
+            this._ordersLoaded = true;
+        } catch (e) {
+            this.showToast('주문을 불러오지 못했습니다. (스키마 설치 필요할 수 있음)');
+            this.orders = []; this._ordersLoaded = true;
+        }
+        this._ordersLoading = false;
+        this.requestRender();
+    }
+
+    _orderStatusLabel(s) { return ({ new: '신규', ready: '배송준비', shipping: '배송중', done: '완료', hold: '보류' })[s] || s; }
+    _orderItemsSummary(o) {
+        const its = o.items || [];
+        if (!its.length) return '-';
+        const first = its[0].product_name || its[0].variant_code || '상품';
+        return its.length > 1 ? `${first} 외 ${its.length - 1}건` : first;
+    }
+    _orderQtySum(o) { return (o.items || []).reduce((s, it) => s + (it.quantity || 0), 0); }
+
+    renderOrders() {
+        if (!this._ordersLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">주문을 불러오는 중...</div>`;
+        const filter = this.orderFilter || 'target';
+        const all = this.orders || [];
+        const counts = {
+            target: all.filter(o => o.status === 'new' || o.status === 'ready').length,
+            shipping: all.filter(o => o.status === 'shipping').length,
+            done: all.filter(o => o.status === 'done').length,
+            all: all.length
+        };
+        let rows = all;
+        if (filter === 'target') rows = all.filter(o => o.status === 'new' || o.status === 'ready');
+        else if (filter === 'shipping') rows = all.filter(o => o.status === 'shipping');
+        else if (filter === 'done') rows = all.filter(o => o.status === 'done');
+
+        const ls = (this.inventory && this.inventory.lastSync) || null;
+        const tab = (id, label, n) => `<button class="oms-tab ${filter === id ? 'active' : ''}" data-f="${id}" style="padding:7px 14px;border-radius:20px;font-size:0.85rem;cursor:pointer;border:1px solid var(--card-border);background:${filter === id ? 'var(--primary)' : 'rgba(var(--tint),0.05)'};color:${filter === id ? '#fff' : 'var(--text-muted)'}">${label} ${n}</button>`;
+
+        const body = rows.map(o => `
+            <tr style="border-bottom:1px solid var(--card-border)">
+                <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" style="accent-color:var(--primary)"></td>
+                <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}</td>
+                <td style="padding:10px"><span style="font-size:0.72rem;padding:2px 8px;border-radius:10px;background:rgba(99,102,241,0.18);color:#a5b4fc">${this._mallLabel(o.mall_key)}</span></td>
+                <td style="padding:10px;color:var(--text-muted);font-size:0.82rem">${o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : '-'}</td>
+                <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
+                <td style="padding:10px;font-size:0.88rem">${this._orderItemsSummary(o)}</td>
+                <td style="padding:10px;text-align:center">${this._orderQtySum(o)}</td>
+                <td style="padding:10px;text-align:center"><span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${o.status === 'shipping' ? 'rgba(34,197,94,0.18)' : (o.status === 'done' ? 'rgba(148,163,184,0.18)' : 'rgba(245,158,11,0.18)')};color:${o.status === 'shipping' ? '#22c55e' : (o.status === 'done' ? '#94a3b8' : '#f59e0b')}">${this._orderStatusLabel(o.status)}</span></td>
+                <td style="padding:10px;font-size:0.8rem;color:var(--text-muted)">${o.invoice_no ? `${o.courier || ''} ${o.invoice_no}` : '-'}</td>
+            </tr>`).join('') || `<tr><td colspan="9" style="padding:2rem;text-align:center;color:var(--text-muted)">주문이 없습니다. 카페24 동기화가 돌면 여기로 모입니다.</td></tr>`;
+
+        return `
+        <div class="glass" style="padding:2rem;border-radius:20px">
+            <div class="mobile-responsive-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;gap:1rem;flex-wrap:wrap">
+                <h2 style="display:flex;align-items:center;gap:8px;font-size:1.5rem;margin:0"><i class="ph ph-shopping-bag-open"></i> 주문/배송</h2>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                    <button class="btn-secondary" id="oms-sync-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-arrows-clockwise"></i> 카페24 주문 수집</button>
+                    <button class="btn-secondary" id="oms-export-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-download-simple"></i> 송장양식 다운로드</button>
+                    <button class="btn-primary" id="oms-upload-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem"><i class="ph ph-upload-simple"></i> 송장번호 업로드</button>
+                    <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
+                ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('all', '전체', counts.all)}
+            </div>
+            <div class="table-container" style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;min-width:720px">
+                    <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.8rem;text-align:left">
+                        <th style="padding:10px;text-align:center"><input type="checkbox" id="oms-chk-all" style="accent-color:var(--primary)"></th>
+                        <th style="padding:10px">주문번호</th><th style="padding:10px">몰</th><th style="padding:10px">주문일</th><th style="padding:10px">받는분</th>
+                        <th style="padding:10px">상품</th><th style="padding:10px;text-align:center">수량</th><th style="padding:10px;text-align:center">상태</th><th style="padding:10px">송장</th>
+                    </tr></thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>
+            <div style="margin-top:1rem;padding:1rem;background:rgba(var(--tint),0.03);border-radius:12px;font-size:0.82rem;color:var(--text-muted);line-height:1.7">
+                <b style="color:#e2e8f0">송장 처리 흐름</b><br>
+                ① <b>송장양식 다운로드</b> → 택배사 프로그램에서 운송장 출력 →
+                ② 운송장번호 받은 파일을 <b>송장번호 업로드</b>(CSV: 주문번호,택배사,송장번호) →
+                ③ 카페24에 배송중+운송장 자동 등록 ${ls && ls.result === 'dry_run' ? '<span style="color:#f59e0b">(현재 dry-run: 카페24 전송 없이 2179만 갱신)</span>' : ''}
+            </div>
+        </div>`;
+    }
+
+    bindOrdersEvents() {
+        this.appContainer.querySelectorAll('.oms-tab').forEach(t => t.onclick = () => this.setState({ orderFilter: t.dataset.f }));
+        const chkAll = document.getElementById('oms-chk-all');
+        if (chkAll) chkAll.onclick = () => this.appContainer.querySelectorAll('.oms-chk').forEach(c => { c.checked = chkAll.checked; });
+        const syncBtn = document.getElementById('oms-sync-btn');
+        if (syncBtn) syncBtn.onclick = () => this.runCafe24Sync();
+        const exportBtn = document.getElementById('oms-export-btn');
+        if (exportBtn) exportBtn.onclick = () => this.exportInvoiceTemplate();
+        const upBtn = document.getElementById('oms-upload-btn');
+        const fileEl = document.getElementById('oms-invoice-file');
+        if (upBtn && fileEl) {
+            upBtn.onclick = () => fileEl.click();
+            fileEl.onchange = (e) => { const f = e.target.files[0]; if (f) this.handleInvoiceUpload(f); e.target.value = ''; };
+        }
+    }
+
+    _csvCell(v) { const s = (v == null ? '' : String(v)).replace(/"/g, '""'); return `"${s}"`; }
+
+    exportInvoiceTemplate() {
+        const targets = (this.orders || []).filter(o => o.status === 'new' || o.status === 'ready');
+        if (!targets.length) { this.showToast('배송대상 주문이 없습니다.'); return; }
+        const header = ['주문번호', '받는분', '전화번호', '우편번호', '주소', '상품명', '수량', '메모'];
+        const lines = [header.map(this._csvCell).join(',')];
+        targets.forEach(o => {
+            lines.push([
+                o.order_id, o.receiver_name || o.buyer_name || '', o.receiver_phone || '',
+                o.receiver_zipcode || '', o.receiver_address || '',
+                this._orderItemsSummary(o), this._orderQtySum(o), o.memo || ''
+            ].map(v => this._csvCell(v)).join(','));
+        });
+        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        const today = new Date().toISOString().slice(0, 10);
+        a.href = URL.createObjectURL(blob);
+        a.download = `송장양식_${today}_${targets.length}건.csv`;
+        document.body.appendChild(a); a.click(); a.remove();
+        this.showToast(`${targets.length}건 송장양식을 내려받았습니다.`);
+    }
+
+    _parseCsv(text) {
+        // 간단 CSV 파서 (따옴표/콤마 처리)
+        const rows = [];
+        const lines = text.replace(/\r\n/g, '\n').replace(/^﻿/, '').split('\n').filter(l => l.trim());
+        for (const line of lines) {
+            const cells = []; let cur = '', inQ = false;
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (inQ) {
+                    if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+                    else if (ch === '"') inQ = false;
+                    else cur += ch;
+                } else {
+                    if (ch === '"') inQ = true;
+                    else if (ch === ',') { cells.push(cur); cur = ''; }
+                    else cur += ch;
+                }
+            }
+            cells.push(cur);
+            rows.push(cells.map(c => c.trim()));
+        }
+        return rows;
+    }
+
+    async handleInvoiceUpload(file) {
+        const text = await file.text();
+        const rows = this._parseCsv(text);
+        if (rows.length < 2) { this.showToast('업로드할 데이터가 없습니다.'); return; }
+        // 헤더 매핑: 주문번호 / 택배사 / 송장번호 (순서·헤더명 유연 처리)
+        const head = rows[0].map(h => h.replace(/\s/g, ''));
+        const idxOrder = head.findIndex(h => /주문(번호)?|order/i.test(h));
+        const idxCourier = head.findIndex(h => /택배사|courier|배송사/i.test(h));
+        const idxInv = head.findIndex(h => /송장|운송장|invoice|tracking/i.test(h));
+        if (idxOrder < 0 || idxInv < 0) { this.showToast('헤더에 "주문번호"와 "송장번호" 열이 필요합니다.'); return; }
+
+        const orders = [];
+        for (let i = 1; i < rows.length; i++) {
+            const r = rows[i];
+            const oid = r[idxOrder]; const inv = r[idxInv];
+            if (!oid || !inv) continue;
+            orders.push({ order_id: oid, invoice_no: inv, courier_name: idxCourier >= 0 ? r[idxCourier] : '' });
+        }
+        if (!orders.length) { this.showToast('유효한 행이 없습니다.'); return; }
+
+        // 주문번호로 몰 매칭 후 몰별로 그룹
+        const byMall = {};
+        let unmatched = 0;
+        orders.forEach(o => {
+            const found = (this.orders || []).find(x => String(x.order_id) === String(o.order_id));
+            const mk = found?.mall_key;
+            if (!mk) { unmatched++; return; }
+            (byMall[mk] = byMall[mk] || []).push(o);
+        });
+        const mallKeys = Object.keys(byMall);
+        if (!mallKeys.length) { this.showToast('업로드한 주문번호가 수집된 주문과 매칭되지 않습니다. (먼저 주문 수집)'); return; }
+
+        const ok = await this.showConfirm(`${orders.length - unmatched}건의 운송장을 카페24에 배송중으로 등록합니다.${unmatched ? ` (미매칭 ${unmatched}건 제외)` : ''} 계속할까요?`, '송장 일괄 등록');
+        if (!ok) return;
+        this.showToast(`${mallKeys.length}개 몰 / 총 ${orders.length - unmatched}건 등록 중...`);
+        let totalOk = 0, dry = false;
+        for (const mk of mallKeys) {
+            try {
+                const { data, error } = await this.supabase.functions.invoke('cafe24-shipping', { body: { mall: mk, orders: byMall[mk] } });
+                if (error) throw error;
+                totalOk += (data?.success || 0);
+                dry = dry || !!data?.dry_run;
+            } catch (e) {
+                this.showToast(`[${this._mallLabel(mk)}] 등록 실패: ` + (e.message || e));
+            }
+        }
+        this.showToast(dry ? `${totalOk}건 처리(dry-run: 카페24 전송 없이 2179만 갱신)` : `${totalOk}건 배송중 등록 완료`);
+        this._ordersLoaded = false;
+        await this.loadOrders();
+    }
+
+    async runCafe24Sync() {
+        this.showToast('카페24 주문 수집 중...');
+        try {
+            const { data, error } = await this.supabase.functions.invoke('cafe24-sync', { body: {} });
+            if (error) throw error;
+            this.showToast(`수집 완료: 신규 ${data?.orders_stored ?? 0}건 / 차감 ${data?.deducted ?? 0}건`);
+        } catch (e) {
+            this.showToast('수집 실패: ' + (e.message || e) + ' (연동 설정 확인)');
+        }
+        this._ordersLoaded = false;
+        await this.loadOrders();
+    }
+
+    // ============================================================
+    //  재고 관리 (카페24 연동 대상)
+    // ============================================================
+    async loadInventory() {
+        this._invLoading = true;
+        try {
+            const [items, listings, ledger, slog] = await Promise.all([
+                this.supabase.from('inventory_items').select('*').order('created_at', { ascending: true }),
+                this.supabase.from('channel_listings').select('*'),
+                this.supabase.from('inventory_ledger').select('*').order('created_at', { ascending: false }).limit(300),
+                this.supabase.from('sync_log').select('*').order('run_at', { ascending: false }).limit(1)
+            ]);
+            this.inventory = {
+                items: items.data || [], listings: listings.data || [],
+                ledger: ledger.data || [], lastSync: (slog.data || [])[0] || null
+            };
+            this._invLoaded = true;
+        } catch (e) {
+            this.showToast('재고 데이터를 불러오지 못했습니다. (스키마 설치 필요할 수 있음)');
+            this.inventory = { items: [], listings: [], ledger: [], lastSync: null };
+            this._invLoaded = true;
+        }
+        this._invLoading = false;
+        this.requestRender();
+    }
+
+    renderInventory() {
+        const inv = this.inventory || { items: [], listings: [], ledger: [], lastSync: null };
+        if (!this._invLoaded) {
+            return `<div class="glass" style="padding:3rem; border-radius:20px; text-align:center; color:var(--text-muted)">재고 데이터를 불러오는 중...</div>`;
+        }
+        const listingOf = (itemId) => (inv.listings || []).find(l => l.channel === 'cafe24' && l.inventory_item_id === itemId);
+        let items = inv.items;
+        if (this.invSelectedBrand && this.invSelectedBrand !== 'all') items = items.filter(i => i.brand_id === this.invSelectedBrand);
+
+        const ls = inv.lastSync;
+        const syncBadge = ls
+            ? `<span class="glass" style="padding:6px 12px; border-radius:20px; font-size:0.8rem; color:${ls.result === 'error' ? '#ef4444' : (ls.result === 'dry_run' ? '#f59e0b' : '#22c55e')}">
+                 <i class="ph ph-arrows-clockwise"></i> 마지막 동기화: ${new Date(ls.run_at).toLocaleString('ko-KR')} · ${ls.result}</span>`
+            : `<span class="glass" style="padding:6px 12px; border-radius:20px; font-size:0.8rem; color:var(--text-muted)"><i class="ph ph-plug"></i> 카페24 미연동</span>`;
+
+        const rows = items.map(i => {
+            const map = listingOf(i.id);
+            const low = i.on_hand <= i.safety_stock;
+            return `
+              <tr class="inv-row" style="border-bottom:1px solid var(--card-border)">
+                <td style="padding:12px; font-family:monospace; color:var(--text-muted)">${i.sku || '-'}</td>
+                <td style="padding:12px; font-weight:600">${i.name || '-'}</td>
+                <td style="padding:12px; color:var(--text-muted)">${i.option_name || '-'}</td>
+                <td style="padding:12px; color:var(--text-muted)">${this._brandNameById(i.brand_id)}</td>
+                <td style="padding:12px; text-align:center">
+                    <div style="display:inline-flex; align-items:center; gap:6px">
+                        <button class="inv-dec" data-id="${i.id}" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--card-border);background:rgba(var(--tint),0.05);color:white;cursor:pointer">−</button>
+                        <span style="min-width:42px; display:inline-block; font-weight:700; font-size:1.05rem; color:${low ? '#ef4444' : 'white'}">${i.on_hand}</span>
+                        <button class="inv-inc" data-id="${i.id}" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--card-border);background:rgba(var(--tint),0.05);color:white;cursor:pointer">+</button>
+                    </div>
+                    ${low ? '<div style="font-size:0.7rem;color:#ef4444;margin-top:2px">안전재고 이하</div>' : ''}
+                </td>
+                <td style="padding:12px; text-align:center; color:var(--text-muted)">${i.safety_stock}</td>
+                <td style="padding:12px; text-align:center">
+                    ${map && map.channel_variant_code
+                        ? `<span style="color:#22c55e;font-size:0.8rem"><i class="ph ph-check-circle"></i> ${map.channel_product_no || ''}/${map.channel_variant_code}</span>${map.allocated > 0 ? `<div style="font-size:0.72rem;color:#6366f1;margin-top:2px">배정 ${map.allocated}${map.sold ? ` · 판매 ${map.sold}` : ''}</div>` : '<div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px">전량 배분</div>'}`
+                        : `<span style="color:var(--text-muted);font-size:0.8rem">미매핑</span>`}
+                </td>
+                <td style="padding:12px; text-align:right; white-space:nowrap">
+                    <button class="inv-adjust btn-secondary" data-id="${i.id}" style="padding:5px 10px;border-radius:8px;font-size:0.78rem">조정</button>
+                    <button class="inv-map btn-secondary" data-id="${i.id}" style="padding:5px 10px;border-radius:8px;font-size:0.78rem">매핑</button>
+                    <button class="inv-log btn-secondary" data-id="${i.id}" style="padding:5px 10px;border-radius:8px;font-size:0.78rem">내역</button>
+                </td>
+              </tr>`;
+        }).join('');
+
+        const ledgerItems = this.invLedgerItemId
+            ? inv.ledger.filter(l => l.inventory_item_id === this.invLedgerItemId)
+            : inv.ledger;
+        const reasonLabel = { initial: '초기', restock: '입고', cafe24_order: '카페24판매', manual: '수동', adjust: '보정', return: '반품' };
+        const ledgerRows = ledgerItems.slice(0, 60).map(l => {
+            const it = inv.items.find(x => x.id === l.inventory_item_id);
+            return `<tr style="border-bottom:1px solid var(--card-border)">
+                <td style="padding:8px;color:var(--text-muted);font-size:0.8rem">${new Date(l.created_at).toLocaleString('ko-KR')}</td>
+                <td style="padding:8px;font-size:0.85rem">${it ? it.name : '?'}</td>
+                <td style="padding:8px;text-align:center"><span style="font-size:0.72rem;padding:2px 8px;border-radius:10px;background:rgba(var(--tint),0.08)">${reasonLabel[l.reason] || l.reason}</span></td>
+                <td style="padding:8px;text-align:right;font-weight:700;color:${l.delta >= 0 ? '#22c55e' : '#ef4444'}">${l.delta >= 0 ? '+' : ''}${l.delta}</td>
+                <td style="padding:8px;color:var(--text-muted);font-size:0.8rem">${l.note || l.ref || ''}</td>
+            </tr>`;
+        }).join('') || `<tr><td colspan="5" style="padding:1.5rem;text-align:center;color:var(--text-muted)">변동 내역이 없습니다.</td></tr>`;
+
+        return `
+        <div class="glass" style="padding:2rem; border-radius:20px;">
+            <div class="mobile-responsive-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; gap:1rem; flex-wrap:wrap">
+                <h2 style="display:flex; align-items:center; gap:8px; font-size:1.5rem; margin:0"><i class="ph ph-package"></i> 재고 관리</h2>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+                    ${syncBadge}
+                    <select id="inv-brand-filter" class="glass brand-select" style="color:white;border:1px solid rgba(var(--tint),0.1);border-radius:8px;padding:6px 12px;cursor:pointer">
+                        <option value="all" style="background:#0f172a" ${(this.invSelectedBrand || 'all') === 'all' ? 'selected' : ''}>전체 브랜드</option>
+                        ${(mockData.brands || []).map(b => `<option value="${b.id}" style="background:#0f172a" ${this.invSelectedBrand === b.id ? 'selected' : ''}>${b.name}</option>`).join('')}
+                    </select>
+                    <button class="btn-secondary" id="inv-cafe24-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-plug-charging"></i> 카페24 연동</button>
+                    <button class="btn-primary" id="inv-add-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem">+ 품목 추가</button>
+                </div>
+            </div>
+
+            <div class="table-container" style="overflow-x:auto">
+                <table style="width:100%; border-collapse:collapse; min-width:780px">
+                    <thead><tr style="border-bottom:2px solid var(--card-border); color:var(--text-muted); font-size:0.82rem; text-align:left">
+                        <th style="padding:12px">SKU</th><th style="padding:12px">품목명</th><th style="padding:12px">옵션</th>
+                        <th style="padding:12px">브랜드</th><th style="padding:12px; text-align:center">현재고</th>
+                        <th style="padding:12px; text-align:center">안전재고</th><th style="padding:12px; text-align:center">카페24</th>
+                        <th style="padding:12px; text-align:right">작업</th>
+                    </tr></thead>
+                    <tbody>${rows || `<tr><td colspan="8" style="padding:2rem;text-align:center;color:var(--text-muted)">등록된 품목이 없습니다. "+ 품목 추가"로 시작하세요.</td></tr>`}</tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:2rem">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+                    <h3 style="margin:0;font-size:1.05rem;display:flex;align-items:center;gap:6px"><i class="ph ph-clock-counter-clockwise"></i> 재고 변동 내역 ${this.invLedgerItemId ? '(필터됨)' : ''}</h3>
+                    ${this.invLedgerItemId ? `<button class="btn-secondary" id="inv-log-clear" style="padding:5px 12px;border-radius:8px;font-size:0.8rem">전체 보기</button>` : ''}
+                </div>
+                <div class="table-container" style="overflow-x:auto; max-height:320px; overflow-y:auto">
+                    <table style="width:100%; border-collapse:collapse; min-width:560px">
+                        <thead><tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:0.78rem;text-align:left">
+                            <th style="padding:8px">시각</th><th style="padding:8px">품목</th><th style="padding:8px;text-align:center">사유</th><th style="padding:8px;text-align:right">증감</th><th style="padding:8px">비고</th>
+                        </tr></thead>
+                        <tbody>${ledgerRows}</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    bindInventoryEvents() {
+        const bf = document.getElementById('inv-brand-filter');
+        if (bf) bf.onchange = () => this.setState({ invSelectedBrand: bf.value });
+        const addBtn = document.getElementById('inv-add-btn');
+        if (addBtn) addBtn.onclick = () => this.showInventoryItemModal();
+        const cafeBtn = document.getElementById('inv-cafe24-btn');
+        if (cafeBtn) cafeBtn.onclick = () => this.showCafe24Modal();
+        const logClear = document.getElementById('inv-log-clear');
+        if (logClear) logClear.onclick = () => this.setState({ invLedgerItemId: null });
+
+        this.appContainer.querySelectorAll('.inv-inc').forEach(b => b.onclick = () => this.quickAdjust(b.dataset.id, 1));
+        this.appContainer.querySelectorAll('.inv-dec').forEach(b => b.onclick = () => this.quickAdjust(b.dataset.id, -1));
+        this.appContainer.querySelectorAll('.inv-adjust').forEach(b => b.onclick = () => this.showAdjustModal(b.dataset.id));
+        this.appContainer.querySelectorAll('.inv-map').forEach(b => b.onclick = () => this.showMappingModal(b.dataset.id));
+        this.appContainer.querySelectorAll('.inv-log').forEach(b => b.onclick = () => this.setState({ invLedgerItemId: b.dataset.id }));
+    }
+
+    async quickAdjust(itemId, delta) {
+        const it = (this.inventory.items || []).find(i => i.id === itemId);
+        if (it && it.on_hand + delta < 0) { this.showToast('재고는 0 미만이 될 수 없습니다.'); return; }
+        const { error } = await this.supabase.from('inventory_ledger').insert([{
+            inventory_item_id: itemId, delta, reason: 'manual', note: '빠른 조정', created_by: this._actor()
+        }]);
+        if (error) { this.showToast('조정 실패: ' + error.message); return; }
+        await this.loadInventory();
+    }
+
+    showInventoryItemModal() {
+        const c = document.getElementById('global-modal-container');
+        if (!c) return;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in" style="width:90%;max-width:480px;padding:2rem;border-radius:20px;position:relative">
+            <h2 style="margin:0 0 1.5rem;font-size:1.2rem"><i class="ph ph-package"></i> 새 재고 품목</h2>
+            <div style="display:flex;flex-direction:column;gap:12px">
+                <input id="ii-sku" class="login-input" placeholder="SKU (예: BNAP-TOP-RED-90)">
+                <input id="ii-name" class="login-input" placeholder="품목명 (예: 베이비 우주복)">
+                <input id="ii-opt" class="login-input" placeholder="옵션 (예: 레드 / 90)">
+                <select id="ii-mall" class="login-input">${this._mallOptions('')}</select>
+                <select id="ii-brand" class="login-input">${this._brandOptions('')}</select>
+                <div style="display:flex;gap:10px">
+                    <input id="ii-qty" type="number" class="login-input" placeholder="초기 재고" value="0">
+                    <input id="ii-safe" type="number" class="login-input" placeholder="안전재고" value="0">
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:1.5rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:10px 20px;border-radius:10px">취소</button>
+                <button id="ii-save" class="btn-primary" style="padding:10px 20px;border-radius:10px">저장</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        document.getElementById('ii-save').onclick = () => this.saveInventoryItem();
+    }
+
+    async saveInventoryItem() {
+        const sku = document.getElementById('ii-sku').value.trim();
+        const name = document.getElementById('ii-name').value.trim();
+        if (!sku || !name) { this.showToast('SKU와 품목명은 필수입니다.'); return; }
+        const qty = parseInt(document.getElementById('ii-qty').value || '0', 10);
+        const safe = parseInt(document.getElementById('ii-safe').value || '0', 10);
+        const brand = document.getElementById('ii-brand').value || null;
+        const mall = document.getElementById('ii-mall').value || null;
+        const opt = document.getElementById('ii-opt').value.trim() || null;
+        const { data, error } = await this.supabase.from('inventory_items')
+            .insert([{ sku, name, option_name: opt, brand_id: brand, mall_key: mall, safety_stock: safe, on_hand: 0 }]).select().single();
+        if (error) { this.showToast('저장 실패: ' + error.message); return; }
+        if (qty !== 0 && data) {
+            await this.supabase.from('inventory_ledger').insert([{
+                inventory_item_id: data.id, delta: qty, reason: 'initial', note: '초기 등록', created_by: this._actor()
+            }]);
+        }
+        this.closeGlobalModal();
+        await this.loadInventory();
+        this.showToast('품목이 추가되었습니다.');
+    }
+
+    showAdjustModal(itemId) {
+        const it = (this.inventory.items || []).find(i => i.id === itemId);
+        if (!it) return;
+        const c = document.getElementById('global-modal-container');
+        c.innerHTML = `
+        <div class="glass modal-content fade-in" style="width:90%;max-width:420px;padding:2rem;border-radius:20px">
+            <h2 style="margin:0 0 0.5rem;font-size:1.15rem"><i class="ph ph-sliders"></i> 재고 조정</h2>
+            <p style="color:var(--text-muted);margin:0 0 1.2rem;font-size:0.85rem">${it.name} · 현재 ${it.on_hand}개</p>
+            <div style="display:flex;flex-direction:column;gap:12px">
+                <select id="adj-reason" class="login-input">
+                    <option value="restock" style="background:#0f172a">입고 (+)</option>
+                    <option value="return" style="background:#0f172a">반품 입고 (+)</option>
+                    <option value="manual" style="background:#0f172a">수동 조정</option>
+                    <option value="adjust" style="background:#0f172a">실사 보정</option>
+                </select>
+                <input id="adj-delta" type="number" class="login-input" placeholder="증감 수량 (예: +10 또는 -3)">
+                <input id="adj-note" class="login-input" placeholder="비고 (예: 29CM 판매분 차감)">
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:1.5rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:10px 20px;border-radius:10px">취소</button>
+                <button id="adj-save" class="btn-primary" style="padding:10px 20px;border-radius:10px">적용</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        document.getElementById('adj-save').onclick = () => this.saveAdjust(itemId);
+    }
+
+    async saveAdjust(itemId) {
+        const delta = parseInt(document.getElementById('adj-delta').value || '0', 10);
+        if (!delta) { this.showToast('증감 수량을 입력하세요.'); return; }
+        const reason = document.getElementById('adj-reason').value;
+        const note = document.getElementById('adj-note').value.trim() || null;
+        const it = (this.inventory.items || []).find(i => i.id === itemId);
+        if (it && it.on_hand + delta < 0) { this.showToast('재고는 0 미만이 될 수 없습니다.'); return; }
+        const { error } = await this.supabase.from('inventory_ledger').insert([{
+            inventory_item_id: itemId, delta, reason, note, created_by: this._actor()
+        }]);
+        if (error) { this.showToast('조정 실패: ' + error.message); return; }
+        this.closeGlobalModal();
+        await this.loadInventory();
+    }
+
+    showMappingModal(itemId) {
+        const it = (this.inventory.items || []).find(i => i.id === itemId);
+        const map = (this.inventory.listings || []).find(l => l.channel === 'cafe24' && l.inventory_item_id === itemId);
+        const c = document.getElementById('global-modal-container');
+        c.innerHTML = `
+        <div class="glass modal-content fade-in" style="width:90%;max-width:460px;padding:2rem;border-radius:20px">
+            <h2 style="margin:0 0 0.5rem;font-size:1.15rem"><i class="ph ph-link"></i> 카페24 품목 매핑</h2>
+            <p style="color:var(--text-muted);margin:0 0 1.2rem;font-size:0.85rem">${it ? it.name : ''} ↔ 카페24 상품/품목</p>
+            <div style="display:flex;flex-direction:column;gap:12px">
+                <select id="map-mall" class="login-input">${this._mallOptions(map?.mall_key || it?.mall_key || '')}</select>
+                <input id="map-pno" class="login-input" placeholder="카페24 product_no (상품번호)" value="${map?.channel_product_no || ''}">
+                <input id="map-vcode" class="login-input" placeholder="카페24 variant_code (품목코드)" value="${map?.channel_variant_code || ''}">
+                <input id="map-alloc" type="number" class="login-input" placeholder="이 채널 배정 수량 (비우면 전량 배분)" value="${map?.allocated || ''}">
+                <p style="color:var(--text-muted);font-size:0.78rem;margin:0">몰·상품번호·품목코드를 입력. <b>배정 수량</b>을 넣으면 그만큼만 이 채널에 뿌려요(오버셀 방지). 비우면 전량. 카페24 관리자 → 상품관리에서 코드 확인.</p>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:1.5rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:10px 20px;border-radius:10px">취소</button>
+                <button id="map-save" class="btn-primary" style="padding:10px 20px;border-radius:10px">저장</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        document.getElementById('map-save').onclick = () => this.saveMapping(itemId);
+    }
+
+    async saveMapping(itemId) {
+        const pno = document.getElementById('map-pno').value.trim() || null;
+        const vcode = document.getElementById('map-vcode').value.trim() || null;
+        const mall = document.getElementById('map-mall').value || null;
+        const allocRaw = document.getElementById('map-alloc').value.trim();
+        const allocated = allocRaw === '' ? 0 : Math.max(parseInt(allocRaw, 10) || 0, 0);
+        if (!mall) { this.showToast('몰을 선택하세요. (없으면 "카페24 연동"에서 몰 등록)'); return; }
+        const existing = (this.inventory.listings || []).find(l => l.channel === 'cafe24' && l.inventory_item_id === itemId);
+        let error;
+        if (existing) {
+            ({ error } = await this.supabase.from('channel_listings').update({ mall_key: mall, channel_product_no: pno, channel_variant_code: vcode, allocated }).eq('id', existing.id));
+        } else {
+            ({ error } = await this.supabase.from('channel_listings').insert([{ inventory_item_id: itemId, channel: 'cafe24', mall_key: mall, channel_product_no: pno, channel_variant_code: vcode, allocated }]));
+        }
+        if (error) { this.showToast('매핑 저장 실패: ' + error.message); return; }
+        this.closeGlobalModal();
+        await this.loadInventory();
+        this.showToast('카페24 매핑이 저장되었습니다.');
+    }
+
+    showCafe24Modal() {
+        const c = document.getElementById('global-modal-container');
+        const malls = this.malls || [];
+        const mallRows = malls.map(m => `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border:1px solid var(--card-border);border-radius:10px;margin-bottom:8px">
+                <div>
+                    <div style="font-weight:600">${m.label} <span style="font-size:0.72rem;color:var(--text-muted)">${m.cafe24_mall_id || ''}.cafe24.com</span></div>
+                    <div style="font-size:0.75rem;color:${m.connected ? '#22c55e' : '#f59e0b'}">${m.connected ? '● 연동됨' : '○ 미인증'}</div>
+                </div>
+                <div style="display:flex;gap:6px">
+                    <button class="c24-auth btn-primary" data-key="${m.mall_key}" style="padding:6px 12px;border-radius:8px;font-size:0.78rem">${m.connected ? '재인증' : '인증'}</button>
+                </div>
+            </div>`).join('') || '<p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 8px">아직 등록된 몰이 없습니다. 아래에서 추가하세요.</p>';
+
+        c.innerHTML = `
+        <div class="glass modal-content fade-in" style="width:90%;max-width:560px;padding:2rem;border-radius:20px;max-height:88vh;overflow-y:auto">
+            <h2 style="margin:0 0 1rem;font-size:1.2rem"><i class="ph ph-plug-charging"></i> 카페24 몰 연동</h2>
+
+            <div style="margin-bottom:1.25rem">${mallRows}</div>
+
+            <details style="margin-bottom:1rem">
+                <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;margin-bottom:8px"><i class="ph ph-plus-circle"></i> 새 몰 등록</summary>
+                <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+                    <input id="c24-key" class="login-input" placeholder="몰 식별자 영문 (예: hiheiho)">
+                    <input id="c24-label" class="login-input" placeholder="표시명 (예: 하이헤이호)">
+                    <input id="c24-mallid" class="login-input" placeholder="카페24 몰아이디 (xxx.cafe24.com 의 xxx)">
+                    <input id="c24-cid" class="login-input" placeholder="Client ID">
+                    <input id="c24-secret" class="login-input" placeholder="Client Secret" type="password">
+                    <select id="c24-brand" class="login-input">${this._brandOptions('')}</select>
+                    <button id="c24-register" class="btn-primary" style="padding:10px;border-radius:10px">몰 등록</button>
+                </div>
+            </details>
+
+            <ol style="color:var(--text-muted);font-size:0.82rem;line-height:1.8;padding-left:1.2rem;margin:0 0 0.5rem">
+                <li>각 브랜드 카페24 개발자센터에서 앱 생성 → Client ID/Secret 발급 (Redirect URL = <code>${this._oauthUrl('KEY').replace('?mall=KEY', '')}</code>)</li>
+                <li>Edge Functions(cafe24-oauth/sync/shipping) 배포돼 있어야 인증 버튼이 작동합니다</li>
+                <li>등록 → 인증 → 기본 dry-run으로 검증 후 실연동</li>
+            </ol>
+            <div style="display:flex;justify-content:flex-end;margin-top:1rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:10px 20px;border-radius:10px">닫기</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        const reg = document.getElementById('c24-register');
+        if (reg) reg.onclick = () => this.registerMall();
+        c.querySelectorAll('.c24-auth').forEach(b => b.onclick = () => this.authMall(b.dataset.key));
+    }
+
+    async registerMall() {
+        const key = (document.getElementById('c24-key').value || '').trim().toLowerCase();
+        const label = (document.getElementById('c24-label').value || '').trim();
+        const mallId = (document.getElementById('c24-mallid').value || '').trim();
+        const cid = (document.getElementById('c24-cid').value || '').trim();
+        const secret = (document.getElementById('c24-secret').value || '').trim();
+        const brand = document.getElementById('c24-brand').value || null;
+        if (!key || !label || !mallId || !cid || !secret) { this.showToast('식별자·표시명·몰아이디·Client ID/Secret 모두 필요합니다.'); return; }
+        if (!/^[a-z0-9_]+$/.test(key)) { this.showToast('식별자는 영문 소문자/숫자/밑줄만 가능합니다.'); return; }
+
+        const { error: mErr } = await this.supabase.from('malls')
+            .insert([{ mall_key: key, label, cafe24_mall_id: mallId, brand_id: brand, channel: 'cafe24' }]);
+        if (mErr) { this.showToast('몰 등록 실패: ' + mErr.message); return; }
+        const { error: sErr } = await this.supabase.from('channel_sync_state')
+            .insert([{ mall_key: key, channel: 'cafe24', cafe24_mall_id: mallId, client_id: cid, client_secret: secret, dry_run: true }]);
+        if (sErr) { this.showToast('자격증명 저장 실패: ' + sErr.message + ' (몰은 등록됨)'); }
+        this._mallsLoaded = false;
+        await this.loadMalls();
+        this.showToast(`${label} 몰 등록됨. "인증" 버튼으로 카페24 로그인하세요.`);
+        this.showCafe24Modal();
+    }
+
+    authMall(key) {
+        const url = this._oauthUrl(key);
+        window.open(url, '_blank');
+        this.showToast('새 탭에서 카페24 인증을 완료하세요. 완료 후 이 창을 새로고침하면 "연동됨"으로 바뀝니다.');
+    }
+
+    // ============================================================
+    //  노션식: 페이지 / 위키
+    // ============================================================
+    async loadPages() {
+        this._pagesLoading = true;
+        try {
+            const { data } = await this.supabase.from('pages').select('*').order('sort_order', { ascending: true });
+            this.pages = data || [];
+            this._pagesLoaded = true;
+        } catch (e) { this.showToast('페이지를 불러오지 못했습니다.'); this.pages = []; this._pagesLoaded = true; }
+        this._pagesLoading = false;
+        this.requestRender();
+    }
+
+    _renderPageTree(parentId, depth) {
+        const children = (this.pages || []).filter(p => (p.parent_id || null) === parentId);
+        return children.map(p => `
+            <div>
+                <div class="page-tree-item ${this.activePageId === p.id ? 'active' : ''}" data-pid="${p.id}"
+                     style="display:flex;align-items:center;gap:6px;padding:6px 8px;padding-left:${10 + depth * 14}px;border-radius:8px;cursor:pointer;font-size:0.88rem;${this.activePageId === p.id ? 'background:rgba(99,102,241,0.18)' : ''}">
+                    <span>${p.icon || '📄'}</span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.title || '제목 없음'}</span>
+                    <button class="page-add-child" data-pid="${p.id}" title="하위 페이지" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.9rem">+</button>
+                </div>
+                ${this._renderPageTree(p.id, depth + 1)}
+            </div>`).join('');
+    }
+
+    renderPagesView() {
+        if (!this._pagesLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">페이지를 불러오는 중...</div>`;
+        const active = (this.pages || []).find(p => p.id === this.activePageId);
+        const editing = this._pageEditing;
+        return `
+        <div style="display:flex;gap:1rem;height:calc(100vh - 160px);min-height:480px">
+            <div class="glass" style="width:260px;flex-shrink:0;padding:1rem;border-radius:16px;overflow-y:auto">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+                    <h3 style="margin:0;font-size:1rem"><i class="ph ph-note-pencil"></i> 페이지</h3>
+                    <button id="page-new-root" class="btn-secondary" style="padding:4px 10px;border-radius:8px;font-size:0.8rem">+ 새</button>
+                </div>
+                ${this._renderPageTree(null, 0) || '<p style="color:var(--text-muted);font-size:0.82rem;padding:8px">아직 페이지가 없습니다.</p>'}
+            </div>
+            <div class="glass" style="flex:1;padding:2rem;border-radius:16px;overflow-y:auto">
+                ${!active ? `<div style="color:var(--text-muted);text-align:center;margin-top:4rem"><i class="ph ph-file-dashed" style="font-size:2.5rem"></i><p>왼쪽에서 페이지를 선택하거나 새로 만드세요.</p></div>` : `
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;gap:1rem">
+                        <input id="page-title" value="${(active.title || '').replace(/"/g, '&quot;')}" style="flex:1;background:none;border:none;color:white;font-size:1.6rem;font-weight:700;outline:none">
+                        <div style="display:flex;gap:8px">
+                            <button id="page-toggle-edit" class="btn-secondary" style="padding:6px 14px;border-radius:8px;font-size:0.82rem">${editing ? '미리보기' : '편집'}</button>
+                            <button id="page-delete" class="btn-secondary" style="padding:6px 12px;border-radius:8px;font-size:0.82rem;color:#ef4444">삭제</button>
+                        </div>
+                    </div>
+                    ${editing
+                        ? `<textarea id="page-content" style="width:100%;height:calc(100% - 90px);min-height:340px;background:rgba(0,0,0,0.2);border:1px solid var(--card-border);border-radius:12px;color:white;padding:1rem;font-size:0.95rem;line-height:1.7;resize:vertical;outline:none;font-family:inherit" placeholder="# 제목\n마크다운으로 작성하세요. **굵게**, *기울임*, - 목록, \`코드\`">${(active.content || '').replace(/</g, '&lt;')}</textarea>
+                           <p style="color:var(--text-muted);font-size:0.78rem;margin-top:8px">자동 저장됩니다 (편집창 벗어날 때).</p>`
+                        : `<div class="page-render" style="line-height:1.8;color:#e2e8f0">${this._mdToHtml(active.content)}</div>`}
+                `}
+            </div>
+        </div>`;
+    }
+
+    _mdToHtml(md) {
+        if (!md || !md.trim()) return '<p style="color:var(--text-muted)">내용이 없습니다. "편집"을 눌러 작성하세요.</p>';
+        let h = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/^### (.*)$/gm, '<h3 style="margin:1rem 0 .4rem">$1</h3>')
+            .replace(/^## (.*)$/gm, '<h2 style="margin:1.2rem 0 .5rem">$1</h2>')
+            .replace(/^# (.*)$/gm, '<h1 style="margin:1.2rem 0 .6rem">$1</h1>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`([^`]+)`/g, '<code style="background:rgba(var(--tint),0.1);padding:2px 6px;border-radius:4px">$1</code>')
+            .replace(/^\s*[-*] (.*)$/gm, '<li>$1</li>');
+        h = h.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul style="padding-left:1.4rem;margin:.5rem 0">$1</ul>');
+        h = h.split(/\n{2,}/).map(b => b.match(/^<(h\d|ul|li)/) ? b : `<p style="margin:.5rem 0">${b.replace(/\n/g, '<br>')}</p>`).join('');
+        return h;
+    }
+
+    bindPagesEvents() {
+        const newRoot = document.getElementById('page-new-root');
+        if (newRoot) newRoot.onclick = () => this.createPage(null);
+        this.appContainer.querySelectorAll('.page-tree-item').forEach(el => {
+            el.onclick = (e) => { if (e.target.closest('.page-add-child')) return; this.setState({ activePageId: el.dataset.pid, _pageEditing: false }); };
+        });
+        this.appContainer.querySelectorAll('.page-add-child').forEach(b => b.onclick = (e) => { e.stopPropagation(); this.createPage(b.dataset.pid); });
+
+        const titleEl = document.getElementById('page-title');
+        if (titleEl) titleEl.onblur = () => this.savePageField('title', titleEl.value);
+        const toggle = document.getElementById('page-toggle-edit');
+        if (toggle) toggle.onclick = () => {
+            const ta = document.getElementById('page-content');
+            if (ta && this._pageEditing) this.savePageField('content', ta.value, true);
+            else this.setState({ _pageEditing: true });
+        };
+        const ta = document.getElementById('page-content');
+        if (ta) ta.onblur = () => this.savePageField('content', ta.value);
+        const del = document.getElementById('page-delete');
+        if (del) del.onclick = () => this.deletePage(this.activePageId);
+    }
+
+    async createPage(parentId) {
+        const { data, error } = await this.supabase.from('pages')
+            .insert([{ title: '제목 없음', parent_id: parentId, sort_order: (this.pages || []).length, created_by: this._actor() }]).select().single();
+        if (error) { this.showToast('페이지 생성 실패: ' + error.message); return; }
+        this._pagesLoaded = false;
+        await this.loadPages();
+        this.setState({ activePageId: data.id, _pageEditing: true });
+    }
+
+    async savePageField(field, value, togglePreview) {
+        if (!this.activePageId) return;
+        const p = (this.pages || []).find(x => x.id === this.activePageId);
+        if (p && p[field] === value && !togglePreview) return;
+        const { error } = await this.supabase.from('pages').update({ [field]: value }).eq('id', this.activePageId);
+        if (error) { this.showToast('저장 실패: ' + error.message); return; }
+        if (p) p[field] = value;
+        if (togglePreview) this.setState({ _pageEditing: false });
+    }
+
+    async deletePage(pageId) {
+        const ok = await this.showConfirm('이 페이지와 하위 페이지가 모두 삭제됩니다. 계속할까요?', '페이지 삭제');
+        if (!ok) return;
+        const { error } = await this.supabase.from('pages').delete().eq('id', pageId);
+        if (error) { this.showToast('삭제 실패: ' + error.message); return; }
+        this._pagesLoaded = false;
+        this.activePageId = null;
+        await this.loadPages();
+    }
+
+    // ============================================================
+    //  노션식: 보드(칸반) + 표 — board_cards 공유
+    // ============================================================
+    async loadCards() {
+        this._cardsLoading = true;
+        try {
+            const { data } = await this.supabase.from('board_cards').select('*').order('sort_order', { ascending: true });
+            this.cards = data || [];
+            this._cardsLoaded = true;
+        } catch (e) { this.showToast('보드를 불러오지 못했습니다.'); this.cards = []; this._cardsLoaded = true; }
+        this._cardsLoading = false;
+        this.requestRender();
+    }
+
+    _kanbanColumns() { return [{ id: 'todo', label: '할 일' }, { id: 'doing', label: '진행 중' }, { id: 'done', label: '완료' }]; }
+
+    renderKanban() {
+        if (!this._cardsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">보드를 불러오는 중...</div>`;
+        const cols = this._kanbanColumns();
+        return `
+        <div class="glass" style="padding:1.5rem;border-radius:20px">
+            <h2 style="margin:0 0 1.25rem;font-size:1.5rem"><i class="ph ph-kanban"></i> 보드</h2>
+            <div style="display:flex;gap:1rem;overflow-x:auto;padding-bottom:8px">
+                ${cols.map(col => {
+                    const cards = (this.cards || []).filter(c => c.status === col.id);
+                    return `
+                    <div class="kanban-col" data-status="${col.id}" style="flex:1;min-width:260px;background:rgba(var(--tint),0.03);border:1px solid var(--card-border);border-radius:14px;padding:12px">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                            <span style="font-weight:600;font-size:0.92rem">${col.label} <span style="color:var(--text-muted)">${cards.length}</span></span>
+                            <button class="kanban-add" data-status="${col.id}" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem">+</button>
+                        </div>
+                        <div class="kanban-dropzone" data-status="${col.id}" style="min-height:60px;display:flex;flex-direction:column;gap:8px">
+                            ${cards.map(c => `
+                                <div class="kanban-card" draggable="true" data-id="${c.id}" style="background:var(--card-bg,rgba(var(--tint),0.06));border:1px solid var(--card-border);border-radius:10px;padding:10px;cursor:grab">
+                                    <div style="font-size:0.9rem;font-weight:600;margin-bottom:4px">${c.title}</div>
+                                    ${c.body ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">${c.body}</div>` : ''}
+                                    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                                        ${c.brand_id ? `<span style="font-size:0.68rem;padding:2px 8px;border-radius:10px;background:rgba(99,102,241,0.2)">${this._brandNameById(c.brand_id)}</span>` : ''}
+                                        ${c.assignee ? `<span style="font-size:0.68rem;color:var(--text-muted)">@${c.assignee}</span>` : ''}
+                                        ${c.due_date ? `<span style="font-size:0.68rem;color:var(--text-muted)">📅 ${c.due_date}</span>` : ''}
+                                        <button class="kanban-del" data-id="${c.id}" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem">✕</button>
+                                    </div>
+                                </div>`).join('')}
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>`;
+    }
+
+    bindKanbanEvents() {
+        this.appContainer.querySelectorAll('.kanban-add').forEach(b => b.onclick = () => this.createCard(b.dataset.status));
+        this.appContainer.querySelectorAll('.kanban-del').forEach(b => b.onclick = (e) => { e.stopPropagation(); this.deleteCard(b.dataset.id); });
+        this.appContainer.querySelectorAll('.kanban-card').forEach(card => {
+            card.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', card.dataset.id); card.style.opacity = '0.4'; });
+            card.addEventListener('dragend', () => { card.style.opacity = '1'; });
+        });
+        this.appContainer.querySelectorAll('.kanban-dropzone').forEach(zone => {
+            zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.background = 'rgba(99,102,241,0.08)'; });
+            zone.addEventListener('dragleave', () => { zone.style.background = 'none'; });
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault(); zone.style.background = 'none';
+                const id = e.dataTransfer.getData('text/plain');
+                this.moveCard(id, zone.dataset.status);
+            });
+        });
+    }
+
+    async createCard(status) {
+        const title = (window.prompt && window.prompt('카드 제목')) || '';
+        if (!title.trim()) return;
+        const { error } = await this.supabase.from('board_cards')
+            .insert([{ title: title.trim(), status, sort_order: (this.cards || []).length, created_by: this._actor() }]);
+        if (error) { this.showToast('카드 생성 실패: ' + error.message); return; }
+        this._cardsLoaded = false; await this.loadCards();
+    }
+
+    async moveCard(id, status) {
+        const card = (this.cards || []).find(c => c.id === id);
+        if (!card || card.status === status) return;
+        card.status = status;
+        const { error } = await this.supabase.from('board_cards').update({ status }).eq('id', id);
+        if (error) { this.showToast('이동 실패: ' + error.message); this._cardsLoaded = false; await this.loadCards(); return; }
+        this.requestRender();
+    }
+
+    async deleteCard(id) {
+        const { error } = await this.supabase.from('board_cards').delete().eq('id', id);
+        if (error) { this.showToast('삭제 실패: ' + error.message); return; }
+        this._cardsLoaded = false; await this.loadCards();
+    }
+
+    async updateCardField(id, field, value) {
+        const card = (this.cards || []).find(c => c.id === id);
+        if (card) card[field] = value;
+        const { error } = await this.supabase.from('board_cards').update({ [field]: value || null }).eq('id', id);
+        if (error) this.showToast('수정 실패: ' + error.message);
+    }
+
+    renderTableView() {
+        if (!this._cardsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">표를 불러오는 중...</div>`;
+        const statusOpt = { todo: '할 일', doing: '진행 중', done: '완료' };
+        let rows = [...(this.cards || [])];
+        const f = this.tableFilter || 'all';
+        if (f !== 'all') rows = rows.filter(c => c.status === f);
+        const sortKey = this.tableSort || 'created_at';
+        rows.sort((a, b) => String(a[sortKey] || '').localeCompare(String(b[sortKey] || '')));
+        return `
+        <div class="glass" style="padding:2rem;border-radius:20px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
+                <h2 style="margin:0;font-size:1.5rem"><i class="ph ph-table"></i> 표</h2>
+                <div style="display:flex;gap:10px;align-items:center">
+                    <select id="table-filter" class="glass brand-select" style="color:white;border:1px solid rgba(var(--tint),0.1);border-radius:8px;padding:6px 12px">
+                        <option value="all" style="background:#0f172a" ${f === 'all' ? 'selected' : ''}>전체 상태</option>
+                        ${Object.entries(statusOpt).map(([k, v]) => `<option value="${k}" style="background:#0f172a" ${f === k ? 'selected' : ''}>${v}</option>`).join('')}
+                    </select>
+                    <button class="btn-primary" id="table-add" style="padding:8px 16px;border-radius:10px">+ 행 추가</button>
+                </div>
+            </div>
+            <div class="table-container" style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;min-width:680px">
+                    <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.82rem;text-align:left">
+                        <th class="tbl-sort" data-k="title" style="padding:12px;cursor:pointer">제목 ⇅</th>
+                        <th class="tbl-sort" data-k="status" style="padding:12px;cursor:pointer">상태 ⇅</th>
+                        <th class="tbl-sort" data-k="assignee" style="padding:12px;cursor:pointer">담당 ⇅</th>
+                        <th class="tbl-sort" data-k="due_date" style="padding:12px;cursor:pointer">마감 ⇅</th>
+                        <th style="padding:12px">브랜드</th><th style="padding:12px;text-align:right">작업</th>
+                    </tr></thead>
+                    <tbody>
+                        ${rows.map(c => `
+                        <tr style="border-bottom:1px solid var(--card-border)">
+                            <td style="padding:10px"><input class="tbl-edit" data-id="${c.id}" data-f="title" value="${(c.title || '').replace(/"/g, '&quot;')}" style="background:none;border:none;color:white;width:100%;outline:none;font-size:0.9rem"></td>
+                            <td style="padding:10px">
+                                <select class="tbl-edit" data-id="${c.id}" data-f="status" style="background:rgba(var(--tint),0.05);border:1px solid var(--card-border);border-radius:6px;color:white;padding:4px 8px">
+                                    ${Object.entries(statusOpt).map(([k, v]) => `<option value="${k}" style="background:#0f172a" ${c.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+                                </select>
+                            </td>
+                            <td style="padding:10px"><input class="tbl-edit" data-id="${c.id}" data-f="assignee" value="${(c.assignee || '').replace(/"/g, '&quot;')}" placeholder="-" style="background:none;border:none;color:white;width:90px;outline:none;font-size:0.9rem"></td>
+                            <td style="padding:10px"><input type="date" class="tbl-edit" data-id="${c.id}" data-f="due_date" value="${c.due_date || ''}" style="background:none;border:none;color:white;outline:none;font-size:0.85rem"></td>
+                            <td style="padding:10px;color:var(--text-muted);font-size:0.85rem">${this._brandNameById(c.brand_id)}</td>
+                            <td style="padding:10px;text-align:right"><button class="tbl-del btn-secondary" data-id="${c.id}" style="padding:4px 10px;border-radius:8px;font-size:0.78rem">삭제</button></td>
+                        </tr>`).join('') || `<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">행이 없습니다. "+ 행 추가"로 시작하세요.</td></tr>`}
+                    </tbody>
+                </table>
+            </div>
+            <p style="color:var(--text-muted);font-size:0.78rem;margin-top:10px">셀을 직접 편집하면 자동 저장됩니다. 보드(칸반)와 같은 데이터를 공유합니다.</p>
+        </div>`;
+    }
+
+    bindTableEvents() {
+        const filter = document.getElementById('table-filter');
+        if (filter) filter.onchange = () => this.setState({ tableFilter: filter.value });
+        const add = document.getElementById('table-add');
+        if (add) add.onclick = () => this.createCard('todo');
+        this.appContainer.querySelectorAll('.tbl-sort').forEach(th => th.onclick = () => this.setState({ tableSort: th.dataset.k }));
+        this.appContainer.querySelectorAll('.tbl-del').forEach(b => b.onclick = () => this.deleteCard(b.dataset.id));
+        this.appContainer.querySelectorAll('.tbl-edit').forEach(el => {
+            const ev = el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'blur';
+            el.addEventListener(ev, () => this.updateCardField(el.dataset.id, el.dataset.f, el.value));
+        });
+    }
+
+    // ============================================================
+    //  노션식: 캘린더 (할일·일정·카드 마감 집계)
+    // ============================================================
+    _calItems() {
+        const items = [];
+        (this.cards || []).forEach(c => { if (c.due_date) items.push({ date: c.due_date, label: c.title, type: 'card', color: '#6366f1' }); });
+        (mockData.products || []).forEach(p => (p.todos || []).forEach(t => {
+            const d = t.due_date || t.date || t.dueDate;
+            if (d) items.push({ date: String(d).slice(0, 10).replace(/\./g, '-'), label: t.title || t.content || t.text || '할일', type: 'todo', color: '#22c55e' });
+        }));
+        (mockData.schedules || []).forEach(s => { const d = s.date || s.due_date; if (d) items.push({ date: String(d).slice(0, 10), label: s.title || s.name || '일정', type: 'schedule', color: '#f59e0b' }); });
+        return items;
+    }
+
+    renderCalendar() {
+        if (!this._cardsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">캘린더를 불러오는 중...</div>`;
+        const now = new Date();
+        if (!this.calYear) { this.calYear = now.getFullYear(); this.calMonth = now.getMonth(); }
+        const y = this.calYear, m = this.calMonth;
+        const first = new Date(y, m, 1);
+        const startDay = first.getDay();
+        const daysInMonth = new Date(y, m + 1, 0).getDate();
+        const items = this._calItems();
+        const byDate = {};
+        items.forEach(it => { (byDate[it.date] = byDate[it.date] || []).push(it); });
+        const pad = (n) => String(n).padStart(2, '0');
+        const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+        let cells = '';
+        for (let i = 0; i < startDay; i++) cells += `<div style="min-height:96px"></div>`;
+        for (let d = 1; d <= daysInMonth; d++) {
+            const ds = `${y}-${pad(m + 1)}-${pad(d)}`;
+            const dayItems = byDate[ds] || [];
+            const isToday = ds === todayStr;
+            cells += `
+            <div style="min-height:96px;border:1px solid var(--card-border);border-radius:10px;padding:6px;background:${isToday ? 'rgba(99,102,241,0.12)' : 'rgba(var(--tint),0.02)'}">
+                <div style="font-size:0.78rem;color:${isToday ? '#a5b4fc' : 'var(--text-muted)'};font-weight:${isToday ? '700' : '400'};margin-bottom:4px">${d}</div>
+                ${dayItems.slice(0, 4).map(it => `<div style="font-size:0.68rem;padding:2px 5px;border-radius:5px;background:${it.color}22;color:${it.color};margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.label}</div>`).join('')}
+                ${dayItems.length > 4 ? `<div style="font-size:0.65rem;color:var(--text-muted)">+${dayItems.length - 4}</div>` : ''}
+            </div>`;
+        }
+        const week = ['일', '월', '화', '수', '목', '금', '토'];
+        return `
+        <div class="glass" style="padding:2rem;border-radius:20px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+                <h2 style="margin:0;font-size:1.5rem"><i class="ph ph-calendar-dots"></i> ${y}년 ${m + 1}월</h2>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button id="cal-prev" class="btn-secondary" style="padding:6px 12px;border-radius:8px">‹</button>
+                    <button id="cal-today" class="btn-secondary" style="padding:6px 14px;border-radius:8px;font-size:0.85rem">오늘</button>
+                    <button id="cal-next" class="btn-secondary" style="padding:6px 12px;border-radius:8px">›</button>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px">
+                ${week.map((w, i) => `<div style="text-align:center;font-size:0.8rem;color:${i === 0 ? '#ef4444' : (i === 6 ? '#60a5fa' : 'var(--text-muted)')};padding:4px">${w}</div>`).join('')}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cells}</div>
+            <div style="display:flex;gap:14px;margin-top:1rem;font-size:0.78rem;color:var(--text-muted)">
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#22c55e"></span> 할일</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f59e0b"></span> 일정</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#6366f1"></span> 보드카드</span>
+            </div>
+        </div>`;
+    }
+
+    bindCalendarEvents() {
+        const prev = document.getElementById('cal-prev');
+        const next = document.getElementById('cal-next');
+        const today = document.getElementById('cal-today');
+        if (prev) prev.onclick = () => { let m = this.calMonth - 1, y = this.calYear; if (m < 0) { m = 11; y--; } this.setState({ calMonth: m, calYear: y }); };
+        if (next) next.onclick = () => { let m = this.calMonth + 1, y = this.calYear; if (m > 11) { m = 0; y++; } this.setState({ calMonth: m, calYear: y }); };
+        if (today) today.onclick = () => { const n = new Date(); this.setState({ calMonth: n.getMonth(), calYear: n.getFullYear() }); };
+    }
+
+    bindSampleMakerEvents() {
+        const cfg = this.sampleConfig;
+
+        if (!this._smZoom) this._smZoom = { preview: { s: 1, x: 0, y: 0 }, flat: { s: 1, x: 0, y: 0 }, pattern: { s: 1, x: 0, y: 0 } };
+        const paneKey = id => id === 'sm-preview' ? 'preview' : id === 'sm-flat' ? 'flat' : 'pattern';
+        const applyZoom = id => {
+            const pane = document.getElementById(id); const svg = pane && pane.querySelector('svg');
+            if (!svg) return; const z = this._smZoom[paneKey(id)];
+            svg.style.transformOrigin = '0 0';
+            svg.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.s})`;
+        };
+
+        // 미리보기/도식/패턴/지시서 부분 갱신 (컨트롤 패널 포커스 유지)
+        const refreshCanvas = () => {
+            const pv = document.getElementById('sm-preview');
+            const fl = document.getElementById('sm-flat');
+            const pt2 = document.getElementById('sm-pattern');
+            const tp = document.getElementById('sm-techpack');
+            if (pv) pv.innerHTML = garmentPreviewSVG(this.sampleConfig, true);
+            if (fl) fl.innerHTML = garmentFlatSVG(this.sampleConfig, true);
+            if (pt2) pt2.innerHTML = garmentPatternSVG(this.sampleConfig);
+            if (tp) { tp.innerHTML = techPackSummaryHTML(this.sampleConfig); bindPrint(); }
+            ['sm-preview', 'sm-flat', 'sm-pattern'].forEach(applyZoom);
+            bindCanvasHandles();
+            syncMeasureInputs();
+        };
+
+        // 컨트롤 패널의 치수 입력값을 현재 config로 동기화 (핸들 드래그 후)
+        const syncMeasureInputs = () => {
+            const c = this.sampleConfig;
+            this.appContainer.querySelectorAll('.sm-measure, .sm-measure-num').forEach(el => {
+                const k = el.getAttribute('data-key');
+                if (c.measure[k] != null && el.value != c.measure[k]) el.value = c.measure[k];
+            });
+        };
+
+        const bindPrint = () => {
+            const btn = document.getElementById('sm-print-btn');
+            if (!btn) return;
+            btn.onclick = () => {
+                const html = buildTechPackPrintHTML(this.sampleConfig);
+                const w = window.open('', '_blank');
+                if (!w) { this.showToast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+                w.document.write(html);
+                w.document.close();
+            };
+        };
+
+        // ===== 캔버스 핸들 드래그 (배치 이동/리사이즈, 치수, 곡선) =====
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+        const round05 = v => Math.round(v * 2) / 2;
+        const findPlById = id => (this.sampleConfig.placements || []).find(p => p.id === id);
+
+        const bindCanvasHandles = () => {
+            ['sm-preview', 'sm-flat'].forEach(id => {
+                const pane = document.getElementById(id);
+                const svg = pane && pane.querySelector('svg');
+                if (!svg) return;
+                svg.querySelectorAll('.sm-pl-node, .sm-pl-resize, .sm-anchor, .sm-h-size, .sm-h-ctrl').forEach(el => {
+                    el.style.touchAction = 'none';
+                    el.addEventListener('pointerdown', ev => startHandleDrag(ev, el, svg));
+                });
+            });
+        };
+
+        const startHandleDrag = (e, el, svg) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const ctm = el.getScreenCTM();
+            if (!ctm) return;
+            const inv = ctm.inverse();
+            const toLocal = ev => {
+                const p = svg.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY;
+                const l = p.matrixTransform(inv); return { x: l.x, y: l.y };
+            };
+            const ds = el.dataset;
+            const cfg = this.sampleConfig;
+            let kind;
+            if (el.classList.contains('sm-pl-resize')) kind = 'resize';
+            else if (el.classList.contains('sm-pl-node')) kind = 'move';
+            else if (el.classList.contains('sm-h-ctrl')) kind = 'ctrl';
+            else kind = 'size';
+
+            const startL = toLocal(e);
+            let grab = { x: 0, y: 0 };
+            if (kind === 'move') {
+                const p = findPlById(ds.id);
+                const ccx = parseFloat(ds.cx), ccy = parseFloat(ds.cy);
+                grab = { x: ccx - startL.x, y: ccy - startL.y };
+                if (p) { /* ensure free coords */ }
+            }
+
+            const tip = document.getElementById('sm-drag-tip') || (() => {
+                const d = document.createElement('div'); d.id = 'sm-drag-tip'; d.className = 'sm-drag-tip'; document.body.appendChild(d); return d;
+            })();
+            const labelMap = { shoulder: '어깨', chest: '가슴', hem: '밑단', neck: '목', length: '총장', sleeve: '소매', armhole: '암홀', waist: '허리', hip: '엉덩이', rise: '밑위', thigh: '허벅지' };
+
+            const apply = ev => {
+                const L = toLocal(ev);
+                let tipText = '';
+                if (kind === 'move') {
+                    const p = findPlById(ds.id); if (!p) return;
+                    p.fx = clamp(L.x + grab.x, 6, 894);
+                    p.fy = clamp(L.y + grab.y, 6, 554);
+                    tipText = '위치 이동';
+                } else if (kind === 'resize') {
+                    const sx = parseFloat(ds.sx), ccx = parseFloat(ds.cx);
+                    const p = findPlById(ds.id); if (!p) return;
+                    const half = Math.abs(L.x - ccx);
+                    p.sizeCm = clamp(round05((2 * half) / sx), 2, 40);
+                    tipText = `크기 ${p.sizeCm}cm`;
+                } else if (kind === 'ctrl') {
+                    if (!cfg.nodes) cfg.nodes = {};
+                    const bx = parseFloat(ds.bx), by = parseFloat(ds.by);
+                    cfg.nodes[ds.key] = { dx: clamp(L.x - bx, -120, 120), dy: clamp(L.y - by, -120, 120) };
+                    tipText = '곡선 조절';
+                } else { // size
+                    const base = parseFloat(ds.base), scale = parseFloat(ds.scale);
+                    const m = { min: parseFloat(ds.min), max: parseFloat(ds.max) };
+                    let val;
+                    if (ds.h === 'sleeve') val = Math.hypot(L.x - parseFloat(ds.sx), L.y - parseFloat(ds.sy)) / scale;
+                    else if (ds.h === 'armhole') val = 2 * (L.y - base) / scale;
+                    else if (ds.axis === 'y') val = (L.y - base) / scale;
+                    else val = (parseFloat(ds.mult) || 1) * (L.x - base) / scale;
+                    val = clamp(round05(Math.abs(val)), m.min, m.max);
+                    cfg.measure[ds.key] = val;
+                    tipText = `${labelMap[ds.key] || ds.key} ${val}cm`;
+                }
+                tip.textContent = tipText;
+                tip.style.display = 'block';
+                tip.style.left = (ev.clientX + 14) + 'px';
+                tip.style.top = (ev.clientY - 10) + 'px';
+                refreshCanvas();
+            };
+            const up = () => {
+                tip.style.display = 'none';
+                window.removeEventListener('pointermove', apply);
+                window.removeEventListener('pointerup', up);
+            };
+            window.addEventListener('pointermove', apply);
+            window.addEventListener('pointerup', up);
+        };
+
+        // 편집(핸들) 토글
+        const editToggle = document.getElementById('sm-edit-toggle');
+        if (editToggle) editToggle.onclick = () => {
+            this.sampleConfig.editMode = !this.sampleConfig.editMode;
+            editToggle.classList.toggle('active', this.sampleConfig.editMode);
+            refreshCanvas();
+        };
+
+        // ② 의류 종류 (치수/디테일 리셋 → 컨트롤 패널까지 전체 재렌더)
+        this.appContainer.querySelectorAll('.sm-type').forEach(btn => {
+            btn.onclick = () => {
+                const type = btn.getAttribute('data-type');
+                if (type === this.sampleConfig.type) return;
+                this.sampleConfig = configForType(this.sampleConfig, type);
+                this.requestRender();
+            };
+        });
+
+        // ③ 색상
+        this.appContainer.querySelectorAll('.sm-color').forEach(btn => {
+            btn.onclick = () => {
+                this.sampleConfig.color = { name: btn.getAttribute('data-name'), hex: btn.getAttribute('data-hex') };
+                this.appContainer.querySelectorAll('.sm-color').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                refreshCanvas();
+            };
+        });
+
+        // ④ 상세 치수 (range ↔ number 동기화)
+        const syncMeasure = (key, value) => {
+            const v = Math.max(0, Number(value) || 0);
+            this.sampleConfig.measure[key] = v;
+            this.appContainer.querySelectorAll(`.sm-measure[data-key="${key}"], .sm-measure-num[data-key="${key}"]`)
+                .forEach(el => { if (el.value != v) el.value = v; });
+            refreshCanvas();
+        };
+        this.appContainer.querySelectorAll('.sm-measure, .sm-measure-num').forEach(el => {
+            el.addEventListener('input', () => syncMeasure(el.getAttribute('data-key'), el.value));
+        });
+
+        // ⑤ 디테일
+        this.appContainer.querySelectorAll('.sm-detail').forEach(chk => {
+            chk.addEventListener('change', () => {
+                this.sampleConfig.details[chk.getAttribute('data-key')] = chk.checked;
+                refreshCanvas();
+            });
+        });
+
+        // ⑥ 로고·배치 추가/삭제/수정
+        this.appContainer.querySelectorAll('.sm-pl-add').forEach(btn => {
+            btn.onclick = () => {
+                const kind = btn.getAttribute('data-kind');
+                const id = 'pl' + Date.now() + Math.floor((this._plSeq = (this._plSeq || 0) + 1));
+                if (!this.sampleConfig.placements) this.sampleConfig.placements = [];
+                this.sampleConfig.placements.push(newPlacement(kind, this.sampleConfig, id));
+                this.requestRender();
+            };
+        });
+        this.appContainer.querySelectorAll('.sm-pl-del').forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.getAttribute('data-id');
+                this.sampleConfig.placements = (this.sampleConfig.placements || []).filter(p => p.id !== id);
+                this.requestRender();
+            };
+        });
+        const findPl = id => (this.sampleConfig.placements || []).find(p => p.id === id);
+        this.appContainer.querySelectorAll('.sm-pl-pos').forEach(sel => {
+            sel.addEventListener('change', () => {
+                const p = findPl(sel.getAttribute('data-id'));
+                if (p) { p.pos = sel.value; p.fx = null; p.fy = null; refreshCanvas(); }
+            });
+        });
+        this.appContainer.querySelectorAll('.sm-pl-size').forEach(rng => {
+            rng.addEventListener('input', () => {
+                const p = findPl(rng.getAttribute('data-id'));
+                if (!p) return;
+                p.sizeCm = Number(rng.value);
+                const lbl = rng.parentElement.querySelector('.sm-pl-sizeval');
+                if (lbl) lbl.textContent = p.sizeCm + 'cm';
+                refreshCanvas();
+            });
+        });
+        this.appContainer.querySelectorAll('.sm-pl-input').forEach(inp => {
+            inp.addEventListener('change', () => {
+                const p = findPl(inp.getAttribute('data-id'));
+                const file = inp.files && inp.files[0];
+                if (!p || !file) return;
+                if (file.size > 4 * 1024 * 1024) { this.showToast('이미지가 너무 큽니다 (4MB 이하).'); return; }
+                const reader = new FileReader();
+                reader.onload = e => {
+                    p.dataUrl = e.target.result;
+                    p.fileName = file.name;
+                    this.requestRender(); // 썸네일 패널 반영
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+
+        // ① 기본 정보 / ⑦ 원단·비고
+        const textMap = { 'sm-styleName': 'styleName', 'sm-styleNo': 'styleNo', 'sm-size': 'size', 'sm-fabric': 'fabric', 'sm-note': 'note' };
+        Object.entries(textMap).forEach(([id, key]) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', () => {
+                this.sampleConfig[key] = el.value;
+                const tp = document.getElementById('sm-techpack');
+                if (tp) { tp.innerHTML = techPackSummaryHTML(this.sampleConfig); bindPrint(); }
+            });
+        });
+
+        // 탭 전환 (실사 / 도식 / 패턴)
+        this.appContainer.querySelectorAll('.sm-tab[data-tab]').forEach(tab => {
+            tab.onclick = () => {
+                const t = tab.getAttribute('data-tab');
+                this.sampleConfig.activeTab = t;
+                this.appContainer.querySelectorAll('.sm-tab[data-tab]').forEach(b => b.classList.toggle('active', b === tab));
+                const map = { preview: 'sm-preview', flat: 'sm-flat', pattern: 'sm-pattern' };
+                Object.entries(map).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.style.display = (k === t) ? '' : 'none'; });
+            };
+        });
+
+        // ===== 줌/팬 (돋보기) =====
+        const activePaneId = () => {
+            const t = this.sampleConfig.activeTab || 'preview';
+            return t === 'flat' ? 'sm-flat' : t === 'pattern' ? 'sm-pattern' : 'sm-preview';
+        };
+        this.appContainer.querySelectorAll('.sm-zoom-btn').forEach(btn => {
+            btn.onclick = () => {
+                const id = activePaneId(), z = this._smZoom[id === 'sm-flat' ? 'flat' : id === 'sm-pattern' ? 'pattern' : 'preview'];
+                const act = btn.getAttribute('data-zoom');
+                if (act === 'in') z.s = clamp(z.s * 1.25, 0.4, 6);
+                else if (act === 'out') z.s = clamp(z.s / 1.25, 0.4, 6);
+                else { z.s = 1; z.x = 0; z.y = 0; }
+                applyZoom(id);
+            };
+        });
+        // 휠 줌 + 빈곳 드래그 팬
+        ['sm-preview', 'sm-flat', 'sm-pattern'].forEach(id => {
+            const pane = document.getElementById(id);
+            if (!pane) return;
+            const zk = id === 'sm-flat' ? 'flat' : id === 'sm-pattern' ? 'pattern' : 'preview';
+            pane.onwheel = e => {
+                e.preventDefault();
+                const z = this._smZoom[zk];
+                const r = pane.getBoundingClientRect();
+                const mx = e.clientX - r.left, my = e.clientY - r.top;
+                const old = z.s, ns = clamp(z.s * (e.deltaY < 0 ? 1.12 : 1 / 1.12), 0.4, 6);
+                // 커서 기준 확대
+                z.x = mx - (mx - z.x) * (ns / old);
+                z.y = my - (my - z.y) * (ns / old);
+                z.s = ns;
+                applyZoom(id);
+            };
+            pane.addEventListener('pointerdown', e => {
+                if (e.target.closest('.sm-pl-node, .sm-pl-resize, .sm-anchor, .sm-h-size, .sm-h-ctrl')) return; // 핸들이면 팬 X
+                const z = this._smZoom[zk];
+                const sx = e.clientX, sy = e.clientY, ox = z.x, oy = z.y;
+                pane.style.cursor = 'grabbing';
+                const mv = ev => { z.x = ox + (ev.clientX - sx); z.y = oy + (ev.clientY - sy); applyZoom(id); };
+                const up = () => { pane.style.cursor = ''; window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+                window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+            });
+        });
+
+        // 곡선 초기화 버튼
+        const resetCurveBtn = document.getElementById('sm-reset-curve');
+        if (resetCurveBtn) resetCurveBtn.onclick = () => { this.sampleConfig.nodes = {}; refreshCanvas(); };
+
+        bindPrint();
+        bindCanvasHandles();
+        ['sm-preview', 'sm-flat', 'sm-pattern'].forEach(applyZoom);
+    }
+
+    bindGlobalSearch() {
+        const overlay = document.getElementById('global-search-overlay');
+        const input = document.getElementById('global-search-input');
+        const resultsEl = document.getElementById('global-search-results');
+        if (!overlay || !input || !resultsEl) return;
+
+        const openBtn = document.getElementById('open-search-btn');
+        const mobileBtn = document.getElementById('mobile-search-btn');
+        const closeBtn = document.getElementById('close-search-btn');
+        const hint = '<div class="search-hint"><i class="ph ph-keyboard"></i> 검색어를 입력하세요. 결과 클릭 시 해당 프로젝트로 이동합니다.</div>';
+
+        const open = () => {
+            overlay.style.display = 'flex';
+            input.value = '';
+            resultsEl.innerHTML = hint;
+            setTimeout(() => input.focus(), 30);
+        };
+        const close = () => { overlay.style.display = 'none'; };
+
+        if (openBtn) openBtn.onclick = open;
+        if (mobileBtn) mobileBtn.onclick = open;
+        if (closeBtn) closeBtn.onclick = close;
+        overlay.onclick = (e) => { if (e.target === overlay) close(); };
+
+        const kindColor = { '프로젝트': '#3b82f6', '할일': '#22c55e', '문서': '#f59e0b', '메모': '#a855f7' };
+        const renderResults = (q) => {
+            if (!q.trim()) { resultsEl.innerHTML = hint; return; }
+            const items = this.runGlobalSearch(q);
+            if (items.length === 0) {
+                resultsEl.innerHTML = `<div class="search-hint"><i class="ph ph-magnifying-glass"></i> "${q}" 검색 결과가 없습니다.</div>`;
+                return;
+            }
+            resultsEl.innerHTML = `<div class="search-count">${items.length}건</div>` + items.map(r => `
+                <div class="search-result-item" data-pid="${r.product_id}">
+                    <span class="search-kind" style="background:${(kindColor[r.kind] || '#3b82f6')}22; color:${kindColor[r.kind] || '#3b82f6'};"><i class="ph ${r.icon}"></i> ${r.kind}</span>
+                    <div class="search-result-body">
+                        <span class="search-result-title ${r.done ? 'done' : ''}">${r.title}</span>
+                        ${r.sub ? `<span class="search-result-sub">${r.sub}</span>` : ''}
+                    </div>
+                    <i class="ph ph-arrow-right search-result-go"></i>
+                </div>
+            `).join('');
+            resultsEl.querySelectorAll('.search-result-item').forEach(el => {
+                el.onclick = () => {
+                    const pid = el.getAttribute('data-pid');
+                    close();
+                    this.setState({ currentView: 'detail', activeProjectId: pid });
+                };
+            });
+        };
+
+        let debounce = null;
+        input.oninput = () => { clearTimeout(debounce); const v = input.value; debounce = setTimeout(() => renderResults(v), 120); };
+        input.onkeydown = (e) => { if (e.key === 'Escape') close(); };
+
+        // '/' 단축키로 검색 열기 (리스너 1회만 등록)
+        if (!window.__BHAS_SEARCH_HOTKEY__) {
+            window.__BHAS_SEARCH_HOTKEY__ = true;
+            document.addEventListener('keydown', (e) => {
+                const tag = (document.activeElement && document.activeElement.tagName) || '';
+                if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(tag)) {
+                    const ov = document.getElementById('global-search-overlay');
+                    const ob = document.getElementById('open-search-btn');
+                    if (ov && ov.style.display !== 'flex' && ob) { e.preventDefault(); ob.click(); }
+                }
+            });
         }
     }
 
     bindDashboardEvents() {
+        this.bindGlobalSearch();
         // 사이드바 내비게이션 (onclick으로 중복 방지)
         this.appContainer.querySelectorAll('.nav-links li[data-view]').forEach(li => {
             li.onclick = () => {
@@ -2263,6 +4038,29 @@ class BhasApp {
                 this.setState({ currentView: view });
             };
         });
+
+        // 사이드바 그룹 접기/펴기
+        this.appContainer.querySelectorAll('.nav-group-header').forEach(h => {
+            h.onclick = () => {
+                const g = h.getAttribute('data-group');
+                this.navCollapsed = this.navCollapsed || {};
+                this.navCollapsed[g] = !this.navCollapsed[g];
+                this.requestRender();
+            };
+        });
+
+        // 라이트/다크 테마 토글
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) themeToggle.onclick = () => this.toggleTheme();
+
+        // 노션식 워크스페이스 + 재고 뷰: lazy-load + 이벤트 바인딩
+        this.ensureViewData();
+        if (this.currentView === 'orders') this.bindOrdersEvents();
+        if (this.currentView === 'inventory') this.bindInventoryEvents();
+        if (this.currentView === 'pages') this.bindPagesEvents();
+        if (this.currentView === 'kanban') this.bindKanbanEvents();
+        if (this.currentView === 'table') this.bindTableEvents();
+        if (this.currentView === 'calendar') this.bindCalendarEvents();
 
         const viewGridBtn = document.getElementById('view-grid-btn');
         if (viewGridBtn) viewGridBtn.onclick = () => {
@@ -2308,6 +4106,16 @@ class BhasApp {
                     this.setState({ currentView: 'detail', activeProjectId: row.getAttribute('data-id') });
                 };
             });
+        }
+
+        if (this.currentView === 'timeline') {
+            this.appContainer.querySelectorAll('.tl-row').forEach(row => {
+                row.onclick = () => this.setState({ currentView: 'detail', activeProjectId: row.getAttribute('data-id') });
+            });
+        }
+
+        if (this.currentView === 'sample_maker') {
+            this.bindSampleMakerEvents();
         }
 
         if (this.currentView === 'documents') {
@@ -2643,7 +4451,7 @@ class BhasApp {
 
                     if (filtered.length > 0) {
                         mentionList.innerHTML = filtered.map(c => `
-                            <div class="mention-item" data-id="${c.id}" data-name="${c.name}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem;" onmouseover="this.style.background='rgba(37,99,235,0.2)'" onmouseout="this.style.background='transparent'">
+                            <div class="mention-item" data-id="${c.id}" data-name="${c.name}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid rgba(var(--tint),0.05); font-size: 0.85rem;" onmouseover="this.style.background='rgba(37,99,235,0.2)'" onmouseout="this.style.background='transparent'">
                                 <strong>${c.name}</strong> <span style="font-size: 0.7rem; color: var(--text-muted);">(${c.role === 'MASTER' ? '마스터' : '운영진'})</span>
                             </div>
                         `).join('');
@@ -2937,7 +4745,7 @@ class BhasApp {
                 </div>
                 
                 <div style="display: flex; gap: 10px;">
-                    <button id="cancel-user-btn" style="flex: 1; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer;">취소</button>
+                    <button id="cancel-user-btn" style="flex: 1; padding: 12px; border-radius: 12px; background: rgba(var(--tint),0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer;">취소</button>
                     <button id="save-user-btn" class="btn-primary" style="flex: 1; padding: 12px; border-radius: 12px;">계정 생성</button>
                 </div>
             </div>
@@ -2990,7 +4798,7 @@ class BhasApp {
                 </div>
 
                 <div style="display: flex; gap: 10px;">
-                    <button id="cancel-brand-btn" style="flex: 1; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer;">취소</button>
+                    <button id="cancel-brand-btn" style="flex: 1; padding: 12px; border-radius: 12px; background: rgba(var(--tint),0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer;">취소</button>
                     <button id="save-brand-btn" class="btn-primary" style="flex: 1; padding: 12px; border-radius: 12px;">브랜드 생성</button>
                 </div>
             </div>

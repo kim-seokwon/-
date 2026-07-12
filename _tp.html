@@ -1,0 +1,198 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<title>작업지시서 - 베이직 맨투맨</title>
+<style>
+  @page { size: A4 landscape; margin: 7mm; }
+  * { box-sizing: border-box; }
+  body { font-family:'Pretendard','Apple SD Gothic Neo',sans-serif; color:#111; margin:0; font-size:10px; }
+  .tp { border:1.5px solid #111; }
+  .row { display:flex; }
+  .cell { border-right:1px solid #bbb; border-bottom:1px solid #bbb; padding:3px 6px; }
+  .lbl-cell { background:#f2f2f2; font-weight:600; color:#333; white-space:nowrap; }
+  /* 헤더 */
+  .hd { display:flex; align-items:stretch; border-bottom:1.5px solid #111; }
+  .hd-logo { width:130px; display:flex; align-items:center; gap:6px; padding:6px 10px; border-right:1px solid #bbb; }
+  .hd-logo .mark { width:26px; height:26px; border-radius:50%; background:#111; }
+  .hd-logo b { font-size:11px; letter-spacing:1px; }
+  .hd-title { flex:1; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; letter-spacing:14px; }
+  .approve { display:flex; }
+  .approve .ab { width:58px; border-left:1px solid #bbb; text-align:center; }
+  .approve .ab .t { font-size:9px; background:#f2f2f2; border-bottom:1px solid #bbb; padding:2px 0; }
+  .approve .ab .v { height:34px; }
+  /* 정보 그리드 */
+  .meta { display:flex; border-bottom:1.5px solid #111; }
+  .meta .grid { flex:1; display:grid; grid-template-columns: 70px 1fr 70px 1fr 70px 1fr; }
+  .meta .grid .cell { font-size:10px; }
+  .swatchbox { width:150px; border-left:1px solid #bbb; display:flex; flex-direction:column; }
+  .swatchbox .sw { flex:1; min-height:54px; background:#2A3550; border-bottom:1px solid #bbb; }
+  .swatchbox .nm { padding:3px 6px; font-weight:600; font-size:10px; text-align:center; }
+  /* 본문 3단 */
+  .body { display:flex; min-height:430px; }
+  .col { padding:0; }
+  .col-left { width:170px; border-right:1px solid #bbb; }
+  .col-mid { flex:1; border-right:1px solid #bbb; display:flex; flex-direction:column; }
+  .col-right { width:248px; }
+  .sechd { background:#111; color:#fff; font-size:10px; font-weight:700; padding:3px 8px; letter-spacing:1px; }
+  .flatwrap { flex:1; padding:6px; display:flex; align-items:center; justify-content:center; }
+  .flatwrap svg { width:100%; height:auto; max-height:420px; }
+  .flatwrap svg .sm-dim line { stroke:#d11; stroke-width:0.7; }
+  .flatwrap svg .sm-dim text { fill:#d11; font-size:10px; font-weight:700; }
+  .flatwrap svg .sm-ext { stroke:#d11; stroke-width:0.4; stroke-dasharray:2 2; }
+  .sm-viewlabel { font-size:13px; font-weight:700; fill:#333; letter-spacing:2px; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { border:1px solid #bbb; padding:2.5px 4px; font-size:9.5px; text-align:center; }
+  th { background:#f2f2f2; font-weight:700; }
+  th.base, td.base { background:#fff4e0; }
+  td.lbl { background:#f7f7f7; font-weight:600; text-align:left; white-space:nowrap; }
+  td.tol, td.qty { color:#666; }
+  .note { padding:5px 7px; font-size:9.5px; white-space:pre-wrap; line-height:1.5; min-height:50px; }
+  .chips { padding:5px 7px; }
+  .chips span { display:inline-block; border:1px solid #ccc; border-radius:10px; padding:1px 7px; font-size:9px; margin:0 3px 3px 0; }
+  .plimg { width:26px; height:26px; object-fit:contain; vertical-align:middle; }
+  .foot { border-top:1.5px solid #111; padding:5px 8px; font-size:9px; color:#444; line-height:1.6; }
+  .foot b { color:#111; }
+</style></head><body>
+  <div class="tp">
+    <!-- 헤더 -->
+    <div class="hd">
+      <div class="hd-logo"><span class="mark"></span><b>더하임<br>PROMOTION</b></div>
+      <div class="hd-title">작 업 지 시 서</div>
+      <div class="approve">
+        <div class="ab"><div class="t">디자이너</div><div class="v"></div></div><div class="ab"><div class="t">MD</div><div class="v"></div></div><div class="ab"><div class="t">대표</div><div class="v"></div></div>
+      </div>
+    </div>
+    <!-- 정보 그리드 + 스와치 -->
+    <div class="meta">
+      <div class="grid">
+        <div class="cell lbl-cell">담당</div><div class="cell">디자인팀</div>
+        <div class="cell lbl-cell">품번</div><div class="cell">HM-2026-001</div>
+        <div class="cell lbl-cell">아이템</div><div class="cell">맨투맨</div>
+        <div class="cell lbl-cell">스타일명</div><div class="cell">베이직 맨투맨</div>
+        <div class="cell lbl-cell">시즌</div><div class="cell">2026 S/S</div>
+        <div class="cell lbl-cell">작성일</div><div class="cell">____ . __ . __</div>
+        <div class="cell lbl-cell">기준사이즈</div><div class="cell">110</div>
+        <div class="cell lbl-cell">원단</div><div class="cell">폴리에스터 60/면 40</div>
+        <div class="cell lbl-cell">발주수량</div><div class="cell" style="border-bottom:none"></div>
+      </div>
+      <div class="swatchbox">
+        <div class="sw"></div>
+        <div class="nm">네이비 <span style="color:#999;font-weight:400">#2A3550</span></div>
+      </div>
+    </div>
+    <!-- 본문 3단 -->
+    <div class="body">
+      <!-- 좌: COLOR/수량, 디테일, 비고 -->
+      <div class="col col-left">
+        <div class="sechd">COLOR / 수량</div>
+        <table><thead><tr><th class="lbl" style="text-align:left">컬러</th><th class="">90</th><th class="">100</th><th class="base">110</th><th class="">120</th><th>합계</th></tr></thead><tbody><tr><td class="lbl">네이비</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>
+        <div class="sechd">디테일</div>
+        <div class="chips"><span>넥/소매/밑단 리브</span><span>기모 안감</span></div>
+        <div class="sechd">비고 / 봉제지시</div>
+        <div class="note">· 시접 1cm
+· 기모 안감
+· 넥 리브 2x1</div>
+      </div>
+      <!-- 중: 도식 FRONT/BACK -->
+      <div class="col col-mid">
+        <div class="sechd">도식화 (FLAT — FRONT / BACK)</div>
+        <div class="flatwrap"><svg viewBox="0 0 840 600" class="sm-svg sm-svg-flat" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="smShade" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/>
+        <stop offset="45%" stop-color="#ffffff" stop-opacity="0"/>
+        <stop offset="100%" stop-color="#000000" stop-opacity="0.16"/>
+      </linearGradient>
+    </defs>
+    <g transform="translate(0,0)"><path d="M 140 93
+    C 101.3 133.3 43.5 191.5 35.2 200.2
+    L 54.6 218.9
+    C 63.0 210.2 87.6 182.8 122.0 147.0
+    C 120.0 123.0 144.0 111.0 140 93 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.8"/><path d="M 260 93
+    C 298.7 133.3 356.5 191.5 364.8 200.2
+    L 345.4 218.9
+    C 337.0 210.2 312.4 182.8 278.0 147.0
+    C 280.0 123.0 256.0 111.0 260 93 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.8"/><path d="M 173 78
+    Q 170 79 140 93
+    C 144 111 120 123 122 147
+    C 121 193 126 167 125 213
+    L 275 213
+    C 274 167 279 193 278 147
+    C 280 123 256 111 260 93
+    Q 230 79 227 78
+    Q 200 104.74 173 78 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.8"/><path d="M 144.0 111.0 C 146 113 122 125 125.0 145.0" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><path d="M 256.0 111.0 C 254 113 278 125 275.0 145.0" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><path d="M 35.2 200.2 L 54.6 218.9 L 63.7 209.5 L 44.2 190.8 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.4"/><line x1="39.1" y1="203.9" x2="48.1" y2="194.5" stroke="#1f1f1f" stroke-width="0.5"/><line x1="43.0" y1="207.7" x2="52.0" y2="198.3" stroke="#1f1f1f" stroke-width="0.5"/><line x1="46.9" y1="211.4" x2="55.9" y2="202.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="50.8" y1="215.1" x2="59.8" y2="205.8" stroke="#1f1f1f" stroke-width="0.5"/><path d="M 364.8 200.2 L 345.4 218.9 L 336.3 209.5 L 355.8 190.8 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.4"/><line x1="360.9" y1="203.9" x2="351.9" y2="194.5" stroke="#1f1f1f" stroke-width="0.5"/><line x1="357.0" y1="207.7" x2="348.0" y2="198.3" stroke="#1f1f1f" stroke-width="0.5"/><line x1="353.1" y1="211.4" x2="344.1" y2="202.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="349.2" y1="215.1" x2="340.2" y2="205.8" stroke="#1f1f1f" stroke-width="0.5"/><path d="M 125.0 213.0 L 275.0 213.0 L 275.0 197.0 L 125.0 197.0 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.4"/><line x1="131.0" y1="213.0" x2="131.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="137.0" y1="213.0" x2="137.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="143.0" y1="213.0" x2="143.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="149.0" y1="213.0" x2="149.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="155.0" y1="213.0" x2="155.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="161.0" y1="213.0" x2="161.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="167.0" y1="213.0" x2="167.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="173.0" y1="213.0" x2="173.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="179.0" y1="213.0" x2="179.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="185.0" y1="213.0" x2="185.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="191.0" y1="213.0" x2="191.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="197.0" y1="213.0" x2="197.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="203.0" y1="213.0" x2="203.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="209.0" y1="213.0" x2="209.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="215.0" y1="213.0" x2="215.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="221.0" y1="213.0" x2="221.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="227.0" y1="213.0" x2="227.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="233.0" y1="213.0" x2="233.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="239.0" y1="213.0" x2="239.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="245.0" y1="213.0" x2="245.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="251.0" y1="213.0" x2="251.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="257.0" y1="213.0" x2="257.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="263.0" y1="213.0" x2="263.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="269.0" y1="213.0" x2="269.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><path d="M 173 78 Q 200 104.74 227 78 L 224 86 Q 200 112.74 176 86 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.4"/><line x1="175.7" y1="80.5" x2="178.4" y2="88.5" stroke="#1f1f1f" stroke-width="0.5"/><line x1="178.4" y1="82.8" x2="180.8" y2="90.8" stroke="#1f1f1f" stroke-width="0.5"/><line x1="181.1" y1="84.8" x2="183.2" y2="92.8" stroke="#1f1f1f" stroke-width="0.5"/><line x1="183.8" y1="86.6" x2="185.6" y2="94.6" stroke="#1f1f1f" stroke-width="0.5"/><line x1="186.5" y1="88.0" x2="188.0" y2="96.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="189.2" y1="89.2" x2="190.4" y2="97.2" stroke="#1f1f1f" stroke-width="0.5"/><line x1="191.9" y1="90.2" x2="192.8" y2="98.2" stroke="#1f1f1f" stroke-width="0.5"/><line x1="194.6" y1="90.8" x2="195.2" y2="98.8" stroke="#1f1f1f" stroke-width="0.5"/><line x1="197.3" y1="91.2" x2="197.6" y2="99.2" stroke="#1f1f1f" stroke-width="0.5"/><line x1="200.0" y1="91.4" x2="200.0" y2="99.4" stroke="#1f1f1f" stroke-width="0.5"/><line x1="202.7" y1="91.2" x2="202.4" y2="99.2" stroke="#1f1f1f" stroke-width="0.5"/><line x1="205.4" y1="90.8" x2="204.8" y2="98.8" stroke="#1f1f1f" stroke-width="0.5"/><line x1="208.1" y1="90.2" x2="207.2" y2="98.2" stroke="#1f1f1f" stroke-width="0.5"/><line x1="210.8" y1="89.2" x2="209.6" y2="97.2" stroke="#1f1f1f" stroke-width="0.5"/><line x1="213.5" y1="88.0" x2="212.0" y2="96.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="216.2" y1="86.6" x2="214.4" y2="94.6" stroke="#1f1f1f" stroke-width="0.5"/><line x1="218.9" y1="84.8" x2="216.8" y2="92.8" stroke="#1f1f1f" stroke-width="0.5"/><line x1="221.6" y1="82.8" x2="219.2" y2="90.8" stroke="#1f1f1f" stroke-width="0.5"/><line x1="224.3" y1="80.5" x2="221.6" y2="88.5" stroke="#1f1f1f" stroke-width="0.5"/><path d="M 173 80 Q 170 81 140 93" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><path d="M 227 80 Q 230 81 260 93" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><rect x="173" y="120.05" width="54" height="45.9" rx="4" fill="#fff" stroke="#1f1f1f" stroke-width="1" stroke-dasharray="4 3"/><text x="200" y="147" text-anchor="middle" font-size="10" fill="#999">프린트</text><text x="200" y="187.4" text-anchor="middle" font-size="9" fill="#e3000f">18cm</text><rect x="150.5" y="127.65" width="21" height="14.7" rx="4" fill="#fff" stroke="#1f1f1f" stroke-width="1" stroke-dasharray="4 3"/><text x="161" y="139" text-anchor="middle" font-size="10" fill="#999">로고</text><text x="161" y="159.6" text-anchor="middle" font-size="9" fill="#e3000f">7cm</text>
+    <g class="sm-dim">
+      <line x1="140" y1="56" x2="260" y2="56" />
+      <line x1="140" y1="51" x2="140" y2="61" />
+      <line x1="260" y1="51" x2="260" y2="61" />
+      <line class="sm-ext" x1="140" y1="93" x2="140" y2="56" /><line class="sm-ext" x1="260" y1="93" x2="260" y2="56" />
+      <rect x="178" y="48" width="44" height="16" rx="3" fill="#fff" />
+      <text x="200" y="60" text-anchor="middle">어깨 40</text>
+    </g>
+    <g class="sm-dim">
+      <line x1="122" y1="147" x2="278" y2="147" />
+      <line x1="122" y1="142" x2="122" y2="152" />
+      <line x1="278" y1="142" x2="278" y2="152" />
+      
+      <rect x="178" y="139" width="44" height="16" rx="3" fill="#fff" />
+      <text x="200" y="151" text-anchor="middle">가슴 26</text>
+    </g>
+    <g class="sm-dim">
+      <line x1="125" y1="249" x2="275" y2="249" />
+      <line x1="125" y1="244" x2="125" y2="254" />
+      <line x1="275" y1="244" x2="275" y2="254" />
+      <line class="sm-ext" x1="125" y1="213" x2="125" y2="249" /><line class="sm-ext" x1="275" y1="213" x2="275" y2="249" />
+      <rect x="178" y="241" width="44" height="16" rx="3" fill="#fff" />
+      <text x="200" y="253" text-anchor="middle">밑단 25</text>
+    </g>
+    <g class="sm-dim">
+      <line x1="327" y1="78" x2="327" y2="213" />
+      <line x1="322" y1="78" x2="332" y2="78" />
+      <line x1="322" y1="213" x2="332" y2="213" />
+      <line class="sm-ext" x1="275" y1="78" x2="327" y2="78" /><line class="sm-ext" x1="275" y1="213" x2="327" y2="213" />
+      <rect x="305" y="137.5" width="44" height="16" rx="3" fill="#fff" />
+      <text x="327" y="149.5" text-anchor="middle">총장 50</text>
+    </g>
+    <g class="sm-dim">
+      <line x1="140" y1="93" x2="44.91589744152836" y2="209.5274666608105" />
+      <line x1="135" y1="93" x2="145" y2="93" />
+      <line x1="39.91589744152836" y1="209.5274666608105" x2="49.91589744152836" y2="209.5274666608105" />
+      
+      <rect x="70.45794872076418" y="143.26373333040524" width="44" height="16" rx="3" fill="#fff" />
+      <text x="92.45794872076418" y="155.26373333040524" text-anchor="middle">소매 46</text>
+    </g><text x="200" y="588" text-anchor="middle" class="sm-viewlabel">FRONT</text></g>
+    <g transform="translate(440,0)"><path d="M 140 93
+    C 101.3 133.3 43.5 191.5 35.2 200.2
+    L 54.6 218.9
+    C 63.0 210.2 87.6 182.8 122.0 147.0
+    C 120.0 123.0 144.0 111.0 140 93 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.8"/><path d="M 260 93
+    C 298.7 133.3 356.5 191.5 364.8 200.2
+    L 345.4 218.9
+    C 337.0 210.2 312.4 182.8 278.0 147.0
+    C 280.0 123.0 256.0 111.0 260 93 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.8"/><path d="M 173 78
+    Q 170 79 140 93
+    C 144 111 120 123 122 147
+    C 121 193 126 167 125 213
+    L 275 213
+    C 274 167 279 193 278 147
+    C 280 123 256 111 260 93
+    Q 230 79 227 78
+    Q 200 89.48 173 78 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.8"/><path d="M 144.0 111.0 C 146 113 122 125 125.0 145.0" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><path d="M 256.0 111.0 C 254 113 278 125 275.0 145.0" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><path d="M 35.2 200.2 L 54.6 218.9 L 63.7 209.5 L 44.2 190.8 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.4"/><line x1="39.1" y1="203.9" x2="48.1" y2="194.5" stroke="#1f1f1f" stroke-width="0.5"/><line x1="43.0" y1="207.7" x2="52.0" y2="198.3" stroke="#1f1f1f" stroke-width="0.5"/><line x1="46.9" y1="211.4" x2="55.9" y2="202.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="50.8" y1="215.1" x2="59.8" y2="205.8" stroke="#1f1f1f" stroke-width="0.5"/><path d="M 364.8 200.2 L 345.4 218.9 L 336.3 209.5 L 355.8 190.8 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.4"/><line x1="360.9" y1="203.9" x2="351.9" y2="194.5" stroke="#1f1f1f" stroke-width="0.5"/><line x1="357.0" y1="207.7" x2="348.0" y2="198.3" stroke="#1f1f1f" stroke-width="0.5"/><line x1="353.1" y1="211.4" x2="344.1" y2="202.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="349.2" y1="215.1" x2="340.2" y2="205.8" stroke="#1f1f1f" stroke-width="0.5"/><path d="M 125.0 213.0 L 275.0 213.0 L 275.0 197.0 L 125.0 197.0 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.4"/><line x1="131.0" y1="213.0" x2="131.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="137.0" y1="213.0" x2="137.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="143.0" y1="213.0" x2="143.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="149.0" y1="213.0" x2="149.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="155.0" y1="213.0" x2="155.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="161.0" y1="213.0" x2="161.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="167.0" y1="213.0" x2="167.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="173.0" y1="213.0" x2="173.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="179.0" y1="213.0" x2="179.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="185.0" y1="213.0" x2="185.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="191.0" y1="213.0" x2="191.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="197.0" y1="213.0" x2="197.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="203.0" y1="213.0" x2="203.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="209.0" y1="213.0" x2="209.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="215.0" y1="213.0" x2="215.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="221.0" y1="213.0" x2="221.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="227.0" y1="213.0" x2="227.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="233.0" y1="213.0" x2="233.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="239.0" y1="213.0" x2="239.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="245.0" y1="213.0" x2="245.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="251.0" y1="213.0" x2="251.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="257.0" y1="213.0" x2="257.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="263.0" y1="213.0" x2="263.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><line x1="269.0" y1="213.0" x2="269.0" y2="197.0" stroke="#1f1f1f" stroke-width="0.5"/><path d="M 173 78 Q 200 89.48 227 78 L 224 86 Q 200 97.48 176 86 Z" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.4"/><line x1="175.7" y1="79.1" x2="178.4" y2="87.1" stroke="#1f1f1f" stroke-width="0.5"/><line x1="178.4" y1="80.1" x2="180.8" y2="88.1" stroke="#1f1f1f" stroke-width="0.5"/><line x1="181.1" y1="80.9" x2="183.2" y2="88.9" stroke="#1f1f1f" stroke-width="0.5"/><line x1="183.8" y1="81.7" x2="185.6" y2="89.7" stroke="#1f1f1f" stroke-width="0.5"/><line x1="186.5" y1="82.3" x2="188.0" y2="90.3" stroke="#1f1f1f" stroke-width="0.5"/><line x1="189.2" y1="82.8" x2="190.4" y2="90.8" stroke="#1f1f1f" stroke-width="0.5"/><line x1="191.9" y1="83.2" x2="192.8" y2="91.2" stroke="#1f1f1f" stroke-width="0.5"/><line x1="194.6" y1="83.5" x2="195.2" y2="91.5" stroke="#1f1f1f" stroke-width="0.5"/><line x1="197.3" y1="83.7" x2="197.6" y2="91.7" stroke="#1f1f1f" stroke-width="0.5"/><line x1="200.0" y1="83.7" x2="200.0" y2="91.7" stroke="#1f1f1f" stroke-width="0.5"/><line x1="202.7" y1="83.7" x2="202.4" y2="91.7" stroke="#1f1f1f" stroke-width="0.5"/><line x1="205.4" y1="83.5" x2="204.8" y2="91.5" stroke="#1f1f1f" stroke-width="0.5"/><line x1="208.1" y1="83.2" x2="207.2" y2="91.2" stroke="#1f1f1f" stroke-width="0.5"/><line x1="210.8" y1="82.8" x2="209.6" y2="90.8" stroke="#1f1f1f" stroke-width="0.5"/><line x1="213.5" y1="82.3" x2="212.0" y2="90.3" stroke="#1f1f1f" stroke-width="0.5"/><line x1="216.2" y1="81.7" x2="214.4" y2="89.7" stroke="#1f1f1f" stroke-width="0.5"/><line x1="218.9" y1="80.9" x2="216.8" y2="88.9" stroke="#1f1f1f" stroke-width="0.5"/><line x1="221.6" y1="80.1" x2="219.2" y2="88.1" stroke="#1f1f1f" stroke-width="0.5"/><line x1="224.3" y1="79.1" x2="221.6" y2="87.1" stroke="#1f1f1f" stroke-width="0.5"/><path d="M 173 80 Q 170 81 140 93" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><path d="M 227 80 Q 230 81 260 93" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><path d="M 146 101 Q 200 103.48 254 101" fill="none" stroke="#8a8a8a" stroke-width="0.8" stroke-dasharray="4 2.5" stroke-linecap="round"/><text x="200" y="588" text-anchor="middle" class="sm-viewlabel">BACK</text></g>
+  </svg></div>
+      </div>
+      <!-- 우: SIZE SPEC, 원부자재, 배치 -->
+      <div class="col col-right">
+        <div class="sechd">SIZE SPEC (CM)</div>
+        <table><thead><tr><th class="lbl" style="text-align:left">부위</th><th class="">90</th><th class="">100</th><th class="base">110</th><th class="">120</th><th class="tol">편차</th></tr></thead><tbody><tr><td class="lbl">어깨너비</td><td class="">36</td><td class="">38</td><td class="base">40</td><td class="">42</td><td class="tol">±0.5</td></tr><tr><td class="lbl">가슴단면</td><td class="">22</td><td class="">24</td><td class="base">26</td><td class="">28</td><td class="tol">±0.5</td></tr><tr><td class="lbl">총장</td><td class="">44</td><td class="">47</td><td class="base">50</td><td class="">53</td><td class="tol">±1.0</td></tr><tr><td class="lbl">소매길이</td><td class="">41</td><td class="">43.5</td><td class="base">46</td><td class="">48.5</td><td class="tol">±1.0</td></tr><tr><td class="lbl">소매부리(리브)</td><td class="">7</td><td class="">8</td><td class="base">9</td><td class="">10</td><td class="tol">±0.5</td></tr><tr><td class="lbl">밑단(리브)</td><td class="">21</td><td class="">23</td><td class="base">25</td><td class="">27</td><td class="tol">±0.5</td></tr><tr><td class="lbl">목너비</td><td class="">16</td><td class="">17</td><td class="base">18</td><td class="">19</td><td class="tol">±0.5</td></tr></tbody></table>
+        <div class="sechd">원 · 부자재</div>
+        <table><thead><tr><th class="lbl" style="text-align:left">품목</th><th>내용</th><th>수량</th></tr></thead><tbody><tr><td class="lbl">겉감</td><td>폴리에스터 60/면 40</td><td class="qty">요척별</td></tr><tr><td class="lbl">기모가공</td><td>안기모 처리</td><td class="qty">1식</td></tr><tr><td class="lbl">리브</td><td>2x1 골지 (넥/소매/밑단)</td><td class="qty">1식</td></tr><tr><td class="lbl">전사/프린트</td><td>가슴중앙 18cm</td><td class="qty">1식</td></tr><tr><td class="lbl">로고(워펜/라벨)</td><td>좌가슴 7cm</td><td class="qty">1ea</td></tr><tr><td class="lbl">메인라벨</td><td>후넥 중앙</td><td class="qty">1ea</td></tr><tr><td class="lbl">케어라벨</td><td>좌측 사이드시임</td><td class="qty">1ea</td></tr><tr><td class="lbl">행택+택끈</td><td>브랜드 기본</td><td class="qty">1set</td></tr><tr><td class="lbl">폴리백</td><td>사이즈별 규격</td><td class="qty">1ea</td></tr></tbody></table>
+        <div class="sechd">로고 · 그래픽 배치</div>
+        <table><thead><tr><th>종류</th><th>위치</th><th>크기</th><th>아트워크</th></tr></thead><tbody><tr><td>프린트</td><td>가슴중앙</td><td>18cm</td><td>-</td></tr><tr><td>로고</td><td>좌가슴</td><td>7cm</td><td>-</td></tr></tbody></table>
+      </div>
+    </div>
+    <!-- 푸터 -->
+    <div class="foot">
+      <b>봉제 지시</b> · 본봉 시접 1cm, 오바록 마감 · 밑단·소매부리 더블 스티치(1/4") · 넥 리브 2x1 골지 · 라벨 위치 후넥 중앙 &nbsp;|&nbsp;
+      <b>검품</b> 치수 편차 ±0.5~1.0cm 허용 · 컬러 견본 대조 후 진행 &nbsp;|&nbsp; 더하임프로모션 아동복 사업부
+    </div>
+  </div>
+  <script>window.onload=function(){setTimeout(function(){window.print();},350);};</script>
+</body></html>
