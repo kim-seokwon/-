@@ -5,7 +5,18 @@
 
 ---
 
-## 1. 송장 자동발번 (굿스플로)
+## 1-A. 송장 최종 결정 (2026-07-21): 우체국 계약소포 OpenAPI 직접 ★채택
+아래 굿스플로 검토(1)는 참고로 남김. **실제 채택 = 우체국 오픈API 직접.** 이유: 멀티채널(카페24 API·무신사 API·키디키디 엑셀)을 브하스가 이미 통합하는데, 굿스플로는 무신사·키디키디 커버 못 하고 API는 엔터프라이즈(세팅 22만+월협의)만 됨. 우체국 계약택배 계약은 이미 보유 → 오픈API 직접이 전채널·대행료0.
+
+- **base URL:** `http://ship.epost.go.kr/{메시지명}` — REST GET/POST, 결과 XML, **UTF-8**
+- **인증:** `key`=인증키(regkey, 오픈API사용신청>소포신청으로 발급, **30자리, 비밀=서버에만**) + 쓰기API는 `regData`=SEED128 암호문
+- **암호화:** SEED-128 대칭키 **ECB**, 키=접수용 **보안키**(신청결과 화면 [보안키생성]). 평문 `custNo=..&reqType=1&officeSer=01&weight=5&..`(& 구분) → SEED128 → regData. Java/PHP 샘플 → **Deno 포팅 필요**. 참조: `supabase/functions/_epost_ref/` (SEED128.java/.php, 규격서 PDF).
+- **API 목록(ship.epost.go.kr):** 고객번호조회 `api.GetCustNo.jparcel` → 계약승인번호 `api.GetApprNo.jparcel` → **공급지등록 `api.InsertOffice.jparcel`** → **발번(소포신청/픽업) `api.InsertOrder.jparcel`**(등기번호 리턴) → 확인 `api.GetResInfo.jparcel` / 취소 `api.GetResCancelCmd.jparcel`. 배송조회=종추적 API(같은 regkey).
+- **헤더:** Connection: keep-alive, Host: biz.epost.go.kr, User-Agent 지정(방화벽).
+- **빌드 계획:** ① SEED128 Deno 포팅 ② Edge Function `courier-issue`(고객번호→승인번호→공급지등록1회→InsertOrder 발번→등기번호 저장) ③ brhas OMS 배송탭에서 채널주문 골라 일괄 발번+각 채널 배송중 처리 ④ regkey/보안키는 `provider_credentials`(service_role 전용)에.
+- **상태:** regkey 발급 완료(서버 설정에 넣을 것). **남은 것: 접수용 보안키 [보안키생성] + 위 빌드.**
+
+## 1. 송장 자동발번 (굿스플로) — 참고(미채택)
 
 ### 왜 굿스플로인가
 - 우체국 계약(이미 보유)은 **그대로 유지**, 발번만 대행. 굿스플로에 우체국 **고객번호=업체코드** 등록.
