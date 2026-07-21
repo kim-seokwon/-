@@ -863,6 +863,7 @@ class BhasApp {
             { id: 'dashboard', label: '프로젝트', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
+            { id: 'vendors', label: '거래처', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'pages', label: '페이지', icon: '<i class="ph ph-note-pencil"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
@@ -2652,6 +2653,8 @@ class BhasApp {
             return this.renderCalendar();
         } else if (this.currentView === 'table') {
             return this.renderTableView();
+        } else if (this.currentView === 'vendors') {
+            return this.renderVendors();
         }
     }
 
@@ -2665,6 +2668,7 @@ class BhasApp {
         if (v === 'inventory' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
+        if (v === 'vendors' && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
     }
 
     _actor() { return this.currentUser?.username || this.currentUser?.name || 'system'; }
@@ -4029,6 +4033,264 @@ class BhasApp {
         }
     }
 
+    // ============================================================
+    //  거래처 물품 현황 (동대문 공장 등) + 지도(Leaflet)
+    // ============================================================
+    _vesc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+    _vendorCatColor(c){ return ({ '봉제':'#3b82f6','원단':'#8b5cf6','부자재':'#f59e0b','프린트':'#10b981' })[c] || '#64748b'; }
+
+    async loadVendors() {
+        this._vendorsLoading = true;
+        try {
+            const [vRes, jRes] = await Promise.all([
+                this.supabase.from('vendors').select('*').order('name', { ascending: true }),
+                this.supabase.from('vendor_jobs').select('*').order('due_date', { ascending: true })
+            ]);
+            const byVendor = {};
+            (jRes.data || []).forEach(j => { (byVendor[j.vendor_id] = byVendor[j.vendor_id] || []).push(j); });
+            this.vendors = (vRes.data || []).map(v => ({ ...v, jobs: byVendor[v.id] || [] }));
+            this._vendorsLoaded = true;
+        } catch (e) {
+            this.showToast('거래처를 불러오지 못했습니다. (007_vendors.sql 설치 필요)');
+            this.vendors = []; this._vendorsLoaded = true;
+        }
+        this._vendorsLoading = false;
+        this.requestRender();
+    }
+
+    renderVendors() {
+        if (!this._vendorsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">거래처를 불러오는 중...</div>`;
+        const vendors = this.vendors || [];
+        const allJobs = vendors.flatMap(v => (v.jobs||[]).map(j => ({...j, _vendor: v.name })));
+        const active = allJobs.filter(j => j.status !== 'done');
+        const today = new Date(); today.setHours(0,0,0,0);
+        const dday = (d) => { if(!d) return null; const dt=new Date(d); dt.setHours(0,0,0,0); return Math.round((dt-today)/86400000); };
+        const upcoming = active.filter(j=>j.due_date).sort((a,b)=> new Date(a.due_date)-new Date(b.due_date)).slice(0,8);
+
+        const scheduleStrip = upcoming.length ? `
+            <div class="glass" style="padding:1rem 1.2rem;border-radius:16px;margin-bottom:1rem">
+                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem"><i class="ph ph-calendar-dots"></i> 임박 스케줄</div>
+                <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
+                    ${upcoming.map(j=>{ const dd=dday(j.due_date); const col = dd<0?'#ef4444':(dd<=3?'#f59e0b':'var(--text-muted)');
+                        return `<div style="flex:0 0 auto;min-width:150px;padding:10px 12px;border-radius:12px;background:rgba(148,163,184,0.08);border:1px solid rgba(148,163,184,0.15)">
+                            <div style="font-size:0.8rem;color:${col};font-weight:700">${dd<0?`지연 ${-dd}일`:(dd===0?'오늘':`D-${dd}`)}</div>
+                            <div style="font-size:0.88rem;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this._vesc(j.title)}</div>
+                            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:1px">${this._vesc(j._vendor)}</div>
+                        </div>`; }).join('')}
+                </div>
+            </div>` : '';
+
+        const cards = vendors.map(v => {
+            const jobs = v.jobs || [];
+            const act = jobs.filter(j=>j.status!=='done');
+            const col = this._vendorCatColor(v.category);
+            const jobRows = jobs.length ? jobs.map(j=>{ const dd=dday(j.due_date); const done=j.status==='done';
+                const ddText = j.due_date && !done ? (dd<0?`<span style="color:#ef4444">지연${-dd}일</span>`:(dd<=3?`<span style="color:#f59e0b">D-${Math.max(dd,0)}</span>`:`D-${dd}`)) : '';
+                return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid rgba(148,163,184,0.12)">
+                    <button class="vjob-toggle" data-id="${j.id}" title="완료 토글" style="flex:0 0 auto;width:18px;height:18px;border-radius:5px;border:2px solid ${done?'#10b981':'rgba(148,163,184,0.5)'};background:${done?'#10b981':'transparent'};cursor:pointer;color:#fff;font-size:0.7rem;line-height:1;padding:0">${done?'✓':''}</button>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-size:0.88rem;font-weight:600;${done?'text-decoration:line-through;color:var(--text-muted)':''}">${this._vesc(j.title)}${j.qty?` <span style="color:var(--text-muted);font-weight:400">·${j.qty}장</span>`:''}</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted)">${this._vesc(j.stage)}${ddText?' · '+ddText:''}</div>
+                    </div>
+                    <button class="vjob-del" data-id="${j.id}" title="삭제" style="flex:0 0 auto;background:none;border:none;color:var(--text-muted);cursor:pointer"><i class="ph ph-x"></i></button>
+                </div>`; }).join('') : `<div style="padding:10px 0;color:var(--text-muted);font-size:0.83rem">진행중 물품 없음</div>`;
+
+            return `<div class="glass" style="padding:1.1rem 1.2rem;border-radius:16px;display:flex;flex-direction:column;gap:2px">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+                    <div style="min-width:0">
+                        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                            <span style="font-size:1rem;font-weight:700">${this._vesc(v.name)}</span>
+                            <span style="font-size:0.7rem;font-weight:700;color:#fff;background:${col};padding:1px 8px;border-radius:20px">${this._vesc(v.category)}</span>
+                            ${act.length?`<span style="font-size:0.72rem;color:var(--primary);font-weight:700">진행 ${act.length}</span>`:''}
+                        </div>
+                        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:3px">${v.address?`<i class="ph ph-map-pin"></i> ${this._vesc(v.address)}`:'<span style="opacity:0.6">주소 없음</span>'}${v.phone?` · ${this._vesc(v.phone)}`:''}</div>
+                    </div>
+                    <button class="vendor-edit" data-id="${v.id}" title="수정" style="flex:0 0 auto;background:none;border:none;color:var(--text-muted);cursor:pointer;padding:2px"><i class="ph ph-pencil-simple"></i></button>
+                </div>
+                <div style="margin-top:6px">${jobRows}</div>
+                <button class="vjob-add" data-id="${v.id}" style="margin-top:8px;align-self:flex-start;background:none;border:1px dashed rgba(148,163,184,0.4);color:var(--text-muted);padding:5px 12px;border-radius:8px;cursor:pointer;font-size:0.8rem"><i class="ph ph-plus"></i> 물품 추가</button>
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
+                <div>
+                    <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-map-pin-line"></i> 거래처 물품 현황</h1>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">거래처 ${vendors.length} · 진행중 물품 ${active.length}</p>
+                </div>
+                <button id="vendor-add-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 거래처 등록</button>
+            </div>
+            <div id="vendor-map" style="height:380px;border-radius:16px;overflow:hidden;margin-bottom:1rem;background:rgba(148,163,184,0.1);z-index:0"></div>
+            ${scheduleStrip}
+            ${vendors.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">${cards}</div>` : `<div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted)">등록된 거래처가 없습니다. 우측 상단 [거래처 등록]으로 시작하세요.</div>`}
+        </div>`;
+    }
+
+    bindVendorsEvents() {
+        const addBtn = document.getElementById('vendor-add-btn');
+        if (addBtn) addBtn.onclick = () => this.showVendorModal();
+        this.appContainer.querySelectorAll('.vendor-edit').forEach(b => b.onclick = () => this.showVendorModal(b.dataset.id));
+        this.appContainer.querySelectorAll('.vjob-add').forEach(b => b.onclick = () => this.showJobModal(b.dataset.id));
+        this.appContainer.querySelectorAll('.vjob-toggle').forEach(b => b.onclick = () => this.toggleJob(b.dataset.id));
+        this.appContainer.querySelectorAll('.vjob-del').forEach(b => b.onclick = () => this.deleteJob(b.dataset.id));
+        this.initVendorMap();
+    }
+
+    initVendorMap() {
+        if (typeof L === 'undefined') return;
+        const el = document.getElementById('vendor-map');
+        if (!el || el._leaflet_id) return;
+        const DONGDAEMUN = [37.5686, 127.0093];
+        const pts = (this.vendors||[]).filter(v => v.lat && v.lng);
+        const map = L.map(el, { scrollWheelZoom: false }).setView(pts.length ? [pts[0].lat, pts[0].lng] : DONGDAEMUN, pts.length ? 14 : 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+        const group = [];
+        pts.forEach(v => {
+            const actN = (v.jobs||[]).filter(j=>j.status!=='done').length;
+            const m = L.marker([v.lat, v.lng]).addTo(map);
+            m.bindPopup(`<b>${this._vesc(v.name)}</b><br>${this._vesc(v.category)} · 진행 ${actN}건<br>${this._vesc(v.address||'')}`);
+            group.push([v.lat, v.lng]);
+        });
+        if (group.length > 1) { try { map.fitBounds(group, { padding: [40,40], maxZoom: 16 }); } catch(e){} }
+        this._vendorMap = map;
+        setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 120);
+    }
+
+    showVendorModal(id) {
+        const v = id ? (this.vendors||[]).find(x=>x.id===id) : null;
+        this._vendorPick = (v && v.lat && v.lng) ? { lat:v.lat, lng:v.lng } : null;
+        const cats = ['봉제','원단','부자재','프린트','기타'];
+        const c = document.getElementById('global-modal-container');
+        if (!c) return;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in" style="width:92%;max-width:520px;padding:1.8rem;border-radius:20px;position:relative;max-height:90vh;overflow-y:auto">
+            <h2 style="margin:0 0 1.3rem;font-size:1.2rem"><i class="ph ph-storefront"></i> ${v?'거래처 수정':'거래처 등록'}</h2>
+            <div style="display:flex;flex-direction:column;gap:10px">
+                <input id="vd-name" class="login-input" placeholder="상호 (예: 성수봉제)" value="${v?this._vesc(v.name):''}">
+                <select id="vd-cat" class="login-input">${cats.map(k=>`<option value="${k}" ${v&&v.category===k?'selected':''} style="background:#0f172a">${k}</option>`).join('')}</select>
+                <input id="vd-addr" class="login-input" placeholder="주소 (대부분 동대문)" value="${v?this._vesc(v.address||''):''}">
+                <div style="display:flex;gap:8px">
+                    <input id="vd-phone" class="login-input" placeholder="전화" value="${v?this._vesc(v.phone||''):''}">
+                    <input id="vd-biz" class="login-input" placeholder="사업자번호(세금계산서용)" value="${v?this._vesc(v.biz_no||''):''}">
+                </div>
+                <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px"><i class="ph ph-hand-tap"></i> 지도를 클릭해 위치를 찍으세요 (대부분 동대문)</div>
+                <div id="vd-pickmap" style="height:200px;border-radius:12px;overflow:hidden;background:rgba(148,163,184,0.1);z-index:0"></div>
+                <textarea id="vd-memo" class="login-input" placeholder="메모" style="min-height:52px;resize:vertical">${v?this._vesc(v.memo||''):''}</textarea>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.4rem">
+                <div>${v?`<button id="vd-delete" class="btn-secondary" style="padding:9px 14px;border-radius:10px;color:#ef4444">삭제</button>`:''}</div>
+                <div style="display:flex;gap:8px">
+                    <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">취소</button>
+                    <button id="vd-save" class="btn-primary" style="padding:9px 18px;border-radius:10px">저장</button>
+                </div>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        document.getElementById('vd-save').onclick = () => this.saveVendor(id);
+        const delBtn = document.getElementById('vd-delete');
+        if (delBtn) delBtn.onclick = () => this.deleteVendor(id);
+        setTimeout(() => {
+            if (typeof L === 'undefined') return;
+            const el = document.getElementById('vd-pickmap');
+            if (!el || el._leaflet_id) return;
+            const start = this._vendorPick ? [this._vendorPick.lat, this._vendorPick.lng] : [37.5686, 127.0093];
+            const map = L.map(el).setView(start, 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+            let marker = this._vendorPick ? L.marker(start).addTo(map) : null;
+            map.on('click', (e) => {
+                this._vendorPick = { lat: e.latlng.lat, lng: e.latlng.lng };
+                if (marker) marker.setLatLng(e.latlng); else marker = L.marker(e.latlng).addTo(map);
+            });
+            setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} }, 80);
+        }, 60);
+    }
+
+    async saveVendor(id) {
+        const name = document.getElementById('vd-name').value.trim();
+        if (!name) { this.showToast('상호는 필수입니다.'); return; }
+        const row = {
+            name,
+            category: document.getElementById('vd-cat').value,
+            address: document.getElementById('vd-addr').value.trim() || null,
+            phone: document.getElementById('vd-phone').value.trim() || null,
+            biz_no: document.getElementById('vd-biz').value.trim() || null,
+            memo: document.getElementById('vd-memo').value.trim() || null,
+            lat: this._vendorPick ? this._vendorPick.lat : null,
+            lng: this._vendorPick ? this._vendorPick.lng : null,
+        };
+        let error;
+        if (id) ({ error } = await this.supabase.from('vendors').update(row).eq('id', id));
+        else ({ error } = await this.supabase.from('vendors').insert([row]));
+        if (error) { this.showToast('저장 실패: ' + error.message); return; }
+        this.closeGlobalModal();
+        await this.loadVendors();
+        this.showToast('저장되었습니다.');
+    }
+
+    async deleteVendor(id) {
+        if (!confirm('이 거래처와 물품 현황을 모두 삭제할까요?')) return;
+        const { error } = await this.supabase.from('vendors').delete().eq('id', id);
+        if (error) { this.showToast('삭제 실패: ' + error.message); return; }
+        this.closeGlobalModal();
+        await this.loadVendors();
+    }
+
+    showJobModal(vendorId) {
+        const c = document.getElementById('global-modal-container');
+        if (!c) return;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in" style="width:92%;max-width:440px;padding:1.8rem;border-radius:20px;position:relative">
+            <h2 style="margin:0 0 1.3rem;font-size:1.15rem"><i class="ph ph-package"></i> 물품 추가</h2>
+            <div style="display:flex;flex-direction:column;gap:10px">
+                <input id="vj-title" class="login-input" placeholder="품목/작업명 (예: 여름 로고 티)">
+                <div style="display:flex;gap:8px">
+                    <input id="vj-stage" class="login-input" placeholder="단계 (예: 봉제)" value="진행중">
+                    <input id="vj-qty" type="number" class="login-input" placeholder="수량">
+                </div>
+                <label style="font-size:0.8rem;color:var(--text-muted)">마감(스케줄)</label>
+                <input id="vj-due" type="date" class="login-input">
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:1.4rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">취소</button>
+                <button id="vj-save" class="btn-primary" style="padding:9px 18px;border-radius:10px">추가</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        document.getElementById('vj-save').onclick = () => this.saveJob(vendorId);
+    }
+
+    async saveJob(vendorId) {
+        const title = document.getElementById('vj-title').value.trim();
+        if (!title) { this.showToast('품목명은 필수입니다.'); return; }
+        const qtyRaw = document.getElementById('vj-qty').value;
+        const row = {
+            vendor_id: vendorId,
+            title,
+            stage: document.getElementById('vj-stage').value.trim() || '진행중',
+            qty: qtyRaw ? parseInt(qtyRaw,10) : null,
+            due_date: document.getElementById('vj-due').value || null,
+        };
+        const { error } = await this.supabase.from('vendor_jobs').insert([row]);
+        if (error) { this.showToast('추가 실패: ' + error.message); return; }
+        this.closeGlobalModal();
+        await this.loadVendors();
+    }
+
+    async toggleJob(id) {
+        const job = (this.vendors||[]).flatMap(v=>v.jobs||[]).find(j=>j.id===id);
+        if (!job) return;
+        const { error } = await this.supabase.from('vendor_jobs').update({ status: job.status==='done'?'active':'done' }).eq('id', id);
+        if (error) { this.showToast('변경 실패: ' + error.message); return; }
+        await this.loadVendors();
+    }
+
+    async deleteJob(id) {
+        const { error } = await this.supabase.from('vendor_jobs').delete().eq('id', id);
+        if (error) { this.showToast('삭제 실패: ' + error.message); return; }
+        await this.loadVendors();
+    }
+
     bindDashboardEvents() {
         this.bindGlobalSearch();
         // 사이드바 내비게이션 (onclick으로 중복 방지)
@@ -4061,6 +4323,7 @@ class BhasApp {
         if (this.currentView === 'kanban') this.bindKanbanEvents();
         if (this.currentView === 'table') this.bindTableEvents();
         if (this.currentView === 'calendar') this.bindCalendarEvents();
+        if (this.currentView === 'vendors') this.bindVendorsEvents();
 
         const viewGridBtn = document.getElementById('view-grid-btn');
         if (viewGridBtn) viewGridBtn.onclick = () => {
