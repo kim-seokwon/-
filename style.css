@@ -2049,3 +2049,16 @@ body {
     background: #111827; color: #fff; font-size: 0.78rem; font-weight: 600;
     padding: 4px 9px; border-radius: 7px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
+
+/* 거래처/물품 모달 입력칸 — 밝은 모달에서도 읽히게(login-input 어두운 배경 오버라이드) */
+.vmodal .login-input {
+    background: rgba(148,163,184,0.14);
+    border: 1px solid rgba(148,163,184,0.42);
+    color: var(--text-main);
+    padding: 11px 13px;
+    border-radius: 10px;
+    font-size: 0.95rem;
+}
+.vmodal .login-input::placeholder { color: var(--text-muted); opacity: 1; }
+.vmodal .login-input:focus { border-color: var(--primary); background: rgba(148,163,184,0.08); }
+.vmodal select.login-input option { color: #1a2331; }

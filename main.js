@@ -4164,11 +4164,11 @@ class BhasApp {
         const c = document.getElementById('global-modal-container');
         if (!c) return;
         c.innerHTML = `
-        <div class="glass modal-content fade-in" style="width:92%;max-width:520px;padding:1.8rem;border-radius:20px;position:relative;max-height:90vh;overflow-y:auto">
+        <div class="glass modal-content fade-in vmodal" style="width:92%;max-width:520px;padding:1.8rem;border-radius:20px;position:relative;max-height:90vh;overflow-y:auto">
             <h2 style="margin:0 0 1.3rem;font-size:1.2rem"><i class="ph ph-storefront"></i> ${v?'거래처 수정':'거래처 등록'}</h2>
             <div style="display:flex;flex-direction:column;gap:10px">
                 <input id="vd-name" class="login-input" placeholder="상호 (예: 성수봉제)" value="${v?this._vesc(v.name):''}">
-                <select id="vd-cat" class="login-input">${cats.map(k=>`<option value="${k}" ${v&&v.category===k?'selected':''} style="background:#0f172a">${k}</option>`).join('')}</select>
+                <select id="vd-cat" class="login-input">${cats.map(k=>`<option value="${k}" ${v&&v.category===k?'selected':''}>${k}</option>`).join('')}</select>
                 <input id="vd-addr" class="login-input" placeholder="주소 (대부분 동대문)" value="${v?this._vesc(v.address||''):''}">
                 <div style="display:flex;gap:8px">
                     <input id="vd-phone" class="login-input" placeholder="전화" value="${v?this._vesc(v.phone||''):''}">
@@ -4240,7 +4240,7 @@ class BhasApp {
         const c = document.getElementById('global-modal-container');
         if (!c) return;
         c.innerHTML = `
-        <div class="glass modal-content fade-in" style="width:92%;max-width:440px;padding:1.8rem;border-radius:20px;position:relative">
+        <div class="glass modal-content fade-in vmodal" style="width:92%;max-width:440px;padding:1.8rem;border-radius:20px;position:relative">
             <h2 style="margin:0 0 1.3rem;font-size:1.15rem"><i class="ph ph-package"></i> 물품 추가</h2>
             <div style="display:flex;flex-direction:column;gap:10px">
                 <input id="vj-title" class="login-input" placeholder="품목/작업명 (예: 여름 로고 티)">
