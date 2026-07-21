@@ -4169,12 +4169,12 @@ class BhasApp {
             <div style="display:flex;flex-direction:column;gap:10px">
                 <input id="vd-name" class="login-input" placeholder="상호 (예: 성수봉제)" value="${v?this._vesc(v.name):''}">
                 <select id="vd-cat" class="login-input">${cats.map(k=>`<option value="${k}" ${v&&v.category===k?'selected':''}>${k}</option>`).join('')}</select>
-                <input id="vd-addr" class="login-input" placeholder="주소 (대부분 동대문)" value="${v?this._vesc(v.address||''):''}">
+                <input id="vd-addr" class="login-input" placeholder="주소" value="${v?this._vesc(v.address||''):''}">
                 <div style="display:flex;gap:8px">
-                    <input id="vd-phone" class="login-input" placeholder="전화" value="${v?this._vesc(v.phone||''):''}">
-                    <input id="vd-biz" class="login-input" placeholder="사업자번호(세금계산서용)" value="${v?this._vesc(v.biz_no||''):''}">
+                    <input id="vd-phone" class="login-input" placeholder="전화번호" value="${v?this._vesc(v.phone||''):''}">
+                    <input id="vd-biz" class="login-input" placeholder="사업자등록번호" value="${v?this._vesc(v.biz_no||''):''}">
                 </div>
-                <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px"><i class="ph ph-hand-tap"></i> 지도를 클릭해 위치를 찍으세요 (대부분 동대문)</div>
+                <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px"><i class="ph ph-hand-tap"></i> 지도를 클릭해 위치를 찍으세요</div>
                 <div id="vd-pickmap" style="height:200px;border-radius:12px;overflow:hidden;background:rgba(148,163,184,0.1);z-index:0"></div>
                 <textarea id="vd-memo" class="login-input" placeholder="메모" style="min-height:52px;resize:vertical">${v?this._vesc(v.memo||''):''}</textarea>
             </div>
