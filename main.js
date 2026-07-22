@@ -2,7 +2,7 @@ import { mockData, STAGES } from './mockData.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
     garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
-    newPlacement, newCutline, newPoint,
+    newPlacement, newCutline, newPoint, techPackChecklistItems,
 } from './sampleMaker.js';
 
 // Supabase 설정 (사용자 정보 입력 필요)
@@ -3796,14 +3796,15 @@ class BhasApp {
 
         const bindPrint = () => {
             const btn = document.getElementById('sm-print-btn');
-            if (!btn) return;
-            btn.onclick = () => {
+            if (btn) btn.onclick = () => {
                 const html = buildTechPackPrintHTML(this.sampleConfig);
                 const w = window.open('', '_blank');
                 if (!w) { this.showToast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
                 w.document.write(html);
                 w.document.close();
             };
+            const saveBtn = document.getElementById('sm-save-techpack');
+            if (saveBtn) saveBtn.onclick = () => this.saveTechPack();
         };
 
         // ===== 캔버스 핸들 드래그 (배치 이동/리사이즈, 치수, 곡선) =====
@@ -4413,7 +4414,8 @@ class BhasApp {
         await this.loadVendors();
     }
 
-    showJobModal(vendorId) {
+    async showJobModal(vendorId) {
+        await this.ensureTechPacks();
         const c = document.getElementById('global-modal-container');
         if (!c) return;
         c.innerHTML = `
@@ -4425,6 +4427,8 @@ class BhasApp {
                     <input id="vj-stage" class="login-input" placeholder="단계 (예: 봉제)" value="진행중">
                     <input id="vj-qty" type="number" class="login-input" placeholder="수량">
                 </div>
+                <label style="font-size:0.8rem;color:var(--text-muted)">작업지시서 연결 <span style="color:var(--primary)">(검수 체크리스트 자동생성)</span></label>
+                <select id="vj-pack" class="login-input"><option value="">— 없음 —</option>${(this._techPacks || []).map(t => `<option value="${t.id}">${this._vesc(t.style_name)}${t.style_no ? ` (${t.style_no})` : ''}</option>`).join('')}</select>
                 <label style="font-size:0.8rem;color:var(--text-muted)">마감(스케줄)</label>
                 <input id="vj-due" type="date" class="login-input">
             </div>
@@ -4447,6 +4451,7 @@ class BhasApp {
             stage: document.getElementById('vj-stage').value.trim() || '진행중',
             qty: qtyRaw ? parseInt(qtyRaw,10) : null,
             due_date: document.getElementById('vj-due').value || null,
+            tech_pack_id: (document.getElementById('vj-pack') && document.getElementById('vj-pack').value) || null,
         };
         const { error } = await this.supabase.from('vendor_jobs').insert([row]);
         if (error) { this.showToast('추가 실패: ' + error.message); return; }
@@ -4503,17 +4508,22 @@ class BhasApp {
         });
     }
 
-    showQcModal(jobId) {
+    async showQcModal(jobId) {
+        await this.ensureTechPacks();
         const job = (this.vendors || []).flatMap(v => v.jobs || []).find(j => j.id === jobId);
         if (!job) return;
         const vendor = (this.vendors || []).find(v => (v.jobs || []).some(j => j.id === jobId));
+        const pack = job.tech_pack_id ? (this._techPacks || []).find(t => t.id === job.tech_pack_id) : null;
+        const saved = (Array.isArray(job.qc_checklist) && job.qc_checklist.length) ? job.qc_checklist.map(x => ({ ...x })) : null;
         this._qcDraft = {
             jobId,
-            checklist: (Array.isArray(job.qc_checklist) && job.qc_checklist.length) ? job.qc_checklist.map(x => ({ ...x })) : this._defaultQcChecklist(job),
+            packId: job.tech_pack_id || null,
+            checklist: saved || (pack && pack.config ? this._qcFromConfig(pack.config, job) : this._defaultQcChecklist(job)),
             photos: Array.isArray(job.qc_photos) ? job.qc_photos.slice() : [],
             quick: job.quick_status || null,
             vendorName: vendor ? vendor.name : '',
             title: job.title, qty: job.qty,
+            showSpec: false,
         };
         const c = document.getElementById('global-modal-container');
         if (!c) return;
@@ -4531,6 +4541,16 @@ class BhasApp {
         <div class="glass modal-content fade-in vmodal" style="width:94%;max-width:560px;padding:1.6rem;border-radius:20px;position:relative;max-height:92vh;overflow-y:auto">
             <h2 style="margin:0 0 0.3rem;font-size:1.15rem"><i class="ph ph-clipboard-text"></i> 출고 검수 · 카카오퀵</h2>
             <p style="margin:0 0 1.1rem;color:var(--text-muted);font-size:0.85rem">${this._vesc(d.vendorName)} · ${this._vesc(d.title)}${d.qty ? ` · ${d.qty}장` : ''}</p>
+
+            <div style="font-size:0.82rem;font-weight:700;margin-bottom:6px">작업지시서 연결 <span style="font-weight:400;color:var(--text-muted)">— 연결하면 지시서 항목이 아래 체크리스트로 자동 반영</span></div>
+            <div style="display:flex;gap:6px;margin-bottom:0.7rem;align-items:center">
+                <select id="qc-pack" class="login-input" style="flex:1">
+                    <option value="">— 연결 안 됨 (기본 체크리스트) —</option>
+                    ${(this._techPacks || []).map(t => `<option value="${t.id}" ${d.packId === t.id ? 'selected' : ''}>${this._vesc(t.style_name)}${t.style_no ? ` (${t.style_no})` : ''}</option>`).join('')}
+                </select>
+                ${d.packId ? `<button id="qc-spec-toggle" class="btn-secondary" style="padding:8px 12px;border-radius:9px;white-space:nowrap">${d.showSpec ? '지시서 접기' : '지시서 보기'}</button>` : ''}
+            </div>
+            ${d.showSpec && d.packId ? `<div style="background:#fff;border-radius:12px;padding:10px;margin-bottom:1rem;max-height:300px;overflow:auto">${this._qcSpecHTML(d.packId)}</div>` : ''}
 
             <div style="font-size:0.82rem;font-weight:700;margin-bottom:6px">① 작업지시서 대조 체크리스트</div>
             <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:0.8rem">
@@ -4566,6 +4586,16 @@ class BhasApp {
             ${d.quick ? `<p style="margin:0.8rem 0 0;font-size:0.8rem;color:#10b981"><i class="ph ph-check"></i> 퀵 예약됨${d.quick.trackingNo ? ` · ${this._vesc(d.quick.trackingNo)}` : ''}</p>` : ''}
         </div>`;
 
+        const packSel = document.getElementById('qc-pack');
+        if (packSel) packSel.onchange = () => {
+            d.packId = packSel.value || null;
+            const pack = d.packId ? (this._techPacks || []).find(t => t.id === d.packId) : null;
+            d.checklist = pack && pack.config ? this._qcFromConfig(pack.config, { qty: d.qty }) : this._defaultQcChecklist({ qty: d.qty });
+            d.showSpec = !!d.packId;
+            this._renderQcModal();
+        };
+        const specToggle = document.getElementById('qc-spec-toggle');
+        if (specToggle) specToggle.onclick = () => { d.showSpec = !d.showSpec; this._renderQcModal(); };
         c.querySelectorAll('.qc-chk').forEach(cb => cb.onchange = () => { d.checklist[+cb.dataset.i].checked = cb.checked; this._renderQcModal(); });
         const addBtn = document.getElementById('qc-add-btn');
         if (addBtn) addBtn.onclick = () => { const inp = document.getElementById('qc-add'); const v = (inp.value || '').trim(); if (v) { d.checklist.push({ label: v, checked: false }); this._renderQcModal(); } };
@@ -4585,7 +4615,7 @@ class BhasApp {
     async saveQc() {
         const d = this._qcDraft; if (!d) return;
         const passed = d.checklist.every(x => x.checked) && d.photos.length >= 1;
-        const patch = { qc_checklist: d.checklist, qc_photos: d.photos, qc_status: passed ? 'passed' : 'pending' };
+        const patch = { qc_checklist: d.checklist, qc_photos: d.photos, qc_status: passed ? 'passed' : 'pending', tech_pack_id: d.packId || null };
         const { error } = await this.supabase.from('vendor_jobs').update(patch).eq('id', d.jobId);
         if (error) { this.showToast('검수 저장 실패 (012_vendor_qc.sql 설치 필요): ' + error.message); return; }
         const job = (this.vendors || []).flatMap(v => v.jobs || []).find(j => j.id === d.jobId);
@@ -4612,6 +4642,49 @@ class BhasApp {
         } catch (e) {
             this.showToast('카카오퀵 호출 실패 — 비즈니스 API 키/kakao-quick 함수 설정 필요');
         }
+    }
+
+    // ----- 작업지시서(tech_packs) 저장/로드 + 검수 연결 -----
+    async ensureTechPacks(force) {
+        if (this._techPacksLoaded && !force) return;
+        try {
+            const { data } = await this.supabase.from('tech_packs').select('id, style_name, style_no, config, created_at').order('created_at', { ascending: false });
+            this._techPacks = data || [];
+        } catch (e) { this._techPacks = this._techPacks || []; }
+        this._techPacksLoaded = true;
+    }
+
+    async saveTechPack() {
+        const cfg = this.sampleConfig;
+        const name = (cfg.styleName || '').trim() || '무제 작업지시서';
+        try {
+            const { error } = await this.supabase.from('tech_packs').insert([{ style_name: name, style_no: cfg.styleNo || null, config: cfg }]);
+            if (error) throw error;
+        } catch (e) {
+            this.showToast('작업지시서 저장 실패 (013_tech_packs.sql 설치 필요): ' + (e.message || e));
+            return;
+        }
+        await this.ensureTechPacks(true);
+        this.showToast('작업지시서 저장됨: ' + name + ' — 생산현황 물품에 연결 가능');
+    }
+
+    _qcFromConfig(cfg, job) {
+        const items = (techPackChecklistItems(cfg) || []).map(l => ({ label: l, checked: false }));
+        items.push({ label: `수량 확인${job && job.qty ? ` (${job.qty}장)` : ''}`, checked: false });
+        items.push({ label: '라벨(메인/케어) 부착', checked: false });
+        items.push({ label: '오염·봉제 불량 검수', checked: false });
+        items.push({ label: '포장 상태', checked: false });
+        return items;
+    }
+
+    _qcSpecHTML(packId) {
+        const pack = (this._techPacks || []).find(t => t.id === packId);
+        if (!pack || !pack.config) return '<p style="color:#888;font-size:0.8rem">지시서를 찾을 수 없음</p>';
+        const items = techPackChecklistItems(pack.config);
+        return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+            <div style="flex:1;min-width:170px">${garmentFlatSVG({ ...pack.config, editMode: false }, false)}</div>
+            <div style="flex:1;min-width:150px"><div style="font-weight:700;font-size:0.83rem;margin-bottom:5px;color:#111">지시서 항목</div>${items.map(i => `<div style="font-size:0.79rem;color:#333;padding:3px 0;border-bottom:1px solid #eee">• ${this._vesc(i)}</div>`).join('') || '<span style="color:#888;font-size:0.8rem">항목 없음</span>'}</div>
+        </div>`;
     }
 
     // ============================================================

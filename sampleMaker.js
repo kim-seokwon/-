@@ -1272,6 +1272,19 @@ function selectedDetailLabels(cfg) {
   return def.details.filter(x => cfg.details[x.key]).map(x => x.label);
 }
 
+// 작업지시서 → 출고 검수 체크리스트 항목 (지시서에 있는 걸 검수에서 놓치지 않도록)
+export function techPackChecklistItems(cfg) {
+  const items = [];
+  (cfg.placements || []).forEach(p => {
+    const meta = placementKindMeta(p.kind);
+    const pos = placementPosLabel(cfg, p.pos);
+    items.push(`${meta.label} — ${pos} ${p.sizeCm}cm 위치·색상 확인${p.fileName ? ` (${p.fileName})` : ''}`);
+  });
+  selectedDetailLabels(cfg).forEach(l => items.push(`${l} 확인`));
+  (cfg.cutlines || []).filter(c => (c.pts || []).length >= 2).forEach((c, i) => items.push(`절개선 ${i + 1} (${c.style === 'seam' ? '절개' : '스티치'}) 위치·봉제 확인`));
+  return items;
+}
+
 function placementRows(cfg) {
   return (cfg.placements || []).map(p => {
     const meta = placementKindMeta(p.kind);
@@ -1300,7 +1313,10 @@ export function techPackSummaryHTML(cfg) {
           <span><b>사이즈</b> ${cfg.size || '-'}</span>
         </div>
       </div>
-      <button id="sm-print-btn" class="sm-print-btn"><i class="ph ph-printer"></i> 작업지시서 인쇄 / PDF</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="sm-save-techpack" class="sm-print-btn" style="background:#10b981"><i class="ph ph-floppy-disk"></i> 작업지시서 저장</button>
+        <button id="sm-print-btn" class="sm-print-btn"><i class="ph ph-printer"></i> 인쇄 / PDF</button>
+      </div>
     </div>
     <div class="sm-tp-grid">
       <div class="sm-tp-block">
