@@ -863,7 +863,7 @@ class BhasApp {
             { id: 'dashboard', label: '프로젝트', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
-            { id: 'vendors', label: '생산처', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'vendors', label: '생산현황', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'quotes', label: '견적', icon: '<i class="ph ph-receipt"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
@@ -4291,7 +4291,7 @@ class BhasApp {
         <div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
                 <div>
-                    <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-map-pin-line"></i> 생산처 물품 현황</h1>
+                    <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-map-pin-line"></i> 생산 현황</h1>
                     <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">생산처 ${vendors.length} · 진행중 물품 ${active.length}</p>
                 </div>
                 <button id="vendor-add-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 생산처 등록</button>
