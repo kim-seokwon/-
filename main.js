@@ -1710,6 +1710,34 @@ class BhasApp {
         return false;
     }
 
+    // 매출 집계 (홈·매출뷰 공용): 몰→브랜드 매핑, 월별 합산
+    _salesAgg(limitMonths = 12) {
+        const orders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null);
+        const mallBrand = (o) => {
+            const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
+            if (mall) { const b = (mockData.brands || []).find(x => x.id === mall.brand_id); return b ? b.name : (mall.label || '기타'); }
+            return o.mall_key || o.channel || '기타';
+        };
+        const ym = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
+        let months = [...new Set(orders.map(o => ym(o.order_date)))].sort();
+        if (months.length > limitMonths) months = months.slice(-limitMonths);
+        const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
+        const byBrand = {};
+        orders.forEach(o => {
+            const m = ym(o.order_date); if (!(m in monthIdx)) return;
+            const bn = mallBrand(o);
+            const rec = byBrand[bn] || (byBrand[bn] = { name: bn, cells: months.map(() => ({ amt: 0, cnt: 0 })), total: 0, cnt: 0 });
+            const amt = Number(o.pay_amount) || 0;
+            rec.cells[monthIdx[m]].amt += amt; rec.cells[monthIdx[m]].cnt += 1; rec.total += amt; rec.cnt += 1;
+        });
+        const brands = Object.values(byBrand).sort((a, b) => b.total - a.total);
+        const monthTotals = months.map((_, i) => brands.reduce((s, b) => s + b.cells[i].amt, 0));
+        const grand = monthTotals.reduce((s, x) => s + x, 0);
+        const thisM = monthTotals[monthTotals.length - 1] || 0, prevM = monthTotals[monthTotals.length - 2] || 0;
+        const mom = prevM ? Math.round((thisM - prevM) / prevM * 100) : null;
+        return { orders, months, monthIdx, brands, monthTotals, grand, thisM, prevM, mom };
+    }
+
     renderHome(products) {
         products = products || mockData.products || [];
         const name = this.currentUser?.name || '';
@@ -1741,6 +1769,31 @@ class BhasApp {
         const quoteRows = recentQuotes.map(q => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.85rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(q.client_name)}</span><span style="font-weight:700;white-space:nowrap">${this._won(q.total_amount)}원</span></div>`).join('');
         const jobRows = activeJobs.filter(j => j.due_date).sort((a, b) => new Date(a.due_date) - new Date(b.due_date)).slice(0, 5).map(j => { const dd = dday(j.due_date); const col = dd < 0 ? '#ef4444' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)'); return `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.85rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(j.title)} · ${this._vesc(j._v)}</span><span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span></div>`; }).join('');
 
+        // 매출 위젯 (홈)
+        const sa = this._salesAgg(6);
+        const maxM = Math.max(1, ...sa.monthTotals);
+        const salesCard = sa.orders.length ? `
+            <div class="glass" style="padding:1.3rem 1.4rem;border-radius:16px;margin-bottom:1.5rem;cursor:pointer" onclick="app.switchView('sales')">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                    <div style="font-size:0.95rem;font-weight:700;display:flex;align-items:center;gap:7px"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> 매출 현황</div>
+                    <span style="font-size:0.8rem;color:var(--primary);font-weight:600">브랜드별 상세 →</span>
+                </div>
+                <div style="display:flex;gap:1.6rem;flex-wrap:wrap;align-items:flex-end">
+                    <div style="min-width:130px">
+                        <div style="font-size:0.76rem;color:var(--text-muted)">이번 달 매출</div>
+                        <div style="font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1">${this._won(sa.thisM)}<span style="font-size:0.9rem;font-weight:600">원</span></div>
+                        ${sa.mom != null ? `<div style="font-size:0.75rem;font-weight:600;color:${sa.mom >= 0 ? '#10b981' : '#ef4444'}">전월 대비 ${sa.mom >= 0 ? '+' : ''}${sa.mom}%</div>` : ''}
+                    </div>
+                    <div style="flex:1;min-width:210px;display:flex;align-items:flex-end;gap:6px;height:72px">
+                        ${sa.months.map((m, i) => { const h = Math.round(sa.monthTotals[i] / maxM * 60); const cur = i === sa.months.length - 1; return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0"><div style="width:100%;max-width:34px;height:${Math.max(2, h)}px;background:${cur ? 'var(--primary)' : 'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0"></div><div style="font-size:0.66rem;color:var(--text-muted)">${+m.split('-')[1]}월</div></div>`; }).join('')}
+                    </div>
+                    <div style="min-width:160px">
+                        <div style="font-size:0.76rem;color:var(--text-muted);margin-bottom:5px">브랜드 TOP</div>
+                        ${sa.brands.slice(0, 3).map((b, i) => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:0.8rem;padding:2px 0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${['🥇', '🥈', '🥉'][i]} ${this._vesc(b.name)}</span><span style="font-weight:700;font-variant-numeric:tabular-nums">${this._won(b.total)}</span></div>`).join('') || '<span style="color:var(--text-muted);font-size:0.8rem">-</span>'}
+                    </div>
+                </div>
+            </div>` : '';
+
         return `
         <div class="fade-in" style="padding:1.5rem;max-width:1200px;margin:0 auto">
             <div style="margin-bottom:1.4rem">
@@ -1751,9 +1804,11 @@ class BhasApp {
                 ${kpi('ph-rocket-launch', activeProjects, '진행 중 프로젝트', '#3b82f6')}
                 ${kpi('ph-truck', shipTargets, '배송 대상 주문', '#10b981')}
                 ${kpi('ph-package', activeJobs.length, '진행중 생산 물품', '#f59e0b')}
+                ${kpi('ph-chart-line-up', this._won(sa.thisM), '이번달 매출(원)', '#22c55e')}
                 ${kpi('ph-receipt', this._won(monthTotal), '이번달 견적(원)', '#8b5cf6')}
                 ${kpi('ph-plugs-connected', `${mallsConn}/${malls.length}`, '카페24 연동', '#ec4899')}
             </div>
+            ${salesCard}
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem">
                 ${listCard('임박 생산 스케줄', 'ph-calendar-dots', jobRows, '진행중 물품 없음')}
                 ${listCard('최근 주문', 'ph-shopping-bag-open', orderRows, '주문 없음')}
@@ -2735,35 +2790,12 @@ class BhasApp {
     // ============================================================
     renderSales() {
         if (!this._ordersLoaded || !this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">매출 데이터를 불러오는 중...</div>`;
-        const orders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null);
-        const brandName = (o) => {
-            const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
-            if (mall) { const b = (mockData.brands || []).find(x => x.id === mall.brand_id); return b ? b.name : (mall.label || '기타'); }
-            return o.mall_key || o.channel || '기타';
-        };
-        const ym = (d) => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
+        const { orders, months, brands, monthTotals, grand, thisM, mom } = this._salesAgg(12);
         const won = n => this._won(Math.round(n));
         const monthLabel = m => { const [y, mm] = m.split('-'); return `${+mm}월<span style="color:var(--text-muted);font-size:0.7rem">'${y.slice(2)}</span>`; };
 
         if (!orders.length) return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto"><h1 style="font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1><div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted);margin-top:1rem">주문 데이터가 없습니다. 주문이 수집되면 브랜드별 월 매출이 자동 집계됩니다.</div></div>`;
 
-        let months = [...new Set(orders.map(o => ym(o.order_date)))].sort();
-        if (months.length > 12) months = months.slice(-12);
-        const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
-
-        const byBrand = {};
-        orders.forEach(o => {
-            const m = ym(o.order_date); if (!(m in monthIdx)) return;
-            const bn = brandName(o);
-            const rec = byBrand[bn] || (byBrand[bn] = { name: bn, cells: months.map(() => ({ amt: 0, cnt: 0 })), total: 0, cnt: 0 });
-            const amt = Number(o.pay_amount) || 0;
-            rec.cells[monthIdx[m]].amt += amt; rec.cells[monthIdx[m]].cnt += 1; rec.total += amt; rec.cnt += 1;
-        });
-        const brands = Object.values(byBrand).sort((a, b) => b.total - a.total);
-        const monthTotals = months.map((_, i) => brands.reduce((s, b) => s + b.cells[i].amt, 0));
-        const grand = monthTotals.reduce((s, x) => s + x, 0);
-        const thisM = monthTotals[monthTotals.length - 1] || 0, prevM = monthTotals[monthTotals.length - 2] || 0;
-        const mom = prevM ? Math.round((thisM - prevM) / prevM * 100) : null;
         const maxMonth = Math.max(1, ...monthTotals);
         const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 
