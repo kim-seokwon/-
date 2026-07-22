@@ -2062,3 +2062,15 @@ body {
 .vmodal .login-input::placeholder { color: var(--text-muted); opacity: 1; }
 .vmodal .login-input:focus { border-color: var(--primary); background: rgba(148,163,184,0.08); }
 .vmodal select.login-input option { color: #1a2331; }
+
+/* ===== 라이트 모드 가독성 보정 (인라인 color:white 오버라이드) ===== */
+body.light .brand-select { color: var(--text-main) !important; background: #fff !important; border: 1px solid var(--card-border) !important; }
+body.light .brand-select option { background: #fff !important; color: #1e293b !important; }
+body.light .stat-item .value { color: var(--text-main) !important; }
+body.light .stat-card { background: #fff !important; box-shadow: var(--shadow-premium); }
+body.light .stat-card .label { color: var(--text-muted) !important; }
+body.light .toggle-btn:hover { background: rgba(15,23,42,0.06); color: var(--text-main); }
+body.light .view-toggles button:hover:not(.active) { background: rgba(15,23,42,0.05); color: var(--text-main); }
+body.light .content-header h1,
+body.light .notepad-card h3,
+body.light .stepper-section h2 { color: var(--text-main); }
