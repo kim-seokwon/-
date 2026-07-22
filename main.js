@@ -4427,7 +4427,7 @@ class BhasApp {
                 <td style="padding:10px;font-weight:600">${this._vesc(q.client_name)}</td>
                 <td style="padding:10px;font-size:0.85rem;color:var(--text-muted)">${(q.items || []).length}개 품목</td>
                 <td style="padding:10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">${this._won(q.total_amount)}원</td>
-                <td style="padding:10px;text-align:center"><span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${q.status === 'confirmed' ? 'rgba(34,197,94,0.18)' : (q.status === 'sent' ? 'rgba(59,130,246,0.18)' : 'rgba(245,158,11,0.18)')};color:${q.status === 'confirmed' ? '#22c55e' : (q.status === 'sent' ? '#60a5fa' : '#f59e0b')}">${this._quoteStatusLabel(q.status)}</span></td>
+                <td style="padding:10px;text-align:center;white-space:nowrap"><span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${q.status === 'confirmed' ? 'rgba(34,197,94,0.18)' : (q.status === 'sent' ? 'rgba(59,130,246,0.18)' : 'rgba(245,158,11,0.18)')};color:${q.status === 'confirmed' ? '#22c55e' : (q.status === 'sent' ? '#60a5fa' : '#f59e0b')}">${this._quoteStatusLabel(q.status)}</span>${q.tax_status === 'issued' ? ' <span style="font-size:0.66rem;padding:2px 7px;border-radius:8px;background:rgba(34,197,94,0.18);color:#22c55e">계산서✓</span>' : ''}</td>
                 <td style="padding:10px;text-align:center"><button class="q-print" data-id="${q.id}" title="인쇄" style="background:none;border:none;color:var(--text-muted);cursor:pointer"><i class="ph ph-printer"></i></button></td>
             </tr>`).join('') || `<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">견적서가 없습니다. [새 견적]으로 시작하세요.</td></tr>`;
         return `
@@ -4510,7 +4510,7 @@ class BhasApp {
             </details>
             <textarea id="q-memo" class="login-input" placeholder="비고/메모" style="margin-top:10px;min-height:46px;resize:vertical">${q ? this._vesc(q.memo || '') : ''}</textarea>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.3rem;gap:8px;flex-wrap:wrap">
-                <div style="display:flex;gap:8px;flex-wrap:wrap">${q ? `<button id="q-delete" class="btn-secondary" style="padding:9px 12px;border-radius:10px;color:#ef4444">삭제</button><button id="q-print2" class="btn-secondary" style="padding:9px 12px;border-radius:10px"><i class="ph ph-printer"></i> 인쇄</button><button id="q-image2" class="btn-secondary" style="padding:9px 12px;border-radius:10px"><i class="ph ph-image"></i> 이미지</button>` : ''}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">${q ? `<button id="q-delete" class="btn-secondary" style="padding:9px 12px;border-radius:10px;color:#ef4444">삭제</button><button id="q-print2" class="btn-secondary" style="padding:9px 12px;border-radius:10px"><i class="ph ph-printer"></i> 인쇄</button><button id="q-image2" class="btn-secondary" style="padding:9px 12px;border-radius:10px"><i class="ph ph-image"></i> 이미지</button><button id="q-tax" class="btn-secondary" style="padding:9px 12px;border-radius:10px;color:${q.tax_status === 'issued' ? '#22c55e' : '#3b82f6'}">${q.tax_status === 'issued' ? '<i class="ph ph-check-circle"></i> 계산서 발행됨' : '<i class="ph ph-file-text"></i> 세금계산서'}</button>` : ''}</div>
                 <div style="display:flex;gap:8px">
                     <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">취소</button>
                     <button id="q-save" class="btn-primary" style="padding:9px 18px;border-radius:10px">저장</button>
@@ -4529,6 +4529,7 @@ class BhasApp {
         const dl = document.getElementById('q-delete'); if (dl) dl.onclick = () => this.deleteQuote(id);
         const p2 = document.getElementById('q-print2'); if (p2) p2.onclick = () => { const qq = (this.quotes || []).find(x => x.id === id); if (qq) this.printQuote(qq); };
         const im2 = document.getElementById('q-image2'); if (im2) im2.onclick = () => { const qq = (this.quotes || []).find(x => x.id === id); if (qq) this.saveQuoteImage(qq); };
+        const tx = document.getElementById('q-tax'); if (tx) tx.onclick = () => { const qq = (this.quotes || []).find(x => x.id === id); if (qq) this.showTaxInvoiceModal(qq); };
         const dateEl = document.getElementById('q-date'); const vlbl = document.getElementById('q-valid-lbl');
         const updValid = () => { if (vlbl) vlbl.textContent = dateEl.value ? this._addDays(dateEl.value, 7) : '견적일 +7일'; };
         if (dateEl) { dateEl.onchange = updValid; updValid(); }
@@ -4675,6 +4676,44 @@ class BhasApp {
             this.showToast('이미지 저장됨');
         } catch (e) { this.showToast('이미지 생성 실패: ' + (e.message || e)); }
         finally { holder.remove(); }
+    }
+    showTaxInvoiceModal(q) {
+        if (q.tax_status === 'issued') { this.showToast('이미 발행됨 (관리번호 ' + (q.tax_mgtkey || '') + ')'); return; }
+        const client = (this.clients || []).find(c => c.name === q.client_name && (c.biz_no || '') === (q.client_biz_no || ''));
+        const email = (client && client.email) || '';
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in vmodal" style="width:92%;max-width:460px;padding:1.8rem;border-radius:20px">
+            <h2 style="margin:0 0 1rem;font-size:1.15rem"><i class="ph ph-file-text"></i> 세금계산서 발행</h2>
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px">${this._vesc(q.client_name)} ${q.client_biz_no ? '(' + this._vesc(q.client_biz_no) + ')' : '<span style="color:#ef4444">사업자번호 없음</span>'} · 합계 <b style="color:var(--text-main)">${this._won(q.total_amount)}원</b></div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+                <div><label style="font-size:0.74rem;color:var(--text-muted)">작성일자 (= 실제 공급/납품일)</label><input id="tx-date" type="date" class="login-input" value="${new Date().toISOString().slice(0, 10)}"></div>
+                <div><label style="font-size:0.74rem;color:var(--text-muted)">공급받는자 이메일</label><input id="tx-email" class="login-input" placeholder="세금계산서 받을 이메일" value="${this._vesc(email)}"></div>
+                <div style="display:flex;gap:14px;padding:2px"><label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer"><input type="radio" name="tx-purpose" value="영수" checked style="accent-color:var(--primary)"> 영수</label><label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer"><input type="radio" name="tx-purpose" value="청구" style="accent-color:var(--primary)"> 청구</label></div>
+            </div>
+            <div style="font-size:0.78rem;color:#f59e0b;margin-top:10px;line-height:1.5"><i class="ph ph-warning"></i> 작성일자는 실제 납품일 기준. 다음 달 10일 전 발행해야 가산세 없어요.</div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:1.3rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">취소</button>
+                <button id="tx-issue" class="btn-primary" style="padding:9px 18px;border-radius:10px">발행</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        document.getElementById('tx-issue').onclick = () => this.issueTaxInvoice(q);
+    }
+    async issueTaxInvoice(q) {
+        const email = document.getElementById('tx-email').value.trim();
+        const supplyDate = document.getElementById('tx-date').value;
+        const purposeType = (document.querySelector('input[name="tx-purpose"]:checked') || {}).value || '영수';
+        if (!q.client_biz_no) { this.showToast('고객사 사업자번호가 없습니다. 견적에서 입력하세요.'); return; }
+        if (!email) { this.showToast('공급받는자 이메일을 입력하세요.'); return; }
+        this.showToast('발행 중...');
+        try {
+            const { data, error } = await this.supabase.functions.invoke('taxinvoice-issue', { body: { quote: q, email, supplyDate, purposeType } });
+            if (error || !data || !data.ok) { this.showToast('발행 실패: ' + ((data && data.error) || (error && error.message) || '팝빌 미설정/키 필요')); return; }
+            await this.supabase.from('quotes').update({ tax_status: 'issued', tax_mgtkey: data.mgtKey, tax_supply_date: supplyDate, tax_issued_at: new Date().toISOString() }).eq('id', q.id);
+            this.closeGlobalModal(); this._quotesLoaded = false; await this.loadQuotes();
+            this.showToast('세금계산서 발행 완료');
+        } catch (e) { this.showToast('발행 오류: ' + (e.message || e)); }
     }
 
     bindDashboardEvents() {
