@@ -1041,6 +1041,102 @@ function offsetPoly(pts, d, foldX) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// 절개선 기준 패턴 조각 분할 (도식과 동일 좌표계이므로 직접 매핑)
+// ---------------------------------------------------------------------------
+function cutlinePolyline(pts, perSeg = 14) {
+  if (!pts || pts.length < 2) return [];
+  if (pts.length === 2) return [{ x: pts[0].x, y: pts[0].y }, { x: pts[1].x, y: pts[1].y }];
+  const out = [{ x: pts[0].x, y: pts[0].y }];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
+    for (let j = 1; j <= perSeg; j++) {
+      const t = j / perSeg, u = 1 - t;
+      out.push({ x: u * u * u * p1.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p2.x, y: u * u * u * p1.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p2.y });
+    }
+  }
+  return out;
+}
+function _segX(p1, p2, p3, p4) {
+  const d1x = p2.x - p1.x, d1y = p2.y - p1.y, d2x = p4.x - p3.x, d2y = p4.y - p3.y;
+  const den = d1x * d2y - d1y * d2x;
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / den;
+  const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / den;
+  if (t < -1e-6 || t > 1 + 1e-6 || u < -1e-6 || u > 1 + 1e-6) return null;
+  return { x: p1.x + t * d1x, y: p1.y + t * d1y, t, u };
+}
+function _pointInPoly(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+    if (((yi > pt.y) !== (yj > pt.y)) && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+// 닫힌 폴리곤 V를 열린 폴리라인 C로 2분할. 경계 교차 정확히 2개일 때만 [poly1, poly2] 반환.
+function splitPolyByPolyline(V, C) {
+  const n = V.length, cross = [];
+  for (let ci = 0; ci < C.length - 1; ci++) {
+    for (let vi = 0; vi < n; vi++) {
+      const it = _segX(C[ci], C[ci + 1], V[vi], V[(vi + 1) % n]);
+      if (it && !cross.some(x => Math.abs(x.x - it.x) < 0.5 && Math.abs(x.y - it.y) < 0.5)) {
+        cross.push({ x: it.x, y: it.y, edge: vi, tEdge: it.u, pos: ci + it.t });
+      }
+    }
+  }
+  if (cross.length !== 2) return null;
+  cross.sort((a, b) => a.pos - b.pos);
+  const X0 = cross[0], X1 = cross[1];
+  const s0 = Math.floor(X0.pos), s1 = Math.floor(X1.pos);
+  const cutMid = C.slice(s0 + 1, s1 + 1);
+  let A = X0, B = X1, interior = cutMid.slice();
+  if ((X0.edge + X0.tEdge) > (X1.edge + X1.tEdge)) { A = X1; B = X0; interior = cutMid.slice().reverse(); }
+  const eA = A.edge, eB = B.edge, arc1 = [], arc2 = [];
+  for (let k = eA + 1; k <= eB; k++) arc1.push(V[k % n]);
+  for (let k = eB + 1; k <= eA + n; k++) arc2.push(V[k % n]);
+  const poly1 = [{ x: A.x, y: A.y }, ...arc1, { x: B.x, y: B.y }, ...interior.slice().reverse()];
+  const poly2 = [{ x: B.x, y: B.y }, ...arc2, { x: A.x, y: A.y }, ...interior];
+  if (poly1.length < 3 || poly2.length < 3) return null;
+  return [poly1, poly2];
+}
+function _grainFor(poly) { const bb = bboxP(poly), gx = bb.x + bb.w * 0.46; return [{ x: gx, y: bb.y + 16 }, { x: gx, y: bb.y + bb.h - 14 }]; }
+// 몸판 조각을 절개선들로 분해 → 시접 포함 개별 조각 배열
+function explodePiece(piece) {
+  const cuts = (piece.cutlines || []).filter(c => (c.pts || []).length >= 2);
+  if (!cuts.length) return [piece];
+  let parts = [{ ...piece, cutlines: [] }];
+  const failed = [];
+  cuts.forEach(c => {
+    const poly = cutlinePolyline(c.pts);
+    const xs = poly.map(p => p.x), ys = poly.map(p => p.y);
+    const minx = Math.min(...xs), maxx = Math.max(...xs), spanY = Math.max(...ys) - Math.min(...ys);
+    // 중심(골선) 근처 세로 절개 → 골선재단 해제(중심에 시접 추가, 좌우 2장 재단)
+    if (piece.foldX != null && (maxx - minx) < 22 && Math.abs((minx + maxx) / 2 - piece.foldX) < 16 && spanY > 60) {
+      parts = parts.map(p => ({ ...p, foldX: null, cut: '2 · 중심절개(좌우 대칭)' }));
+      return;
+    }
+    const next = [];
+    let did = false;
+    parts.forEach(sp => {
+      const r = splitPolyByPolyline(sp.pts, poly);
+      if (r) {
+        did = true;
+        r.forEach(pp => {
+          const hasFold = sp.foldX != null && pp.some(v => Math.abs(v.x - sp.foldX) < 1.2);
+          next.push({ label: sp.label, cut: hasFold ? '골선재단' : '2', pts: pp, foldX: hasFold ? sp.foldX : null, dims: (sp.dims || []).filter(d => _pointInPoly(d, pp)), grain: _grainFor(pp), cutlines: [] });
+        });
+      } else next.push(sp);
+    });
+    if (did) parts = next; else failed.push(c);
+  });
+  if (failed.length) parts.forEach(p => { p.cutlines = failed; });
+  if (parts.length > 1) { const marks = ['①', '②', '③', '④', '⑤', '⑥']; parts.forEach((p, i) => { p.label = `${p.label} ${marks[i] || (i + 1)}`; }); }
+  return parts;
+}
+
 function topPatternPieces(cfg) {
   const g = topGeom(cfg), bc = topBodyControls(g), cx = g.cx, N = 12;
   const cp = k => ctrlPt(cfg, k, bc[k]);
@@ -1157,11 +1253,12 @@ function patternCell(piece, ox, oy, cw, ch, sa) {
 }
 
 export function garmentPatternSVG(cfg) {
-  const pieces = garmentDef(cfg.type).category === 'pants' ? pantsPatternPieces(cfg) : topPatternPieces(cfg);
+  const raw = garmentDef(cfg.type).category === 'pants' ? pantsPatternPieces(cfg) : topPatternPieces(cfg);
+  const pieces = raw.flatMap(explodePiece);
   const cols = pieces.length, cw = 300, ch = 460, W = cols * cw, H = ch;
   let s = `<svg viewBox="0 0 ${W} ${H + 30}" class="sm-svg sm-svg-pattern" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H + 30}" fill="#fff"/>`;
   const hasCut = (cfg.cutlines || []).some(c => (c.pts || []).length >= 2);
-  s += `<text x="12" y="20" font-size="13" font-weight="700" fill="#111">패턴 (1차 드래프트 · 곡선 반영) — 시접 미포함 실선 / 점선 = 시접 1cm${hasCut ? ' / <tspan fill="#e3000f">빨강 = 절개선(분리재단, 절개 양쪽 시접 1cm 추가)</tspan>' : ''}</text>`;
+  s += `<text x="12" y="20" font-size="13" font-weight="700" fill="#111">패턴 (1차 드래프트 · 곡선 반영) — 실선=완성선 / 점선=시접 1cm${hasCut ? ' / <tspan fill="#e3000f">절개선 기준 조각 분리 · 각 조각 시접 1cm 별도</tspan>' : ''}</text>`;
   pieces.forEach((p, i) => { s += patternCell(p, i * cw, 30, cw, ch, 9); });
   s += `</svg>`;
   return s;
