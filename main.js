@@ -4264,9 +4264,10 @@ class BhasApp {
                 return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid rgba(148,163,184,0.12)">
                     <button class="vjob-toggle" data-id="${j.id}" title="완료 토글" style="flex:0 0 auto;width:18px;height:18px;border-radius:5px;border:2px solid ${done?'#10b981':'rgba(148,163,184,0.5)'};background:${done?'#10b981':'transparent'};cursor:pointer;color:#fff;font-size:0.7rem;line-height:1;padding:0">${done?'✓':''}</button>
                     <div style="flex:1;min-width:0">
-                        <div style="font-size:0.88rem;font-weight:600;${done?'text-decoration:line-through;color:var(--text-muted)':''}">${this._vesc(j.title)}${j.qty?` <span style="color:var(--text-muted);font-weight:400">·${j.qty}장</span>`:''}</div>
+                        <div style="font-size:0.88rem;font-weight:600;${done?'text-decoration:line-through;color:var(--text-muted)':''}">${this._vesc(j.title)}${j.qty?` <span style="color:var(--text-muted);font-weight:400">·${j.qty}장</span>`:''}${j.qc_status==='passed'?' <span style="font-size:0.66rem;font-weight:700;color:#10b981;background:rgba(16,185,129,0.12);padding:1px 6px;border-radius:6px">검수완료</span>':''}${j.quick_status?' <span style="font-size:0.66rem;font-weight:700;color:#191600;background:#FEE500;padding:1px 6px;border-radius:6px">퀵예약</span>':''}</div>
                         <div style="font-size:0.75rem;color:var(--text-muted)">${this._vesc(j.stage)}${ddText?' · '+ddText:''}</div>
                     </div>
+                    ${done?'':`<button class="vjob-qc" data-id="${j.id}" title="출고 검수 · 카카오퀵" style="flex:0 0 auto;background:none;border:none;color:${j.qc_status==='passed'?'#10b981':'var(--primary)'};cursor:pointer;padding:2px 4px;font-size:1.05rem"><i class="ph ph-clipboard-text"></i></button>`}
                     <button class="vjob-del" data-id="${j.id}" title="삭제" style="flex:0 0 auto;background:none;border:none;color:var(--text-muted);cursor:pointer"><i class="ph ph-x"></i></button>
                 </div>`; }).join('') : `<div style="padding:10px 0;color:var(--text-muted);font-size:0.83rem">진행중 물품 없음</div>`;
 
@@ -4308,6 +4309,7 @@ class BhasApp {
         this.appContainer.querySelectorAll('.vendor-edit').forEach(b => b.onclick = () => this.showVendorModal(b.dataset.id));
         this.appContainer.querySelectorAll('.vjob-add').forEach(b => b.onclick = () => this.showJobModal(b.dataset.id));
         this.appContainer.querySelectorAll('.vjob-toggle').forEach(b => b.onclick = () => this.toggleJob(b.dataset.id));
+        this.appContainer.querySelectorAll('.vjob-qc').forEach(b => b.onclick = () => this.showQcModal(b.dataset.id));
         this.appContainer.querySelectorAll('.vjob-del').forEach(b => b.onclick = () => this.deleteJob(b.dataset.id));
         this.initVendorMap();
     }
@@ -4464,6 +4466,152 @@ class BhasApp {
         const { error } = await this.supabase.from('vendor_jobs').delete().eq('id', id);
         if (error) { this.showToast('삭제 실패: ' + error.message); return; }
         await this.loadVendors();
+    }
+
+    // ============================================================
+    //  출고 검수(QC) + 카카오퀵 게이트  — 완성 사진 + 작업지시서 대조 후에만 퀵 호출
+    // ============================================================
+    _defaultQcChecklist(job) {
+        return [
+            { label: '자수 — 위치·색상·크기 작업지시서 대조', checked: false },
+            { label: '프린트/전사 — 위치·색상 확인', checked: false },
+            { label: '절개·배색 — 지시서와 동일', checked: false },
+            { label: '라벨(메인/케어) 부착', checked: false },
+            { label: `수량 확인${job.qty ? ` (${job.qty}장)` : ''}`, checked: false },
+            { label: '오염·봉제 불량 검수', checked: false },
+            { label: '포장 상태', checked: false },
+        ];
+    }
+
+    _readImageCompressed(file, maxW = 1200, q = 0.75) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const img = new Image();
+                img.onload = () => {
+                    const scale = Math.min(1, maxW / img.width);
+                    const cv = document.createElement('canvas');
+                    cv.width = Math.round(img.width * scale); cv.height = Math.round(img.height * scale);
+                    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+                    try { resolve(cv.toDataURL('image/jpeg', q)); } catch (e) { resolve(reader.result); }
+                };
+                img.onerror = () => resolve(reader.result);
+                img.src = reader.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    showQcModal(jobId) {
+        const job = (this.vendors || []).flatMap(v => v.jobs || []).find(j => j.id === jobId);
+        if (!job) return;
+        const vendor = (this.vendors || []).find(v => (v.jobs || []).some(j => j.id === jobId));
+        this._qcDraft = {
+            jobId,
+            checklist: (Array.isArray(job.qc_checklist) && job.qc_checklist.length) ? job.qc_checklist.map(x => ({ ...x })) : this._defaultQcChecklist(job),
+            photos: Array.isArray(job.qc_photos) ? job.qc_photos.slice() : [],
+            quick: job.quick_status || null,
+            vendorName: vendor ? vendor.name : '',
+            title: job.title, qty: job.qty,
+        };
+        const c = document.getElementById('global-modal-container');
+        if (!c) return;
+        c.style.display = 'flex';
+        this._renderQcModal();
+    }
+
+    _renderQcModal() {
+        const d = this._qcDraft; if (!d) return;
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const allChecked = d.checklist.every(x => x.checked);
+        const hasPhoto = d.photos.length >= 1;
+        const passed = allChecked && hasPhoto;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in vmodal" style="width:94%;max-width:560px;padding:1.6rem;border-radius:20px;position:relative;max-height:92vh;overflow-y:auto">
+            <h2 style="margin:0 0 0.3rem;font-size:1.15rem"><i class="ph ph-clipboard-text"></i> 출고 검수 · 카카오퀵</h2>
+            <p style="margin:0 0 1.1rem;color:var(--text-muted);font-size:0.85rem">${this._vesc(d.vendorName)} · ${this._vesc(d.title)}${d.qty ? ` · ${d.qty}장` : ''}</p>
+
+            <div style="font-size:0.82rem;font-weight:700;margin-bottom:6px">① 작업지시서 대조 체크리스트</div>
+            <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:0.8rem">
+                ${d.checklist.map((x, i) => `
+                    <label style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;background:rgba(148,163,184,0.07);cursor:pointer">
+                        <input type="checkbox" class="qc-chk" data-i="${i}" ${x.checked ? 'checked' : ''} style="width:17px;height:17px;flex:0 0 auto;accent-color:#10b981">
+                        <span style="font-size:0.86rem;${x.checked ? 'color:var(--text-muted)' : ''}">${this._vesc(x.label)}</span>
+                    </label>`).join('')}
+            </div>
+            <div style="display:flex;gap:6px;margin-bottom:1.2rem">
+                <input id="qc-add" class="login-input" placeholder="항목 추가 (예: 지퍼 확인)" style="flex:1">
+                <button id="qc-add-btn" class="btn-secondary" style="padding:8px 14px;border-radius:9px">추가</button>
+            </div>
+
+            <div style="font-size:0.82rem;font-weight:700;margin-bottom:6px">② 완성 사진 <span style="color:#ef4444">*필수</span></div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                ${d.photos.map((p, i) => `<div style="position:relative;width:84px;height:84px;border-radius:10px;overflow:hidden;border:1px solid var(--card-border)"><img src="${p}" style="width:100%;height:100%;object-fit:cover"><button class="qc-photo-del" data-i="${i}" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);border:none;color:#fff;border-radius:6px;width:20px;height:20px;cursor:pointer;line-height:1;padding:0">×</button></div>`).join('')}
+                <label style="width:84px;height:84px;border-radius:10px;border:1.5px dashed var(--card-border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted)"><i class="ph ph-camera" style="font-size:1.4rem"></i><input type="file" accept="image/*" multiple class="qc-photo-input" hidden></label>
+            </div>
+            <p style="margin:0 0 1.2rem;font-size:0.78rem;color:var(--text-muted)">완성품 사진을 올리고 위 지시서 항목과 하나씩 대조하세요. 자수·프린트 누락이 여기서 걸립니다.</p>
+
+            <div style="padding:12px 14px;border-radius:12px;background:${passed ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)'};border:1px solid ${passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'};margin-bottom:1rem;font-size:0.85rem;color:${passed ? '#10b981' : '#ef4444'};font-weight:600">
+                ${passed ? '<i class="ph ph-check-circle"></i> 검수 통과 — 퀵 호출 가능' : `<i class="ph ph-warning"></i> ${!allChecked ? '미확인 항목 있음' : ''}${(!allChecked && !hasPhoto) ? ' · ' : ''}${!hasPhoto ? '완성 사진 없음' : ''}`}
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                <button id="qc-save" class="btn-secondary" style="padding:9px 16px;border-radius:10px"><i class="ph ph-floppy-disk"></i> 검수 저장</button>
+                <div style="display:flex;gap:8px">
+                    <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 16px;border-radius:10px">닫기</button>
+                    <button id="qc-quick" ${passed ? '' : 'disabled'} style="padding:9px 18px;border-radius:10px;border:none;font-weight:700;${passed ? 'background:#FEE500;color:#191600;cursor:pointer' : 'background:rgba(148,163,184,0.2);color:var(--text-muted);cursor:not-allowed'}"><i class="ph ph-scooter"></i> 카카오퀵 호출</button>
+                </div>
+            </div>
+            ${d.quick ? `<p style="margin:0.8rem 0 0;font-size:0.8rem;color:#10b981"><i class="ph ph-check"></i> 퀵 예약됨${d.quick.trackingNo ? ` · ${this._vesc(d.quick.trackingNo)}` : ''}</p>` : ''}
+        </div>`;
+
+        c.querySelectorAll('.qc-chk').forEach(cb => cb.onchange = () => { d.checklist[+cb.dataset.i].checked = cb.checked; this._renderQcModal(); });
+        const addBtn = document.getElementById('qc-add-btn');
+        if (addBtn) addBtn.onclick = () => { const inp = document.getElementById('qc-add'); const v = (inp.value || '').trim(); if (v) { d.checklist.push({ label: v, checked: false }); this._renderQcModal(); } };
+        c.querySelectorAll('.qc-photo-del').forEach(b => b.onclick = () => { d.photos.splice(+b.dataset.i, 1); this._renderQcModal(); });
+        const pin = c.querySelector('.qc-photo-input');
+        if (pin) pin.onchange = async () => {
+            const files = Array.from(pin.files || []);
+            for (const f of files) { if (f.size > 12 * 1024 * 1024) { this.showToast('사진이 너무 큽니다.'); continue; } try { d.photos.push(await this._readImageCompressed(f)); } catch (e) { } }
+            this._renderQcModal();
+        };
+        const saveB = document.getElementById('qc-save');
+        if (saveB) saveB.onclick = () => this.saveQc();
+        const quickB = document.getElementById('qc-quick');
+        if (quickB && passed) quickB.onclick = () => this.callKakaoQuick();
+    }
+
+    async saveQc() {
+        const d = this._qcDraft; if (!d) return;
+        const passed = d.checklist.every(x => x.checked) && d.photos.length >= 1;
+        const patch = { qc_checklist: d.checklist, qc_photos: d.photos, qc_status: passed ? 'passed' : 'pending' };
+        const { error } = await this.supabase.from('vendor_jobs').update(patch).eq('id', d.jobId);
+        if (error) { this.showToast('검수 저장 실패 (012_vendor_qc.sql 설치 필요): ' + error.message); return; }
+        const job = (this.vendors || []).flatMap(v => v.jobs || []).find(j => j.id === d.jobId);
+        if (job) Object.assign(job, patch);
+        this.showToast('검수 저장됨');
+    }
+
+    async callKakaoQuick() {
+        const d = this._qcDraft; if (!d) return;
+        await this.saveQc();
+        this.showToast('카카오퀵 픽업 요청 중...');
+        try {
+            const { data, error } = await this.supabase.functions.invoke('kakao-quick', {
+                body: { jobId: d.jobId, title: d.title, qty: d.qty, vendor: d.vendorName },
+            });
+            if (error) throw error;
+            if (!data || data.ok === false) throw new Error(data && data.error ? data.error : '응답 오류');
+            d.quick = data;
+            await this.supabase.from('vendor_jobs').update({ quick_status: data }).eq('id', d.jobId);
+            const job = (this.vendors || []).flatMap(v => v.jobs || []).find(j => j.id === d.jobId);
+            if (job) job.quick_status = data;
+            this.showToast('카카오퀵 픽업 예약 완료');
+            this._renderQcModal();
+        } catch (e) {
+            this.showToast('카카오퀵 호출 실패 — 비즈니스 API 키/kakao-quick 함수 설정 필요');
+        }
     }
 
     // ============================================================
