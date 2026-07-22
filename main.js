@@ -3764,6 +3764,25 @@ class BhasApp {
             ['sm-preview', 'sm-flat', 'sm-pattern'].forEach(applyZoom);
             bindCanvasHandles();
             syncMeasureInputs();
+            updateCleanPreview();
+        };
+
+        // 편집 중 우측 클린 미리보기(핸들·절개선 없는 기준 옷)
+        const updateCleanPreview = () => {
+            const clean = document.getElementById('sm-clean');
+            const canvasEl = this.appContainer.querySelector('.sm-canvas');
+            const em = !!this.sampleConfig.editMode;
+            const show = em && this.sampleConfig.activeTab !== 'pattern';
+            if (canvasEl) canvasEl.classList.toggle('sm-editing', show);
+            if (!clean) return;
+            if (show) {
+                const cc = { ...this.sampleConfig, cutlines: [], points: [], editMode: false };
+                clean.innerHTML = '<span class="sm-clean-label"><i class="ph ph-eye"></i> 기준 미리보기 · 선 없음</span>' +
+                    (this.sampleConfig.activeTab === 'flat' ? garmentFlatSVG(cc, false) : garmentPreviewSVG(cc, false));
+                clean.style.display = '';
+            } else {
+                clean.style.display = 'none';
+            }
         };
 
         // 컨트롤 패널의 치수 입력값을 현재 config로 동기화 (핸들 드래그 후)
@@ -4064,6 +4083,7 @@ class BhasApp {
                 this.appContainer.querySelectorAll('.sm-tab[data-tab]').forEach(b => b.classList.toggle('active', b === tab));
                 const map = { preview: 'sm-preview', flat: 'sm-flat', pattern: 'sm-pattern' };
                 Object.entries(map).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.style.display = (k === t) ? '' : 'none'; });
+                updateCleanPreview();
             };
         });
 

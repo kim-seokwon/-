@@ -1668,7 +1668,7 @@ export function renderSampleMaker(cfg) {
           <button class="sm-tab ${cfg.activeTab === 'pattern' ? 'active' : ''}" data-tab="pattern"><i class="ph ph-scissors"></i> 패턴</button>
           <button class="sm-tab sm-edit-toggle ${cfg.editMode ? 'active' : ''}" id="sm-edit-toggle" title="핸들로 직접 드래그 편집"><i class="ph ph-cursor"></i> 핸들 편집</button>
         </div>
-        <div class="sm-canvas">
+        <div class="sm-canvas${cfg.editMode && cfg.activeTab !== 'pattern' ? ' sm-editing' : ''}">
           <div class="sm-zoom-ctrl">
             <button class="sm-zoom-btn" data-zoom="out"><i class="ph ph-minus"></i></button>
             <button class="sm-zoom-btn" data-zoom="fit" title="맞춤">⊡</button>
@@ -1678,6 +1678,7 @@ export function renderSampleMaker(cfg) {
           <div id="sm-preview" class="sm-pane" style="${cfg.activeTab !== 'flat' && cfg.activeTab !== 'pattern' ? '' : 'display:none'}">${garmentPreviewSVG(cfg, true)}</div>
           <div id="sm-flat" class="sm-pane sm-pane-flat" style="${cfg.activeTab === 'flat' ? '' : 'display:none'}">${garmentFlatSVG(cfg, true)}</div>
           <div id="sm-pattern" class="sm-pane sm-pane-flat" style="${cfg.activeTab === 'pattern' ? '' : 'display:none'}">${garmentPatternSVG(cfg)}</div>
+          <div id="sm-clean" class="sm-clean-preview" style="${cfg.editMode && cfg.activeTab !== 'pattern' ? '' : 'display:none'}"><span class="sm-clean-label"><i class="ph ph-eye"></i> 기준 미리보기 · 선 없음</span>${garmentPreviewSVG({ ...cfg, cutlines: [], points: [], editMode: false }, false)}</div>
         </div>
         <div id="sm-techpack" class="sm-techpack glass">${techPackSummaryHTML(cfg)}</div>
       </section>
