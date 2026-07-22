@@ -2074,3 +2074,22 @@ body.light .view-toggles button:hover:not(.active) { background: rgba(15,23,42,0
 body.light .content-header h1,
 body.light .notepad-card h3,
 body.light .stepper-section h2 { color: var(--text-main); }
+
+/* ===== 사이드바 접기 (아이콘만) ===== */
+.sidebar { transition: width 0.2s ease, padding 0.2s ease; }
+.sidebar.nav-collapsed { width: 74px !important; padding: 1.5rem 0.5rem !important; overflow: hidden; }
+.sidebar.nav-collapsed .nav-user .user-info,
+.sidebar.nav-collapsed .nav-search span,
+.sidebar.nav-collapsed .nav-search kbd,
+.sidebar.nav-collapsed .nav-links li span,
+.sidebar.nav-collapsed #logout-btn span,
+.sidebar.nav-collapsed .nav-logo span,
+.sidebar.nav-collapsed #theme-toggle,
+.sidebar.nav-collapsed .nav-group-header { display: none !important; }
+.sidebar.nav-collapsed .nav-logo { justify-content: center !important; }
+.sidebar.nav-collapsed .nav-user { justify-content: center; }
+.sidebar.nav-collapsed .nav-search { justify-content: center; padding: 10px 0; }
+.sidebar.nav-collapsed .nav-links li { padding: 10px 0 !important; justify-content: center; }
+.sidebar.nav-collapsed .nav-links li > div { justify-content: center; }
+.sidebar.nav-collapsed .nav-bottom { flex-direction: column; gap: 12px; padding: 12px 0; }
+.sidebar.nav-collapsed .nav-bottom #logout-btn { justify-content: center; }

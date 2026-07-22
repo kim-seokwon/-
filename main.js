@@ -99,7 +99,7 @@ class BhasApp {
                     const parsed = JSON.parse(savedSession);
                     if (parsed && parsed.role && parsed.name) {
                         this.currentUser = parsed;
-                        this.currentView = 'dashboard';
+                        this.currentView = 'home';
                     } else {
                         throw new Error('Invalid session data');
                     }
@@ -863,7 +863,7 @@ class BhasApp {
             { id: 'dashboard', label: '프로젝트', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
-            { id: 'vendors', label: '거래처', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'vendors', label: '생산처', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'quotes', label: '견적', icon: '<i class="ph ph-receipt"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
@@ -873,14 +873,15 @@ class BhasApp {
             { id: 'calendar', label: '캘린더', icon: '<i class="ph ph-calendar-dots"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'table', label: '표', icon: '<i class="ph ph-table"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'all_todos', label: '할일', icon: '<i class="ph ph-list-checks"></i>', group: 'work', visible: true },
-            { id: 'documents', label: '문서', icon: '<i class="ph ph-folder-open"></i>', group: 'work', visible: perms.includes('documents') },
+            { id: 'documents', label: '문서', icon: '<i class="ph ph-folder-open"></i>', group: 'archive', visible: perms.includes('documents') },
             { id: 'user_management', label: '계정', icon: '<i class="ph ph-user-plus"></i>', group: 'admin', visible: perms.includes('user_management') },
             { id: 'brand_management', label: '브랜드', icon: '<i class="ph ph-shield-check"></i>', group: 'admin', visible: perms.includes('user_management') }
         ];
         const navGroups = [
+            { id: 'work', label: '업무관리' },
             { id: 'prod', label: '생산관리' },
             { id: 'stock', label: '재고·판매' },
-            { id: 'work', label: '업무관리' },
+            { id: 'archive', label: '자료실' },
             { id: 'admin', label: '관리' }
         ];
         this.navCollapsed = this.navCollapsed || {};
@@ -912,8 +913,11 @@ class BhasApp {
                         </div>
                     </div>
                 </div>
-                <nav class="glass sidebar">
-                    <div class="nav-logo">2179</div>
+                <nav class="glass sidebar${this.navSidebarCollapsed ? ' nav-collapsed' : ''}">
+                    <div class="nav-logo" style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+                        <span>2179</span>
+                        <button id="sidebar-collapse-btn" title="사이드바 접기/펼치기" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.25rem;padding:0;line-height:1;flex-shrink:0"><i class="ph ph-sidebar-simple"></i></button>
+                    </div>
                     <div class="nav-user">
                         <div class="avatar">${name[0]}</div>
                         <div class="user-info">
@@ -927,6 +931,9 @@ class BhasApp {
                         <kbd>/</kbd>
                     </div>
                     <ul class="nav-links">
+                        <li class="${this.currentView === 'home' ? 'active' : ''}" data-view="home" style="padding:8px 14px;margin-bottom:6px;border-radius:12px">
+                            <div style="display:flex;align-items:center;gap:8px;font-size:0.95rem"><i class="ph ph-house-line"></i> <span style="font-size:0.88rem;font-weight:700">홈</span></div>
+                        </li>
                         ${navGroups.map(g => {
                             const items = menuItems.filter(i => i.group === g.id && i.visible);
                             if (!items.length) return '';
@@ -1086,7 +1093,7 @@ class BhasApp {
                             </div>
                         </div>
                         
-                        <div class="floating-stats">
+                        <div class="floating-stats" style="display:none">
                             ${this.currentView === 'dashboard' ? (() => {
                                 const isActive = (p) => {
                                     const stage = p.currentStage || 'consulting';
@@ -1699,9 +1706,62 @@ class BhasApp {
         return false;
     }
 
+    renderHome(products) {
+        products = products || mockData.products || [];
+        const name = this.currentUser?.name || '';
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const dday = d => { if (!d) return null; const dt = new Date(d); dt.setHours(0, 0, 0, 0); return Math.round((dt - today) / 86400000); };
+        const activeProjects = products.filter(p => (p.currentStage || 'consulting') !== 'shipping').length;
+        const orders = this.orders || [];
+        const shipTargets = orders.filter(o => o.status === 'new' || o.status === 'ready').length;
+        const recentOrders = orders.slice(0, 5);
+        const vendors = this.vendors || [];
+        const vjobs = vendors.flatMap(v => (v.jobs || []).map(j => ({ ...j, _v: v.name })));
+        const activeJobs = vjobs.filter(j => j.status !== 'done');
+        const quotes = this.quotes || [];
+        const thisMonth = new Date().toISOString().slice(0, 7);
+        const monthTotal = quotes.filter(q => (q.quote_date || '').startsWith(thisMonth)).reduce((s, q) => s + (q.total_amount || 0), 0);
+        const recentQuotes = quotes.slice(0, 5);
+        const malls = (this.malls || []).filter(m => (m.channel || 'cafe24') === 'cafe24');
+        const mallsConn = malls.filter(m => m.connected).length;
+
+        const kpi = (icon, num, label, color) => `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:16px;display:flex;align-items:center;gap:14px">
+            <div style="width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-size:1.5rem;color:${color};background:${color}22;flex-shrink:0"><i class="ph ${icon}"></i></div>
+            <div style="min-width:0"><div style="font-size:1.6rem;font-weight:800;line-height:1;color:var(--text-main)">${num}</div><div style="font-size:0.8rem;color:var(--text-muted);margin-top:3px">${label}</div></div>
+        </div>`;
+        const listCard = (title, icon, rows, empty) => `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:16px">
+            <div style="font-size:0.95rem;font-weight:700;margin-bottom:0.9rem;display:flex;align-items:center;gap:7px"><i class="ph ${icon}" style="color:var(--primary)"></i> ${title}</div>
+            ${rows || `<div style="color:var(--text-muted);font-size:0.85rem;padding:0.5rem 0">${empty}</div>`}
+        </div>`;
+        const orderRows = recentOrders.map(o => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.85rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(o.receiver_name || o.buyer_name || '-')} · ${this._vesc(this._orderItemsSummary(o))}</span><span style="color:var(--text-muted);white-space:nowrap">${o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : ''}</span></div>`).join('');
+        const quoteRows = recentQuotes.map(q => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.85rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(q.client_name)}</span><span style="font-weight:700;white-space:nowrap">${this._won(q.total_amount)}원</span></div>`).join('');
+        const jobRows = activeJobs.filter(j => j.due_date).sort((a, b) => new Date(a.due_date) - new Date(b.due_date)).slice(0, 5).map(j => { const dd = dday(j.due_date); const col = dd < 0 ? '#ef4444' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)'); return `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.85rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(j.title)} · ${this._vesc(j._v)}</span><span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span></div>`; }).join('');
+
+        return `
+        <div class="fade-in" style="padding:1.5rem;max-width:1200px;margin:0 auto">
+            <div style="margin-bottom:1.4rem">
+                <h1 style="margin:0;font-size:1.5rem">👋 ${this._vesc(name)}님, 오늘 한눈에</h1>
+                <p style="margin:5px 0 0;color:var(--text-muted);font-size:0.88rem">2179 통합 현황</p>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem">
+                ${kpi('ph-rocket-launch', activeProjects, '진행 중 프로젝트', '#3b82f6')}
+                ${kpi('ph-truck', shipTargets, '배송 대상 주문', '#10b981')}
+                ${kpi('ph-package', activeJobs.length, '진행중 생산 물품', '#f59e0b')}
+                ${kpi('ph-receipt', this._won(monthTotal), '이번달 견적(원)', '#8b5cf6')}
+                ${kpi('ph-plugs-connected', `${mallsConn}/${malls.length}`, '카페24 연동', '#ec4899')}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem">
+                ${listCard('임박 생산 스케줄', 'ph-calendar-dots', jobRows, '진행중 물품 없음')}
+                ${listCard('최근 주문', 'ph-shopping-bag-open', orderRows, '주문 없음')}
+                ${listCard('최근 견적', 'ph-receipt', quoteRows, '견적 없음')}
+            </div>
+        </div>`;
+    }
+
     renderSubView(products) {
         const { role, id: currentUserId, name: currentUserName } = this.currentUser;
-        
+        if (this.currentView === 'home') return this.renderHome(products);
+
         // 데이터 정규화 및 상태 판별 헬퍼
         const isStageCompleted = (p, s) => {
             if (p.stages_data && p.stages_data[s.id] && p.stages_data[s.id].status === 'completed') return true;
@@ -2677,6 +2737,12 @@ class BhasApp {
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
         if (v === 'vendors' && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
         if (v === 'quotes' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
+        if (v === 'home') {
+            if (!this._ordersLoaded && !this._ordersLoading) this.loadOrders();
+            if (!this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
+            if (!this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+            if (!this._mallsLoaded && !this._mallsLoading) this.loadMalls();
+        }
     }
 
     _actor() { return this.currentUser?.username || this.currentUser?.name || 'system'; }
@@ -4072,7 +4138,7 @@ class BhasApp {
             this.vendors = (vRes.data || []).map(v => ({ ...v, jobs: byVendor[v.id] || [] }));
             this._vendorsLoaded = true;
         } catch (e) {
-            this.showToast('거래처를 불러오지 못했습니다. (007_vendors.sql 설치 필요)');
+            this.showToast('생산처를 불러오지 못했습니다. (007_vendors.sql 설치 필요)');
             this.vendors = []; this._vendorsLoaded = true;
         }
         this._vendorsLoading = false;
@@ -4080,7 +4146,7 @@ class BhasApp {
     }
 
     renderVendors() {
-        if (!this._vendorsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">거래처를 불러오는 중...</div>`;
+        if (!this._vendorsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">생산처를 불러오는 중...</div>`;
         const vendors = this.vendors || [];
         const allJobs = vendors.flatMap(v => (v.jobs||[]).map(j => ({...j, _vendor: v.name })));
         const active = allJobs.filter(j => j.status !== 'done');
@@ -4137,14 +4203,14 @@ class BhasApp {
         <div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
                 <div>
-                    <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-map-pin-line"></i> 거래처 물품 현황</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">거래처 ${vendors.length} · 진행중 물품 ${active.length}</p>
+                    <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-map-pin-line"></i> 생산처 물품 현황</h1>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">생산처 ${vendors.length} · 진행중 물품 ${active.length}</p>
                 </div>
-                <button id="vendor-add-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 거래처 등록</button>
+                <button id="vendor-add-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 생산처 등록</button>
             </div>
             <div id="vendor-map" style="height:380px;border-radius:16px;overflow:hidden;margin-bottom:1rem;background:rgba(148,163,184,0.1);z-index:0"></div>
             ${scheduleStrip}
-            ${vendors.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">${cards}</div>` : `<div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted)">등록된 거래처가 없습니다. 우측 상단 [거래처 등록]으로 시작하세요.</div>`}
+            ${vendors.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">${cards}</div>` : `<div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted)">등록된 생산처가 없습니다. 우측 상단 [생산처 등록]으로 시작하세요.</div>`}
         </div>`;
     }
 
@@ -4186,7 +4252,7 @@ class BhasApp {
         if (!c) return;
         c.innerHTML = `
         <div class="glass modal-content fade-in vmodal" style="width:92%;max-width:520px;padding:1.8rem;border-radius:20px;position:relative;max-height:90vh;overflow-y:auto">
-            <h2 style="margin:0 0 1.3rem;font-size:1.2rem"><i class="ph ph-storefront"></i> ${v?'거래처 수정':'거래처 등록'}</h2>
+            <h2 style="margin:0 0 1.3rem;font-size:1.2rem"><i class="ph ph-storefront"></i> ${v?'생산처 수정':'생산처 등록'}</h2>
             <div style="display:flex;flex-direction:column;gap:10px">
                 <input id="vd-name" class="login-input" placeholder="상호 (예: 성수봉제)" value="${v?this._vesc(v.name):''}">
                 <select id="vd-cat" class="login-input">${cats.map(k=>`<option value="${k}" ${v&&v.category===k?'selected':''}>${k}</option>`).join('')}</select>
@@ -4250,7 +4316,7 @@ class BhasApp {
     }
 
     async deleteVendor(id) {
-        if (!confirm('이 거래처와 물품 현황을 모두 삭제할까요?')) return;
+        if (!confirm('이 생산처와 물품 현황을 모두 삭제할까요?')) return;
         const { error } = await this.supabase.from('vendors').delete().eq('id', id);
         if (error) { this.showToast('삭제 실패: ' + error.message); return; }
         this.closeGlobalModal();
@@ -4718,6 +4784,8 @@ class BhasApp {
 
     bindDashboardEvents() {
         this.bindGlobalSearch();
+        const collapseBtn = document.getElementById('sidebar-collapse-btn');
+        if (collapseBtn) collapseBtn.onclick = () => { this.navSidebarCollapsed = !this.navSidebarCollapsed; this.requestRender(); };
         // 사이드바 내비게이션 (onclick으로 중복 방지)
         this.appContainer.querySelectorAll('.nav-links li[data-view]').forEach(li => {
             li.onclick = () => {
