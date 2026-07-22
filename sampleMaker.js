@@ -222,7 +222,7 @@ export function configForType(prev, typeId) {
 }
 
 // 절개선: 여러 점을 지나는 자유곡선 [{id, pts:[{x,y}...], style:'stitch'|'seam'}]
-export function newCutline(id) { return { id, pts: [{ x: 450, y: 175 }, { x: 450, y: 435 }], style: 'stitch' }; }
+export function newCutline(id) { return { id, pts: [{ x: 200, y: 120 }, { x: 200, y: 410 }], style: 'stitch' }; }
 export function newPoint(id) { return { id, fx: 450, fy: 285, label: '포인트' }; }
 function _smEsc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 // 점들을 지나는 매끄러운 path (Catmull-Rom → 베지어). 2점이면 직선.
@@ -1064,7 +1064,7 @@ function topPatternPieces(cfg) {
       { x: cx + 6, y: (neckY + g.hemY) / 2, t: `총장 ${M.length}`, a: 'start' },
       { x: (cx + g.HR.x) / 2, y: g.hemY + 15, t: `밑단 ${M.hem}` },
     ];
-    return { label, cut: '1 · 골선재단', pts, foldX: cx, dims, grain: [{ x: cx + (g.HR.x - cx) * 0.42, y: neckY + 18 }, { x: cx + (g.HR.x - cx) * 0.42, y: g.hemY - 16 }] };
+    return { label, cut: '1 · 골선재단', pts, foldX: cx, dims, grain: [{ x: cx + (g.HR.x - cx) * 0.42, y: neckY + 18 }, { x: cx + (g.HR.x - cx) * 0.42, y: g.hemY - 16 }], cutlines: (cfg.cutlines || []) };
   };
   const capW = Math.hypot(g.SR.x - g.AR.x, g.SR.y - g.AR.y) * 1.05, half = capW / 2;
   const L = g.slL.L, cuffH = g.cuffHalf, sc = 200, y0 = 40;
@@ -1136,9 +1136,22 @@ function patternCell(piece, ox, oy, cw, ch, sa) {
   (piece.dims || []).forEach(dm => {
     s += `<text x="${dm.x.toFixed(1)}" y="${dm.y.toFixed(1)}" font-size="${fs}" fill="#b91c1c" font-weight="700" text-anchor="${dm.a || 'middle'}">${dm.t}</text>`;
   });
+  // 절개선 반영 — 도식과 동일 좌표계이므로 패널 위에 정확히 오버레이, 패널 외곽으로 클립
+  const cls = (piece.cutlines || []).filter(c => (c.pts || []).length >= 2);
+  if (cls.length) {
+    const clipId = `cutclip-${Math.round(ox)}-${Math.round(oy)}`;
+    s += `<clipPath id="${clipId}"><path d="${poly2path(piece.pts)}"/></clipPath>`;
+    s += `<g clip-path="url(#${clipId})">`;
+    cls.forEach(c => {
+      const dd = smoothPath(c.pts);
+      const dash = c.style === 'seam' ? '' : ` stroke-dasharray="${(7 / scale).toFixed(1)} ${(4 / scale).toFixed(1)}"`;
+      s += `<path d="${dd}" fill="none" stroke="#e3000f" stroke-width="${(1.7 / scale).toFixed(2)}"${dash} stroke-linecap="round" stroke-linejoin="round"/>`;
+    });
+    s += `</g>`;
+  }
   s += `</g>`;
   s += `<text x="${(ox + cw / 2).toFixed(1)}" y="${(oy + ch - 22).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="#111">${piece.label}</text>`;
-  s += `<text x="${(ox + cw / 2).toFixed(1)}" y="${(oy + ch - 7).toFixed(1)}" text-anchor="middle" font-size="10" fill="#666">재단 ${piece.cut} · 식서↕ · 시접 1cm 별도</text>`;
+  s += `<text x="${(ox + cw / 2).toFixed(1)}" y="${(oy + ch - 7).toFixed(1)}" text-anchor="middle" font-size="10" fill="#666">재단 ${piece.cut} · 식서↕ · 시접 1cm 별도${cls.length ? ' · 🔴절개=분리재단' : ''}</text>`;
   s += `<rect x="${ox + 4}" y="${oy + 4}" width="${cw - 8}" height="${ch - 8}" fill="none" stroke="#e2e8f0" stroke-width="1"/>`;
   return s;
 }
@@ -1147,7 +1160,8 @@ export function garmentPatternSVG(cfg) {
   const pieces = garmentDef(cfg.type).category === 'pants' ? pantsPatternPieces(cfg) : topPatternPieces(cfg);
   const cols = pieces.length, cw = 300, ch = 460, W = cols * cw, H = ch;
   let s = `<svg viewBox="0 0 ${W} ${H + 30}" class="sm-svg sm-svg-pattern" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H + 30}" fill="#fff"/>`;
-  s += `<text x="12" y="20" font-size="13" font-weight="700" fill="#111">패턴 (1차 드래프트 · 곡선 반영) — 시접 미포함 실선 / 점선 = 시접 1cm</text>`;
+  const hasCut = (cfg.cutlines || []).some(c => (c.pts || []).length >= 2);
+  s += `<text x="12" y="20" font-size="13" font-weight="700" fill="#111">패턴 (1차 드래프트 · 곡선 반영) — 시접 미포함 실선 / 점선 = 시접 1cm${hasCut ? ' / <tspan fill="#e3000f">빨강 = 절개선(분리재단, 절개 양쪽 시접 1cm 추가)</tspan>' : ''}</text>`;
   pieces.forEach((p, i) => { s += patternCell(p, i * cw, 30, cw, ch, 9); });
   s += `</svg>`;
   return s;
@@ -1529,7 +1543,7 @@ export function renderSampleMaker(cfg) {
         </div>
 
         <div class="sm-group">
-          <h4>⑦ 절개선 · 포인트 <span class="sm-hint">(자유 · 편집모드에서 드래그)</span></h4>
+          <h4>⑦ 절개선 · 포인트 <span class="sm-hint">(드래그 · Shift=수직/수평 · 패턴에 자동 반영)</span></h4>
           <div class="sm-pl-addbar">
             <button class="sm-cut-add"><i class="ph ph-scissors"></i> 절개선</button>
             <button class="sm-point-add"><i class="ph ph-map-pin"></i> 포인트</button>

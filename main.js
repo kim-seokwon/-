@@ -3857,8 +3857,16 @@ class BhasApp {
                 } else if (kind === 'cutend') {
                     const cl = (cfg.cutlines || []).find(x => x.id === ds.id); if (!cl || !cl.pts) return;
                     const idx = parseInt(ds.idx, 10);
-                    if (cl.pts[idx]) { cl.pts[idx].x = clamp(L.x, 6, 894); cl.pts[idx].y = clamp(L.y, 6, 554); }
-                    tipText = '절개선';
+                    let nx = clamp(L.x, 6, 894), ny = clamp(L.y, 6, 554);
+                    if (ev.shiftKey && cl.pts.length > 1) {
+                        const anchor = cl.pts[idx - 1] || cl.pts[idx + 1];
+                        if (anchor) {
+                            if (Math.abs(nx - anchor.x) < Math.abs(ny - anchor.y)) nx = anchor.x; // 수직 고정
+                            else ny = anchor.y;                                                     // 수평 고정
+                        }
+                    }
+                    if (cl.pts[idx]) { cl.pts[idx].x = nx; cl.pts[idx].y = ny; }
+                    tipText = ev.shiftKey ? '절개선 · 수직/수평 고정' : '절개선';
                 } else if (kind === 'ctrl') {
                     if (!cfg.nodes) cfg.nodes = {};
                     const bx = parseFloat(ds.bx), by = parseFloat(ds.by);
