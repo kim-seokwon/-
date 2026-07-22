@@ -221,17 +221,41 @@ export function configForType(prev, typeId) {
   return { ...prev, type: typeId, measure: defMeasure(def), details: defDetails(def), placements, cutlines: prev.cutlines || [], points: prev.points || [], references: prev.references || [], nodes: {}, curve: { side: 0, shoulder: 0, hem: 0 } };
 }
 
-export function newCutline(id) { return { id, x1: 375, y1: 265, x2: 525, y2: 265 }; }
+// 절개선: 여러 점을 지나는 자유곡선 [{id, pts:[{x,y}...], style:'stitch'|'seam'}]
+export function newCutline(id) { return { id, pts: [{ x: 450, y: 175 }, { x: 450, y: 435 }], style: 'stitch' }; }
 export function newPoint(id) { return { id, fx: 450, fy: 285, label: '포인트' }; }
 function _smEsc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+// 점들을 지나는 매끄러운 path (Catmull-Rom → 베지어). 2점이면 직선.
+function smoothPath(pts) {
+  if (!pts || pts.length < 2) return '';
+  if (pts.length === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+  let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
 function renderCutPoints(cfg, interactive) {
   const edit = interactive && cfg.editMode;
   let s = '';
   (cfg.cutlines || []).forEach(c => {
-    s += `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="#e3000f" stroke-width="1.6" stroke-dasharray="7 4" stroke-linecap="round"/>`;
+    const pts = c.pts || [];
+    if (pts.length < 2) return;
+    const d = smoothPath(pts);
+    if (c.style === 'seam') {
+      // 절개(완성선): 실선 + 나란한 스티치 암시 없이 굵은 실선
+      s += `<path d="${d}" fill="none" stroke="#e3000f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
+    } else {
+      // 스티치(탑스티치): 점선
+      s += `<path d="${d}" fill="none" stroke="#e3000f" stroke-width="1.4" stroke-dasharray="7 4" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
     if (edit) {
-      s += `<circle class="sm-cut-end" data-id="${c.id}" data-end="1" cx="${c.x1}" cy="${c.y1}" r="6" fill="#fff" stroke="#e3000f" stroke-width="2" style="cursor:move"/>`;
-      s += `<circle class="sm-cut-end" data-id="${c.id}" data-end="2" cx="${c.x2}" cy="${c.y2}" r="6" fill="#fff" stroke="#e3000f" stroke-width="2" style="cursor:move"/>`;
+      pts.forEach((p, i) => {
+        s += `<circle class="sm-cut-end" data-id="${c.id}" data-idx="${i}" cx="${p.x}" cy="${p.y}" r="6" fill="#fff" stroke="#e3000f" stroke-width="2" style="cursor:move"/>`;
+      });
     }
   });
   (cfg.points || []).forEach(p => {
@@ -1446,7 +1470,16 @@ export function renderSampleMaker(cfg) {
   }).join('');
 
   const cutPointRows = [
-    ...(cfg.cutlines || []).map(c => `<div class="sm-pl-row"><div class="sm-pl-head"><span class="sm-pl-kind"><i class="ph ph-scissors"></i> 절개선</span><button class="sm-cut-del" data-id="${c.id}" title="삭제"><i class="ph ph-trash"></i></button></div></div>`),
+    ...(cfg.cutlines || []).map((c, i) => `<div class="sm-pl-row"><div class="sm-pl-head"><span class="sm-pl-kind"><i class="ph ph-scissors"></i> 절개선 ${i + 1} <span class="sm-hint">(${(c.pts || []).length}점)</span></span><button class="sm-cut-del" data-id="${c.id}" title="삭제"><i class="ph ph-trash"></i></button></div>
+      <div class="sm-cut-ctl">
+        <div class="sm-seg">
+          <button class="sm-cut-style${c.style !== 'seam' ? ' on' : ''}" data-id="${c.id}" data-style="stitch">╌ 스티치</button>
+          <button class="sm-cut-style${c.style === 'seam' ? ' on' : ''}" data-id="${c.id}" data-style="seam">━ 절개</button>
+        </div>
+        <button class="sm-cut-vadd" data-id="${c.id}" title="점 추가"><i class="ph ph-plus"></i></button>
+        <button class="sm-cut-vdel" data-id="${c.id}" title="점 삭제"${(c.pts || []).length <= 2 ? ' disabled' : ''}><i class="ph ph-minus"></i></button>
+      </div>
+    </div>`),
     ...(cfg.points || []).map(p => `<div class="sm-pl-row"><div class="sm-pl-head"><span class="sm-pl-kind"><i class="ph ph-map-pin"></i> 포인트</span><button class="sm-point-del" data-id="${p.id}" title="삭제"><i class="ph ph-trash"></i></button></div><input type="text" class="sm-point-label" data-id="${p.id}" placeholder="라벨 (예: 단추, 자수)" value="${_smEsc(p.label || '').replace(/"/g, '&quot;')}"></div>`),
   ].join('');
 
@@ -1501,7 +1534,7 @@ export function renderSampleMaker(cfg) {
             <button class="sm-cut-add"><i class="ph ph-scissors"></i> 절개선</button>
             <button class="sm-point-add"><i class="ph ph-map-pin"></i> 포인트</button>
           </div>
-          <div class="sm-pl-list">${cutPointRows || '<p class="sm-pl-empty">절개선(색상블록·패널 분할) / 포인트(단추·자수 위치 등)를 자유롭게 추가하세요.</p>'}</div>
+          <div class="sm-pl-list">${cutPointRows || '<p class="sm-pl-empty">절개선(봉제선·스티치·패널 분할) / 포인트(단추·자수 위치 등). [+점]으로 꺾고 노드를 드래그해 곡선을 만드세요.</p>'}</div>
         </div>
 
         <div class="sm-group">

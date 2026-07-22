@@ -3852,9 +3852,9 @@ class BhasApp {
                     pt.fx = clamp(L.x + grab.x, 6, 894); pt.fy = clamp(L.y + grab.y, 6, 554);
                     tipText = '포인트 이동';
                 } else if (kind === 'cutend') {
-                    const cl = (cfg.cutlines || []).find(x => x.id === ds.id); if (!cl) return;
-                    const nx = clamp(L.x, 6, 894), ny = clamp(L.y, 6, 554);
-                    if (ds.end === '1') { cl.x1 = nx; cl.y1 = ny; } else { cl.x2 = nx; cl.y2 = ny; }
+                    const cl = (cfg.cutlines || []).find(x => x.id === ds.id); if (!cl || !cl.pts) return;
+                    const idx = parseInt(ds.idx, 10);
+                    if (cl.pts[idx]) { cl.pts[idx].x = clamp(L.x, 6, 894); cl.pts[idx].y = clamp(L.y, 6, 554); }
                     tipText = '절개선';
                 } else if (kind === 'ctrl') {
                     if (!cfg.nodes) cfg.nodes = {};
@@ -3952,6 +3952,17 @@ class BhasApp {
         const pointAdd = this.appContainer.querySelector('.sm-point-add');
         if (pointAdd) pointAdd.onclick = () => { if (!this.sampleConfig.points) this.sampleConfig.points = []; this.sampleConfig.points.push(newPoint('pt' + Date.now())); this.sampleConfig.editMode = true; this.requestRender(); };
         this.appContainer.querySelectorAll('.sm-cut-del').forEach(b => b.onclick = () => { this.sampleConfig.cutlines = (this.sampleConfig.cutlines || []).filter(c => c.id !== b.getAttribute('data-id')); this.requestRender(); });
+        this.appContainer.querySelectorAll('.sm-cut-style').forEach(b => b.onclick = () => { const cl = (this.sampleConfig.cutlines || []).find(c => c.id === b.getAttribute('data-id')); if (cl) { cl.style = b.getAttribute('data-style'); this.sampleConfig.editMode = true; this.requestRender(); } });
+        this.appContainer.querySelectorAll('.sm-cut-vadd').forEach(b => b.onclick = () => {
+            const cl = (this.sampleConfig.cutlines || []).find(c => c.id === b.getAttribute('data-id'));
+            if (!cl || !cl.pts || !cl.pts.length) return;
+            const last = cl.pts[cl.pts.length - 1], prev = cl.pts[cl.pts.length - 2] || last;
+            const nx = Math.max(20, Math.min(880, last.x + (last.x - prev.x) * 0.5 + 24));
+            const ny = Math.max(20, Math.min(540, last.y + (last.y - prev.y) * 0.5 + 24));
+            cl.pts.push({ x: nx, y: ny });
+            this.sampleConfig.editMode = true; this.requestRender();
+        });
+        this.appContainer.querySelectorAll('.sm-cut-vdel').forEach(b => b.onclick = () => { const cl = (this.sampleConfig.cutlines || []).find(c => c.id === b.getAttribute('data-id')); if (cl && cl.pts && cl.pts.length > 2) { cl.pts.pop(); this.sampleConfig.editMode = true; this.requestRender(); } });
         this.appContainer.querySelectorAll('.sm-point-del').forEach(b => b.onclick = () => { this.sampleConfig.points = (this.sampleConfig.points || []).filter(p => p.id !== b.getAttribute('data-id')); this.requestRender(); });
         this.appContainer.querySelectorAll('.sm-point-label').forEach(inp => inp.addEventListener('input', () => { const p = (this.sampleConfig.points || []).find(x => x.id === inp.getAttribute('data-id')); if (p) { p.label = inp.value; refreshCanvas(); } }));
         this.appContainer.querySelectorAll('.sm-pl-del').forEach(btn => {

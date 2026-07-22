@@ -1976,6 +1976,15 @@ body {
 .sm-pl-kind { font-size: 0.78rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 5px; }
 .sm-pl-del { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.95rem; padding: 2px; }
 .sm-pl-del:hover { color: var(--accent-danger); }
+/* 절개선 스타일/점 컨트롤 */
+.sm-cut-ctl { display: flex; align-items: center; gap: 6px; }
+.sm-seg { display: inline-flex; border: 1px solid var(--card-border); border-radius: 7px; overflow: hidden; }
+.sm-seg .sm-cut-style { background: rgba(255,255,255,0.04); border: none; color: var(--text-muted); font-size: 0.72rem; font-weight: 600; padding: 4px 9px; cursor: pointer; }
+.sm-seg .sm-cut-style + .sm-cut-style { border-left: 1px solid var(--card-border); }
+.sm-seg .sm-cut-style.on { background: var(--accent, #e3000f); color: #fff; }
+.sm-cut-vadd, .sm-cut-vdel { background: rgba(255,255,255,0.06); border: 1px solid var(--card-border); border-radius: 7px; color: var(--text-main); width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.9rem; }
+.sm-cut-vadd:hover, .sm-cut-vdel:hover { background: rgba(255,255,255,0.12); }
+.sm-cut-vdel:disabled { opacity: 0.35; cursor: not-allowed; }
 .sm-pl-ctrls { display: grid; grid-template-columns: 84px 1fr 44px; align-items: center; gap: 6px; }
 .sm-pl-pos {
     background: rgba(255,255,255,0.06); border: 1px solid var(--card-border); border-radius: 6px;
