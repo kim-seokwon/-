@@ -866,6 +866,7 @@ class BhasApp {
             { id: 'vendors', label: '거래처', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'integrations', label: '연동', icon: '<i class="ph ph-plugs-connected"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'pages', label: '페이지', icon: '<i class="ph ph-note-pencil"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'kanban', label: '보드', icon: '<i class="ph ph-kanban"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'calendar', label: '캘린더', icon: '<i class="ph ph-calendar-dots"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
@@ -2655,6 +2656,8 @@ class BhasApp {
             return this.renderTableView();
         } else if (this.currentView === 'vendors') {
             return this.renderVendors();
+        } else if (this.currentView === 'integrations') {
+            return this.renderIntegrations();
         }
     }
 
@@ -2663,7 +2666,7 @@ class BhasApp {
     // ============================================================
     ensureViewData() {
         const v = this.currentView;
-        if ((v === 'orders' || v === 'inventory') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
+        if ((v === 'orders' || v === 'inventory' || v === 'integrations') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
         if (v === 'orders' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'inventory' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
@@ -2748,18 +2751,26 @@ class BhasApp {
         const ls = (this.inventory && this.inventory.lastSync) || null;
         const tab = (id, label, n) => `<button class="oms-tab ${filter === id ? 'active' : ''}" data-f="${id}" style="padding:7px 14px;border-radius:20px;font-size:0.85rem;cursor:pointer;border:1px solid var(--card-border);background:${filter === id ? 'var(--primary)' : 'rgba(var(--tint),0.05)'};color:${filter === id ? '#fff' : 'var(--text-muted)'}">${label} ${n}</button>`;
 
-        const body = rows.map(o => `
+        const body = rows.map(o => {
+            const items = o.items || [];
+            const multi = items.length > 1;
+            const prodCell = multi
+                ? `<button class="oms-expand" data-id="${o.order_id}" style="background:none;border:none;color:var(--text-main);cursor:pointer;text-align:left;font-size:0.88rem;display:inline-flex;align-items:center;gap:6px;padding:0"><i class="ph ph-caret-right oms-caret" style="font-size:0.9rem;color:var(--primary);transition:transform .2s"></i>${this._orderItemsSummary(o)}</button>`
+                : this._orderItemsSummary(o);
+            const detail = multi ? `<tr class="oms-detail" data-for="${o.order_id}" style="display:none"><td colspan="9" style="padding:2px 10px 12px 42px;background:rgba(var(--tint),0.04)"><div style="display:flex;flex-direction:column;gap:5px;padding:6px 0">${items.map(it => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:0.83rem"><span style="color:var(--text-muted)">${this._vesc(it.product_name || it.variant_code || '상품')}${it.option_name ? ` · ${this._vesc(it.option_name)}` : ''}</span><span style="color:var(--text-main);font-weight:600;white-space:nowrap">${it.quantity || 1}개</span></div>`).join('')}</div></td></tr>` : '';
+            return `
             <tr style="border-bottom:1px solid var(--card-border)">
                 <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" style="accent-color:var(--primary)"></td>
                 <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}</td>
                 <td style="padding:10px"><span style="font-size:0.72rem;padding:2px 8px;border-radius:10px;background:rgba(99,102,241,0.18);color:#a5b4fc">${this._mallLabel(o.mall_key)}</span></td>
                 <td style="padding:10px;color:var(--text-muted);font-size:0.82rem">${o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : '-'}</td>
                 <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
-                <td style="padding:10px;font-size:0.88rem">${this._orderItemsSummary(o)}</td>
+                <td style="padding:10px;font-size:0.88rem">${prodCell}</td>
                 <td style="padding:10px;text-align:center">${this._orderQtySum(o)}</td>
                 <td style="padding:10px;text-align:center"><span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${o.status === 'shipping' ? 'rgba(34,197,94,0.18)' : (o.status === 'done' ? 'rgba(148,163,184,0.18)' : 'rgba(245,158,11,0.18)')};color:${o.status === 'shipping' ? '#22c55e' : (o.status === 'done' ? '#94a3b8' : '#f59e0b')}">${this._orderStatusLabel(o.status)}</span></td>
                 <td style="padding:10px;font-size:0.8rem;color:var(--text-muted)">${o.invoice_no ? `${o.courier || ''} ${o.invoice_no}` : '-'}</td>
-            </tr>`).join('') || `<tr><td colspan="9" style="padding:2rem;text-align:center;color:var(--text-muted)">주문이 없습니다. 카페24 동기화가 돌면 여기로 모입니다.</td></tr>`;
+            </tr>${detail}`;
+        }).join('') || `<tr><td colspan="9" style="padding:2rem;text-align:center;color:var(--text-muted)">주문이 없습니다. 카페24 동기화가 돌면 여기로 모입니다.</td></tr>`;
 
         return `
         <div class="glass" style="padding:2rem;border-radius:20px">
@@ -2796,6 +2807,11 @@ class BhasApp {
 
     bindOrdersEvents() {
         this.appContainer.querySelectorAll('.oms-tab').forEach(t => t.onclick = () => this.setState({ orderFilter: t.dataset.f }));
+        this.appContainer.querySelectorAll('.oms-expand').forEach(b => b.onclick = () => {
+            const dr = this.appContainer.querySelector(`.oms-detail[data-for="${b.dataset.id}"]`);
+            const caret = b.querySelector('.oms-caret');
+            if (dr) { const show = dr.style.display === 'none'; dr.style.display = show ? 'table-row' : 'none'; if (caret) caret.style.transform = show ? 'rotate(90deg)' : ''; }
+        });
         const chkAll = document.getElementById('oms-chk-all');
         if (chkAll) chkAll.onclick = () => this.appContainer.querySelectorAll('.oms-chk').forEach(c => { c.checked = chkAll.checked; });
         const syncBtn = document.getElementById('oms-sync-btn');
@@ -4291,6 +4307,58 @@ class BhasApp {
         await this.loadVendors();
     }
 
+    // ============================================================
+    //  채널 연동 현황 (몰별 카페24 + 기타 채널)
+    // ============================================================
+    renderIntegrations() {
+        if (!this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">연동 정보를 불러오는 중...</div>`;
+        const malls = (this.malls || []).filter(m => (m.channel || 'cafe24') === 'cafe24');
+        const conn = malls.filter(m => m.connected).length;
+        const mallCards = malls.length ? malls.map(m => {
+            const ok = !!m.connected;
+            return `<div class="glass" style="padding:1.1rem 1.2rem;border-radius:16px;display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+                    <div style="min-width:0">
+                        <div style="font-size:1rem;font-weight:700">${this._vesc(m.label)}</div>
+                        <div style="font-size:0.76rem;color:var(--text-muted);margin-top:2px">${m.cafe24_mall_id ? this._vesc(m.cafe24_mall_id) + '.cafe24.com' : '카페24'}${m.brand_id ? ' · ' + this._vesc(this._brandNameById(m.brand_id)) : ''}</div>
+                    </div>
+                    <span style="flex:0 0 auto;font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px;color:#fff;background:${ok ? '#22c55e' : '#f59e0b'}">${ok ? '● 연동됨' : '○ 미인증'}</span>
+                </div>
+                <button class="integ-auth btn-primary" data-key="${m.mall_key}" style="align-self:flex-start;padding:7px 14px;border-radius:9px;font-size:0.82rem">${ok ? '재인증' : '인증하기'}</button>
+            </div>`;
+        }).join('') : `<div class="glass" style="padding:2rem;border-radius:16px;text-align:center;color:var(--text-muted)">등록된 카페24 몰이 없습니다. [카페24 몰 관리]로 추가하세요.</div>`;
+
+        const other = [
+            { name: '무신사', desc: '입점몰 · API 연동', status: '계획', scolor: '#94a3b8' },
+            { name: '키디키디', desc: '입점몰 · 엑셀 수동', status: '수동', scolor: '#f59e0b' },
+            { name: '우체국 송장', desc: '계약소포 OpenAPI · 발번', status: '배포 대기', scolor: '#3b82f6' },
+        ].map(c => `<div class="glass" style="padding:1rem 1.1rem;border-radius:16px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <div><div style="font-weight:700">${c.name}</div><div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">${c.desc}</div></div>
+            <span style="flex:0 0 auto;font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px;color:#fff;background:${c.scolor}">${c.status}</span>
+        </div>`).join('');
+
+        return `
+        <div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
+                <div>
+                    <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-plugs-connected"></i> 채널 연동 현황</h1>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">카페24 몰 ${conn}/${malls.length} 연동 · 주문수집·재고·배송중 반영</p>
+                </div>
+                <button id="integ-cafe24-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plug-charging"></i> 카페24 몰 관리</button>
+            </div>
+            <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:0 0 0.7rem">카페24 몰</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem;margin-bottom:1.6rem">${mallCards}</div>
+            <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:0 0 0.7rem">기타 채널</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem">${other}</div>
+        </div>`;
+    }
+
+    bindIntegrationsEvents() {
+        const b = document.getElementById('integ-cafe24-btn');
+        if (b) b.onclick = () => this.showCafe24Modal();
+        this.appContainer.querySelectorAll('.integ-auth').forEach(x => x.onclick = () => this.authMall(x.dataset.key));
+    }
+
     bindDashboardEvents() {
         this.bindGlobalSearch();
         // 사이드바 내비게이션 (onclick으로 중복 방지)
@@ -4324,6 +4392,7 @@ class BhasApp {
         if (this.currentView === 'table') this.bindTableEvents();
         if (this.currentView === 'calendar') this.bindCalendarEvents();
         if (this.currentView === 'vendors') this.bindVendorsEvents();
+        if (this.currentView === 'integrations') this.bindIntegrationsEvents();
 
         const viewGridBtn = document.getElementById('view-grid-btn');
         if (viewGridBtn) viewGridBtn.onclick = () => {
