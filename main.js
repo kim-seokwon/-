@@ -2670,6 +2670,7 @@ class BhasApp {
     ensureViewData() {
         const v = this.currentView;
         if ((v === 'orders' || v === 'inventory' || v === 'integrations') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
+        if (v === 'integrations' && !this._bsLoaded && !this._bsLoading) this.loadBrandSettings();
         if (v === 'orders' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'inventory' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
@@ -4321,8 +4322,15 @@ class BhasApp {
         const channels = [
             { key: 'cafe24', label: '카페24', active: true },
             { key: 'musinsa', label: '무신사', active: false },
+            { key: '29cm', label: '29CM', active: false },
             { key: 'kidikidi', label: '키디키디', active: false },
+            { key: 'smartstore', label: '스마트스토어', active: false },
         ];
+        const couriers = ['우체국', 'CJ대한통운', '한진택배', '롯데택배', '로젠택배', '기타'];
+        const courierCell = (b) => {
+            const cur = (this.brandCouriers || {})[b.id] || '우체국';
+            return `<select class="integ-courier" data-brand="${b.id}" style="padding:6px 8px;font-size:0.78rem;border-radius:8px;border:1px solid var(--card-border);background:rgba(148,163,184,0.12);color:var(--text-main);min-width:96px">${couriers.map(c => `<option value="${c}" ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}</select>`;
+        };
         const cell = (brand, ch) => {
             if (ch.key === 'cafe24') {
                 const mall = malls.find(m => m.brand_id === brand.id && (m.channel || 'cafe24') === 'cafe24');
@@ -4335,7 +4343,8 @@ class BhasApp {
         const rows = brands.length ? brands.map(b => `<tr style="border-bottom:1px solid var(--card-border)">
             <td style="padding:14px 10px;font-weight:600">${this._vesc(b.name)}</td>
             ${channels.map(ch => `<td style="padding:14px 10px;text-align:center">${cell(b, ch)}</td>`).join('')}
-        </tr>`).join('') : `<tr><td colspan="${channels.length + 1}" style="padding:2.5rem;text-align:center;color:var(--text-muted)">브랜드가 없습니다. [브랜드 추가]로 시작하세요.</td></tr>`;
+            <td style="padding:14px 10px;text-align:center">${courierCell(b)}</td>
+        </tr>`).join('') : `<tr><td colspan="${channels.length + 2}" style="padding:2.5rem;text-align:center;color:var(--text-muted)">브랜드가 없습니다. [브랜드 추가]로 시작하세요.</td></tr>`;
         return `
         <div class="fade-in" style="padding:1.5rem;max-width:900px;margin:0 auto">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
@@ -4343,9 +4352,9 @@ class BhasApp {
                 <button id="integ-addbrand-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 브랜드 추가</button>
             </div>
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;min-width:520px">
+                <table style="width:100%;border-collapse:collapse;min-width:820px">
                     <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.82rem;text-align:left">
-                        <th style="padding:12px 10px">브랜드</th>${channels.map(ch => `<th style="padding:12px 10px;text-align:center">${ch.label}${ch.active ? '' : ' <span style="font-size:0.66rem;opacity:0.6">(준비중)</span>'}</th>`).join('')}
+                        <th style="padding:12px 10px">브랜드</th>${channels.map(ch => `<th style="padding:12px 10px;text-align:center">${ch.label}${ch.active ? '' : ' <span style="font-size:0.66rem;opacity:0.6">(준비중)</span>'}</th>`).join('')}<th style="padding:12px 10px;text-align:center">택배사</th>
                     </tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
@@ -4359,6 +4368,24 @@ class BhasApp {
         if (add) add.onclick = () => this.setState({ currentView: 'brand_management' });
         this.appContainer.querySelectorAll('.integ-auth').forEach(x => x.onclick = () => this.authMall(x.dataset.key));
         this.appContainer.querySelectorAll('.integ-connect').forEach(x => x.onclick = () => this.showCafe24Modal(x.dataset.brand));
+        this.appContainer.querySelectorAll('.integ-courier').forEach(s => s.onchange = () => this.saveBrandCourier(s.dataset.brand, s.value));
+    }
+    async loadBrandSettings() {
+        this._bsLoading = true;
+        try {
+            const { data } = await this.supabase.from('brand_settings').select('*');
+            this.brandCouriers = {};
+            (data || []).forEach(r => { this.brandCouriers[r.brand_id] = r.courier; });
+            this._bsLoaded = true;
+        } catch (e) { this.brandCouriers = {}; this._bsLoaded = true; }
+        this._bsLoading = false;
+        this.requestRender();
+    }
+    async saveBrandCourier(brandId, courier) {
+        this.brandCouriers = this.brandCouriers || {}; this.brandCouriers[brandId] = courier;
+        const { error } = await this.supabase.from('brand_settings').upsert({ brand_id: brandId, courier }, { onConflict: 'brand_id' });
+        if (error) { this.showToast('택배사 저장 실패: ' + error.message); return; }
+        this.showToast('택배사: ' + courier);
     }
 
     // ============================================================
@@ -4366,13 +4393,28 @@ class BhasApp {
     // ============================================================
     _won(n) { return (Number(n) || 0).toLocaleString('ko-KR'); }
     _quoteStatusLabel(s) { return ({ draft: '작성중', sent: '발송', confirmed: '확정' })[s] || s; }
+    _addDays(dateStr, n) { if (!dateStr) return ''; const d = new Date(dateStr); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+    _defaultQuoteTerms() {
+        return [
+            '브하스는 의뢰인의 제품 제작을 위한 제작 대행 업무를 수행합니다. 제품의 디자인, 사이즈 스펙, 원단 선택 및 최종 사양에 대한 결정 및 책임은 의뢰인에게 있으며, 의뢰인이 최종 승인한 내용에 따라 제작이 진행됩니다. 승인 이후 발생하는 결과물에 대한 책임은 의뢰인에게 귀속됩니다.',
+            '대량 생산의 특성상 ±1~3cm의 사이즈 오차가 발생할 수 있습니다. 염색 및 워싱 제품의 경우 동일 컬러 내에서도 탕 차이(미세한 색상 차이)가 발생할 수 있으며, 이는 원단 생산 및 가공 과정에서 발생하는 특성으로 브하스의 책임에 해당하지 않습니다. 또한 공장 기준상 정상 범위로 판단되는 사항은 불량으로 간주하지 않습니다.',
+            '불량 판정은 생산 공장의 A급 기준을 따르며, 기능상 문제가 없는 미세한 실밥, 잡사, 초크 자국, 미세 오염 등은 불량에 해당하지 않습니다. 명확한 제작상 하자가 확인된 경우에 한하여 보완 또는 재작업 여부를 상호 협의합니다.',
+            '의뢰인의 디자인 및 제작 관련 정보는 외부에 공유하지 않습니다. 단, 브하스의 포트폴리오 활용 여부는 사전 협의 후 결정합니다. 또한 브하스는 제작 대행 업무를 수행하며, 완성된 제품의 판매 결과, 재고 부담, 마케팅 성과 및 수익에 대해서는 책임을 지지 않습니다.',
+            '모든 원·부자재가 공장에 입고 완료된 이후 제품 완성까지는 최소 2주에서 최대 4주가 소요됩니다. 다만, 공장 상황, 원단 수급, 생산 물량 등에 따라 일정은 변동될 수 있습니다.',
+            '본 계약에서 청구되는 제작 대행 비용은 핸들링비용이 포함되며, 원·부자재 비용, 그레이딩 패턴 비용, 운송비 등을 제외한 금액일 수 있습니다. 이 경우 해당 비용은 실제 발생 금액에 따라 별도로 청구됩니다.',
+        ].map((t, i) => `${i + 1}. ${t}`).join('\n');
+    }
     async loadQuotes() {
         this._quotesLoading = true;
         try {
-            const { data } = await this.supabase.from('quotes').select('*').order('created_at', { ascending: false });
-            this.quotes = data || [];
+            const [qRes, cRes] = await Promise.all([
+                this.supabase.from('quotes').select('*').order('created_at', { ascending: false }),
+                this.supabase.from('clients').select('*').order('name', { ascending: true }),
+            ]);
+            this.quotes = qRes.data || [];
+            this.clients = cRes.data || [];
             this._quotesLoaded = true;
-        } catch (e) { this.showToast('견적을 불러오지 못했습니다. (008_quotes.sql 설치 필요)'); this.quotes = []; this._quotesLoaded = true; }
+        } catch (e) { this.showToast('견적을 불러오지 못했습니다. (008/010 SQL 설치 필요)'); this.quotes = []; this.clients = this.clients || []; this._quotesLoaded = true; }
         this._quotesLoading = false;
         this.requestRender();
     }
@@ -4428,11 +4470,20 @@ class BhasApp {
         c.innerHTML = `
         <div class="glass modal-content fade-in vmodal" style="width:94%;max-width:720px;padding:1.8rem;border-radius:20px;max-height:92vh;overflow-y:auto">
             <h2 style="margin:0 0 1.2rem;font-size:1.2rem"><i class="ph ph-receipt"></i> ${q ? '견적서 수정' : '새 견적서'}</h2>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-                <div><label style="font-size:0.74rem;color:var(--text-muted)">견적일</label><input id="q-date" type="date" class="login-input" value="${q?.quote_date || ''}"></div>
-                <div><label style="font-size:0.74rem;color:var(--text-muted)">유효기간</label><input id="q-valid" type="date" class="login-input" value="${q?.valid_until || ''}"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;align-items:end">
+                <div><label style="font-size:0.74rem;color:var(--text-muted)">견적일</label><input id="q-date" type="date" class="login-input" value="${q?.quote_date || new Date().toISOString().slice(0, 10)}"></div>
+                <div style="font-size:0.82rem;color:var(--text-muted);padding-bottom:11px">유효기간 <b id="q-valid-lbl" style="color:var(--text-main)">견적일 +7일</b></div>
             </div>
-            <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);margin:8px 0 6px">고객사 (공급받는자)</div>
+            <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);margin:8px 0 6px">고객사 (거래처)</div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+                <select id="q-clientsel" class="login-input" style="flex:1"><option value="">거래처 선택…</option>${(this.clients || []).map(cl => `<option value="${cl.id}">${this._vesc(cl.name)}${cl.biz_no ? ' (' + this._vesc(cl.biz_no) + ')' : ''}</option>`).join('')}</select>
+                <button id="q-addclient" type="button" class="btn-secondary" style="padding:8px 12px;border-radius:9px;white-space:nowrap"><i class="ph ph-plus"></i> 거래처 추가</button>
+            </div>
+            <div id="q-addclient-form" style="display:none;flex-direction:column;gap:8px;padding:12px;background:rgba(148,163,184,0.1);border-radius:10px;margin-bottom:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="ac-name" class="login-input" placeholder="상호 *"><input id="ac-biz" class="login-input" placeholder="사업자등록번호"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px"><input id="ac-ceo" class="login-input" placeholder="대표자"><input id="ac-contact" class="login-input" placeholder="담당자"><input id="ac-tel" class="login-input" placeholder="연락처"></div>
+                <button id="ac-save" type="button" class="btn-primary" style="padding:8px;border-radius:9px">거래처 저장</button>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
                 <input id="q-client" class="login-input" placeholder="상호 *" value="${q ? this._vesc(q.client_name) : ''}">
                 <input id="q-biz" class="login-input" placeholder="사업자등록번호" value="${q ? this._vesc(q.client_biz_no || '') : ''}">
@@ -4453,9 +4504,13 @@ class BhasApp {
                 <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">세액 (10%)</span><span id="q-tax" style="font-variant-numeric:tabular-nums">0</span></div>
                 <div style="display:flex;justify-content:space-between;font-weight:800;font-size:1.05rem;border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px"><span>합계</span><span id="q-total" style="font-variant-numeric:tabular-nums">0</span></div>
             </div>
+            <details style="margin-top:12px" ${q && q.terms ? '' : ''}>
+                <summary style="cursor:pointer;font-size:0.82rem;font-weight:700;color:var(--text-muted);padding:4px 0"><i class="ph ph-note-pencil"></i> 특약사항 (자세히 보기 / 수정)</summary>
+                <textarea id="q-terms" class="login-input" style="margin-top:8px;min-height:180px;resize:vertical;font-size:0.8rem;line-height:1.6">${this._vesc((q && q.terms) || this._defaultQuoteTerms())}</textarea>
+            </details>
             <textarea id="q-memo" class="login-input" placeholder="비고/메모" style="margin-top:10px;min-height:46px;resize:vertical">${q ? this._vesc(q.memo || '') : ''}</textarea>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.3rem;gap:8px;flex-wrap:wrap">
-                <div style="display:flex;gap:8px">${q ? `<button id="q-delete" class="btn-secondary" style="padding:9px 14px;border-radius:10px;color:#ef4444">삭제</button><button id="q-print2" class="btn-secondary" style="padding:9px 14px;border-radius:10px"><i class="ph ph-printer"></i> 인쇄</button>` : ''}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">${q ? `<button id="q-delete" class="btn-secondary" style="padding:9px 12px;border-radius:10px;color:#ef4444">삭제</button><button id="q-print2" class="btn-secondary" style="padding:9px 12px;border-radius:10px"><i class="ph ph-printer"></i> 인쇄</button><button id="q-image2" class="btn-secondary" style="padding:9px 12px;border-radius:10px"><i class="ph ph-image"></i> 이미지</button>` : ''}</div>
                 <div style="display:flex;gap:8px">
                     <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">취소</button>
                     <button id="q-save" class="btn-primary" style="padding:9px 18px;border-radius:10px">저장</button>
@@ -4473,7 +4528,30 @@ class BhasApp {
         document.getElementById('q-save').onclick = () => this.saveQuote(id);
         const dl = document.getElementById('q-delete'); if (dl) dl.onclick = () => this.deleteQuote(id);
         const p2 = document.getElementById('q-print2'); if (p2) p2.onclick = () => { const qq = (this.quotes || []).find(x => x.id === id); if (qq) this.printQuote(qq); };
+        const im2 = document.getElementById('q-image2'); if (im2) im2.onclick = () => { const qq = (this.quotes || []).find(x => x.id === id); if (qq) this.saveQuoteImage(qq); };
+        const dateEl = document.getElementById('q-date'); const vlbl = document.getElementById('q-valid-lbl');
+        const updValid = () => { if (vlbl) vlbl.textContent = dateEl.value ? this._addDays(dateEl.value, 7) : '견적일 +7일'; };
+        if (dateEl) { dateEl.onchange = updValid; updValid(); }
+        const sel = document.getElementById('q-clientsel');
+        if (sel) sel.onchange = () => { const cl = (this.clients || []).find(x => x.id === sel.value); if (cl) { document.getElementById('q-client').value = cl.name || ''; document.getElementById('q-biz').value = cl.biz_no || ''; document.getElementById('q-ceo').value = cl.ceo || ''; document.getElementById('q-contact').value = cl.contact || ''; document.getElementById('q-tel').value = cl.tel || ''; } };
+        const ac = document.getElementById('q-addclient'); if (ac) ac.onclick = () => { const f = document.getElementById('q-addclient-form'); f.style.display = f.style.display === 'none' ? 'flex' : 'none'; };
+        const acs = document.getElementById('ac-save'); if (acs) acs.onclick = () => this.saveClientInline();
         this.recalcQuote();
+    }
+    async saveClientInline() {
+        const name = document.getElementById('ac-name').value.trim();
+        if (!name) { this.showToast('상호는 필수입니다.'); return; }
+        const row = { name, biz_no: document.getElementById('ac-biz').value.trim() || null, ceo: document.getElementById('ac-ceo').value.trim() || null, contact: document.getElementById('ac-contact').value.trim() || null, tel: document.getElementById('ac-tel').value.trim() || null };
+        const { data, error } = await this.supabase.from('clients').insert([row]).select().single();
+        if (error) { this.showToast('거래처 저장 실패: ' + error.message); return; }
+        this.clients = this.clients || []; this.clients.push(data); this.clients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        const sel = document.getElementById('q-clientsel');
+        const opt = document.createElement('option'); opt.value = data.id; opt.textContent = data.name + (data.biz_no ? ' (' + data.biz_no + ')' : ''); sel.appendChild(opt); sel.value = data.id;
+        document.getElementById('q-client').value = data.name || ''; document.getElementById('q-biz').value = data.biz_no || '';
+        document.getElementById('q-ceo').value = data.ceo || ''; document.getElementById('q-contact').value = data.contact || ''; document.getElementById('q-tel').value = data.tel || '';
+        document.getElementById('q-addclient-form').style.display = 'none';
+        ['ac-name', 'ac-biz', 'ac-ceo', 'ac-contact', 'ac-tel'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+        this.showToast('거래처 추가됨');
     }
     _readQuoteItems() {
         return [...document.querySelectorAll('#q-items .q-item')].map(r => {
@@ -4508,7 +4586,8 @@ class BhasApp {
             client_tel: document.getElementById('q-tel').value.trim() || null,
             items, supply_amount: supply, tax_amount: tax, total_amount: supply + tax,
             quote_date: document.getElementById('q-date').value || null,
-            valid_until: document.getElementById('q-valid').value || null,
+            valid_until: this._addDays(document.getElementById('q-date').value, 7) || null,
+            terms: document.getElementById('q-terms') ? document.getElementById('q-terms').value : null,
             memo: document.getElementById('q-memo').value.trim() || null,
         };
         let error;
@@ -4525,60 +4604,77 @@ class BhasApp {
         if (error) { this.showToast('삭제 실패: ' + error.message); return; }
         this.closeGlobalModal(); this._quotesLoaded = false; await this.loadQuotes();
     }
-    printQuote(q) {
+    _quoteDoc(q) {
         const esc = (s) => this._vesc(s);
         const rows = (q.items || []).map((it) => `<tr><td>${esc(it.name || '')}</td><td style="text-align:center">${esc(it.spec || '')}</td><td style="text-align:right">${(it.qty || 0).toLocaleString()}</td><td style="text-align:right">${(it.price || 0).toLocaleString()}</td><td style="text-align:right">${((it.qty || 0) * (it.price || 0)).toLocaleString()}</td><td style="text-align:right">${(it.tax || 0).toLocaleString()}</td><td>${esc(it.note || '')}</td></tr>`).join('');
-        const terms = [
-            '브하스는 의뢰인의 제품 제작을 위한 제작 대행 업무를 수행합니다. 제품의 디자인, 사이즈 스펙, 원단 선택 및 최종 사양에 대한 결정 및 책임은 의뢰인에게 있으며, 의뢰인이 최종 승인한 내용에 따라 제작이 진행됩니다. 승인 이후 발생하는 결과물에 대한 책임은 의뢰인에게 귀속됩니다.',
-            '대량 생산의 특성상 ±1~3cm의 사이즈 오차가 발생할 수 있습니다. 염색 및 워싱 제품의 경우 동일 컬러 내에서도 탕 차이(미세한 색상 차이)가 발생할 수 있으며, 이는 원단 생산 및 가공 과정에서 발생하는 특성으로 브하스의 책임에 해당하지 않습니다. 또한 공장 기준상 정상 범위로 판단되는 사항은 불량으로 간주하지 않습니다.',
-            '불량 판정은 생산 공장의 A급 기준을 따르며, 기능상 문제가 없는 미세한 실밥, 잡사, 초크 자국, 미세 오염 등은 불량에 해당하지 않습니다. 명확한 제작상 하자가 확인된 경우에 한하여 보완 또는 재작업 여부를 상호 협의합니다.',
-            '의뢰인의 디자인 및 제작 관련 정보는 외부에 공유하지 않습니다. 단, 브하스의 포트폴리오 활용 여부는 사전 협의 후 결정합니다. 또한 브하스는 제작 대행 업무를 수행하며, 완성된 제품의 판매 결과, 재고 부담, 마케팅 성과 및 수익에 대해서는 책임을 지지 않습니다.',
-            '모든 원·부자재가 공장에 입고 완료된 이후 제품 완성까지는 최소 2주에서 최대 4주가 소요됩니다. 다만, 공장 상황, 원단 수급, 생산 물량 등에 따라 일정은 변동될 수 있습니다.',
-            '본 계약에서 청구되는 제작 대행 비용은 핸들링비용이 포함되며, 원·부자재 비용, 그레이딩 패턴 비용, 운송비 등을 제외한 금액일 수 있습니다. 이 경우 해당 비용은 실제 발생 금액에 따라 별도로 청구됩니다.',
-        ].map((t, i) => `<div style="margin-bottom:7px">${i + 1}. ${esc(t)}</div>`).join('');
+        const termsText = (q.terms && q.terms.trim()) ? q.terms : this._defaultQuoteTerms();
+        const terms = termsText.split('\n').filter(l => l.trim()).map(l => `<div style="margin-bottom:7px">${esc(l)}</div>`).join('');
+        const css = `
+            .qh{width:800px;box-sizing:border-box;padding:34px 40px;background:#fff;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#2b2b2b;font-size:12.5px;margin:0 auto}
+            .qh .head{text-align:center;font-size:23px;font-weight:800;color:#8a7a5c;letter-spacing:4px;border-bottom:3px solid #cdbfa3;padding-bottom:13px;margin-bottom:22px}
+            .qh .top{display:flex;justify-content:space-between;gap:22px;margin-bottom:20px}
+            .qh .recv td{padding:6px 10px}
+            .qh .recv .l{font-weight:700;width:64px}
+            .qh .sup{border-collapse:collapse}
+            .qh .sup td{border:1px solid #b7ac93;padding:5px 10px;font-size:11.5px}
+            .qh .sup .l{background:#f3efe4;font-weight:700;text-align:center;width:84px}
+            .qh .amt{font-size:19px;font-weight:800;margin:6px 0 15px}
+            .qh .items{width:100%;border-collapse:collapse;margin-bottom:6px}
+            .qh .items th{background:#f3efe4;border:1px solid #b7ac93;padding:7px;font-size:11.5px}
+            .qh .items td{border:1px solid #b7ac93;padding:6px 8px}
+            .qh .items tfoot td{background:#faf7f0;font-weight:700}
+            .qh .terms{border:1px solid #d8cdb4;border-radius:4px;padding:14px 16px;margin-top:22px;font-size:10.5px;color:#555;line-height:1.55}
+            .qh .terms .tt{text-align:center;font-weight:700;color:#333;margin-bottom:9px;font-size:12px}
+            .qh .bank{text-align:center;font-weight:700;margin-top:14px;padding:9px;background:#f3efe4;border-radius:4px}`;
+        const body = `<div class="qh">
+            <div class="head">브하스 의류제작 견적서</div>
+            <div class="top">
+                <table class="recv"><tr><td class="l">수 신</td><td>${esc(q.client_name || '')} 대표님 귀하</td></tr><tr><td class="l">견 적 일</td><td>${q.quote_date || ''}</td></tr></table>
+                <table class="sup">
+                    <tr><td class="l">상호</td><td>주식회사 이일칠구</td></tr>
+                    <tr><td class="l">사업자번호</td><td>279-88-03052</td></tr>
+                    <tr><td class="l">주소</td><td>인천광역시 하늘중앙로 225번길 20, 507-8호</td></tr>
+                    <tr><td class="l">대표</td><td>김석원</td></tr>
+                    <tr><td class="l">TEL</td><td>담당자 방보경 010-9072-7003</td></tr>
+                </table>
+            </div>
+            <div class="amt">견적금액　${(q.total_amount || 0).toLocaleString()} 원 정</div>
+            <table class="items">
+                <thead><tr><th>품목명</th><th style="width:8%">규격</th><th style="width:9%">총 수량</th><th style="width:11%">단가</th><th style="width:14%">공급가액</th><th style="width:11%">세액</th><th style="width:18%">비고</th></tr></thead>
+                <tbody>${rows}</tbody>
+                <tfoot><tr><td colspan="4" style="text-align:center">합 계</td><td style="text-align:right">공급가액 ${(q.supply_amount || 0).toLocaleString()}</td><td style="text-align:right">VAT ${(q.tax_amount || 0).toLocaleString()}</td><td style="text-align:right">합계 ${(q.total_amount || 0).toLocaleString()}</td></tr></tfoot>
+            </table>
+            ${q.memo ? `<div style="margin-top:10px;font-size:11px;color:#555">비고: ${esc(q.memo)}</div>` : ''}
+            <div class="terms"><div class="tt">참고사항</div>${terms}</div>
+            <div class="bank">입금계좌: 기업은행 988-026117-04-012 (주)더하임프로모션</div>
+        </div>`;
+        return { css, body };
+    }
+    printQuote(q) {
+        const { css, body } = this._quoteDoc(q);
         const w = window.open('', '_blank', 'width=900,height=1100');
         if (!w) { this.showToast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
-        w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>브하스 의류제작 견적서 - ${esc(q.client_name || '')}</title><style>
-            body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;padding:36px 44px;color:#2b2b2b;font-size:12.5px}
-            .head{text-align:center;font-size:24px;font-weight:800;color:#8a7a5c;letter-spacing:4px;border-bottom:3px solid #cdbfa3;padding-bottom:14px;margin-bottom:24px}
-            .top{display:flex;justify-content:space-between;gap:24px;margin-bottom:22px}
-            .recv td{padding:6px 10px}
-            .recv .l{font-weight:700;width:64px}
-            .sup{border-collapse:collapse}
-            .sup td{border:1px solid #b7ac93;padding:5px 10px;font-size:11.5px}
-            .sup .l{background:#f3efe4;font-weight:700;text-align:center;width:88px}
-            .amt{font-size:20px;font-weight:800;margin:6px 0 16px}
-            .items{width:100%;border-collapse:collapse;margin-bottom:6px}
-            .items th{background:#f3efe4;border:1px solid #b7ac93;padding:8px;font-size:12px}
-            .items td{border:1px solid #b7ac93;padding:7px 9px}
-            .items tfoot td{background:#faf7f0;font-weight:700}
-            .terms{border:1px solid #d8cdb4;border-radius:4px;padding:16px 18px;margin-top:26px;font-size:11px;color:#555;line-height:1.6}
-            .terms .tt{text-align:center;font-weight:700;color:#333;margin-bottom:10px;font-size:12.5px}
-            .bank{text-align:center;font-weight:700;margin-top:16px;padding:10px;background:#f3efe4;border-radius:4px}
-        </style></head><body>
-        <div class="head">브하스 의류제작 견적서</div>
-        <div class="top">
-            <table class="recv"><tr><td class="l">수 신</td><td>${esc(q.client_name || '')} 대표님 귀하</td></tr><tr><td class="l">견 적 일</td><td>${q.quote_date || ''}</td></tr></table>
-            <table class="sup">
-                <tr><td class="l">상호</td><td>주식회사 이일칠구</td></tr>
-                <tr><td class="l">사업자번호</td><td>279-88-03052</td></tr>
-                <tr><td class="l">주소</td><td>인천광역시 하늘중앙로 225번길 20, 507-8호</td></tr>
-                <tr><td class="l">대표</td><td>김석원</td></tr>
-                <tr><td class="l">TEL</td><td>담당자 방보경 010-9072-7003</td></tr>
-            </table>
-        </div>
-        <div class="amt">견적금액　${(q.total_amount || 0).toLocaleString()} 원 정</div>
-        <table class="items">
-            <thead><tr><th>품목명</th><th style="width:8%">규격</th><th style="width:9%">총 수량</th><th style="width:11%">단가</th><th style="width:14%">공급가액</th><th style="width:11%">세액</th><th style="width:18%">비고</th></tr></thead>
-            <tbody>${rows}</tbody>
-            <tfoot><tr><td colspan="4" style="text-align:center">합 계</td><td style="text-align:right">공급가액 ${(q.supply_amount || 0).toLocaleString()}</td><td style="text-align:right">VAT ${(q.tax_amount || 0).toLocaleString()}</td><td style="text-align:right">합계 ${(q.total_amount || 0).toLocaleString()}</td></tr></tfoot>
-        </table>
-        ${q.memo ? `<div style="margin-top:10px;font-size:11.5px;color:#555">비고: ${esc(q.memo)}</div>` : ''}
-        <div class="terms"><div class="tt">참고사항</div>${terms}</div>
-        <div class="bank">입금계좌: 기업은행 988-026117-04-012 (주)더하임프로모션</div>
-        </body></html>`);
+        w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>브하스 의류제작 견적서 - ${this._vesc(q.client_name || '')}</title><style>${css}</style></head><body>${body}</body></html>`);
         w.document.close(); w.focus();
         setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
+    }
+    async saveQuoteImage(q) {
+        if (typeof html2canvas === 'undefined') { this.showToast('이미지 라이브러리 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+        const { css, body } = this._quoteDoc(q);
+        const holder = document.createElement('div');
+        holder.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff';
+        holder.innerHTML = `<style>${css}</style>${body}`;
+        document.body.appendChild(holder);
+        try {
+            const target = holder.querySelector('.qh');
+            const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#ffffff' });
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL('image/png');
+            a.download = `견적서_${(q.client_name || '견적').replace(/[^\w가-힣]/g, '')}_${q.quote_date || ''}.png`;
+            a.click();
+            this.showToast('이미지 저장됨');
+        } catch (e) { this.showToast('이미지 생성 실패: ' + (e.message || e)); }
+        finally { holder.remove(); }
     }
 
     bindDashboardEvents() {
