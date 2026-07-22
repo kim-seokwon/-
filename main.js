@@ -2,7 +2,7 @@ import { mockData, STAGES } from './mockData.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
     garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
-    newPlacement,
+    newPlacement, newCutline, newPoint,
 } from './sampleMaker.js';
 
 // Supabase 설정 (사용자 정보 입력 필요)
@@ -3794,7 +3794,7 @@ class BhasApp {
                 const pane = document.getElementById(id);
                 const svg = pane && pane.querySelector('svg');
                 if (!svg) return;
-                svg.querySelectorAll('.sm-pl-node, .sm-pl-resize, .sm-anchor, .sm-h-size, .sm-h-ctrl').forEach(el => {
+                svg.querySelectorAll('.sm-pl-node, .sm-pl-resize, .sm-anchor, .sm-h-size, .sm-h-ctrl, .sm-point-node, .sm-cut-end').forEach(el => {
                     el.style.touchAction = 'none';
                     el.addEventListener('pointerdown', ev => startHandleDrag(ev, el, svg));
                 });
@@ -3816,16 +3816,16 @@ class BhasApp {
             let kind;
             if (el.classList.contains('sm-pl-resize')) kind = 'resize';
             else if (el.classList.contains('sm-pl-node')) kind = 'move';
+            else if (el.classList.contains('sm-point-node')) kind = 'point';
+            else if (el.classList.contains('sm-cut-end')) kind = 'cutend';
             else if (el.classList.contains('sm-h-ctrl')) kind = 'ctrl';
             else kind = 'size';
 
             const startL = toLocal(e);
             let grab = { x: 0, y: 0 };
-            if (kind === 'move') {
-                const p = findPlById(ds.id);
+            if (kind === 'move' || kind === 'point') {
                 const ccx = parseFloat(ds.cx), ccy = parseFloat(ds.cy);
                 grab = { x: ccx - startL.x, y: ccy - startL.y };
-                if (p) { /* ensure free coords */ }
             }
 
             const tip = document.getElementById('sm-drag-tip') || (() => {
@@ -3847,6 +3847,15 @@ class BhasApp {
                     const half = Math.abs(L.x - ccx);
                     p.sizeCm = clamp(round05((2 * half) / sx), 2, 40);
                     tipText = `크기 ${p.sizeCm}cm`;
+                } else if (kind === 'point') {
+                    const pt = (cfg.points || []).find(x => x.id === ds.id); if (!pt) return;
+                    pt.fx = clamp(L.x + grab.x, 6, 894); pt.fy = clamp(L.y + grab.y, 6, 554);
+                    tipText = '포인트 이동';
+                } else if (kind === 'cutend') {
+                    const cl = (cfg.cutlines || []).find(x => x.id === ds.id); if (!cl) return;
+                    const nx = clamp(L.x, 6, 894), ny = clamp(L.y, 6, 554);
+                    if (ds.end === '1') { cl.x1 = nx; cl.y1 = ny; } else { cl.x2 = nx; cl.y2 = ny; }
+                    tipText = '절개선';
                 } else if (kind === 'ctrl') {
                     if (!cfg.nodes) cfg.nodes = {};
                     const bx = parseFloat(ds.bx), by = parseFloat(ds.by);
@@ -3937,6 +3946,14 @@ class BhasApp {
                 this.requestRender();
             };
         });
+        // ⑦ 절개선·포인트
+        const cutAdd = this.appContainer.querySelector('.sm-cut-add');
+        if (cutAdd) cutAdd.onclick = () => { if (!this.sampleConfig.cutlines) this.sampleConfig.cutlines = []; this.sampleConfig.cutlines.push(newCutline('cl' + Date.now())); this.sampleConfig.editMode = true; this.requestRender(); };
+        const pointAdd = this.appContainer.querySelector('.sm-point-add');
+        if (pointAdd) pointAdd.onclick = () => { if (!this.sampleConfig.points) this.sampleConfig.points = []; this.sampleConfig.points.push(newPoint('pt' + Date.now())); this.sampleConfig.editMode = true; this.requestRender(); };
+        this.appContainer.querySelectorAll('.sm-cut-del').forEach(b => b.onclick = () => { this.sampleConfig.cutlines = (this.sampleConfig.cutlines || []).filter(c => c.id !== b.getAttribute('data-id')); this.requestRender(); });
+        this.appContainer.querySelectorAll('.sm-point-del').forEach(b => b.onclick = () => { this.sampleConfig.points = (this.sampleConfig.points || []).filter(p => p.id !== b.getAttribute('data-id')); this.requestRender(); });
+        this.appContainer.querySelectorAll('.sm-point-label').forEach(inp => inp.addEventListener('input', () => { const p = (this.sampleConfig.points || []).find(x => x.id === inp.getAttribute('data-id')); if (p) { p.label = inp.value; refreshCanvas(); } }));
         this.appContainer.querySelectorAll('.sm-pl-del').forEach(btn => {
             btn.onclick = () => {
                 const id = btn.getAttribute('data-id');

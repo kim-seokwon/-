@@ -199,6 +199,8 @@ export function defaultSampleConfig(typeId = 'tee') {
     measure: defMeasure(def),
     details: defDetails(def),
     placements: [], // 로고/프린트/포켓/자수/라벨 자유 배치
+    cutlines: [],   // 절개선 [{id,x1,y1,x2,y2}] 자유
+    points: [],     // 디자인 포인트 [{id,fx,fy,label}] 자유
     nodes: {},      // 베지어 컨트롤포인트 오프셋 {key:{dx,dy}}
     curve: { side: 0, shoulder: 0, hem: 0 }, // (구) 곡률 보정 — nodes로 대체
     fabric: '면 100%',
@@ -215,7 +217,30 @@ export function configForType(prev, typeId) {
   const positions = (PLACEMENT_POSITIONS[def.category] || []).map(p => p.key);
   const placements = (prev.placements || []).map(p =>
     positions.includes(p.pos) ? p : { ...p, pos: positions[0] });
-  return { ...prev, type: typeId, measure: defMeasure(def), details: defDetails(def), placements, nodes: {}, curve: { side: 0, shoulder: 0, hem: 0 } };
+  return { ...prev, type: typeId, measure: defMeasure(def), details: defDetails(def), placements, cutlines: prev.cutlines || [], points: prev.points || [], nodes: {}, curve: { side: 0, shoulder: 0, hem: 0 } };
+}
+
+export function newCutline(id) { return { id, x1: 375, y1: 265, x2: 525, y2: 265 }; }
+export function newPoint(id) { return { id, fx: 450, fy: 285, label: '포인트' }; }
+function _smEsc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function renderCutPoints(cfg, interactive) {
+  const edit = interactive && cfg.editMode;
+  let s = '';
+  (cfg.cutlines || []).forEach(c => {
+    s += `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="#e3000f" stroke-width="1.6" stroke-dasharray="7 4" stroke-linecap="round"/>`;
+    if (edit) {
+      s += `<circle class="sm-cut-end" data-id="${c.id}" data-end="1" cx="${c.x1}" cy="${c.y1}" r="6" fill="#fff" stroke="#e3000f" stroke-width="2" style="cursor:move"/>`;
+      s += `<circle class="sm-cut-end" data-id="${c.id}" data-end="2" cx="${c.x2}" cy="${c.y2}" r="6" fill="#fff" stroke="#e3000f" stroke-width="2" style="cursor:move"/>`;
+    }
+  });
+  (cfg.points || []).forEach(p => {
+    s += `<g ${edit ? `class="sm-point-node" data-id="${p.id}" data-cx="${p.fx}" data-cy="${p.fy}" style="cursor:move"` : ''}>`;
+    s += `<circle cx="${p.fx}" cy="${p.fy}" r="4.5" fill="#2563eb"/>`;
+    s += `<circle cx="${p.fx}" cy="${p.fy}" r="9" fill="none" stroke="#2563eb" stroke-width="1.3"/>`;
+    if (p.label) s += `<text x="${p.fx + 12}" y="${p.fy + 4}" font-size="12" font-weight="700" fill="#2563eb">${_smEsc(p.label)}</text>`;
+    s += `</g>`;
+  });
+  return s;
 }
 
 // 새 배치 요소 생성 (id는 호출측에서 부여)
@@ -574,6 +599,7 @@ function drawTopView(cfg, mode, view, interactive) {
 
     // 배치 요소
     s += renderPlacements(cfg, anchorsForTop(g), mode, line, g.SX, interactive);
+    s += renderCutPoints(cfg, interactive);
   } else {
     // ===== 뒷판 전용 =====
     // 뒷목 요크 라인
@@ -800,6 +826,7 @@ function drawPantsView(cfg, mode, view, interactive) {
       leftAnkle: { x: hemCenterL, y: hemY - 42 }, rightAnkle: { x: hemCenterR, y: hemY - 42 },
     };
     s += renderPlacements(cfg, pantsAnchors, mode, line, SX, interactive);
+    s += renderCutPoints(cfg, interactive);
   }
 
   // 도식 치수선 (앞면만)
@@ -1402,6 +1429,11 @@ export function renderSampleMaker(cfg) {
     </div>`;
   }).join('');
 
+  const cutPointRows = [
+    ...(cfg.cutlines || []).map(c => `<div class="sm-pl-row"><div class="sm-pl-head"><span class="sm-pl-kind"><i class="ph ph-scissors"></i> 절개선</span><button class="sm-cut-del" data-id="${c.id}" title="삭제"><i class="ph ph-trash"></i></button></div></div>`),
+    ...(cfg.points || []).map(p => `<div class="sm-pl-row"><div class="sm-pl-head"><span class="sm-pl-kind"><i class="ph ph-map-pin"></i> 포인트</span><button class="sm-point-del" data-id="${p.id}" title="삭제"><i class="ph ph-trash"></i></button></div><input type="text" class="sm-point-label" data-id="${p.id}" placeholder="라벨 (예: 단추, 자수)" value="${_smEsc(p.label || '').replace(/"/g, '&quot;')}"></div>`),
+  ].join('');
+
   return `
   <div class="sm-view fade-in">
     <div class="sm-layout">
@@ -1439,6 +1471,15 @@ export function renderSampleMaker(cfg) {
           <h4>⑥ 로고 · 배치 <span class="sm-hint">(위치·크기 자유)</span></h4>
           <div class="sm-pl-addbar">${addBtns}</div>
           <div class="sm-pl-list">${plRows || '<p class="sm-pl-empty">위 버튼으로 로고·프린트·포켓·자수·라벨을 추가하세요.</p>'}</div>
+        </div>
+
+        <div class="sm-group">
+          <h4>⑦ 절개선 · 포인트 <span class="sm-hint">(자유 · 편집모드에서 드래그)</span></h4>
+          <div class="sm-pl-addbar">
+            <button class="sm-cut-add"><i class="ph ph-scissors"></i> 절개선</button>
+            <button class="sm-point-add"><i class="ph ph-map-pin"></i> 포인트</button>
+          </div>
+          <div class="sm-pl-list">${cutPointRows || '<p class="sm-pl-empty">절개선(색상블록·패널 분할) / 포인트(단추·자수 위치 등)를 자유롭게 추가하세요.</p>'}</div>
         </div>
 
         <div class="sm-group">
