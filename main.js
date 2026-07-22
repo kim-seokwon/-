@@ -3994,6 +3994,35 @@ class BhasApp {
             });
         });
 
+        // 레퍼런스 사진 (디테일 메모)
+        this.appContainer.querySelectorAll('.sm-ref-input').forEach(inp => {
+            inp.addEventListener('change', () => {
+                const file = inp.files && inp.files[0];
+                if (!file) return;
+                if (file.size > 4 * 1024 * 1024) { this.showToast('이미지가 너무 큽니다 (4MB 이하).'); return; }
+                const reader = new FileReader();
+                reader.onload = e => {
+                    if (!Array.isArray(this.sampleConfig.references)) this.sampleConfig.references = [];
+                    this.sampleConfig.references.push({ id: 'ref' + Date.now().toString(36), dataUrl: e.target.result, note: '' });
+                    this.requestRender();
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+        this.appContainer.querySelectorAll('.sm-ref-note').forEach(inp => {
+            inp.addEventListener('input', () => {
+                const r = (this.sampleConfig.references || []).find(x => x.id === inp.getAttribute('data-id'));
+                if (r) r.note = inp.value;
+            });
+        });
+        this.appContainer.querySelectorAll('.sm-ref-del').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                this.sampleConfig.references = (this.sampleConfig.references || []).filter(x => x.id !== id);
+                this.requestRender();
+            });
+        });
+
         // ① 기본 정보 / ⑦ 원단·비고
         const textMap = { 'sm-styleName': 'styleName', 'sm-styleNo': 'styleNo', 'sm-size': 'size', 'sm-fabric': 'fabric', 'sm-note': 'note' };
         Object.entries(textMap).forEach(([id, key]) => {

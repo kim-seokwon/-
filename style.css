@@ -1996,6 +1996,10 @@ body {
 /* tech pack 확장 */
 .sm-tp-block-wide { grid-column: 1 / -1; }
 .sm-tp-mini { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; background: #fff; vertical-align: middle; }
+.sm-tp-refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.sm-tp-ref { margin: 0; border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 6px; overflow: hidden; background: rgba(255,255,255,.03); }
+.sm-tp-ref img { width: 100%; height: 96px; object-fit: contain; background: #fff; display: block; }
+.sm-tp-ref figcaption { padding: 4px 6px; font-size: 11px; color: var(--text-dim, #aaa); white-space: pre-wrap; line-height: 1.4; }
 
 /* 샘플 제작 — 전문 도식 (FRONT/BACK, 콜아웃) */
 .sm-pane-flat { max-width: 780px !important; }

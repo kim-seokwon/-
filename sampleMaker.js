@@ -201,6 +201,7 @@ export function defaultSampleConfig(typeId = 'tee') {
     placements: [], // 로고/프린트/포켓/자수/라벨 자유 배치
     cutlines: [],   // 절개선 [{id,x1,y1,x2,y2}] 자유
     points: [],     // 디자인 포인트 [{id,fx,fy,label}] 자유
+    references: [], // 레퍼런스 사진 [{id,dataUrl,note}] — 디테일 메모
     nodes: {},      // 베지어 컨트롤포인트 오프셋 {key:{dx,dy}}
     curve: { side: 0, shoulder: 0, hem: 0 }, // (구) 곡률 보정 — nodes로 대체
     fabric: '면 100%',
@@ -217,7 +218,7 @@ export function configForType(prev, typeId) {
   const positions = (PLACEMENT_POSITIONS[def.category] || []).map(p => p.key);
   const placements = (prev.placements || []).map(p =>
     positions.includes(p.pos) ? p : { ...p, pos: positions[0] });
-  return { ...prev, type: typeId, measure: defMeasure(def), details: defDetails(def), placements, cutlines: prev.cutlines || [], points: prev.points || [], nodes: {}, curve: { side: 0, shoulder: 0, hem: 0 } };
+  return { ...prev, type: typeId, measure: defMeasure(def), details: defDetails(def), placements, cutlines: prev.cutlines || [], points: prev.points || [], references: prev.references || [], nodes: {}, curve: { side: 0, shoulder: 0, hem: 0 } };
 }
 
 export function newCutline(id) { return { id, x1: 375, y1: 265, x2: 525, y2: 265 }; }
@@ -1184,6 +1185,10 @@ export function techPackSummaryHTML(cfg) {
         <h4>로고 · 배치 (${pls.length})</h4>
         ${plBlock}
       </div>
+      ${(cfg.references || []).length ? `<div class="sm-tp-block sm-tp-block-wide">
+        <h4>레퍼런스 사진 (${cfg.references.length})</h4>
+        <div class="sm-tp-refs">${cfg.references.map(r => `<figure class="sm-tp-ref"><img src="${r.dataUrl}" alt="">${r.note ? `<figcaption>${_smEsc(r.note)}</figcaption>` : ''}</figure>`).join('')}</div>
+      </div>` : ''}
     </div>`;
 }
 
@@ -1243,6 +1248,16 @@ export function buildTechPackPrintHTML(cfg) {
   const matRows = mats.map(m => `<tr><td class="lbl">${m.item}</td><td>${m.spec}</td><td class="qty">${m.qty}</td></tr>`).join('');
   const colorRow = `<tr><td class="lbl">${c.name}</td>${grade.sizes.map(() => '<td></td>').join('')}<td></td></tr>`;
   const plsRows = pls.length ? pls.map(p => `<tr><td>${p.kind}</td><td>${p.pos}</td><td>${p.size}cm</td><td>${p.dataUrl ? `<img src="${p.dataUrl}" class="plimg">` : (p.file || '-')}</td></tr>`).join('') : `<tr><td colspan="4" style="color:#999">배치 요소 없음</td></tr>`;
+  const refsPage = (cfg.references || []).length ? `
+  <div class="tp" style="margin-top:8px;page-break-before:always;">
+    <div class="hd"><div class="hd-logo"><span class="mark"></span><b>이일칠구<br>2179</b></div><div class="hd-title" style="font-size:18px;letter-spacing:8px;">레퍼런스 · REFERENCE</div><div class="approve"><div class="ab"><div class="t">디자이너</div><div class="v"></div></div></div></div>
+    <div style="padding:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+      ${cfg.references.map(r => `<figure style="margin:0;border:1px solid #bbb;">
+        <img src="${r.dataUrl}" style="width:100%;height:155px;object-fit:contain;background:#f7f7f7;display:block;">
+        <figcaption style="padding:4px 6px;font-size:9.5px;border-top:1px solid #bbb;min-height:15px;white-space:pre-wrap;line-height:1.4;">${_smEsc(r.note || '')}</figcaption>
+      </figure>`).join('')}
+    </div>
+  </div>` : '';
 
   return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <title>작업지시서 - ${cfg.styleName || def.label}</title>
@@ -1362,6 +1377,7 @@ export function buildTechPackPrintHTML(cfg) {
       <div style="width:100%;">${garmentPatternSVG(cfg).replace('<svg ', '<svg style="width:100%;height:auto;max-height:460px;" ')}</div>
     </div>
   </div>
+  ${refsPage}
   <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
 </body></html>`;
 }
@@ -1434,6 +1450,12 @@ export function renderSampleMaker(cfg) {
     ...(cfg.points || []).map(p => `<div class="sm-pl-row"><div class="sm-pl-head"><span class="sm-pl-kind"><i class="ph ph-map-pin"></i> 포인트</span><button class="sm-point-del" data-id="${p.id}" title="삭제"><i class="ph ph-trash"></i></button></div><input type="text" class="sm-point-label" data-id="${p.id}" placeholder="라벨 (예: 단추, 자수)" value="${_smEsc(p.label || '').replace(/"/g, '&quot;')}"></div>`),
   ].join('');
 
+  const refRows = (cfg.references || []).map(r => `<div class="sm-pl-row" data-id="${r.id}">
+      <div class="sm-pl-head"><span class="sm-pl-kind"><i class="ph ph-image"></i> 레퍼런스</span><button class="sm-ref-del" data-id="${r.id}" title="삭제"><i class="ph ph-trash"></i></button></div>
+      <div class="sm-pl-file"><img src="${r.dataUrl}" class="sm-pl-thumb" alt=""></div>
+      <input type="text" class="sm-ref-note" data-id="${r.id}" placeholder="메모 (예: 이런 느낌 절개)" value="${_smEsc(r.note || '').replace(/"/g, '&quot;')}">
+    </div>`).join('');
+
   return `
   <div class="sm-view fade-in">
     <div class="sm-layout">
@@ -1480,6 +1502,12 @@ export function renderSampleMaker(cfg) {
             <button class="sm-point-add"><i class="ph ph-map-pin"></i> 포인트</button>
           </div>
           <div class="sm-pl-list">${cutPointRows || '<p class="sm-pl-empty">절개선(색상블록·패널 분할) / 포인트(단추·자수 위치 등)를 자유롭게 추가하세요.</p>'}</div>
+        </div>
+
+        <div class="sm-group">
+          <h4>⑧ 레퍼런스 사진 <span class="sm-hint">(디테일 메모)</span></h4>
+          <label class="sm-pl-upload" style="width:100%;justify-content:center;margin-bottom:8px;box-sizing:border-box"><i class="ph ph-image"></i> 사진 추가<input type="file" accept="image/*" class="sm-ref-input" hidden></label>
+          <div class="sm-pl-list">${refRows || '<p class="sm-pl-empty">참고 이미지를 올리고 메모를 달아 공장에 전달하세요.</p>'}</div>
         </div>
 
         <div class="sm-group">
