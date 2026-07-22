@@ -1710,32 +1710,43 @@ class BhasApp {
         return false;
     }
 
-    // 매출 집계 (홈·매출뷰 공용): 몰→브랜드 매핑, 월별 합산
+    // 매출 집계 (홈·매출뷰 공용)
+    //  · 리테일(토비·하이헤이호·로하이스튜디오): 몰 주문 pay_amount (mall→brand)
+    //  · 브하스(컨설팅): 발행된 세금계산서(견적 tax_status='issued') 기준
     _salesAgg(limitMonths = 12) {
-        const orders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null);
+        const ym = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
         const mallBrand = (o) => {
             const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
             if (mall) { const b = (mockData.brands || []).find(x => x.id === mall.brand_id); return b ? b.name : (mall.label || '기타'); }
             return o.mall_key || o.channel || '기타';
         };
-        const ym = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
-        let months = [...new Set(orders.map(o => ym(o.order_date)))].sort();
+        const orders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null);
+        const events = [];
+        orders.forEach(o => events.push({ m: ym(o.order_date), brand: mallBrand(o), amt: Number(o.pay_amount) || 0, kind: 'order' }));
+        // 브하스 컨설팅 = 실현 매출(세금계산서 발행분). 발행 데이터 없으면 견적 총액으로 폴백.
+        const quotes = (this.quotes || []).filter(q => q.total_amount);
+        const anyIssued = quotes.some(q => q.tax_status === 'issued');
+        quotes.forEach(q => {
+            if (anyIssued && q.tax_status !== 'issued') return;
+            const d = q.tax_supply_date || q.quote_date; if (!d) return;
+            events.push({ m: ym(d), brand: '브하스 (컨설팅)', amt: Number(q.total_amount) || 0, kind: 'consulting' });
+        });
+
+        let months = [...new Set(events.map(e => e.m))].sort();
         if (months.length > limitMonths) months = months.slice(-limitMonths);
         const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
         const byBrand = {};
-        orders.forEach(o => {
-            const m = ym(o.order_date); if (!(m in monthIdx)) return;
-            const bn = mallBrand(o);
-            const rec = byBrand[bn] || (byBrand[bn] = { name: bn, cells: months.map(() => ({ amt: 0, cnt: 0 })), total: 0, cnt: 0 });
-            const amt = Number(o.pay_amount) || 0;
-            rec.cells[monthIdx[m]].amt += amt; rec.cells[monthIdx[m]].cnt += 1; rec.total += amt; rec.cnt += 1;
+        events.forEach(e => {
+            if (!(e.m in monthIdx)) return;
+            const rec = byBrand[e.brand] || (byBrand[e.brand] = { name: e.brand, kind: e.kind, cells: months.map(() => ({ amt: 0, cnt: 0 })), total: 0, cnt: 0 });
+            rec.cells[monthIdx[e.m]].amt += e.amt; rec.cells[monthIdx[e.m]].cnt += 1; rec.total += e.amt; rec.cnt += 1;
         });
         const brands = Object.values(byBrand).sort((a, b) => b.total - a.total);
         const monthTotals = months.map((_, i) => brands.reduce((s, b) => s + b.cells[i].amt, 0));
         const grand = monthTotals.reduce((s, x) => s + x, 0);
         const thisM = monthTotals[monthTotals.length - 1] || 0, prevM = monthTotals[monthTotals.length - 2] || 0;
         const mom = prevM ? Math.round((thisM - prevM) / prevM * 100) : null;
-        return { orders, months, monthIdx, brands, monthTotals, grand, thisM, prevM, mom };
+        return { orders, events, months, monthIdx, brands, monthTotals, grand, thisM, prevM, mom, consultingFromQuote: !anyIssued };
     }
 
     renderHome(products) {
@@ -2790,11 +2801,11 @@ class BhasApp {
     // ============================================================
     renderSales() {
         if (!this._ordersLoaded || !this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">매출 데이터를 불러오는 중...</div>`;
-        const { orders, months, brands, monthTotals, grand, thisM, mom } = this._salesAgg(12);
+        const { orders, events, months, brands, monthTotals, grand, thisM, mom, consultingFromQuote } = this._salesAgg(12);
         const won = n => this._won(Math.round(n));
         const monthLabel = m => { const [y, mm] = m.split('-'); return `${+mm}월<span style="color:var(--text-muted);font-size:0.7rem">'${y.slice(2)}</span>`; };
 
-        if (!orders.length) return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto"><h1 style="font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1><div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted);margin-top:1rem">주문 데이터가 없습니다. 주문이 수집되면 브랜드별 월 매출이 자동 집계됩니다.</div></div>`;
+        if (!events.length) return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto"><h1 style="font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1><div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted);margin-top:1rem">매출 데이터가 없습니다.<br>리테일(토비·하이헤이호·로하이스튜디오)은 몰 주문이 수집되면, 브하스는 세금계산서(견적)가 등록되면 자동 집계됩니다.</div></div>`;
 
         const maxMonth = Math.max(1, ...monthTotals);
         const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
@@ -2834,7 +2845,7 @@ class BhasApp {
                 </tr></thead>
                 <tbody>
                     ${brands.map((b, bi) => `<tr style="border-bottom:1px solid var(--card-border)">
-                        <td style="text-align:left;padding:8px 10px;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${palette[bi % palette.length]};margin-right:6px"></span>${this._vesc(b.name)}</td>
+                        <td style="text-align:left;padding:8px 10px;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${palette[bi % palette.length]};margin-right:6px"></span>${this._vesc(b.name)}${b.kind === 'consulting' ? ` <span style="font-size:0.66rem;font-weight:700;color:#8b5cf6;background:rgba(139,92,246,0.14);padding:1px 6px;border-radius:6px">컨설팅</span>` : ''}</td>
                         ${b.cells.map(c => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;color:${c.amt ? 'var(--text-main)' : 'var(--text-muted)'}">${c.amt ? won(c.amt) : '·'}</td>`).join('')}
                         <td style="text-align:right;padding:8px 10px;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td>
                     </tr>`).join('')}
@@ -2845,7 +2856,7 @@ class BhasApp {
                     <td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(grand)}</td>
                 </tr></tfoot>
             </table>
-            <p style="margin:0.8rem 0 0;font-size:0.74rem;color:var(--text-muted)">* 결제금액(pay_amount) 기준 총 주문액. 취소·환불은 채널 상태 연동 후 반영됩니다.</p>
+            <p style="margin:0.8rem 0 0;font-size:0.74rem;color:var(--text-muted)">* 리테일(토비·하이헤이호·로하이스튜디오) = 몰 주문 결제금액. 브하스(컨설팅) = ${consultingFromQuote ? '견적 총액(세금계산서 발행분 없어 견적 기준)' : '발행 세금계산서'}. 취소·환불은 채널 상태 연동 후 반영.</p>
         </div>`;
 
         return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto">
@@ -2864,6 +2875,7 @@ class BhasApp {
         const v = this.currentView;
         if ((v === 'orders' || v === 'inventory' || v === 'integrations' || v === 'sales') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
+        if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         if (v === 'integrations' && !this._bsLoaded && !this._bsLoading) this.loadBrandSettings();
         if (v === 'orders' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'inventory' && !this._invLoaded && !this._invLoading) this.loadInventory();
