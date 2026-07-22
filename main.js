@@ -4365,7 +4365,7 @@ class BhasApp {
 
     bindIntegrationsEvents() {
         const add = document.getElementById('integ-addbrand-btn');
-        if (add) add.onclick = () => this.setState({ currentView: 'brand_management' });
+        if (add) add.onclick = () => this.showAddBrandModal();
         this.appContainer.querySelectorAll('.integ-auth').forEach(x => x.onclick = () => this.authMall(x.dataset.key));
         this.appContainer.querySelectorAll('.integ-connect').forEach(x => x.onclick = () => this.showCafe24Modal(x.dataset.brand));
         this.appContainer.querySelectorAll('.integ-courier').forEach(s => s.onchange = () => this.saveBrandCourier(s.dataset.brand, s.value));
