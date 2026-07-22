@@ -918,18 +918,6 @@ class BhasApp {
                         <span>2179</span>
                         <button id="sidebar-collapse-btn" title="사이드바 접기/펼치기" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.25rem;padding:0;line-height:1;flex-shrink:0"><i class="ph ph-sidebar-simple"></i></button>
                     </div>
-                    <div class="nav-user">
-                        <div class="avatar">${name[0]}</div>
-                        <div class="user-info">
-                            <span class="name">${name}</span>
-                            <span class="role">${role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사')}</span>
-                        </div>
-                    </div>
-                    <div class="nav-search" id="open-search-btn" title="통합 검색 (단축키 /)">
-                        <i class="ph ph-magnifying-glass"></i>
-                        <span>프로젝트·할일·문서 검색</span>
-                        <kbd>/</kbd>
-                    </div>
                     <ul class="nav-links">
                         <li class="${this.currentView === 'home' ? 'active' : ''}" data-view="home" style="padding:8px 14px;margin-bottom:6px;border-radius:12px">
                             <div style="display:flex;align-items:center;gap:8px;font-size:0.95rem"><i class="ph ph-house-line"></i> <span style="font-size:0.88rem;font-weight:700">홈</span></div>
@@ -950,8 +938,7 @@ class BhasApp {
                                 `).join('')}
                             `;
                         }).join('')}
-                        <li class="nav-bottom" style="margin-top:auto; display:flex; align-items:center; justify-content:space-between; padding:12px 14px; margin-bottom:0; cursor:default;">
-                            <span id="logout-btn" style="display:flex; align-items:center; gap:8px; color:#ef4444; cursor:pointer; padding:0; margin:0;"><i class="ph ph-power" style="font-size:1.2rem;"></i> 로그아웃</span>
+                        <li class="nav-bottom" style="margin-top:auto; display:flex; align-items:center; justify-content:flex-end; padding:12px 14px; margin-bottom:0; cursor:default;">
                             <button id="theme-toggle" title="라이트/다크 전환" style="position:relative; width:50px; height:26px; border-radius:999px; border:none; cursor:pointer; flex-shrink:0; background:${isLight ? '#cbd5e1' : 'var(--primary)'}; transition:background 0.25s;">
                                 <span style="position:absolute; top:3px; left:${isLight ? '3px' : '27px'}; width:20px; height:20px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; transition:left 0.25s; box-shadow:0 1px 3px rgba(0,0,0,0.25);">
                                     <i class="ph ${isLight ? 'ph-sun' : 'ph-moon'}" style="font-size:0.72rem; color:${isLight ? '#f59e0b' : '#3b82f6'};"></i>
@@ -960,7 +947,23 @@ class BhasApp {
                         </li>
                     </ul>
                 </nav>
-                
+
+                <div class="top-toolbar">
+                    <div class="tt-search" id="open-search-btn" title="통합 검색 (단축키 /)">
+                        <i class="ph ph-magnifying-glass"></i>
+                        <span>검색</span>
+                        <kbd>/</kbd>
+                    </div>
+                    <div class="tt-profile" title="${name} · ${role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사')}">
+                        <div class="tt-avatar">${name[0]}</div>
+                        <div class="tt-userinfo">
+                            <span class="tt-name">${name}</span>
+                            <span class="tt-role">${role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사')}</span>
+                        </div>
+                    </div>
+                    <button id="logout-btn" class="tt-logout" title="로그아웃"><i class="ph ph-power"></i></button>
+                </div>
+
                 <main class="main-content">
                     <header class="content-header mobile-responsive-header">
                         ${this.currentView === 'detail' ? (() => {
@@ -1073,9 +1076,9 @@ class BhasApp {
                                     `;
 
                                     return `
-                                        <div class="notification-bell" style="position: fixed; top: 30px; right: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 50%; background: rgba(37,99,235,0.15); box-shadow: 0 0 20px rgba(37,99,235,0.2); transition: 0.3s; z-index: 1000;" onmouseover="this.style.background='rgba(37,99,235,0.25)'; this.style.transform='scale(1.05)';" onmouseout="this.style.background='rgba(37,99,235,0.15)'; this.style.transform='scale(1)';" onclick="const popup = document.getElementById('notification-popup'); popup.style.display = popup.style.display === 'none' ? 'block' : 'none';" title="알림 (할 일)">
-                                            <i class="ph ph-bell-ringing" style="font-size: 2.5rem; color: var(--primary);"></i>
-                                            ${alertDot ? `<span style="position: absolute; top: 10px; right: 12px; min-width: 16px; height: 16px; padding: 0 4px; display:flex; align-items:center; justify-content:center; font-size:0.65rem; font-weight:700; color:#fff; background: ${alertDot}; border-radius: 8px; border: 2px solid var(--bg-dark); box-shadow: 0 0 10px ${alertDot};">${deadlineAlerts.length > 0 ? deadlineAlerts.length : ''}</span>` : ''}
+                                        <div class="notification-bell" style="position: fixed; top: 16px; right: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; border-radius: 50%; background: rgba(37,99,235,0.15); box-shadow: 0 0 16px rgba(37,99,235,0.18); transition: 0.3s; z-index: 1200;" onmouseover="this.style.background='rgba(37,99,235,0.25)'; this.style.transform='scale(1.05)';" onmouseout="this.style.background='rgba(37,99,235,0.15)'; this.style.transform='scale(1)';" onclick="const popup = document.getElementById('notification-popup'); popup.style.display = popup.style.display === 'none' ? 'block' : 'none';" title="알림 (할 일)">
+                                            <i class="ph ph-bell-ringing" style="font-size: 1.5rem; color: var(--primary);"></i>
+                                            ${alertDot ? `<span style="position: absolute; top: 4px; right: 6px; min-width: 15px; height: 15px; padding: 0 4px; display:flex; align-items:center; justify-content:center; font-size:0.62rem; font-weight:700; color:#fff; background: ${alertDot}; border-radius: 8px; border: 2px solid var(--bg-dark); box-shadow: 0 0 8px ${alertDot};">${deadlineAlerts.length > 0 ? deadlineAlerts.length : ''}</span>` : ''}
                                         </div>
                                         <div id="notification-popup" class="glass fade-in" style="display: none; position: fixed; top: 100px; right: 16px; width: calc(100vw - 32px); max-width: 380px; max-height: 70vh; overflow-y: auto; border-radius: 20px; z-index: 1001; padding: 1.5rem; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border: 1px solid var(--card-border); text-align: left; box-sizing: border-box;">
                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
