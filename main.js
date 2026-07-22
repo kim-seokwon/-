@@ -864,6 +864,7 @@ class BhasApp {
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'vendors', label: '거래처', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'quotes', label: '견적', icon: '<i class="ph ph-receipt"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'integrations', label: '연동', icon: '<i class="ph ph-plugs-connected"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
@@ -2658,6 +2659,8 @@ class BhasApp {
             return this.renderVendors();
         } else if (this.currentView === 'integrations') {
             return this.renderIntegrations();
+        } else if (this.currentView === 'quotes') {
+            return this.renderQuotes();
         }
     }
 
@@ -2672,6 +2675,7 @@ class BhasApp {
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
         if (v === 'vendors' && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+        if (v === 'quotes' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
     }
 
     _actor() { return this.currentUser?.username || this.currentUser?.name || 'system'; }
@@ -3229,7 +3233,7 @@ class BhasApp {
         this.showToast('카페24 매핑이 저장되었습니다.');
     }
 
-    showCafe24Modal() {
+    showCafe24Modal(preBrand) {
         const c = document.getElementById('global-modal-container');
         const malls = this.malls || [];
         const mallRows = malls.map(m => `
@@ -3244,7 +3248,7 @@ class BhasApp {
             </div>`).join('') || '<p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 8px">아직 등록된 몰이 없습니다. 아래에서 추가하세요.</p>';
 
         c.innerHTML = `
-        <div class="glass modal-content fade-in" style="width:90%;max-width:560px;padding:2rem;border-radius:20px;max-height:88vh;overflow-y:auto">
+        <div class="glass modal-content fade-in vmodal" style="width:90%;max-width:560px;padding:2rem;border-radius:20px;max-height:88vh;overflow-y:auto">
             <h2 style="margin:0 0 1rem;font-size:1.2rem"><i class="ph ph-plug-charging"></i> 카페24 몰 연동</h2>
 
             <div style="margin-bottom:1.25rem">${mallRows}</div>
@@ -3257,7 +3261,7 @@ class BhasApp {
                     <input id="c24-mallid" class="login-input" placeholder="카페24 몰아이디 (xxx.cafe24.com 의 xxx)">
                     <input id="c24-cid" class="login-input" placeholder="Client ID">
                     <input id="c24-secret" class="login-input" placeholder="Client Secret" type="password">
-                    <select id="c24-brand" class="login-input">${this._brandOptions('')}</select>
+                    <select id="c24-brand" class="login-input">${this._brandOptions(preBrand || '')}</select>
                     <button id="c24-register" class="btn-primary" style="padding:10px;border-radius:10px">몰 등록</button>
                 </div>
             </details>
@@ -4312,51 +4316,269 @@ class BhasApp {
     // ============================================================
     renderIntegrations() {
         if (!this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">연동 정보를 불러오는 중...</div>`;
-        const malls = (this.malls || []).filter(m => (m.channel || 'cafe24') === 'cafe24');
-        const conn = malls.filter(m => m.connected).length;
-        const mallCards = malls.length ? malls.map(m => {
-            const ok = !!m.connected;
-            return `<div class="glass" style="padding:1.1rem 1.2rem;border-radius:16px;display:flex;flex-direction:column;gap:10px">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-                    <div style="min-width:0">
-                        <div style="font-size:1rem;font-weight:700">${this._vesc(m.label)}</div>
-                        <div style="font-size:0.76rem;color:var(--text-muted);margin-top:2px">${m.cafe24_mall_id ? this._vesc(m.cafe24_mall_id) + '.cafe24.com' : '카페24'}${m.brand_id ? ' · ' + this._vesc(this._brandNameById(m.brand_id)) : ''}</div>
-                    </div>
-                    <span style="flex:0 0 auto;font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px;color:#fff;background:${ok ? '#22c55e' : '#f59e0b'}">${ok ? '● 연동됨' : '○ 미인증'}</span>
-                </div>
-                <button class="integ-auth btn-primary" data-key="${m.mall_key}" style="align-self:flex-start;padding:7px 14px;border-radius:9px;font-size:0.82rem">${ok ? '재인증' : '인증하기'}</button>
-            </div>`;
-        }).join('') : `<div class="glass" style="padding:2rem;border-radius:16px;text-align:center;color:var(--text-muted)">등록된 카페24 몰이 없습니다. [카페24 몰 관리]로 추가하세요.</div>`;
-
-        const other = [
-            { name: '무신사', desc: '입점몰 · API 연동', status: '계획', scolor: '#94a3b8' },
-            { name: '키디키디', desc: '입점몰 · 엑셀 수동', status: '수동', scolor: '#f59e0b' },
-            { name: '우체국 송장', desc: '계약소포 OpenAPI · 발번', status: '배포 대기', scolor: '#3b82f6' },
-        ].map(c => `<div class="glass" style="padding:1rem 1.1rem;border-radius:16px;display:flex;align-items:center;justify-content:space-between;gap:10px">
-            <div><div style="font-weight:700">${c.name}</div><div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">${c.desc}</div></div>
-            <span style="flex:0 0 auto;font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px;color:#fff;background:${c.scolor}">${c.status}</span>
-        </div>`).join('');
-
+        const brands = mockData.brands || [];
+        const malls = this.malls || [];
+        const channels = [
+            { key: 'cafe24', label: '카페24', active: true },
+            { key: 'musinsa', label: '무신사', active: false },
+            { key: 'kidikidi', label: '키디키디', active: false },
+        ];
+        const cell = (brand, ch) => {
+            if (ch.key === 'cafe24') {
+                const mall = malls.find(m => m.brand_id === brand.id && (m.channel || 'cafe24') === 'cafe24');
+                if (mall && mall.connected) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span><button class="integ-auth" data-key="${mall.mall_key}" style="font-size:0.72rem;padding:3px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">재인증</button></div>`;
+                if (mall) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 미인증</span><button class="integ-auth btn-primary" data-key="${mall.mall_key}" style="font-size:0.72rem;padding:3px 10px;border-radius:7px">인증</button></div>`;
+                return `<button class="integ-connect" data-brand="${brand.id}" style="font-size:0.76rem;padding:5px 12px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
+            }
+            return `<span style="font-size:0.72rem;color:var(--text-muted);opacity:0.5">준비중</span>`;
+        };
+        const rows = brands.length ? brands.map(b => `<tr style="border-bottom:1px solid var(--card-border)">
+            <td style="padding:14px 10px;font-weight:600">${this._vesc(b.name)}</td>
+            ${channels.map(ch => `<td style="padding:14px 10px;text-align:center">${cell(b, ch)}</td>`).join('')}
+        </tr>`).join('') : `<tr><td colspan="${channels.length + 1}" style="padding:2.5rem;text-align:center;color:var(--text-muted)">브랜드가 없습니다. [브랜드 추가]로 시작하세요.</td></tr>`;
         return `
-        <div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto">
+        <div class="fade-in" style="padding:1.5rem;max-width:900px;margin:0 auto">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
-                <div>
-                    <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-plugs-connected"></i> 채널 연동 현황</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">카페24 몰 ${conn}/${malls.length} 연동 · 주문수집·재고·배송중 반영</p>
-                </div>
-                <button id="integ-cafe24-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plug-charging"></i> 카페24 몰 관리</button>
+                <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-plugs-connected"></i> 채널 연동</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별로 판매 채널을 연동하세요</p></div>
+                <button id="integ-addbrand-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 브랜드 추가</button>
             </div>
-            <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:0 0 0.7rem">카페24 몰</div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem;margin-bottom:1.6rem">${mallCards}</div>
-            <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:0 0 0.7rem">기타 채널</div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem">${other}</div>
+            <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;min-width:520px">
+                    <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.82rem;text-align:left">
+                        <th style="padding:12px 10px">브랜드</th>${channels.map(ch => `<th style="padding:12px 10px;text-align:center">${ch.label}${ch.active ? '' : ' <span style="font-size:0.66rem;opacity:0.6">(준비중)</span>'}</th>`).join('')}
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+            <p style="margin:1rem 0 0;color:var(--text-muted);font-size:0.8rem"><i class="ph ph-info"></i> 카페24 [연동] → 몰 정보·Client ID/Secret 입력 → 인증(카페24 로그인)하면 연동됩니다. 로하이스튜디오처럼요.</p>
         </div>`;
     }
 
     bindIntegrationsEvents() {
-        const b = document.getElementById('integ-cafe24-btn');
-        if (b) b.onclick = () => this.showCafe24Modal();
+        const add = document.getElementById('integ-addbrand-btn');
+        if (add) add.onclick = () => this.setState({ currentView: 'brand_management' });
         this.appContainer.querySelectorAll('.integ-auth').forEach(x => x.onclick = () => this.authMall(x.dataset.key));
+        this.appContainer.querySelectorAll('.integ-connect').forEach(x => x.onclick = () => this.showCafe24Modal(x.dataset.brand));
+    }
+
+    // ============================================================
+    //  견적 시스템 (사업자 고객 대상, 세금계산서 소스)
+    // ============================================================
+    _won(n) { return (Number(n) || 0).toLocaleString('ko-KR'); }
+    _quoteStatusLabel(s) { return ({ draft: '작성중', sent: '발송', confirmed: '확정' })[s] || s; }
+    async loadQuotes() {
+        this._quotesLoading = true;
+        try {
+            const { data } = await this.supabase.from('quotes').select('*').order('created_at', { ascending: false });
+            this.quotes = data || [];
+            this._quotesLoaded = true;
+        } catch (e) { this.showToast('견적을 불러오지 못했습니다. (008_quotes.sql 설치 필요)'); this.quotes = []; this._quotesLoaded = true; }
+        this._quotesLoading = false;
+        this.requestRender();
+    }
+    renderQuotes() {
+        if (!this._quotesLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">견적을 불러오는 중...</div>`;
+        const qs = this.quotes || [];
+        const rows = qs.map(q => `
+            <tr class="q-row" data-id="${q.id}" style="border-bottom:1px solid var(--card-border);cursor:pointer">
+                <td style="padding:10px;font-size:0.82rem;color:var(--text-muted)">${q.quote_date || '-'}</td>
+                <td style="padding:10px;font-weight:600">${this._vesc(q.client_name)}</td>
+                <td style="padding:10px;font-size:0.85rem;color:var(--text-muted)">${(q.items || []).length}개 품목</td>
+                <td style="padding:10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">${this._won(q.total_amount)}원</td>
+                <td style="padding:10px;text-align:center"><span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${q.status === 'confirmed' ? 'rgba(34,197,94,0.18)' : (q.status === 'sent' ? 'rgba(59,130,246,0.18)' : 'rgba(245,158,11,0.18)')};color:${q.status === 'confirmed' ? '#22c55e' : (q.status === 'sent' ? '#60a5fa' : '#f59e0b')}">${this._quoteStatusLabel(q.status)}</span></td>
+                <td style="padding:10px;text-align:center"><button class="q-print" data-id="${q.id}" title="인쇄" style="background:none;border:none;color:var(--text-muted);cursor:pointer"><i class="ph ph-printer"></i></button></td>
+            </tr>`).join('') || `<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">견적서가 없습니다. [새 견적]으로 시작하세요.</td></tr>`;
+        return `
+        <div class="fade-in" style="padding:1.5rem;max-width:1000px;margin:0 auto">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
+                <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-receipt"></i> 견적서</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${qs.length}건 · 엑셀 대체</p></div>
+                <button id="q-new-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 새 견적</button>
+            </div>
+            <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;min-width:620px">
+                    <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.8rem;text-align:left">
+                        <th style="padding:10px">견적일</th><th style="padding:10px">고객사</th><th style="padding:10px">품목</th><th style="padding:10px;text-align:right">합계</th><th style="padding:10px;text-align:center">상태</th><th style="padding:10px;text-align:center">인쇄</th>
+                    </tr></thead><tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+    }
+    bindQuotesEvents() {
+        const n = document.getElementById('q-new-btn'); if (n) n.onclick = () => this.showQuoteModal();
+        this.appContainer.querySelectorAll('.q-row').forEach(r => r.onclick = (e) => { if (e.target.closest('.q-print')) return; this.showQuoteModal(r.dataset.id); });
+        this.appContainer.querySelectorAll('.q-print').forEach(b => b.onclick = (e) => { e.stopPropagation(); const q = (this.quotes || []).find(x => x.id === b.dataset.id); if (q) this.printQuote(q); });
+    }
+    _quoteItemRow(it = {}) {
+        const supply = (Number(it.qty) || 0) * (Number(it.price) || 0);
+        return `<div class="q-item" style="display:grid;grid-template-columns:1.25fr 52px 48px 72px 82px 72px 1fr 22px;gap:5px;align-items:center;margin-bottom:6px">
+            <input class="q-name login-input" placeholder="품목명" value="${it.name ? this._vesc(it.name) : ''}" style="padding:7px 8px">
+            <input class="q-spec login-input" placeholder="규격" value="${it.spec ? this._vesc(it.spec) : ''}" style="padding:7px 8px">
+            <input class="q-qty login-input" type="number" placeholder="수량" value="${it.qty ?? ''}" style="padding:7px 8px;text-align:right">
+            <input class="q-price login-input" type="number" placeholder="단가" value="${it.price ?? ''}" style="padding:7px 8px;text-align:right">
+            <span class="q-amt" style="text-align:right;font-size:0.8rem;font-variant-numeric:tabular-nums">${this._won(supply)}</span>
+            <input class="q-tax login-input" type="number" placeholder="세액" value="${it.tax ?? ''}" style="padding:7px 8px;text-align:right">
+            <input class="q-note login-input" placeholder="비고" value="${it.note ? this._vesc(it.note) : ''}" style="padding:7px 8px">
+            <button class="q-del" style="background:none;border:none;color:var(--text-muted);cursor:pointer"><i class="ph ph-x"></i></button>
+        </div>`;
+    }
+    showQuoteModal(id) {
+        const q = id ? (this.quotes || []).find(x => x.id === id) : null;
+        const items = q && Array.isArray(q.items) && q.items.length ? q.items : [{}];
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in vmodal" style="width:94%;max-width:720px;padding:1.8rem;border-radius:20px;max-height:92vh;overflow-y:auto">
+            <h2 style="margin:0 0 1.2rem;font-size:1.2rem"><i class="ph ph-receipt"></i> ${q ? '견적서 수정' : '새 견적서'}</h2>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+                <div><label style="font-size:0.74rem;color:var(--text-muted)">견적일</label><input id="q-date" type="date" class="login-input" value="${q?.quote_date || ''}"></div>
+                <div><label style="font-size:0.74rem;color:var(--text-muted)">유효기간</label><input id="q-valid" type="date" class="login-input" value="${q?.valid_until || ''}"></div>
+            </div>
+            <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);margin:8px 0 6px">고객사 (공급받는자)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
+                <input id="q-client" class="login-input" placeholder="상호 *" value="${q ? this._vesc(q.client_name) : ''}">
+                <input id="q-biz" class="login-input" placeholder="사업자등록번호" value="${q ? this._vesc(q.client_biz_no || '') : ''}">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+                <input id="q-ceo" class="login-input" placeholder="대표자" value="${q ? this._vesc(q.client_ceo || '') : ''}">
+                <input id="q-contact" class="login-input" placeholder="담당자" value="${q ? this._vesc(q.client_contact || '') : ''}">
+                <input id="q-tel" class="login-input" placeholder="연락처" value="${q ? this._vesc(q.client_tel || '') : ''}">
+            </div>
+            <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);margin:8px 0 6px">품목</div>
+            <div style="display:grid;grid-template-columns:1.25fr 52px 48px 72px 82px 72px 1fr 22px;gap:5px;font-size:0.66rem;color:var(--text-muted);margin-bottom:4px;padding:0 2px">
+                <span>품목명</span><span>규격</span><span style="text-align:right">수량</span><span style="text-align:right">단가</span><span style="text-align:right">공급가액</span><span style="text-align:right">세액</span><span>비고</span><span></span>
+            </div>
+            <div id="q-items">${items.map(it => this._quoteItemRow(it)).join('')}</div>
+            <button id="q-additem" style="margin-top:6px;background:none;border:1px dashed rgba(148,163,184,0.4);color:var(--text-muted);padding:6px 12px;border-radius:8px;cursor:pointer;font-size:0.8rem"><i class="ph ph-plus"></i> 품목 추가</button>
+            <div style="margin-top:14px;padding:12px 14px;background:rgba(148,163,184,0.1);border-radius:10px;display:flex;flex-direction:column;gap:5px;font-size:0.9rem">
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">공급가액</span><span id="q-supply" style="font-variant-numeric:tabular-nums">0</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">세액 (10%)</span><span id="q-tax" style="font-variant-numeric:tabular-nums">0</span></div>
+                <div style="display:flex;justify-content:space-between;font-weight:800;font-size:1.05rem;border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px"><span>합계</span><span id="q-total" style="font-variant-numeric:tabular-nums">0</span></div>
+            </div>
+            <textarea id="q-memo" class="login-input" placeholder="비고/메모" style="margin-top:10px;min-height:46px;resize:vertical">${q ? this._vesc(q.memo || '') : ''}</textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.3rem;gap:8px;flex-wrap:wrap">
+                <div style="display:flex;gap:8px">${q ? `<button id="q-delete" class="btn-secondary" style="padding:9px 14px;border-radius:10px;color:#ef4444">삭제</button><button id="q-print2" class="btn-secondary" style="padding:9px 14px;border-radius:10px"><i class="ph ph-printer"></i> 인쇄</button>` : ''}</div>
+                <div style="display:flex;gap:8px">
+                    <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">취소</button>
+                    <button id="q-save" class="btn-primary" style="padding:9px 18px;border-radius:10px">저장</button>
+                </div>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        const cont = document.getElementById('q-items');
+        const bindRow = (row) => {
+            row.querySelectorAll('.q-qty,.q-price,.q-tax').forEach(inp => inp.oninput = () => this.recalcQuote());
+            const del = row.querySelector('.q-del'); if (del) del.onclick = () => { if (cont.querySelectorAll('.q-item').length > 1) { row.remove(); this.recalcQuote(); } };
+        };
+        cont.querySelectorAll('.q-item').forEach(bindRow);
+        document.getElementById('q-additem').onclick = () => { cont.insertAdjacentHTML('beforeend', this._quoteItemRow({})); bindRow(cont.lastElementChild); };
+        document.getElementById('q-save').onclick = () => this.saveQuote(id);
+        const dl = document.getElementById('q-delete'); if (dl) dl.onclick = () => this.deleteQuote(id);
+        const p2 = document.getElementById('q-print2'); if (p2) p2.onclick = () => { const qq = (this.quotes || []).find(x => x.id === id); if (qq) this.printQuote(qq); };
+        this.recalcQuote();
+    }
+    _readQuoteItems() {
+        return [...document.querySelectorAll('#q-items .q-item')].map(r => {
+            const qty = Number(r.querySelector('.q-qty').value) || 0;
+            const price = Number(r.querySelector('.q-price').value) || 0;
+            const tax = Number(r.querySelector('.q-tax').value) || 0;
+            return { name: r.querySelector('.q-name').value.trim(), spec: r.querySelector('.q-spec').value.trim(), qty, price, supply: qty * price, tax, note: r.querySelector('.q-note').value.trim() };
+        }).filter(it => it.name || it.supply || it.tax);
+    }
+    recalcQuote() {
+        let supply = 0, tax = 0;
+        document.querySelectorAll('#q-items .q-item').forEach(r => {
+            const s = (Number(r.querySelector('.q-qty').value) || 0) * (Number(r.querySelector('.q-price').value) || 0);
+            r.querySelector('.q-amt').textContent = this._won(s);
+            supply += s;
+            tax += Number(r.querySelector('.q-tax').value) || 0;
+        });
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = this._won(v); };
+        set('q-supply', supply); set('q-tax', tax); set('q-total', supply + tax);
+    }
+    async saveQuote(id) {
+        const client = document.getElementById('q-client').value.trim();
+        if (!client) { this.showToast('고객사 상호는 필수입니다.'); return; }
+        const items = this._readQuoteItems();
+        const supply = items.reduce((s, it) => s + it.supply, 0);
+        const tax = items.reduce((s, it) => s + it.tax, 0);
+        const row = {
+            client_name: client,
+            client_biz_no: document.getElementById('q-biz').value.trim() || null,
+            client_ceo: document.getElementById('q-ceo').value.trim() || null,
+            client_contact: document.getElementById('q-contact').value.trim() || null,
+            client_tel: document.getElementById('q-tel').value.trim() || null,
+            items, supply_amount: supply, tax_amount: tax, total_amount: supply + tax,
+            quote_date: document.getElementById('q-date').value || null,
+            valid_until: document.getElementById('q-valid').value || null,
+            memo: document.getElementById('q-memo').value.trim() || null,
+        };
+        let error;
+        if (id) ({ error } = await this.supabase.from('quotes').update(row).eq('id', id));
+        else ({ error } = await this.supabase.from('quotes').insert([row]));
+        if (error) { this.showToast('저장 실패: ' + error.message); return; }
+        this.closeGlobalModal();
+        this._quotesLoaded = false; await this.loadQuotes();
+        this.showToast('견적서 저장됨');
+    }
+    async deleteQuote(id) {
+        if (!confirm('이 견적서를 삭제할까요?')) return;
+        const { error } = await this.supabase.from('quotes').delete().eq('id', id);
+        if (error) { this.showToast('삭제 실패: ' + error.message); return; }
+        this.closeGlobalModal(); this._quotesLoaded = false; await this.loadQuotes();
+    }
+    printQuote(q) {
+        const esc = (s) => this._vesc(s);
+        const rows = (q.items || []).map((it) => `<tr><td>${esc(it.name || '')}</td><td style="text-align:center">${esc(it.spec || '')}</td><td style="text-align:right">${(it.qty || 0).toLocaleString()}</td><td style="text-align:right">${(it.price || 0).toLocaleString()}</td><td style="text-align:right">${((it.qty || 0) * (it.price || 0)).toLocaleString()}</td><td style="text-align:right">${(it.tax || 0).toLocaleString()}</td><td>${esc(it.note || '')}</td></tr>`).join('');
+        const terms = [
+            '브하스는 의뢰인의 제품 제작을 위한 제작 대행 업무를 수행합니다. 제품의 디자인, 사이즈 스펙, 원단 선택 및 최종 사양에 대한 결정 및 책임은 의뢰인에게 있으며, 의뢰인이 최종 승인한 내용에 따라 제작이 진행됩니다. 승인 이후 발생하는 결과물에 대한 책임은 의뢰인에게 귀속됩니다.',
+            '대량 생산의 특성상 ±1~3cm의 사이즈 오차가 발생할 수 있습니다. 염색 및 워싱 제품의 경우 동일 컬러 내에서도 탕 차이(미세한 색상 차이)가 발생할 수 있으며, 이는 원단 생산 및 가공 과정에서 발생하는 특성으로 브하스의 책임에 해당하지 않습니다. 또한 공장 기준상 정상 범위로 판단되는 사항은 불량으로 간주하지 않습니다.',
+            '불량 판정은 생산 공장의 A급 기준을 따르며, 기능상 문제가 없는 미세한 실밥, 잡사, 초크 자국, 미세 오염 등은 불량에 해당하지 않습니다. 명확한 제작상 하자가 확인된 경우에 한하여 보완 또는 재작업 여부를 상호 협의합니다.',
+            '의뢰인의 디자인 및 제작 관련 정보는 외부에 공유하지 않습니다. 단, 브하스의 포트폴리오 활용 여부는 사전 협의 후 결정합니다. 또한 브하스는 제작 대행 업무를 수행하며, 완성된 제품의 판매 결과, 재고 부담, 마케팅 성과 및 수익에 대해서는 책임을 지지 않습니다.',
+            '모든 원·부자재가 공장에 입고 완료된 이후 제품 완성까지는 최소 2주에서 최대 4주가 소요됩니다. 다만, 공장 상황, 원단 수급, 생산 물량 등에 따라 일정은 변동될 수 있습니다.',
+            '본 계약에서 청구되는 제작 대행 비용은 핸들링비용이 포함되며, 원·부자재 비용, 그레이딩 패턴 비용, 운송비 등을 제외한 금액일 수 있습니다. 이 경우 해당 비용은 실제 발생 금액에 따라 별도로 청구됩니다.',
+        ].map((t, i) => `<div style="margin-bottom:7px">${i + 1}. ${esc(t)}</div>`).join('');
+        const w = window.open('', '_blank', 'width=900,height=1100');
+        if (!w) { this.showToast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+        w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>브하스 의류제작 견적서 - ${esc(q.client_name || '')}</title><style>
+            body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;padding:36px 44px;color:#2b2b2b;font-size:12.5px}
+            .head{text-align:center;font-size:24px;font-weight:800;color:#8a7a5c;letter-spacing:4px;border-bottom:3px solid #cdbfa3;padding-bottom:14px;margin-bottom:24px}
+            .top{display:flex;justify-content:space-between;gap:24px;margin-bottom:22px}
+            .recv td{padding:6px 10px}
+            .recv .l{font-weight:700;width:64px}
+            .sup{border-collapse:collapse}
+            .sup td{border:1px solid #b7ac93;padding:5px 10px;font-size:11.5px}
+            .sup .l{background:#f3efe4;font-weight:700;text-align:center;width:88px}
+            .amt{font-size:20px;font-weight:800;margin:6px 0 16px}
+            .items{width:100%;border-collapse:collapse;margin-bottom:6px}
+            .items th{background:#f3efe4;border:1px solid #b7ac93;padding:8px;font-size:12px}
+            .items td{border:1px solid #b7ac93;padding:7px 9px}
+            .items tfoot td{background:#faf7f0;font-weight:700}
+            .terms{border:1px solid #d8cdb4;border-radius:4px;padding:16px 18px;margin-top:26px;font-size:11px;color:#555;line-height:1.6}
+            .terms .tt{text-align:center;font-weight:700;color:#333;margin-bottom:10px;font-size:12.5px}
+            .bank{text-align:center;font-weight:700;margin-top:16px;padding:10px;background:#f3efe4;border-radius:4px}
+        </style></head><body>
+        <div class="head">브하스 의류제작 견적서</div>
+        <div class="top">
+            <table class="recv"><tr><td class="l">수 신</td><td>${esc(q.client_name || '')} 대표님 귀하</td></tr><tr><td class="l">견 적 일</td><td>${q.quote_date || ''}</td></tr></table>
+            <table class="sup">
+                <tr><td class="l">상호</td><td>주식회사 이일칠구</td></tr>
+                <tr><td class="l">사업자번호</td><td>279-88-03052</td></tr>
+                <tr><td class="l">주소</td><td>인천광역시 하늘중앙로 225번길 20, 507-8호</td></tr>
+                <tr><td class="l">대표</td><td>김석원</td></tr>
+                <tr><td class="l">TEL</td><td>담당자 방보경 010-9072-7003</td></tr>
+            </table>
+        </div>
+        <div class="amt">견적금액　${(q.total_amount || 0).toLocaleString()} 원 정</div>
+        <table class="items">
+            <thead><tr><th>품목명</th><th style="width:8%">규격</th><th style="width:9%">총 수량</th><th style="width:11%">단가</th><th style="width:14%">공급가액</th><th style="width:11%">세액</th><th style="width:18%">비고</th></tr></thead>
+            <tbody>${rows}</tbody>
+            <tfoot><tr><td colspan="4" style="text-align:center">합 계</td><td style="text-align:right">공급가액 ${(q.supply_amount || 0).toLocaleString()}</td><td style="text-align:right">VAT ${(q.tax_amount || 0).toLocaleString()}</td><td style="text-align:right">합계 ${(q.total_amount || 0).toLocaleString()}</td></tr></tfoot>
+        </table>
+        ${q.memo ? `<div style="margin-top:10px;font-size:11.5px;color:#555">비고: ${esc(q.memo)}</div>` : ''}
+        <div class="terms"><div class="tt">참고사항</div>${terms}</div>
+        <div class="bank">입금계좌: 기업은행 988-026117-04-012 (주)더하임프로모션</div>
+        </body></html>`);
+        w.document.close(); w.focus();
+        setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
     }
 
     bindDashboardEvents() {
@@ -4393,6 +4615,7 @@ class BhasApp {
         if (this.currentView === 'calendar') this.bindCalendarEvents();
         if (this.currentView === 'vendors') this.bindVendorsEvents();
         if (this.currentView === 'integrations') this.bindIntegrationsEvents();
+        if (this.currentView === 'quotes') this.bindQuotesEvents();
 
         const viewGridBtn = document.getElementById('view-grid-btn');
         if (viewGridBtn) viewGridBtn.onclick = () => {
