@@ -1,0 +1,27 @@
+name: 키디키디 주문 수집
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # 매시간 (UTC). 필요시 조정.
+  workflow_dispatch:        # 수동 실행 버튼
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: channel-bots/kidikidi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run sync
+        env:
+          ELAND_ID: ${{ secrets.ELAND_ID }}
+          ELAND_PW: ${{ secrets.ELAND_PW }}
+          ELAND_TOTP_SECRET: ${{ secrets.ELAND_TOTP_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
