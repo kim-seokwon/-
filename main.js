@@ -1931,6 +1931,35 @@ class BhasApp {
         const panel = (title, bodyHTML, right) => `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.7rem"><span style="font-size:0.86rem;font-weight:700">${title}</span>${right || ''}</div>${bodyHTML}</div>`;
 
+        // ── BI 스타일: 스파크라인 · KPI카드 · 도넛 · 일별차트 ──
+        const daysBackSeries = fn => { const a = []; for (let i = 13; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); a.push(fn(localYMD(d))); } return a; };
+        const salesSpark = daysBackSeries(ds => sumBetween(ds, ds));
+        const orderSpark = daysBackSeries(ds => revOrders.filter(o => localYMD(o.order_date) === ds).length);
+        const yStr = localYMD(new Date(today.getTime() - 864e5));
+        const ydaySales = sumBetween(yStr, yStr);
+        const todayDelta = ydaySales ? Math.round((todaySales - ydaySales) / ydaySales * 100) : null;
+        const pwFrom = new Date(today); pwFrom.setDate(pwFrom.getDate() - 13);
+        const pwTo = new Date(today); pwTo.setDate(pwTo.getDate() - 7);
+        const prevWeekSales = sumBetween(localYMD(pwFrom), localYMD(pwTo));
+        const weekDelta = prevWeekSales ? Math.round((weekSales - prevWeekSales) / prevWeekSales * 100) : null;
+        const monthOrdersCnt = monthRev.length;
+        const monthDaily = Array(daysIn).fill(0);
+        monthRev.forEach(o => { const dt = new Date(o.order_date); if (dt.getMonth() === moIdx) monthDaily[dt.getDate() - 1] += Number(o.pay_amount || 0); });
+        const mdMax = Math.max(1, ...monthDaily);
+        const spark = (vals, color) => { const w = 130, h = 36; if (!vals.some(v => v > 0)) return `<svg width="${w}" height="${h}" style="width:100%;max-width:${w}px"></svg>`; const max = Math.max(...vals, 1), n = vals.length; const X = i => (n <= 1 ? w : i / (n - 1) * w); const Y = v => h - 4 - (v / max) * (h - 9); const line = vals.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(''); const gid = 'sg' + color.replace('#', ''); return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;width:100%;max-width:${w}px"><defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${line}L${w},${h}L0,${h}Z" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`; };
+        const deltaBadge = (pct, ref) => pct == null ? `<span style="font-size:0.68rem;color:var(--text-muted)">${ref} 기준 없음</span>` : `<span style="font-size:0.68rem;font-weight:700;color:${pct >= 0 ? '#16a34a' : '#dc2626'};background:${pct >= 0 ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.12)'};padding:2px 7px;border-radius:6px;white-space:nowrap">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% ${ref}</span>`;
+        const kpiCard = (label, big, unit, badge, sparkVals, color) => `<div class="glass" style="padding:1rem 1.15rem;border-radius:16px">
+            <div style="font-size:0.76rem;color:var(--text-muted);font-weight:600">${label}</div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-top:3px">
+                <div style="font-size:1.4rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;white-space:nowrap">${big}<span style="font-size:0.7rem;font-weight:600">${unit}</span></div>
+                <div style="flex:1;min-width:0;max-width:130px">${spark(sparkVals, color)}</div>
+            </div>
+            <div style="margin-top:6px">${badge}</div>
+        </div>`;
+        const donut = (entries, colors) => { const size = 116, r = size / 2 - 9, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r; const total = entries.reduce((s, e) => s + e[1], 0) || 1; let off = 0; const segs = entries.map(([l, v], i) => { const frac = v / total; const s = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colors[i % colors.length]}" stroke-width="15" stroke-dasharray="${Math.max(0, frac * circ - 1.5).toFixed(1)} ${circ.toFixed(1)}" stroke-dashoffset="${(-off * circ).toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"/>`; off += frac; return s; }).join(''); return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0">${segs}</svg>`; };
+        const brandLegend = brandArr.length ? brandArr.map(([l, v], i) => `<div style="display:flex;align-items:center;gap:7px;font-size:0.8rem;padding:3px 0"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(l)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.8rem">이번달 매출 없음</span>';
+        const barChart = `<div style="display:flex;align-items:flex-end;gap:2px;height:110px">${monthDaily.map((v, i) => { const h = v / mdMax * 100; const isT = (i + 1) === today.getDate(); return `<div style="flex:1;min-width:2px;background:${isT ? '#6366f1' : 'rgba(99,102,241,0.32)'};height:${Math.max(2, h)}%;border-radius:2px 2px 0 0"></div>`; }).join('')}</div><div style="display:flex;justify-content:space-between;font-size:0.66rem;color:var(--text-muted);margin-top:5px"><span>1일</span><span>오늘 ${mm}/${today.getDate()}</span><span>${daysIn}일</span></div>`;
+
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:0.6rem">
@@ -1938,15 +1967,17 @@ class BhasApp {
                 <span style="font-size:0.82rem;color:var(--text-muted)">2179 운영 현황 · ${todayStr}</span>
             </div>
 
-            <!-- ═══ 블록 1: 매출 · 주문 ═══ -->
-            ${sectionHead('ph-chart-line-up', '매출 · 주문', '오늘·주간·이번달 / 브랜드·채널')}
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.9rem;margin-bottom:0.9rem">
-                ${bigStat('오늘 매출', won(todaySales), '원', '#22c55e', "app.switchView('sales')")}
-                ${bigStat('주간 매출 (7일)', won(weekSales), '원', '#3b82f6', "app.switchView('sales')")}
-                ${bigStat(`${mm}월 매출 합계`, won(monthSales), '원', '#8b5cf6', "app.switchView('sales')")}
+            <!-- ═══ 블록 1: 매출 개요 (BI) ═══ -->
+            ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · 최근 14일 추이`)}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:0.9rem;margin-bottom:0.9rem">
+                ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), salesSpark, '#6366f1')}
+                ${kpiCard('주간 매출 (7일)', won(weekSales), '원', deltaBadge(weekDelta, 'vs 지난주'), salesSpark, '#3b82f6')}
+                ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge(sa.mom, 'vs 전월'), salesSpark, '#8b5cf6')}
+                ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, orderSpark, '#10b981')}
             </div>
+            <div style="margin-bottom:0.9rem">${panel(`${mm}월 일별 매출`, barChart)}</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;margin-bottom:0.9rem">
-                ${panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', barBlock(brandArr, brandMax, i => palette[i % palette.length]))}
+                ${panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">${donut(brandArr, palette)}<div style="flex:1;min-width:150px">${brandLegend}</div></div>`)}
                 ${panel('채널별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', barBlock(chanArr, chanMax, (i, l) => CHCOL[l] || palette[i % palette.length]))}
             </div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.9rem;margin-bottom:0.9rem">
@@ -1954,10 +1985,10 @@ class BhasApp {
                 ${statTile('배송중', stShip, '#06b6d4')}
                 ${statTile('교환·환불', stReturn, '#a855f7')}
             </div>
-            ${panel('최근 주문', `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+            <div style="margin-bottom:0.9rem">${panel('최근 주문', `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
                 <thead><tr style="border-bottom:1.5px solid var(--card-border);color:var(--text-muted);text-align:left"><th style="padding:8px">브랜드</th><th style="padding:8px">주문 내용</th><th style="padding:8px;text-align:right">가격</th><th style="padding:8px">채널</th><th style="padding:8px">고객명</th></tr></thead>
                 <tbody>${orderTableRows}</tbody></table></div>`,
-                `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}
+                `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}</div>
 
             <!-- ═══ 블록 2: 생산 업무 ═══ -->
             ${sectionHead('ph-factory', '생산 업무', '생산중 품목 · 할일 · 마감 캘린더')}
