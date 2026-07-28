@@ -1843,96 +1843,129 @@ class BhasApp {
             </div>` : '';
 
         // ============================================================
-        //  운영 대시보드 — "오늘 뭘 해야 하나 / 뭐가 터지려 하나" 중심
+        //  대시보드 — 블록1 매출·주문 / 블록2 생산 업무(캘린더)
         // ============================================================
         const won = n => this._won(n);
-        const sectionHead = (icon, title, sub) => `<div style="display:flex;align-items:baseline;gap:10px;margin:1.9rem 0 0.9rem">
-            <h2 style="margin:0;font-size:1.08rem;display:flex;align-items:center;gap:8px"><i class="ph ${icon}" style="color:var(--primary)"></i>${title}</h2>
-            ${sub ? `<span style="font-size:0.78rem;color:var(--text-muted)">${sub}</span>` : ''}</div>`;
+        const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
         const notCancelled = o => !this._isCancelled(o);
+        const localYMD = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; };
+        const todayStr = localYMD(today);
+        const monthKey = todayStr.slice(0, 7);
+        const mm = today.getMonth() + 1;
 
-        // ── 출고 큐 (유일한 실제 액션 데이터) ──
-        const shipQueue = orders.filter(o => (o.status === 'new' || o.status === 'ready') && notCancelled(o));
-        const noInvoiceCnt = shipQueue.filter(o => !o.invoice_no).length;
-        const shipByChan = {};
-        shipQueue.forEach(o => { const c = channelOf(o); shipByChan[c] = (shipByChan[c] || 0) + 1; });
-        const shipChanRow = Object.entries(shipByChan).sort((a, b) => b[1] - a[1])
-            .map(([c, n]) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.83rem;margin-right:16px"><span style="width:8px;height:8px;border-radius:2px;background:${CHCOL[c] || '#6366f1'}"></span>${c} <b style="font-variant-numeric:tabular-nums">${n}건</b></span>`).join('');
+        // ── 매출: 오늘 / 주간(7일) / 이번달 (취소 제외) ──
+        const revOrders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null && notCancelled(o));
+        const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
+        const sumBetween = (from, to) => revOrders.filter(o => { const d = localYMD(o.order_date); return d >= from && d <= to; }).reduce((s, o) => s + Number(o.pay_amount || 0), 0);
+        const todaySales = sumBetween(todayStr, todayStr);
+        const weekSales = sumBetween(localYMD(weekAgo), todayStr);
+        const monthSales = sumBetween(monthKey + '-01', todayStr);
 
-        // ── 오늘 주문 유입 ──
-        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        const todayOrders = orders.filter(o => (o.order_date || '').slice(0, 10) === todayStr && notCancelled(o));
-        const todayByChan = {};
-        todayOrders.forEach(o => { const c = channelOf(o); todayByChan[c] = (todayByChan[c] || 0) + 1; });
-        const todayChanRow = Object.entries(todayByChan).sort((a, b) => b[1] - a[1])
-            .map(([c, n]) => `${chip(c, CHCOL[c] || '#6366f1')} <b style="font-variant-numeric:tabular-nums">${n}</b>`).join(' &nbsp;&nbsp; ')
-            || '<span style="color:var(--text-muted);font-size:0.83rem">오늘 신규 주문 없음</span>';
+        // ── 브랜드별 / 채널별 (이번달) ──
+        const monthRev = revOrders.filter(o => localYMD(o.order_date).startsWith(monthKey));
+        const groupSum = keyFn => { const m = {}; monthRev.forEach(o => { const k = keyFn(o) || '기타'; m[k] = (m[k] || 0) + Number(o.pay_amount || 0); }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
+        const brandArr = groupSum(o => brandOf(o) || o.channel);
+        const chanArr = groupSum(o => channelOf(o));
+        const brandMax = Math.max(1, ...brandArr.map(x => x[1]));
+        const chanMax = Math.max(1, ...chanArr.map(x => x[1]));
+        const barBlock = (arr, max, colorFn) => arr.length ? arr.map(([l, amt], i) => `<div style="margin-bottom:0.6rem">
+            <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.82rem;margin-bottom:3px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(l)}</span><span style="font-weight:800;font-variant-numeric:tabular-nums">${won(amt)}원</span></div>
+            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14)"><div style="height:100%;width:${Math.max(3, amt / max * 100)}%;background:${colorFn(i, l)};border-radius:5px"></div></div>
+        </div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.6rem 0">이번달 매출 없음</div>';
 
-        // ── 생산 / 재고 / 정산 (대부분 미사용 → 정직한 상태) ──
-        const delayedJobs = activeJobs.filter(j => j.due_date && dday(j.due_date) < 0).length;
-        const soonJobs = activeJobs.filter(j => j.due_date && dday(j.due_date) >= 0 && dday(j.due_date) <= 3).length;
-        const invItems = this.inventory || this.inventoryItems || [];
-        const lowStock = invItems.filter(it => it.safety_stock != null && Number(it.on_hand) <= Number(it.safety_stock)).length;
-        const unpaidList = quotes.filter(q => q.total_amount && q.tax_status !== 'issued');
-        const unpaidAmt = unpaidList.reduce((s, q) => s + (q.total_amount || 0), 0);
+        // ── 주문 상태: 주문 / 배송중 / 교환·환불 ──
+        const allO = this.orders || [];
+        const stOrder = allO.filter(o => notCancelled(o) && (o.status === 'new' || o.status === 'ready')).length;
+        const stShip = allO.filter(o => o.status === 'shipping').length;
+        const stReturn = allO.filter(o => this._isCancelled(o)).length;
 
-        const miniMetric = items => `<div style="display:flex;gap:1.5rem;flex-wrap:wrap">${items.map(([n, l, c]) => `<div><span style="font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;color:${(+n > 0 ? c : 'var(--text-muted)')}">${(+n).toLocaleString()}</span> <span style="font-size:0.78rem;color:var(--text-muted)">${l}</span></div>`).join('')}</div>`;
-        const stateCard = (icon, title, metricsHTML, hint, view, cta, hot) => `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:16px">
-            <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.8rem"><i class="ph ${icon}" style="color:${hot ? '#f59e0b' : 'var(--primary)'}"></i> ${title}</div>
-            ${metricsHTML}
-            <div style="margin-top:0.9rem;padding-top:0.8rem;border-top:1px solid var(--card-border);font-size:0.78rem;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;gap:10px">
-                <span>${hint}</span>
-                <button onclick="app.switchView('${view}')" style="flex-shrink:0;font-size:0.75rem;padding:4px 10px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--primary);cursor:pointer">${cta} →</button>
-            </div>
-        </div>`;
+        // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
+        const orderTableRows = (recentOrders || []).slice(0, 8).map(o => {
+            const ch = channelOf(o), br = brandOf(o) || '-', col = CHCOL[ch] || '#6366f1';
+            return `<tr style="border-bottom:1px solid var(--card-border)">
+                <td style="padding:8px"><span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:2px;background:${col}"></span>${this._vesc(br)}</span></td>
+                <td style="padding:8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(this._orderItemsSummary(o))}</td>
+                <td style="padding:8px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${won(o.pay_amount || 0)}원</td>
+                <td style="padding:8px">${chip(ch, col)}</td>
+                <td style="padding:8px;white-space:nowrap">${this._vesc(o.receiver_name || o.buyer_name || '-')}</td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="5" style="padding:1.2rem;text-align:center;color:var(--text-muted)">주문 없음</td></tr>';
 
-        const cancelledCnt = orders.filter(o => this._isCancelled(o)).length;
-        // 한 화면 타일 그리드 — 스크롤 없이 한눈에
-        const tile = ({ accent, label, big, unit, sub, onclick, icon }) => `<div class="glass" style="padding:1.05rem 1.15rem;border-radius:16px;${accent ? `border-top:3px solid ${accent};` : ''}${onclick ? 'cursor:pointer;' : ''}"${onclick ? ` onclick="${onclick}"` : ''}>
-            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600">${icon ? `<i class="ph ${icon}"></i> ` : ''}${label}</div>
-            <div style="font-size:1.8rem;font-weight:800;line-height:1.2;font-variant-numeric:tabular-nums;margin-top:3px">${big}${unit ? `<span style="font-size:0.85rem;font-weight:600">${unit}</span>` : ''}</div>
-            <div style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;min-height:1.1em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub || ''}</div>
-        </div>`;
-        const panel = (title, bodyHTML, onclick) => `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;${onclick ? 'cursor:pointer;' : ''}"${onclick ? ` onclick="${onclick}"` : ''}>
-            <div style="font-size:0.85rem;font-weight:700;margin-bottom:0.7rem;color:var(--text-main)">${title}</div>${bodyHTML}</div>`;
-
-        const compactOrders = (recentOrders || []).slice(0, 6).map(o => {
-            const ch = channelOf(o), br = brandOf(o), col = CHCOL[ch] || '#6366f1';
-            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.8rem">
-                <span style="width:7px;height:7px;border-radius:2px;background:${col};flex-shrink:0"></span>
-                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(o.receiver_name || o.buyer_name || '-')}${br ? ` · <span style="color:var(--text-muted)">${this._vesc(br)}</span>` : ''}</span>
-                <span style="color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0">${won(o.pay_amount || 0)}</span>
+        // ── 생산: 생산중 품목·할일 + 이번달 캘린더 ──
+        const yy = today.getFullYear(), moIdx = today.getMonth();
+        const daysIn = new Date(yy, moIdx + 1, 0).getDate();
+        const firstDow = new Date(yy, moIdx, 1).getDay();
+        const jobsByDay = {};
+        activeJobs.forEach(j => { if (!j.due_date) return; const d = new Date(j.due_date); if (d.getFullYear() === yy && d.getMonth() === moIdx) { const k = d.getDate(); (jobsByDay[k] = jobsByDay[k] || []).push(j); } });
+        const prodList = activeJobs.length ? activeJobs.slice(0, 7).map(j => { const dd = dday(j.due_date); const col = dd == null ? 'var(--text-muted)' : (dd < 0 ? '#ef4444' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)')); return `<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(j.title || '작업')}${j._v ? ` · <span style="color:var(--text-muted)">${this._vesc(j._v)}</span>` : ''}</span>${j.due_date ? `<span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span>` : ''}</div>`; }).join('')
+            : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">생산 물품·할일을 등록하면 여기 떠요<br><button onclick="app.switchView(\'vendors\')" style="margin-top:8px;font-size:0.76rem;padding:4px 11px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--primary);cursor:pointer">생산현황에서 등록 →</button></div>';
+        const dow = ['일', '월', '화', '수', '목', '금', '토'];
+        let calCells = '';
+        for (let i = 0; i < firstDow; i++) calCells += '<div></div>';
+        for (let d = 1; d <= daysIn; d++) {
+            const jobs = jobsByDay[d] || [];
+            const isToday = d === today.getDate();
+            calCells += `<div style="min-height:54px;border:1px solid var(--card-border);border-radius:8px;padding:3px 4px;${isToday ? 'background:rgba(99,102,241,0.09);border-color:var(--primary)' : ''}">
+                <div style="font-size:0.68rem;font-weight:${isToday ? '800' : '500'};color:${isToday ? 'var(--primary)' : 'var(--text-muted)'}">${d}</div>
+                ${jobs.slice(0, 2).map(j => `<div style="font-size:0.6rem;background:${j.due_date && dday(j.due_date) < 0 ? '#ef4444' : '#6366f1'};color:#fff;border-radius:3px;padding:1px 3px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(j.title || '작업')}</div>`).join('')}
+                ${jobs.length > 2 ? `<div style="font-size:0.58rem;color:var(--text-muted);margin-top:1px">+${jobs.length - 2}</div>` : ''}
             </div>`;
-        }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">주문 없음</div>';
+        }
+        const calendar = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">
+            ${dow.map((n, i) => `<div style="text-align:center;font-size:0.68rem;font-weight:700;padding-bottom:3px;color:${i === 0 ? '#ef4444' : 'var(--text-muted)'}">${n}</div>`).join('')}
+            ${calCells}
+        </div>`;
+
+        // 헬퍼: 큰 숫자 타일 / 상태 타일 / 패널
+        const bigStat = (label, val, unit, accent, onclick) => `<div class="glass" style="padding:1rem 1.2rem;border-radius:14px;border-top:3px solid ${accent};${onclick ? 'cursor:pointer' : ''}"${onclick ? ` onclick="${onclick}"` : ''}>
+            <div style="font-size:0.76rem;color:var(--text-muted);font-weight:600">${label}</div>
+            <div style="font-size:1.65rem;font-weight:800;line-height:1.2;font-variant-numeric:tabular-nums;margin-top:2px">${val}<span style="font-size:0.8rem;font-weight:600">${unit}</span></div>
+        </div>`;
+        const statTile = (label, n, color) => `<div class="glass" style="padding:1rem 1.2rem;border-radius:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="app.switchView('orders')">
+            <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></span>
+            <div><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.78rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${label}</div></div>
+        </div>`;
+        const sectionHead = (icon, title, sub) => `<div style="display:flex;align-items:baseline;gap:10px;margin:1.6rem 0 0.85rem">
+            <h2 style="margin:0;font-size:1.1rem;display:flex;align-items:center;gap:8px"><i class="ph ${icon}" style="color:var(--primary)"></i>${title}</h2>
+            ${sub ? `<span style="font-size:0.78rem;color:var(--text-muted)">${sub}</span>` : ''}</div>`;
+        const panel = (title, bodyHTML, right) => `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.7rem"><span style="font-size:0.86rem;font-weight:700">${title}</span>${right || ''}</div>${bodyHTML}</div>`;
 
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
-                <h1 style="margin:0;font-size:1.35rem">👋 ${this._vesc(name)}님, 오늘 할 일</h1>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:0.6rem">
+                <h1 style="margin:0;font-size:1.35rem">👋 ${this._vesc(name)}님</h1>
                 <span style="font-size:0.82rem;color:var(--text-muted)">2179 운영 현황 · ${todayStr}</span>
             </div>
 
-            <!-- 히어로 타일 4 -->
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:0.9rem;margin-bottom:0.9rem">
-                ${tile({ accent: shipQueue.length ? '#ef4444' : '#94a3b8', icon: 'ph-truck', label: '출고 대기', big: shipQueue.length.toLocaleString(), unit: '건', sub: `송장 미입력 ${noInvoiceCnt}건`, onclick: "app.switchView('orders')" })}
-                ${tile({ accent: '#3b82f6', icon: 'ph-shopping-bag-open', label: `오늘 주문 (${todayStr.slice(5)})`, big: todayOrders.length.toLocaleString(), unit: '건', sub: Object.keys(todayByChan).length ? Object.entries(todayByChan).map(([c, n]) => `${c} ${n}`).join(' · ') : '오늘 유입 없음', onclick: "app.switchView('orders')" })}
-                ${tile({ accent: delayedJobs ? '#f59e0b' : '#94a3b8', icon: 'ph-factory', label: '생산 리스크', big: (delayedJobs + soonJobs).toLocaleString(), unit: '건', sub: activeJobs.length ? `지연 ${delayedJobs} · 임박 ${soonJobs}` : '생산 미등록', onclick: "app.switchView('vendors')" })}
-                ${tile({ accent: '#22c55e', icon: 'ph-chart-line-up', label: '이번달 매출', big: won(sa.thisM), unit: '원', sub: sa.mom != null ? `전월 대비 ${sa.mom >= 0 ? '+' : ''}${sa.mom}%` : '집계 시작', onclick: "app.switchView('sales')" })}
+            <!-- ═══ 블록 1: 매출 · 주문 ═══ -->
+            ${sectionHead('ph-chart-line-up', '매출 · 주문', '오늘·주간·이번달 / 브랜드·채널')}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.9rem;margin-bottom:0.9rem">
+                ${bigStat('오늘 매출', won(todaySales), '원', '#22c55e', "app.switchView('sales')")}
+                ${bigStat('주간 매출 (7일)', won(weekSales), '원', '#3b82f6', "app.switchView('sales')")}
+                ${bigStat(`${mm}월 매출 합계`, won(monthSales), '원', '#8b5cf6', "app.switchView('sales')")}
             </div>
-
-            ${shipQueue.length ? `<div class="glass" style="padding:0.7rem 1rem;border-radius:12px;background:rgba(245,158,11,0.1);font-size:0.79rem;color:#f59e0b;margin-bottom:0.9rem;line-height:1.45"><i class="ph ph-seal-check"></i> <b>출고 전 QC 검수 통과 확인</b> — 자수·검수 미확인 출고 = 반품·재작업(월 수백만원). 검수 기록은 주문 상세에서.</div>` : ''}
-
-            <!-- 콘텐츠 2열 -->
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:0.9rem;margin-bottom:0.9rem">
-                ${panel('채널별 출고 대기', shipChanRow ? `<div style="line-height:2">${shipChanRow}</div>` : '<div style="color:var(--text-muted);font-size:0.82rem">출고 대기 없음</div>')}
-                ${panel('최근 주문', compactOrders, "app.switchView('orders')")}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;margin-bottom:0.9rem">
+                ${panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', barBlock(brandArr, brandMax, i => palette[i % palette.length]))}
+                ${panel('채널별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', barBlock(chanArr, chanMax, (i, l) => CHCOL[l] || palette[i % palette.length]))}
             </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.9rem;margin-bottom:0.9rem">
+                ${statTile('주문', stOrder, '#6366f1')}
+                ${statTile('배송중', stShip, '#06b6d4')}
+                ${statTile('교환·환불', stReturn, '#a855f7')}
+            </div>
+            ${panel('최근 주문', `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+                <thead><tr style="border-bottom:1.5px solid var(--card-border);color:var(--text-muted);text-align:left"><th style="padding:8px">브랜드</th><th style="padding:8px">주문 내용</th><th style="padding:8px;text-align:right">가격</th><th style="padding:8px">채널</th><th style="padding:8px">고객명</th></tr></thead>
+                <tbody>${orderTableRows}</tbody></table></div>`,
+                `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}
 
-            <!-- 하단 정산 3열 -->
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem">
-                ${tile({ accent: lowStock ? '#ef4444' : '#94a3b8', icon: 'ph-cube', label: '재고 부족', big: lowStock.toLocaleString(), unit: '개', sub: invItems.length ? `등록 품목 ${invItems.length}` : '재고 미등록', onclick: "app.switchView('inventory')" })}
-                ${tile({ accent: unpaidList.length ? '#f59e0b' : '#94a3b8', icon: 'ph-receipt', label: '미수금(컨설팅)', big: unpaidAmt ? won(unpaidAmt) : '0', unit: '원', sub: unpaidList.length ? `미발행/미수 ${unpaidList.length}건` : '견적 없음', onclick: "app.switchView('quotes')" })}
-                ${tile({ accent: '#a855f7', icon: 'ph-arrow-u-up-left', label: '취소·반품', big: cancelledCnt.toLocaleString(), unit: '건', sub: '매출 제외분', onclick: "app.switchView('sales')" })}
+            <!-- ═══ 블록 2: 생산 업무 ═══ -->
+            ${sectionHead('ph-factory', '생산 업무', '생산중 품목 · 할일 · 마감 캘린더')}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem">
+                ${panel('생산중 · 할일', prodList,
+                    `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('vendors')">생산현황 →</span>`)}
+                ${panel(`${mm}월 생산 캘린더`, calendar,
+                    `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('calendar')">캘린더 →</span>`)}
             </div>
         </div>`;
     }
