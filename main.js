@@ -2807,64 +2807,123 @@ class BhasApp {
 
         if (!events.length) return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto"><h1 style="font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1><div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted);margin-top:1rem">매출 데이터가 없습니다.<br>리테일(토비·하이헤이호·로하이스튜디오)은 몰 주문이 수집되면, 브하스는 세금계산서(견적)가 등록되면 자동 집계됩니다.</div></div>`;
 
-        const maxMonth = Math.max(1, ...monthTotals);
         const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+        const wonMan = n => (Math.abs(n) >= 10000 ? this._won(Math.round(n / 10000)) + '만' : this._won(Math.round(n)));
+        const curKey = months[months.length - 1];
+        const [cy, cmo] = curKey.split('-').map(Number);
+        const daysInMonth = new Date(cy, cmo, 0).getDate();
+        const inCur = d => { const dt = new Date(d); return dt.getFullYear() === cy && dt.getMonth() + 1 === cmo; };
 
-        const cards = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:1.2rem">
-            ${[
-                { l: '이번 달 매출', v: won(thisM) + '원', s: mom == null ? '' : `전월 대비 ${mom >= 0 ? '+' : ''}${mom}%`, c: mom == null ? '' : (mom >= 0 ? '#10b981' : '#ef4444') },
-                { l: `기간 합계 (${months.length}개월)`, v: won(grand) + '원', s: `${brands.length}개 브랜드`, c: 'var(--text-muted)' },
-                { l: '월 평균', v: won(grand / Math.max(1, months.length)) + '원', s: '', c: 'var(--text-muted)' },
-                { l: '총 주문', v: orders.length.toLocaleString() + '건', s: '', c: 'var(--text-muted)' },
-            ].map(k => `<div class="glass" style="padding:1rem 1.1rem;border-radius:14px">
-                <div style="font-size:0.78rem;color:var(--text-muted)">${k.l}</div>
-                <div style="font-size:1.25rem;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums">${k.v}</div>
-                ${k.s ? `<div style="font-size:0.75rem;margin-top:2px;color:${k.c};font-weight:600">${k.s}</div>` : ''}
+        // 이번 달 일별 매출 + 인기상품 (몰 주문)
+        const daily = Array(daysInMonth).fill(0);
+        const prodQty = {};
+        let ordersThisMonth = 0;
+        orders.forEach(o => {
+            if (!inCur(o.order_date)) return;
+            ordersThisMonth++;
+            daily[new Date(o.order_date).getDate() - 1] += Number(o.pay_amount) || 0;
+            (o.items || []).forEach(it => { const n = it.product_name || it.variant_code || '상품'; prodQty[n] = (prodQty[n] || 0) + (Number(it.quantity) || 1); });
+        });
+        const topProducts = Object.entries(prodQty).sort((a, b) => b[1] - a[1]).slice(0, 6);
+        const topQtyMax = Math.max(1, ...topProducts.map(p => p[1]));
+        const aov = ordersThisMonth ? thisM / ordersThisMonth : 0;
+
+        // 브랜드 이번 달 (점유율)
+        const li = months.length - 1;
+        const brandNow = brands.map((b, i) => ({ name: b.name, kind: b.kind, amt: b.cells[li].amt, color: palette[i % palette.length] }))
+            .filter(b => b.amt > 0).sort((a, b) => b.amt - a.amt);
+        const brandNowMax = Math.max(1, ...brandNow.map(b => b.amt));
+
+        // KPI (전월대비는 지난달이 유의미할 때만 %, 아니면 절대금액 델타)
+        const delta = thisM - prevM;
+        const momSane = prevM >= thisM * 0.05 && prevM > 0;
+        const kpi = (label, val, sub, subColor) => `<div class="glass" style="padding:1.1rem 1.2rem;border-radius:16px">
+            <div style="font-size:0.76rem;color:var(--text-muted)">${label}</div>
+            <div style="font-size:1.55rem;font-weight:800;margin-top:5px;font-variant-numeric:tabular-nums;line-height:1.1">${val}</div>
+            ${sub ? `<div style="font-size:0.75rem;margin-top:3px;color:${subColor || 'var(--text-muted)'};font-weight:600">${sub}</div>` : ''}
+        </div>`;
+        const cards = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:1.3rem">
+            ${kpi(`${cmo}월 매출`, `${won(thisM)}<span style="font-size:1rem;font-weight:600">원</span>`,
+                momSane ? `전월 대비 ${delta >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta / prevM * 100))}%` : (prevM > 0 ? `지난달 ${wonMan(prevM)}원` : '집계 시작'),
+                momSane ? (delta >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)')}
+            ${kpi(`${cmo}월 주문`, `${ordersThisMonth.toLocaleString()}<span style="font-size:1rem;font-weight:600">건</span>`, `전체 누적 ${orders.length.toLocaleString()}건`)}
+            ${kpi('객단가', `${won(aov)}<span style="font-size:1rem;font-weight:600">원</span>`, '주문 1건당 평균')}
+            ${kpi('판매 브랜드', `${brandNow.length}<span style="font-size:1rem;font-weight:600">개</span>`, brandNow.slice(0, 2).map(b => b.name).join(' · ') || '—')}
+        </div>`;
+
+        // 일별 SVG 에어리어 차트
+        const maxDaily = Math.max(1, ...daily);
+        const W = 760, H = 168, padX = 8, padTop = 20, padBot = 8;
+        const xAt = i => padX + (W - 2 * padX) * (daysInMonth > 1 ? i / (daysInMonth - 1) : 0.5);
+        const yAt = v => padTop + (H - padTop - padBot) * (1 - v / maxDaily);
+        const linePts = daily.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`);
+        const line = 'M ' + linePts.join(' L ');
+        const area = `${line} L ${xAt(daysInMonth - 1).toFixed(1)},${(H - padBot).toFixed(1)} L ${xAt(0).toFixed(1)},${(H - padBot).toFixed(1)} Z`;
+        const peakI = daily.indexOf(maxDaily);
+        const gid = 'sg' + Math.floor(cy * 100 + cmo);
+        const chart = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-bottom:1.3rem">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.6rem">
+                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> ${cmo}월 일별 매출</div>
+                <div style="font-size:0.78rem;color:var(--text-muted)">최고 <b style="color:var(--text-main)">${new Date(cy, cmo - 1, peakI + 1).getDate()}일</b> · ${wonMan(maxDaily)}원</div>
+            </div>
+            <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
+                <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity="0.32"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0.02"/></linearGradient></defs>
+                ${[0.33, 0.66].map(f => `<line x1="${padX}" y1="${(padTop + (H - padTop - padBot) * f).toFixed(1)}" x2="${W - padX}" y2="${(padTop + (H - padTop - padBot) * f).toFixed(1)}" stroke="var(--card-border)" stroke-width="1" stroke-dasharray="2 5" opacity="0.55"/>`).join('')}
+                <path d="${area}" fill="url(#${gid})"/>
+                <path d="${line}" fill="none" stroke="var(--primary)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+                <circle cx="${xAt(peakI).toFixed(1)}" cy="${yAt(maxDaily).toFixed(1)}" r="4" fill="var(--primary)" stroke="#fff" stroke-width="1.5"/>
+            </svg>
+            <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--text-muted);margin-top:2px;padding:0 4px">
+                <span>1일</span><span>${Math.round(daysInMonth / 2)}일</span><span>${daysInMonth}일</span>
+            </div>
+        </div>`;
+
+        // 브랜드 점유율 바 (이번 달)
+        const brandBars = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-ranking" style="color:var(--primary)"></i> ${cmo}월 브랜드별 매출</div>
+            <div style="display:flex;flex-direction:column;gap:0.9rem">
+            ${brandNow.map(b => `<div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+                    <span style="font-size:0.85rem;font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${b.color};margin-right:7px"></span>${this._vesc(b.name)}${b.kind === 'consulting' ? ' <span style="font-size:0.62rem;font-weight:700;color:#8b5cf6;background:rgba(139,92,246,0.14);padding:1px 6px;border-radius:6px">컨설팅</span>' : ''}</span>
+                    <span style="font-size:0.85rem;font-weight:800;font-variant-numeric:tabular-nums">${won(b.amt)}<span style="font-size:0.72rem;color:var(--text-muted);font-weight:500"> · ${thisM ? Math.round(b.amt / thisM * 100) : 0}%</span></span>
+                </div>
+                <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${Math.max(3, b.amt / brandNowMax * 100)}%;background:${b.color};border-radius:5px"></div></div>
             </div>`).join('')}
-        </div>`;
-
-        const bars = `<div class="glass" style="padding:1.1rem 1.2rem;border-radius:16px;margin-bottom:1.2rem">
-            <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-chart-bar"></i> 월별 매출 추이</div>
-            <div style="display:flex;align-items:flex-end;gap:8px;height:135px">
-                ${months.map((m, i) => { const h = Math.round(monthTotals[i] / maxMonth * 108); return `
-                    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0">
-                        <div style="font-size:0.65rem;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums">${monthTotals[i] ? won(Math.round(monthTotals[i] / 10000)) + '만' : ''}</div>
-                        <div style="width:100%;max-width:40px;height:${Math.max(2, h)}px;background:linear-gradient(180deg,var(--primary),rgba(99,102,241,0.45));border-radius:5px 5px 0 0"></div>
-                        <div style="font-size:0.7rem;color:var(--text-main)">${monthLabel(m)}</div>
-                    </div>`; }).join('')}
             </div>
         </div>`;
 
-        const table = `<div class="glass" style="padding:1.1rem 1.2rem;border-radius:16px;overflow-x:auto">
-            <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-table"></i> 브랜드별 · 월별 매출</div>
+        // 인기 상품 TOP (이번 달, 수량 기준)
+        const topCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-fire" style="color:#f59e0b"></i> ${cmo}월 인기 상품 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(판매수량)</span></div>
+            ${topProducts.length ? `<div style="display:flex;flex-direction:column;gap:0.75rem">${topProducts.map(([n, q], i) => `<div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                    <span style="font-size:0.83rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%">${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${this._vesc(n)}</span>
+                    <span style="font-size:0.82rem;font-weight:800;font-variant-numeric:tabular-nums">${q}개</span>
+                </div>
+                <div style="height:6px;border-radius:4px;background:rgba(148,163,184,0.12);overflow:hidden"><div style="height:100%;width:${Math.max(4, q / topQtyMax * 100)}%;background:linear-gradient(90deg,#f59e0b,#fbbf24);border-radius:4px"></div></div>
+            </div>`).join('')}</div>` : '<div style="color:var(--text-muted);font-size:0.83rem;padding:0.5rem 0">상품 데이터 없음</div>'}
+        </div>`;
+
+        // 브랜드 × 월 매트릭스 (참고용, 2개월 이상일 때만)
+        const matrix = months.length > 1 ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;overflow-x:auto;margin-top:1.3rem">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-table" style="color:var(--primary)"></i> 브랜드 × 월 매출</div>
             <table style="width:100%;border-collapse:collapse;font-size:0.82rem;white-space:nowrap">
-                <thead><tr style="border-bottom:2px solid var(--card-border)">
-                    <th style="text-align:left;padding:8px 10px">브랜드</th>
-                    ${months.map(m => `<th style="text-align:right;padding:8px 10px">${monthLabel(m)}</th>`).join('')}
-                    <th style="text-align:right;padding:8px 10px;border-left:1px solid var(--card-border)">합계</th>
-                </tr></thead>
-                <tbody>
-                    ${brands.map((b, bi) => `<tr style="border-bottom:1px solid var(--card-border)">
-                        <td style="text-align:left;padding:8px 10px;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${palette[bi % palette.length]};margin-right:6px"></span>${this._vesc(b.name)}${b.kind === 'consulting' ? ` <span style="font-size:0.66rem;font-weight:700;color:#8b5cf6;background:rgba(139,92,246,0.14);padding:1px 6px;border-radius:6px">컨설팅</span>` : ''}</td>
-                        ${b.cells.map(c => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;color:${c.amt ? 'var(--text-main)' : 'var(--text-muted)'}">${c.amt ? won(c.amt) : '·'}</td>`).join('')}
-                        <td style="text-align:right;padding:8px 10px;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td>
-                    </tr>`).join('')}
-                </tbody>
-                <tfoot><tr style="border-top:2px solid var(--card-border);font-weight:800">
-                    <td style="text-align:left;padding:8px 10px">합계</td>
-                    ${monthTotals.map(t => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums">${won(t)}</td>`).join('')}
-                    <td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(grand)}</td>
-                </tr></tfoot>
+                <thead><tr style="border-bottom:2px solid var(--card-border)"><th style="text-align:left;padding:8px 10px">브랜드</th>${months.map(m => `<th style="text-align:right;padding:8px 10px">${monthLabel(m)}</th>`).join('')}<th style="text-align:right;padding:8px 10px;border-left:1px solid var(--card-border)">합계</th></tr></thead>
+                <tbody>${brands.map((b, bi) => `<tr style="border-bottom:1px solid var(--card-border)"><td style="text-align:left;padding:8px 10px;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${palette[bi % palette.length]};margin-right:6px"></span>${this._vesc(b.name)}</td>${b.cells.map(c => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;color:${c.amt ? 'var(--text-main)' : 'var(--text-muted)'}">${c.amt ? won(c.amt) : '·'}</td>`).join('')}<td style="text-align:right;padding:8px 10px;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td></tr>`).join('')}</tbody>
+                <tfoot><tr style="border-top:2px solid var(--card-border);font-weight:800"><td style="text-align:left;padding:8px 10px">합계</td>${monthTotals.map(t => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums">${won(t)}</td>`).join('')}<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(grand)}</td></tr></tfoot>
             </table>
-            <p style="margin:0.8rem 0 0;font-size:0.74rem;color:var(--text-muted)">* 리테일(토비·하이헤이호·로하이스튜디오) = 몰 주문 결제금액. 브하스(컨설팅) = ${consultingFromQuote ? '견적 총액(세금계산서 발행분 없어 견적 기준)' : '발행 세금계산서'}. 취소·환불은 채널 상태 연동 후 반영.</p>
-        </div>`;
+        </div>` : '';
 
-        return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto">
-            <div style="margin-bottom:1.2rem">
-                <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1>
-                <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별 · 월별 매출 집계 (몰→브랜드 자동 매핑)</p>
+        return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
+            <div style="margin-bottom:1.3rem">
+                <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-line-up"></i> 매출 현황</h1>
+                <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${cy}년 ${cmo}월 기준 · 자사몰 주문 + 컨설팅 자동 집계</p>
             </div>
-            ${cards}${bars}${table}
+            ${cards}
+            ${chart}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem">${brandBars}${topCard}</div>
+            ${matrix}
+            <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 리테일 = 몰 주문 결제금액 · 브하스(컨설팅) = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·환불은 채널 상태 연동 후 반영</p>
         </div>`;
     }
 

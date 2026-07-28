@@ -10,7 +10,9 @@
 // Redirect URI(카페24 앱 설정) = 이 함수 공개 URL 과 정확히 일치
 import { admin, baseOf, cors, getMall, log, saveMall } from "../_shared/cafe24.ts";
 
-const SCOPE = "mall.read_product,mall.write_product,mall.read_order,mall.write_order,mall.read_store,mall.read_shipping,mall.write_shipping";
+// ⚠️ 앱(개발자센터)에 설정한 권한과 정확히 일치해야 함. 불일치 시 authorize가 튕겨 무한루프(ERR_TOO_MANY_REDIRECTS) 발생.
+// 현재 BHAS OMS 필요권한: 주문조회 + 배송조회/등록.
+const SCOPE = "mall.read_order,mall.read_shipping,mall.write_shipping";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
@@ -24,6 +26,14 @@ Deno.serve(async (req) => {
   const st = await getMall(db, mallKey);
   if (!st || !st.cafe24_mall_id || !st.client_id) {
     return new Response(`[${mallKey}] 몰 자격증명 미설정 (cafe24_mall_id/client_id 먼저 등록)`, { status: 400, headers: cors() });
+  }
+
+  // 카페24가 에러로 콜백한 경우 → 다시 authorize로 보내지 말고(무한루프 방지) 에러를 표시
+  const oauthErr = url.searchParams.get("error");
+  if (oauthErr) {
+    const desc = url.searchParams.get("error_description") || "";
+    await log(db, mallKey, "oauth", "error", { error: oauthErr, desc });
+    return new Response(`카페24 인증 오류: ${oauthErr}\n${desc}\n\n(앱 권한(scope) 또는 Redirect URI 설정을 확인하세요)`, { status: 400, headers: cors({ "Content-Type": "text/plain; charset=utf-8" }) });
   }
 
   // 1단계: code 없으면 인증 화면으로 redirect (state=mallKey 로 몰 유지)

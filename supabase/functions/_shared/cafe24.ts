@@ -34,9 +34,21 @@ export interface MallState {
   dry_run: boolean;
 }
 
+// DB의 client_secret이 비었거나 'USE_ENV_SECRET' 이면 함수 시크릿(CAFE24_SECRET_<MALLID>)에서 읽는다.
+// → 평문 비밀키를 DB에 저장하지 않고 Supabase secrets(vault)에 보관.
+function applyEnvSecret(st: MallState | null): MallState | null {
+  if (st && (!st.client_secret || st.client_secret === "USE_ENV_SECRET") && st.cafe24_mall_id) {
+    // 몰별 시크릿 우선, 없으면 (주)이일칠구 공용 앱 시크릿으로 폴백 (하이헤이호·토비 동일 앱)
+    const env = Deno.env.get(`CAFE24_SECRET_${st.cafe24_mall_id.toUpperCase()}`)
+      || Deno.env.get("CAFE24_SECRET_MYHO1129");
+    if (env) st.client_secret = env;
+  }
+  return st;
+}
+
 export async function getMall(db: ReturnType<typeof admin>, mallKey: string): Promise<MallState | null> {
   const { data } = await db.from("channel_sync_state").select("*").eq("mall_key", mallKey).maybeSingle();
-  return data as MallState | null;
+  return applyEnvSecret(data as MallState | null);
 }
 
 // 토큰이 있는 활성 몰 전체 (sync 루프용)
@@ -45,7 +57,7 @@ export async function getActiveMalls(db: ReturnType<typeof admin>): Promise<Mall
   const keys = (malls || []).map((m: { mall_key: string }) => m.mall_key);
   if (!keys.length) return [];
   const { data } = await db.from("channel_sync_state").select("*").in("mall_key", keys).not("access_token", "is", null);
-  return (data || []) as MallState[];
+  return ((data || []) as MallState[]).map(s => applyEnvSecret(s) as MallState);
 }
 
 export async function saveMall(db: ReturnType<typeof admin>, mallKey: string, patch: Partial<MallState>) {
