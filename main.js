@@ -2008,9 +2008,11 @@ class BhasApp {
                     ${panel('채널·브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>', `${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div>`)}
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.9rem">${statBlocks}</div>
                 </div>
-                <div style="min-width:0">${brandPanel}</div>
+                <div style="min-width:0;display:flex;flex-direction:column;gap:0.9rem">
+                    ${brandPanel}
+                    ${panel('최근 주문', `<div style="max-height:300px;overflow-y:auto">${recentCompact}</div>`, `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}
+                </div>
             </div>
-            <div style="margin-top:0.9rem">${panel('최근 주문', recentGrid, `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}</div>
 
             <!-- ═══ 블록 2: 생산 업무 ═══ -->
             ${sectionHead('ph-factory', '생산 업무', '생산중 품목 · 할일 · 마감 캘린더')}
