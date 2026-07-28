@@ -1805,26 +1805,56 @@ class BhasApp {
                 </div>
             </div>` : '';
 
+        // 섹션 헤더 + 주문상태 스트립
+        const sectionHead = (icon, title, sub) => `<div style="display:flex;align-items:baseline;gap:10px;margin:1.9rem 0 0.9rem">
+            <h2 style="margin:0;font-size:1.08rem;display:flex;align-items:center;gap:8px"><i class="ph ${icon}" style="color:var(--primary)"></i>${title}</h2>
+            ${sub ? `<span style="font-size:0.78rem;color:var(--text-muted)">${sub}</span>` : ''}</div>`;
+        const OSTAT = [{ k: 'new', l: '신규주문', c: '#6366f1' }, { k: 'ready', l: '배송준비', c: '#f59e0b' }, { k: 'shipping', l: '배송중', c: '#06b6d4' }, { k: 'done', l: '완료', c: '#10b981' }, { k: 'hold', l: '보류', c: '#ef4444' }];
+        const oCnt = {};
+        orders.forEach(o => { const s = o.status || 'new'; oCnt[s] = (oCnt[s] || 0) + 1; });
+        const takeback = orders.filter(o => { const it = (o.raw && o.raw.items) || []; return (Number(o.raw?.takebackQty) || 0) > 0 || it.some(x => Number(x.takebackQty) > 0); }).length;
+        const orderStrip = `<div class="glass" style="padding:1.15rem 1.4rem;border-radius:16px;display:flex;gap:1.6rem;flex-wrap:wrap;align-items:center">
+            ${OSTAT.map(s => `<div style="display:flex;flex-direction:column;gap:3px;min-width:62px">
+                <span style="font-size:1.55rem;font-weight:800;font-variant-numeric:tabular-nums;color:${s.c};line-height:1">${(oCnt[s.k] || 0).toLocaleString()}</span>
+                <span style="font-size:0.76rem;color:var(--text-muted)"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${s.c};margin-right:5px"></span>${s.l}</span>
+            </div>`).join('')}
+            <div style="display:flex;flex-direction:column;gap:3px;min-width:62px;padding-left:1.2rem;border-left:1px solid var(--card-border)">
+                <span style="font-size:1.55rem;font-weight:800;font-variant-numeric:tabular-nums;color:#a855f7;line-height:1">${takeback.toLocaleString()}</span>
+                <span style="font-size:0.76rem;color:var(--text-muted)"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#a855f7;margin-right:5px"></span>반품</span>
+            </div>
+        </div>`;
+        const kpiGrid = (...cards) => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-bottom:1rem">${cards.join('')}</div>`;
+
         return `
         <div class="fade-in" style="padding:1.5rem;max-width:1200px;margin:0 auto">
-            <div style="margin-bottom:1.4rem">
+            <div style="margin-bottom:0.4rem">
                 <h1 style="margin:0;font-size:1.5rem">👋 ${this._vesc(name)}님, 오늘 한눈에</h1>
                 <p style="margin:5px 0 0;color:var(--text-muted);font-size:0.88rem">2179 통합 현황</p>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem">
-                ${kpi('ph-rocket-launch', activeProjects, '진행 중 프로젝트', '#3b82f6')}
-                ${kpi('ph-truck', shipTargets, '배송 대상 주문', '#10b981')}
-                ${kpi('ph-package', activeJobs.length, '진행중 생산 물품', '#f59e0b')}
-                ${kpi('ph-chart-line-up', this._won(sa.thisM), '이번달 매출(원)', '#22c55e')}
-                ${kpi('ph-receipt', this._won(monthTotal), '이번달 견적(원)', '#8b5cf6')}
-                ${kpi('ph-plugs-connected', `${mallsConn}/${malls.length}`, '카페24 연동', '#ec4899')}
-            </div>
+
+            ${sectionHead('ph-shopping-bag-open', '주문', '신규·배송·반품 현황')}
+            ${kpiGrid(
+                kpi('ph-truck', shipTargets, '출고 대상(신규+준비)', '#10b981'),
+                kpi('ph-shopping-bag-open', orders.length, '누적 주문', '#6366f1'),
+            )}
+            ${orderStrip}
+            <div style="margin-top:1rem">${listCard('최근 주문', 'ph-shopping-bag-open', orderRows, '주문 없음')}</div>
+
+            ${sectionHead('ph-package', '생산', '진행 프로젝트·생산 물품')}
+            ${kpiGrid(
+                kpi('ph-rocket-launch', activeProjects, '진행 중 프로젝트', '#3b82f6'),
+                kpi('ph-package', activeJobs.length, '진행중 생산 물품', '#f59e0b'),
+            )}
+            ${listCard('임박 생산 스케줄', 'ph-calendar-dots', jobRows, '진행중 물품 없음')}
+
+            ${sectionHead('ph-chart-line-up', '매출', '자사몰+채널 주문 · 컨설팅')}
+            ${kpiGrid(
+                kpi('ph-chart-line-up', this._won(sa.thisM), '이번달 매출(원)', '#22c55e'),
+                kpi('ph-receipt', this._won(monthTotal), '이번달 견적(원)', '#8b5cf6'),
+                kpi('ph-plugs-connected', `${mallsConn}/${malls.length}`, '카페24 연동', '#ec4899'),
+            )}
             ${salesCard}
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem">
-                ${listCard('임박 생산 스케줄', 'ph-calendar-dots', jobRows, '진행중 물품 없음')}
-                ${listCard('최근 주문', 'ph-shopping-bag-open', orderRows, '주문 없음')}
-                ${listCard('최근 견적', 'ph-receipt', quoteRows, '견적 없음')}
-            </div>
+            <div style="margin-top:1rem">${listCard('최근 견적', 'ph-receipt', quoteRows, '견적 없음')}</div>
         </div>`;
     }
 
@@ -2912,18 +2942,28 @@ class BhasApp {
             { key: 'kidikidi', label: '키디키디', color: '#f59e0b' },
             { key: 'smartstore', label: '스마트스토어', color: '#10b981' },
         ];
-        const chanSum = {};
-        orders.forEach(o => { if (!inCur(o.order_date)) return; const c = o.channel || 'cafe24'; chanSum[c] = (chanSum[c] || 0) + (Number(o.pay_amount) || 0); });
+        // 채널 정규화: 카페24 여러 몰은 'cafe24'로 롤업, 나머지는 mall_key/channel로 플랫폼 식별
+        const platformKey = (o) => {
+            if ((o.channel || 'cafe24') === 'cafe24') return 'cafe24';
+            const mk = (o.mall_key || '').toLowerCase();
+            if (['kidikidi', 'musinsa', '29cm', 'smartstore'].includes(mk)) return mk;
+            const ch = (o.channel || '').toLowerCase();
+            if (ch === 'eland') return 'kidikidi';
+            if (ch === 'naver') return 'smartstore';
+            return mk || ch || 'cafe24';
+        };
+        const chanSum = {}, chanCnt = {};
+        orders.forEach(o => { if (!inCur(o.order_date)) return; const c = platformKey(o); chanSum[c] = (chanSum[c] || 0) + (Number(o.pay_amount) || 0); chanCnt[c] = (chanCnt[c] || 0) + 1; });
         const chanCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
             <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-broadcast" style="color:var(--primary)"></i> ${cmo}월 채널별 매출</div>
             <div style="display:flex;flex-direction:column;gap:0.75rem">
-            ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const on = amt > 0; return `<div style="display:flex;align-items:center;gap:10px">
+            ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const cnt = chanCnt[ch.key] || 0; const on = amt > 0 || cnt > 0; return `<div style="display:flex;align-items:center;gap:10px">
                 <span style="width:9px;height:9px;border-radius:3px;background:${on ? ch.color : 'rgba(148,163,184,0.4)'};flex-shrink:0"></span>
-                <span style="font-size:0.84rem;font-weight:${on ? '600' : '400'};color:${on ? 'var(--text-main)' : 'var(--text-muted)'};flex:1">${ch.label}${on ? '' : ' <span style="font-size:0.66rem;background:rgba(148,163,184,0.15);padding:1px 6px;border-radius:6px">연동 예정</span>'}</span>
+                <span style="font-size:0.84rem;font-weight:${on ? '600' : '400'};color:${on ? 'var(--text-main)' : 'var(--text-muted)'};flex:1">${ch.label}${on ? ` <span style="font-size:0.68rem;color:var(--text-muted);font-weight:500">${cnt}건</span>` : ' <span style="font-size:0.66rem;background:rgba(148,163,184,0.15);padding:1px 6px;border-radius:6px">연동 예정</span>'}</span>
                 <span style="font-size:0.84rem;font-weight:${on ? '800' : '400'};font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(amt) + '원' : '—'}</span>
             </div>`; }).join('')}
             </div>
-            <p style="margin:0.9rem 0 0;font-size:0.72rem;color:var(--text-muted)">무신사·29CM·키디키디는 연동 시 여기 자동 집계돼요</p>
+            <p style="margin:0.9rem 0 0;font-size:0.72rem;color:var(--text-muted)">키디키디·무신사·29CM·스마트스토어는 봇 연동 시 여기 자동 집계돼요</p>
         </div>`;
 
         // 주문 처리 현황 (전체 누적)
