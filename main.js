@@ -1865,13 +1865,17 @@ class BhasApp {
         const monthRev = revOrders.filter(o => localYMD(o.order_date).startsWith(monthKey));
         const groupSum = keyFn => { const m = {}; monthRev.forEach(o => { const k = keyFn(o) || '기타'; m[k] = (m[k] || 0) + Number(o.pay_amount || 0); }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
         const brandArr = groupSum(o => brandOf(o) || o.channel);
-        const chanArr = groupSum(o => channelOf(o));
+        // 채널별은 항상 5개 고정 표시(0원도) — 카페24·키디키디·29CM·스마트스토어·기타
+        const CHAN_FIXED = ['카페24', '키디키디', '29CM', '스마트스토어', '기타'];
+        const chanFixed = Object.fromEntries(CHAN_FIXED.map(c => [c, 0]));
+        monthRev.forEach(o => { let c = channelOf(o); if (!CHAN_FIXED.includes(c)) c = '기타'; chanFixed[c] += Number(o.pay_amount || 0); });
+        const chanArr = CHAN_FIXED.map(c => [c, chanFixed[c]]);
         const brandMax = Math.max(1, ...brandArr.map(x => x[1]));
         const chanMax = Math.max(1, ...chanArr.map(x => x[1]));
-        const barBlock = (arr, max, colorFn) => arr.length ? arr.map(([l, amt], i) => `<div style="margin-bottom:0.6rem">
-            <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.82rem;margin-bottom:3px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(l)}</span><span style="font-weight:800;font-variant-numeric:tabular-nums">${won(amt)}원</span></div>
-            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14)"><div style="height:100%;width:${Math.max(3, amt / max * 100)}%;background:${colorFn(i, l)};border-radius:5px"></div></div>
-        </div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.6rem 0">이번달 매출 없음</div>';
+        const barBlock = (arr, max, colorFn) => arr.length ? arr.map(([l, amt], i) => { const on = amt > 0; const c = on ? colorFn(i, l) : 'rgba(148,163,184,0.4)'; return `<div style="margin-bottom:0.55rem">
+            <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${this._vesc(l)}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(amt) + '원' : '—'}</span></div>
+            <div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.14)"><div style="height:100%;width:${on ? Math.max(3, amt / max * 100) : 0}%;background:${c};border-radius:5px"></div></div>
+        </div>`; }).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.6rem 0">이번달 매출 없음</div>';
 
         // ── 주문 상태: 주문 / 배송중 / 교환·환불 ──
         const allO = this.orders || [];
@@ -1880,16 +1884,20 @@ class BhasApp {
         const stReturn = allO.filter(o => this._isCancelled(o)).length;
 
         // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
-        const orderTableRows = (recentOrders || []).slice(0, 8).map(o => {
+        const recentCompact = (recentOrders || []).slice(0, 8).map(o => {
             const ch = channelOf(o), br = brandOf(o) || '-', col = CHCOL[ch] || '#6366f1';
-            return `<tr style="border-bottom:1px solid var(--card-border)">
-                <td style="padding:8px"><span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:2px;background:${col}"></span>${this._vesc(br)}</span></td>
-                <td style="padding:8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(this._orderItemsSummary(o))}</td>
-                <td style="padding:8px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${won(o.pay_amount || 0)}원</td>
-                <td style="padding:8px">${chip(ch, col)}</td>
-                <td style="padding:8px;white-space:nowrap">${this._vesc(o.receiver_name || o.buyer_name || '-')}</td>
-            </tr>`;
-        }).join('') || '<tr><td colspan="5" style="padding:1.2rem;text-align:center;color:var(--text-muted)">주문 없음</td></tr>';
+            return `<div style="padding:8px 0;border-top:1px solid var(--card-border)">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px">
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-size:0.77rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="width:7px;height:7px;border-radius:2px;background:${col};flex-shrink:0"></span>${this._vesc(br)}</span>
+                    ${chip(ch, col)}
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:0.78rem">
+                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)">${this._vesc(this._orderItemsSummary(o))}</span>
+                    <span style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${won(o.pay_amount || 0)}원</span>
+                    <span style="color:var(--text-muted);white-space:nowrap;max-width:64px;overflow:hidden;text-overflow:ellipsis">${this._vesc(o.receiver_name || o.buyer_name || '-')}</span>
+                </div>
+            </div>`;
+        }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem;padding:10px 0">주문 없음</div>';
 
         // ── 생산: 생산중 품목·할일 + 이번달 캘린더 ──
         const yy = today.getFullYear(), moIdx = today.getMonth();
@@ -1972,16 +1980,16 @@ class BhasApp {
                 ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981')}
             </div>
-            <div style="display:grid;grid-template-columns:0.85fr 1.15fr;gap:0.9rem;align-items:start">
+            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
-                    ${panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">${donut(brandArr, palette)}<div style="flex:1;min-width:120px">${brandLegend}</div></div>`)}
-                    ${panel('채널별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', barBlock(chanArr, chanMax, (i, l) => CHCOL[l] || palette[i % palette.length]))}
-                    ${panel('주문 상태', `<div style="display:flex;gap:1rem;flex-wrap:wrap">${[['주문', stOrder, '#6366f1'], ['배송중', stShip, '#06b6d4'], ['교환·환불', stReturn, '#a855f7']].map(([l, n, c]) => `<div style="flex:1;min-width:62px"><div style="font-size:1.35rem;font-weight:800;font-variant-numeric:tabular-nums;color:${c};line-height:1">${n.toLocaleString()}<span style="font-size:0.7rem;font-weight:600;color:var(--text-main)">건</span></div><div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px">${l}</div></div>`).join('')}</div>`)}
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem">
+                        ${panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">${donut(brandArr, palette)}<div style="flex:1;min-width:120px">${brandLegend}</div></div>`)}
+                        ${panel('채널별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', barBlock(chanArr, chanMax, (i, l) => CHCOL[l] || palette[i % palette.length]))}
+                    </div>
+                    ${panel('주문 상태', `<div style="display:flex;gap:1.4rem;flex-wrap:wrap">${[['주문', stOrder, '#6366f1'], ['배송중', stShip, '#06b6d4'], ['교환·환불', stReturn, '#a855f7']].map(([l, n, c]) => `<div style="flex:1;min-width:62px"><div style="font-size:1.35rem;font-weight:800;font-variant-numeric:tabular-nums;color:${c};line-height:1">${n.toLocaleString()}<span style="font-size:0.7rem;font-weight:600;color:var(--text-main)">건</span></div><div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px">${l}</div></div>`).join('')}</div>`)}
                 </div>
                 <div style="min-width:0">
-                    ${panel('최근 주문', `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
-                        <thead><tr style="border-bottom:1.5px solid var(--card-border);color:var(--text-muted);text-align:left"><th style="padding:8px">브랜드</th><th style="padding:8px">주문 내용</th><th style="padding:8px;text-align:right">가격</th><th style="padding:8px">채널</th><th style="padding:8px">고객명</th></tr></thead>
-                        <tbody>${orderTableRows}</tbody></table></div>`,
+                    ${panel('최근 주문', recentCompact,
                         `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}
                 </div>
             </div>
