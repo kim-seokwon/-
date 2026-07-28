@@ -3031,8 +3031,8 @@ class BhasApp {
         const daysInMonth = yearMode ? 12 : new Date(cy, cmo, 0).getDate();
         const inScope = d => { const dt = new Date(d); if (dt.getFullYear() !== cy) return false; return yearMode ? true : (dt.getMonth() + 1 === cmo); };
         const inCur = inScope;
-        const periodLabel = yearMode ? `${cy}년 전체` : `${cy}년 ${shortLabel}`;
-        const shortLabel = yearMode ? `${cy}년 연간` : `${shortLabel}`;
+        const shortLabel = yearMode ? `${cy}년 연간` : `${cmo}월`;
+        const periodLabel = yearMode ? `${cy}년 전체` : `${cy}년 ${cmo}월`;
         const cancelThis = (cancelledOrders || []).filter(o => inScope(o.order_date));
         const cancelThisCnt = cancelThis.length;
         const cancelThisAmt = cancelThis.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
