@@ -3000,9 +3000,12 @@ class BhasApp {
     // ============================================================
     //  매출 — 브랜드별 · 월별 집계 (channel_orders × malls→brand)
     // ============================================================
+    setSalesYear(y) { this.salesViewYear = y; this.switchView('sales'); }
+    setSalesMonth(m) { this.salesViewMonth = m; this.switchView('sales'); }
+
     renderSales() {
         if (!this._ordersLoaded || !this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">매출 데이터를 불러오는 중...</div>`;
-        const { orders, cancelledOrders, events, months, brands, monthTotals, grand, thisM, prevM, consultingFromQuote } = this._salesAgg(12);
+        const { orders, cancelledOrders, events, months, brands, monthTotals, grand, consultingFromQuote } = this._salesAgg(12);
         const won = n => this._won(Math.round(n));
         const monthLabel = m => { const [y, mm] = m.split('-'); return `${+mm}월<span style="color:var(--text-muted);font-size:0.7rem">'${y.slice(2)}</span>`; };
 
@@ -3010,31 +3013,50 @@ class BhasApp {
 
         const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
         const wonMan = n => (Math.abs(n) >= 10000 ? this._won(Math.round(n / 10000)) + '만' : this._won(Math.round(n)));
-        const curKey = months[months.length - 1];
-        const [cy, cmo] = curKey.split('-').map(Number);
-        const daysInMonth = new Date(cy, cmo, 0).getDate();
-        const inCur = d => { const dt = new Date(d); return dt.getFullYear() === cy && dt.getMonth() + 1 === cmo; };
-        const cancelThis = (cancelledOrders || []).filter(o => inCur(o.order_date));
+        // 기간 선택: 연도 + 월(전체/1~12)
+        const yearsAvail = [...new Set(months.map(m => m.slice(0, 4)))].sort();
+        const latest = months[months.length - 1] || '2026-01';
+        const selY = yearsAvail.includes(this.salesViewYear) ? this.salesViewYear : latest.slice(0, 4);
+        const monthsOfY = months.filter(m => m.startsWith(selY));
+        const validM = monthsOfY.map(m => +m.slice(5));
+        const selM = (this.salesViewMonth === 'ALL' || validM.includes(+this.salesViewMonth)) ? this.salesViewMonth : (+(monthsOfY[monthsOfY.length - 1] || latest).slice(5));
+        const yearMode = selM === 'ALL';
+        const cy = +selY, cmo = yearMode ? null : +selM;
+        const scopeMonths = yearMode ? monthsOfY : [`${selY}-${String(cmo).padStart(2, '0')}`];
+        const idxOf = k => months.indexOf(k);
+        const curKey = scopeMonths[scopeMonths.length - 1] || latest;
+        const li = idxOf(curKey);
+        const thisM = scopeMonths.reduce((s, k) => s + (idxOf(k) >= 0 ? monthTotals[idxOf(k)] : 0), 0);
+        const prevM = yearMode ? 0 : (monthTotals[li - 1] || 0);
+        const daysInMonth = yearMode ? 12 : new Date(cy, cmo, 0).getDate();
+        const inScope = d => { const dt = new Date(d); if (dt.getFullYear() !== cy) return false; return yearMode ? true : (dt.getMonth() + 1 === cmo); };
+        const inCur = inScope;
+        const periodLabel = yearMode ? `${cy}년 전체` : `${cy}년 ${shortLabel}`;
+        const shortLabel = yearMode ? `${cy}년 연간` : `${shortLabel}`;
+        const cancelThis = (cancelledOrders || []).filter(o => inScope(o.order_date));
         const cancelThisCnt = cancelThis.length;
         const cancelThisAmt = cancelThis.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
 
-        // 이번 달 일별 매출 + 인기상품 (몰 주문)
-        const daily = Array(daysInMonth).fill(0);
+        // 선택 기간 집계 + 인기상품 (몰 주문)
+        const daily = Array(31).fill(0);
         const prodQty = {};
         let ordersThisMonth = 0;
         orders.forEach(o => {
-            if (!inCur(o.order_date)) return;
+            if (!inScope(o.order_date)) return;
             ordersThisMonth++;
             daily[new Date(o.order_date).getDate() - 1] += Number(o.pay_amount) || 0;
             (o.items || []).forEach(it => { const n = it.product_name || it.variant_code || '상품'; prodQty[n] = (prodQty[n] || 0) + (Number(it.quantity) || 1); });
         });
+        // 차트 시리즈: 단일월=일별, 연간전체=월별(1~12)
+        const chartSeries = yearMode
+            ? Array.from({ length: 12 }, (_, i) => { const k = `${selY}-${String(i + 1).padStart(2, '0')}`; const idx = idxOf(k); return idx >= 0 ? monthTotals[idx] : 0; })
+            : daily.slice(0, daysInMonth);
         const topProducts = Object.entries(prodQty).sort((a, b) => b[1] - a[1]).slice(0, 6);
         const topQtyMax = Math.max(1, ...topProducts.map(p => p[1]));
         const aov = ordersThisMonth ? thisM / ordersThisMonth : 0;
 
-        // 브랜드 이번 달 (점유율)
-        const li = months.length - 1;
-        const brandNow = brands.map((b, i) => ({ name: b.name, kind: b.kind, amt: b.cells[li].amt, color: palette[i % palette.length] }))
+        // 브랜드 선택기간 (점유율)
+        const brandNow = brands.map((b, i) => ({ name: b.name, kind: b.kind, amt: scopeMonths.reduce((s, k) => s + (idxOf(k) >= 0 ? b.cells[idxOf(k)].amt : 0), 0), color: palette[i % palette.length] }))
             .filter(b => b.amt > 0).sort((a, b) => b.amt - a.amt);
         const brandNowMax = Math.max(1, ...brandNow.map(b => b.amt));
 
@@ -3047,28 +3069,31 @@ class BhasApp {
             ${sub ? `<div style="font-size:0.75rem;margin-top:3px;color:${subColor || 'var(--text-muted)'};font-weight:600">${sub}</div>` : ''}
         </div>`;
         const cards = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:1.3rem">
-            ${kpi(`${cmo}월 매출`, `${won(thisM)}<span style="font-size:1rem;font-weight:600">원</span>`,
+            ${kpi(`${shortLabel} 매출`, `${won(thisM)}<span style="font-size:1rem;font-weight:600">원</span>`,
                 (momSane ? `전월 대비 ${delta >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta / prevM * 100))}%` : (prevM > 0 ? `지난달 ${wonMan(prevM)}원` : '집계 시작')) + (cancelThisCnt ? ` · 취소 ${cancelThisCnt}건 제외` : ''),
                 momSane ? (delta >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)')}
-            ${kpi(`${cmo}월 주문`, `${ordersThisMonth.toLocaleString()}<span style="font-size:1rem;font-weight:600">건</span>`, `전체 누적 ${orders.length.toLocaleString()}건`)}
+            ${kpi(`${shortLabel} 주문`, `${ordersThisMonth.toLocaleString()}<span style="font-size:1rem;font-weight:600">건</span>`, `전체 누적 ${orders.length.toLocaleString()}건`)}
             ${kpi('객단가', `${won(aov)}<span style="font-size:1rem;font-weight:600">원</span>`, '주문 1건당 평균')}
             ${kpi('판매 브랜드', `${brandNow.length}<span style="font-size:1rem;font-weight:600">개</span>`, brandNow.slice(0, 2).map(b => b.name).join(' · ') || '—')}
         </div>`;
 
-        // 일별 SVG 에어리어 차트
-        const maxDaily = Math.max(1, ...daily);
+        // SVG 에어리어 차트 (단일월=일별 / 연간전체=월별)
+        const cs = chartSeries, N = cs.length;
+        const maxDaily = Math.max(1, ...cs);
         const W = 760, H = 168, padX = 8, padTop = 20, padBot = 8;
-        const xAt = i => padX + (W - 2 * padX) * (daysInMonth > 1 ? i / (daysInMonth - 1) : 0.5);
+        const xAt = i => padX + (W - 2 * padX) * (N > 1 ? i / (N - 1) : 0.5);
         const yAt = v => padTop + (H - padTop - padBot) * (1 - v / maxDaily);
-        const linePts = daily.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`);
+        const linePts = cs.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`);
         const line = 'M ' + linePts.join(' L ');
-        const area = `${line} L ${xAt(daysInMonth - 1).toFixed(1)},${(H - padBot).toFixed(1)} L ${xAt(0).toFixed(1)},${(H - padBot).toFixed(1)} Z`;
-        const peakI = daily.indexOf(maxDaily);
-        const gid = 'sg' + Math.floor(cy * 100 + cmo);
+        const area = `${line} L ${xAt(N - 1).toFixed(1)},${(H - padBot).toFixed(1)} L ${xAt(0).toFixed(1)},${(H - padBot).toFixed(1)} Z`;
+        const peakI = cs.indexOf(maxDaily);
+        const peakLabel = yearMode ? `${peakI + 1}월` : `${peakI + 1}일`;
+        const gid = 'sg' + Math.floor(cy * 100 + (cmo || 0));
+        const xL = yearMode ? ['1월', '6월', '12월'] : ['1일', `${Math.round(daysInMonth / 2)}일`, `${daysInMonth}일`];
         const chart = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-bottom:1.3rem">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.6rem">
-                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> ${cmo}월 일별 매출</div>
-                <div style="font-size:0.78rem;color:var(--text-muted)">최고 <b style="color:var(--text-main)">${new Date(cy, cmo - 1, peakI + 1).getDate()}일</b> · ${wonMan(maxDaily)}원</div>
+                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> ${yearMode ? `${cy}년 월별 매출` : `${shortLabel} 일별 매출`}</div>
+                <div style="font-size:0.78rem;color:var(--text-muted)">최고 <b style="color:var(--text-main)">${peakLabel}</b> · ${wonMan(maxDaily)}원</div>
             </div>
             <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
                 <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity="0.32"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0.02"/></linearGradient></defs>
@@ -3078,13 +3103,13 @@ class BhasApp {
                 <circle cx="${xAt(peakI).toFixed(1)}" cy="${yAt(maxDaily).toFixed(1)}" r="4" fill="var(--primary)" stroke="#fff" stroke-width="1.5"/>
             </svg>
             <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--text-muted);margin-top:2px;padding:0 4px">
-                <span>1일</span><span>${Math.round(daysInMonth / 2)}일</span><span>${daysInMonth}일</span>
+                <span>${xL[0]}</span><span>${xL[1]}</span><span>${xL[2]}</span>
             </div>
         </div>`;
 
         // 브랜드 점유율 바 (이번 달)
         const brandBars = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-ranking" style="color:var(--primary)"></i> ${cmo}월 브랜드별 매출</div>
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-ranking" style="color:var(--primary)"></i> ${shortLabel} 브랜드별 매출</div>
             <div style="display:flex;flex-direction:column;gap:0.9rem">
             ${brandNow.map(b => `<div>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
@@ -3098,7 +3123,7 @@ class BhasApp {
 
         // 인기 상품 TOP (이번 달, 수량 기준)
         const topCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-fire" style="color:#f59e0b"></i> ${cmo}월 인기 상품 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(판매수량)</span></div>
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-fire" style="color:#f59e0b"></i> ${shortLabel} 인기 상품 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(판매수량)</span></div>
             ${topProducts.length ? `<div style="display:flex;flex-direction:column;gap:0.75rem">${topProducts.map(([n, q], i) => `<div>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
                     <span style="font-size:0.83rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%">${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${this._vesc(n)}</span>
@@ -3139,7 +3164,7 @@ class BhasApp {
             else if (ch === 'naver') connectedSet.add('smartstore');
         });
         const chanCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-broadcast" style="color:var(--primary)"></i> ${cmo}월 채널별 매출</div>
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-broadcast" style="color:var(--primary)"></i> ${shortLabel} 채널별 매출</div>
             <div style="display:flex;flex-direction:column;gap:0.75rem">
             ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const cnt = chanCnt[ch.key] || 0; const on = amt > 0 || cnt > 0; const conn = connectedSet.has(ch.key); const active = on || conn; return `<div style="display:flex;align-items:center;gap:10px">
                 <span style="width:9px;height:9px;border-radius:3px;background:${active ? ch.color : 'rgba(148,163,184,0.4)'};flex-shrink:0"></span>
@@ -3156,7 +3181,7 @@ class BhasApp {
         orders.forEach(o => { if (!inCur(o.order_date)) return; const s = o.status || 'new'; statCnt[s] = (statCnt[s] || 0) + 1; });
         const statMax = Math.max(1, ...STATUS.map(s => statCnt[s.k] || 0));
         const statCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-package" style="color:var(--primary)"></i> 주문 처리 현황 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(${cmo}월)</span></div>
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-package" style="color:var(--primary)"></i> 주문 처리 현황 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(${shortLabel})</span></div>
             <div style="display:flex;flex-direction:column;gap:0.8rem">
             ${STATUS.map(s => { const n = statCnt[s.k] || 0; return `<div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:0.83rem;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.c};margin-right:7px"></span>${s.l}</span><span style="font-size:0.83rem;font-weight:800;font-variant-numeric:tabular-nums">${n.toLocaleString()}건</span></div>
@@ -3177,9 +3202,20 @@ class BhasApp {
         </div>` : '';
 
         return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
-            <div style="margin-bottom:1.3rem">
-                <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-line-up"></i> 매출 현황</h1>
-                <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${cy}년 ${cmo}월 기준 · 자사몰 주문 + 컨설팅 자동 집계</p>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
+                <div>
+                    <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-line-up"></i> 매출 현황</h1>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${periodLabel} 기준 · 자사몰 주문 + 컨설팅 자동 집계</p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <select onchange="app.setSalesYear(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
+                        ${yearsAvail.map(y => `<option value="${y}" ${y === selY ? 'selected' : ''}>${y}년</option>`).join('')}
+                    </select>
+                    <select onchange="app.setSalesMonth(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
+                        <option value="ALL" ${yearMode ? 'selected' : ''}>전체(연간)</option>
+                        ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => { const has = validM.includes(m); return `<option value="${m}" ${(!yearMode && cmo === m) ? 'selected' : ''} ${has ? '' : 'disabled'}>${m}월${has ? '' : ' (없음)'}</option>`; }).join('')}
+                    </select>
+                </div>
             </div>
             ${cards}
             ${chart}
