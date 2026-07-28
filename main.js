@@ -1776,7 +1776,34 @@ class BhasApp {
             <div style="font-size:0.95rem;font-weight:700;margin-bottom:0.9rem;display:flex;align-items:center;gap:7px"><i class="ph ${icon}" style="color:var(--primary)"></i> ${title}</div>
             ${rows || `<div style="color:var(--text-muted);font-size:0.85rem;padding:0.5rem 0">${empty}</div>`}
         </div>`;
-        const orderRows = recentOrders.map(o => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.85rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(o.receiver_name || o.buyer_name || '-')} · ${this._vesc(this._orderItemsSummary(o))}</span><span style="color:var(--text-muted);white-space:nowrap">${o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : ''}</span></div>`).join('');
+        // 주문의 채널·브랜드 라벨
+        const CHCOL = { '카페24': '#3b82f6', '키디키디': '#f59e0b', '스마트스토어': '#10b981', '무신사': '#111827', '29CM': '#6b7280' };
+        const channelOf = (o) => {
+            const mk = (o.mall_key || '').toLowerCase();
+            if (mk === '29cm') return '29CM';
+            if (mk === 'kidikidi') return '키디키디';
+            if (mk === 'smartstore') return '스마트스토어';
+            if (mk === 'musinsa') return '무신사';
+            const ch = (o.channel || 'cafe24').toLowerCase();
+            return ({ cafe24: '카페24', eland: '키디키디', naver: '스마트스토어', musinsa: '무신사' })[ch] || (ch || '카페24');
+        };
+        const brandOf = (o) => {
+            const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
+            if (mall) { const b = (mockData.brands || []).find(x => x.id === mall.brand_id); return b ? b.name : (mall.label || null); }
+            return null;
+        };
+        const chip = (txt, color) => `<span style="font-size:0.66rem;font-weight:700;padding:1px 7px;border-radius:8px;background:${color}22;color:${color};white-space:nowrap">${txt}</span>`;
+        const orderRows = recentOrders.map(o => {
+            const ch = channelOf(o), br = brandOf(o), col = CHCOL[ch] || '#6366f1';
+            const d = o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : '';
+            return `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--card-border);font-size:0.85rem">
+                <div style="min-width:0;display:flex;flex-direction:column;gap:4px">
+                    <div style="display:flex;align-items:center;gap:6px">${chip(ch, col)}${br ? `<span style="font-size:0.72rem;color:var(--text-muted)">${this._vesc(br)}</span>` : ''}</div>
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(o.receiver_name || o.buyer_name || '-')} · ${this._vesc(this._orderItemsSummary(o))}</span>
+                </div>
+                <span style="color:var(--text-muted);white-space:nowrap;align-self:flex-end">${d}</span>
+            </div>`;
+        }).join('');
         const quoteRows = recentQuotes.map(q => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.85rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(q.client_name)}</span><span style="font-weight:700;white-space:nowrap">${this._won(q.total_amount)}원</span></div>`).join('');
         const jobRows = activeJobs.filter(j => j.due_date).sort((a, b) => new Date(a.due_date) - new Date(b.due_date)).slice(0, 5).map(j => { const dd = dday(j.due_date); const col = dd < 0 ? '#ef4444' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)'); return `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.85rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(j.title)} · ${this._vesc(j._v)}</span><span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span></div>`; }).join('');
 
