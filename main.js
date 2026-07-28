@@ -2801,7 +2801,7 @@ class BhasApp {
     // ============================================================
     renderSales() {
         if (!this._ordersLoaded || !this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">매출 데이터를 불러오는 중...</div>`;
-        const { orders, events, months, brands, monthTotals, grand, thisM, mom, consultingFromQuote } = this._salesAgg(12);
+        const { orders, events, months, brands, monthTotals, grand, thisM, prevM, consultingFromQuote } = this._salesAgg(12);
         const won = n => this._won(Math.round(n));
         const monthLabel = m => { const [y, mm] = m.split('-'); return `${+mm}월<span style="color:var(--text-muted);font-size:0.7rem">'${y.slice(2)}</span>`; };
 
