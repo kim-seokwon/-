@@ -2004,7 +2004,7 @@ class BhasApp {
                 ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981')}
             </div>
-            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem">
+            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
                     ${panel('채널·브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>', `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
                         <div style="flex:1;min-width:240px">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>
@@ -2012,11 +2012,9 @@ class BhasApp {
                     </div>`)}
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.9rem">${statBlocks}</div>
                 </div>
-                <div style="min-width:0;min-height:0">
-                    <div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;display:flex;flex-direction:column;height:100%">
-                        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border);flex-shrink:0"><span style="font-size:0.94rem;font-weight:800">최근 주문</span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
-                        <div style="flex:1;min-height:0;overflow-y:auto;padding-right:2px">${recentCompact}</div>
-                    </div>
+                <div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;min-width:0">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border)"><span style="font-size:0.94rem;font-weight:800">최근 주문 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">${(this.orders || []).length}건</span></span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
+                    <div style="max-height:360px;overflow-y:auto;margin-right:-6px;padding-right:6px">${recentCompact}</div>
                 </div>
             </div>
 
