@@ -1982,11 +1982,11 @@ class BhasApp {
             <span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span>
             <div><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${l}</div></div>
         </div>`).join('');
-        // 최근주문 스크롤 패널(높이는 좌측 컬럼에 맞춤 → min-height:0 트릭)
-        const recentPanel = `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;display:flex;flex-direction:column;height:100%">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border);flex-shrink:0"><span style="font-size:0.94rem;font-weight:800">최근 주문</span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
-            <div style="flex:1;min-height:0;overflow-y:auto;padding-right:2px">${recentCompact}</div>
-        </div>`;
+        // 브랜드별 매출 합계(도넛 아래 리스트)
+        const brandTotals = brandArr.length ? brandArr.map(([b, v], i) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.83rem"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(b)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}원</b></div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">이번달 매출 없음</div>';
+        const brandPanel = panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;justify-content:center;margin-bottom:0.4rem">${donut(brandArr, palette)}</div>${brandTotals}`);
+        // 최근주문 — 전체폭 그리드(2줄 카드)
+        const recentGrid = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 1.4rem">${recentCompact}</div>`;
 
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
@@ -2003,13 +2003,14 @@ class BhasApp {
                 ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981')}
             </div>
-            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem">
+            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
                     ${panel('채널·브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>', `${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div>`)}
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.9rem">${statBlocks}</div>
                 </div>
-                <div style="min-width:0;min-height:0">${recentPanel}</div>
+                <div style="min-width:0">${brandPanel}</div>
             </div>
+            <div style="margin-top:0.9rem">${panel('최근 주문', recentGrid, `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}</div>
 
             <!-- ═══ 블록 2: 생산 업무 ═══ -->
             ${sectionHead('ph-factory', '생산 업무', '생산중 품목 · 할일 · 마감 캘린더')}
