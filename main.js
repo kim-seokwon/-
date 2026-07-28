@@ -3215,6 +3215,55 @@ class BhasApp {
             ${repeat.length ? repeat.slice(0, 8).map(([n, arr]) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.83rem"><span>${this._vesc(n)}</span><span style="font-weight:700;color:${arr.length >= 3 ? '#ef4444' : '#f59e0b'}">${arr.length}회</span></div>`).join('') : '<div style="font-size:0.8rem;color:var(--text-muted);padding:6px 0">반복 반품 고객 없음 (정상)</div>'}
         </div>`;
 
+        // ── 운영 인사이트: 채널 순이익(수수료 반영) · 재구매율 · 옵션(사이즈/컬러) 분포 ──
+        const CH_FEE = { cafe24: 0.03, musinsa: 0.30, '29cm': 0.32, kidikidi: 0.35, smartstore: 0.06 };
+        const CH_LABEL = { cafe24: '카페24', musinsa: '무신사', '29cm': '29CM', kidikidi: '키디키디', smartstore: '스마트스토어' };
+        const netByChan = {};
+        orders.forEach(o => { if (!inScope(o.order_date)) return; const c = platformKey(o); const g = Number(o.pay_amount) || 0; (netByChan[c] = netByChan[c] || { g: 0, n: 0 }).g += g; netByChan[c].n += g * (1 - (CH_FEE[c] ?? 0.05)); });
+        const netArr = Object.entries(netByChan).sort((a, b) => b[1].n - a[1].n);
+        const netMax = Math.max(1, ...netArr.map(([, v]) => v.g));
+        const grossTot = netArr.reduce((s, [, v]) => s + v.g, 0), netTot = netArr.reduce((s, [, v]) => s + v.n, 0);
+        const buyerCnt = {};
+        orders.forEach(o => { if (!inScope(o.order_date)) return; const n = o.buyer_name || o.receiver_name; if (n) buyerCnt[n] = (buyerCnt[n] || 0) + 1; });
+        const bvals = Object.values(buyerCnt), totBuyers = bvals.length, repBuyers = bvals.filter(c => c >= 2).length;
+        const repeatRate = totBuyers ? Math.round(repBuyers / totBuyers * 100) : 0;
+        const repeatOrders = bvals.filter(c => c >= 2).reduce((s, c) => s + c, 0), totOrdersB = bvals.reduce((s, c) => s + c, 0);
+        const optCnt = {};
+        orders.forEach(o => {
+            if (!inScope(o.order_date)) return;
+            (o.items || []).forEach(it => { (it.option_name || '').split(/[\/,]/).map(s => s.trim()).filter(Boolean).forEach(t => optCnt[t] = (optCnt[t] || 0) + (Number(it.quantity) || 1)); });
+            (((o.raw || {}).items) || []).forEach(it => { (it.uitem || '').split(/[\/,]/).map(s => s.trim()).filter(Boolean).forEach(t => optCnt[t] = (optCnt[t] || 0) + (Number(it.qty) || 1)); });
+        });
+        const optArr = Object.entries(optCnt).sort((a, b) => b[1] - a[1]).slice(0, 8);
+        const optMax = Math.max(1, ...optArr.map(x => x[1]));
+        const netCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.3rem"><i class="ph ph-coins" style="color:#10b981"></i> 채널 순이익 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(수수료 차감)</span></div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.9rem">총매출 ${won(grossTot)} → 순매출 <b style="color:#10b981">${won(netTot)}</b></div>
+            ${netArr.length ? netArr.map(([c, v]) => `<div style="margin-bottom:0.6rem">
+                <div style="display:flex;justify-content:space-between;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600">${CH_LABEL[c] || c} <span style="font-size:0.68rem;color:var(--text-muted)">수수료 ${Math.round((CH_FEE[c] ?? 0.05) * 100)}%</span></span><span style="font-weight:800;font-variant-numeric:tabular-nums">${won(v.n)}</span></div>
+                <div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${Math.max(3, v.g / netMax * 100)}%;background:#10b981;border-radius:5px;opacity:0.9"></div></div>
+            </div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem">기간 내 매출 없음</div>'}
+            <p style="margin:0.6rem 0 0;font-size:0.68rem;color:var(--text-muted)">* 수수료율은 추정치 — 설정에서 조정 예정</p>
+        </div>`;
+        const repeatCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-arrows-clockwise" style="color:#6366f1"></i> 재구매 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(${shortLabel})</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:0.4rem"><span style="font-size:2rem;font-weight:800;color:#6366f1;line-height:1">${repeatRate}%</span><span style="font-size:0.8rem;color:var(--text-muted)">고객 재구매율</span></div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.9rem">전체 고객 ${totBuyers}명 중 <b style="color:var(--text-main)">${repBuyers}명</b> 재구매</div>
+            <div style="height:10px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden;display:flex">
+                <div style="width:${totOrdersB ? (totOrdersB - repeatOrders) / totOrdersB * 100 : 100}%;background:#94a3b8" title="신규"></div>
+                <div style="width:${totOrdersB ? repeatOrders / totOrdersB * 100 : 0}%;background:#6366f1" title="재구매"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--text-muted);margin-top:5px"><span>신규 주문 ${totOrdersB - repeatOrders}</span><span>재구매 주문 ${repeatOrders}</span></div>
+        </div>`;
+        const optCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-squares-four" style="color:#f59e0b"></i> 옵션(사이즈·컬러) 판매 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(수량)</span></div>
+            ${optArr.length ? `<div style="display:flex;flex-direction:column;gap:0.6rem">${optArr.map(([t, q]) => `<div>
+                <div style="display:flex;justify-content:space-between;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(t)}</span><span style="font-weight:800;font-variant-numeric:tabular-nums">${q}개</span></div>
+                <div style="height:7px;border-radius:4px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${Math.max(4, q / optMax * 100)}%;background:linear-gradient(90deg,#f59e0b,#fbbf24);border-radius:4px"></div></div>
+            </div>`).join('')}</div>` : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.5rem 0">옵션 데이터 부족 — 주문 상품 옵션이 수집되면 사이즈·컬러 분포가 여기 떠요</div>'}
+        </div>`;
+        const insights = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.3rem;margin-top:1.3rem">${netCard}${repeatCard}${optCard}</div>`;
+
         // 브랜드 × 월 매트릭스 (참고용, 2개월 이상일 때만)
         const matrix = months.length > 1 ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;overflow-x:auto;margin-top:1.3rem">
             <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-table" style="color:var(--primary)"></i> 브랜드 × 월 매출</div>
@@ -3246,6 +3295,7 @@ class BhasApp {
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem">${brandBars}${topCard}</div>
             ${channelStatus}
             ${returnCard}
+            ${insights}
             ${matrix}
             <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 리테일 = 몰 주문 결제금액 · 브하스(컨설팅) = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·환불은 채널 상태 연동 후 반영</p>
         </div>`;
