@@ -1973,7 +1973,7 @@ class BhasApp {
         const chanMaxT = Math.max(1, ...CHAN_FIXED.map(chanTot));
         const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div style="margin-bottom:0.55rem">
             <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${c}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(total) + '원' : '—'}</span></div>
-            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${on ? Math.max(3, total / chanMaxT * 100) : 0}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
+            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${on ? Math.max(3, total / chanMaxT * 70) : 0}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
         </div>`; }).join('');
         // 브랜드 색상 범례(채널 스택바 해설)
         const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
