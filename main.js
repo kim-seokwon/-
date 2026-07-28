@@ -1972,7 +1972,7 @@ class BhasApp {
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:0.9rem;margin-bottom:0.9rem">
                 ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), salesSpark, '#6366f1')}
                 ${kpiCard('주간 매출 (7일)', won(weekSales), '원', deltaBadge(weekDelta, 'vs 지난주'), salesSpark, '#3b82f6')}
-                ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge(sa.mom, 'vs 전월'), salesSpark, '#8b5cf6')}
+                ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), salesSpark, '#8b5cf6')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, orderSpark, '#10b981')}
             </div>
             <div style="margin-bottom:0.9rem">${panel(`${mm}월 일별 매출`, barChart)}</div>
