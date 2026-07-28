@@ -2981,13 +2981,26 @@ class BhasApp {
         };
         const chanSum = {}, chanCnt = {};
         orders.forEach(o => { if (!inCur(o.order_date)) return; const c = platformKey(o); chanSum[c] = (chanSum[c] || 0) + (Number(o.pay_amount) || 0); chanCnt[c] = (chanCnt[c] || 0) + 1; });
+        // 연동된 채널 집합 (이번 달 매출 0이어도 '연동됨' 표시)
+        const connectedSet = new Set();
+        (this.malls || []).forEach(m => {
+            if (!m.connected) return;
+            const ch = (m.channel || 'cafe24'), mk = (m.mall_key || '').toLowerCase();
+            if (ch === 'cafe24') connectedSet.add('cafe24');
+            else if (['kidikidi', 'musinsa', '29cm', 'smartstore'].includes(mk)) connectedSet.add(mk);
+            else if (ch === 'eland') connectedSet.add('kidikidi');
+            else if (ch === 'naver') connectedSet.add('smartstore');
+        });
+        // 전체 기간 채널 누적(연동됐지만 이번 달 0인 채널의 총 매출 표시용)
+        const chanTotal = {};
+        orders.forEach(o => { const c = platformKey(o); chanTotal[c] = (chanTotal[c] || 0) + (Number(o.pay_amount) || 0); });
         const chanCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
             <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-broadcast" style="color:var(--primary)"></i> ${cmo}월 채널별 매출</div>
             <div style="display:flex;flex-direction:column;gap:0.75rem">
-            ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const cnt = chanCnt[ch.key] || 0; const on = amt > 0 || cnt > 0; return `<div style="display:flex;align-items:center;gap:10px">
-                <span style="width:9px;height:9px;border-radius:3px;background:${on ? ch.color : 'rgba(148,163,184,0.4)'};flex-shrink:0"></span>
-                <span style="font-size:0.84rem;font-weight:${on ? '600' : '400'};color:${on ? 'var(--text-main)' : 'var(--text-muted)'};flex:1">${ch.label}${on ? ` <span style="font-size:0.68rem;color:var(--text-muted);font-weight:500">${cnt}건</span>` : ' <span style="font-size:0.66rem;background:rgba(148,163,184,0.15);padding:1px 6px;border-radius:6px">연동 예정</span>'}</span>
-                <span style="font-size:0.84rem;font-weight:${on ? '800' : '400'};font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(amt) + '원' : '—'}</span>
+            ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const cnt = chanCnt[ch.key] || 0; const on = amt > 0 || cnt > 0; const conn = connectedSet.has(ch.key); const active = on || conn; return `<div style="display:flex;align-items:center;gap:10px">
+                <span style="width:9px;height:9px;border-radius:3px;background:${active ? ch.color : 'rgba(148,163,184,0.4)'};flex-shrink:0"></span>
+                <span style="font-size:0.84rem;font-weight:${active ? '600' : '400'};color:${active ? 'var(--text-main)' : 'var(--text-muted)'};flex:1">${ch.label}${on ? ` <span style="font-size:0.68rem;color:var(--text-muted);font-weight:500">${cnt}건</span>` : (conn ? ' <span style="font-size:0.66rem;background:rgba(34,197,94,0.15);color:#22c55e;padding:1px 6px;border-radius:6px">연동됨</span>' : ' <span style="font-size:0.66rem;background:rgba(148,163,184,0.15);padding:1px 6px;border-radius:6px">연동 예정</span>')}</span>
+                <span style="font-size:0.84rem;font-weight:${on ? '800' : '400'};font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(amt) + '원' : (conn && chanTotal[ch.key] ? `<span style="font-size:0.7rem;color:var(--text-muted);font-weight:500">누적 ${won(chanTotal[ch.key])}</span>` : '—')}</span>
             </div>`; }).join('')}
             </div>
             <p style="margin:0.9rem 0 0;font-size:0.72rem;color:var(--text-muted)">키디키디·무신사·29CM·스마트스토어는 봇 연동 시 여기 자동 집계돼요</p>
