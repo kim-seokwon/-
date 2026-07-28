@@ -1885,7 +1885,7 @@ class BhasApp {
         const stReturn = allO.filter(o => this._isCancelled(o)).length;
 
         // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
-        const recentCompact = (recentOrders || []).slice(0, 12).map(o => {
+        const recentCompact = (this.orders || []).slice(0, 40).map(o => {
             const ch = channelOf(o), br = brandOf(o) || '-', bcol = brandColor[br] || CHCOL[ch] || '#6366f1', ccol = CHCOL[ch] || '#6366f1';
             return `<div style="padding:7px 0 7px 10px;border-top:1px solid var(--card-border);border-left:3px solid ${bcol};margin-left:1px">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px">
