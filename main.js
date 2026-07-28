@@ -1860,7 +1860,7 @@ class BhasApp {
             .map(([c, n]) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.83rem;margin-right:16px"><span style="width:8px;height:8px;border-radius:2px;background:${CHCOL[c] || '#6366f1'}"></span>${c} <b style="font-variant-numeric:tabular-nums">${n}건</b></span>`).join('');
 
         // ── 오늘 주문 유입 ──
-        const todayStr = today.toISOString().slice(0, 10);
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         const todayOrders = orders.filter(o => (o.order_date || '').slice(0, 10) === todayStr && notCancelled(o));
         const todayByChan = {};
         todayOrders.forEach(o => { const c = channelOf(o); todayByChan[c] = (todayByChan[c] || 0) + 1; });
