@@ -1973,7 +1973,7 @@ class BhasApp {
         const chanMaxT = Math.max(1, ...CHAN_FIXED.map(chanTot));
         const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div style="margin-bottom:0.55rem">
             <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${c}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(total) + '원' : '—'}</span></div>
-            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${on ? Math.max(3, total / chanMaxT * 70) : 0}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
+            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${on ? Math.max(3, total / chanMaxT * 100) : 0}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
         </div>`; }).join('');
         // 브랜드 색상 범례(채널 스택바 해설)
         const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
@@ -2003,14 +2003,19 @@ class BhasApp {
                 ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981')}
             </div>
-            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
+            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
-                    ${panel('채널·브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>', `${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div>`)}
+                    ${panel('채널·브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>', `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
+                        <div style="flex:1;min-width:240px">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>
+                        <div style="width:200px;flex-shrink:0"><div style="display:flex;justify-content:center;margin-bottom:0.5rem">${donut(brandArr, palette)}</div>${brandTotals}</div>
+                    </div>`)}
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.9rem">${statBlocks}</div>
                 </div>
-                <div style="min-width:0;display:flex;flex-direction:column;gap:0.9rem">
-                    ${brandPanel}
-                    ${panel('최근 주문', `<div style="max-height:300px;overflow-y:auto">${recentCompact}</div>`, `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}
+                <div style="min-width:0;min-height:0">
+                    <div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;display:flex;flex-direction:column;height:100%">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border);flex-shrink:0"><span style="font-size:0.94rem;font-weight:800">최근 주문</span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
+                        <div style="flex:1;min-height:0;overflow-y:auto;padding-right:2px">${recentCompact}</div>
+                    </div>
                 </div>
             </div>
 
