@@ -2904,6 +2904,44 @@ class BhasApp {
             </div>`).join('')}</div>` : '<div style="color:var(--text-muted);font-size:0.83rem;padding:0.5rem 0">상품 데이터 없음</div>'}
         </div>`;
 
+        // 채널별 매출 (이번 달) — 멀티채널 프레임 (현재 카페24만 연동)
+        const CHANNELS = [
+            { key: 'cafe24', label: '카페24 자사몰', color: '#3b82f6' },
+            { key: 'musinsa', label: '무신사', color: '#111827' },
+            { key: '29cm', label: '29CM', color: '#6b7280' },
+            { key: 'kidikidi', label: '키디키디', color: '#f59e0b' },
+            { key: 'smartstore', label: '스마트스토어', color: '#10b981' },
+        ];
+        const chanSum = {};
+        orders.forEach(o => { if (!inCur(o.order_date)) return; const c = o.channel || 'cafe24'; chanSum[c] = (chanSum[c] || 0) + (Number(o.pay_amount) || 0); });
+        const chanCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-broadcast" style="color:var(--primary)"></i> ${cmo}월 채널별 매출</div>
+            <div style="display:flex;flex-direction:column;gap:0.75rem">
+            ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const on = amt > 0; return `<div style="display:flex;align-items:center;gap:10px">
+                <span style="width:9px;height:9px;border-radius:3px;background:${on ? ch.color : 'rgba(148,163,184,0.4)'};flex-shrink:0"></span>
+                <span style="font-size:0.84rem;font-weight:${on ? '600' : '400'};color:${on ? 'var(--text-main)' : 'var(--text-muted)'};flex:1">${ch.label}${on ? '' : ' <span style="font-size:0.66rem;background:rgba(148,163,184,0.15);padding:1px 6px;border-radius:6px">연동 예정</span>'}</span>
+                <span style="font-size:0.84rem;font-weight:${on ? '800' : '400'};font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(amt) + '원' : '—'}</span>
+            </div>`; }).join('')}
+            </div>
+            <p style="margin:0.9rem 0 0;font-size:0.72rem;color:var(--text-muted)">무신사·29CM·키디키디는 연동 시 여기 자동 집계돼요</p>
+        </div>`;
+
+        // 주문 처리 현황 (전체 누적)
+        const STATUS = [{ k: 'new', l: '신규', c: '#6366f1' }, { k: 'ready', l: '배송준비', c: '#f59e0b' }, { k: 'shipping', l: '배송중', c: '#06b6d4' }, { k: 'done', l: '완료', c: '#10b981' }, { k: 'hold', l: '보류', c: '#ef4444' }];
+        const statCnt = {};
+        orders.forEach(o => { const s = o.status || 'new'; statCnt[s] = (statCnt[s] || 0) + 1; });
+        const statMax = Math.max(1, ...STATUS.map(s => statCnt[s.k] || 0));
+        const statCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-package" style="color:var(--primary)"></i> 주문 처리 현황 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(누적)</span></div>
+            <div style="display:flex;flex-direction:column;gap:0.8rem">
+            ${STATUS.map(s => { const n = statCnt[s.k] || 0; return `<div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:0.83rem;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.c};margin-right:7px"></span>${s.l}</span><span style="font-size:0.83rem;font-weight:800;font-variant-numeric:tabular-nums">${n.toLocaleString()}건</span></div>
+                <div style="height:6px;border-radius:4px;background:rgba(148,163,184,0.12);overflow:hidden"><div style="height:100%;width:${Math.max(2, n / statMax * 100)}%;background:${s.c};border-radius:4px"></div></div>
+            </div>`; }).join('')}
+            </div>
+        </div>`;
+        const channelStatus = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem;margin-top:1.3rem">${chanCard}${statCard}</div>`;
+
         // 브랜드 × 월 매트릭스 (참고용, 2개월 이상일 때만)
         const matrix = months.length > 1 ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;overflow-x:auto;margin-top:1.3rem">
             <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-table" style="color:var(--primary)"></i> 브랜드 × 월 매출</div>
@@ -2922,6 +2960,7 @@ class BhasApp {
             ${cards}
             ${chart}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem">${brandBars}${topCard}</div>
+            ${channelStatus}
             ${matrix}
             <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 리테일 = 몰 주문 결제금액 · 브하스(컨설팅) = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·환불은 채널 상태 연동 후 반영</p>
         </div>`;
