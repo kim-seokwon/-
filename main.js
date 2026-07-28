@@ -1865,6 +1865,7 @@ class BhasApp {
         const monthRev = revOrders.filter(o => localYMD(o.order_date).startsWith(monthKey));
         const groupSum = keyFn => { const m = {}; monthRev.forEach(o => { const k = keyFn(o) || '기타'; m[k] = (m[k] || 0) + Number(o.pay_amount || 0); }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
         const brandArr = groupSum(o => brandOf(o) || o.channel);
+        const brandColor = {}; brandArr.forEach(([b], i) => brandColor[b] = palette[i % palette.length]);
         // 채널별은 항상 5개 고정 표시(0원도) — 카페24·키디키디·29CM·스마트스토어·기타
         const CHAN_FIXED = ['카페24', '키디키디', '29CM', '스마트스토어', '기타'];
         const chanFixed = Object.fromEntries(CHAN_FIXED.map(c => [c, 0]));
@@ -1884,17 +1885,17 @@ class BhasApp {
         const stReturn = allO.filter(o => this._isCancelled(o)).length;
 
         // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
-        const recentCompact = (recentOrders || []).slice(0, 8).map(o => {
-            const ch = channelOf(o), br = brandOf(o) || '-', col = CHCOL[ch] || '#6366f1';
-            return `<div style="padding:8px 0;border-top:1px solid var(--card-border)">
+        const recentCompact = (recentOrders || []).slice(0, 12).map(o => {
+            const ch = channelOf(o), br = brandOf(o) || '-', bcol = brandColor[br] || CHCOL[ch] || '#6366f1', ccol = CHCOL[ch] || '#6366f1';
+            return `<div style="padding:7px 0 7px 10px;border-top:1px solid var(--card-border);border-left:3px solid ${bcol};margin-left:1px">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px">
-                    <span style="display:inline-flex;align-items:center;gap:5px;font-size:0.77rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="width:7px;height:7px;border-radius:2px;background:${col};flex-shrink:0"></span>${this._vesc(br)}</span>
-                    ${chip(ch, col)}
+                    <span style="font-size:0.77rem;font-weight:700;color:${bcol};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(br)}</span>
+                    ${chip(ch, ccol)}
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:0.78rem">
                     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)">${this._vesc(this._orderItemsSummary(o))}</span>
                     <span style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${won(o.pay_amount || 0)}원</span>
-                    <span style="color:var(--text-muted);white-space:nowrap;max-width:64px;overflow:hidden;text-overflow:ellipsis">${this._vesc(o.receiver_name || o.buyer_name || '-')}</span>
+                    <span style="color:var(--text-muted);white-space:nowrap;max-width:60px;overflow:hidden;text-overflow:ellipsis">${this._vesc(o.receiver_name || o.buyer_name || '-')}</span>
                 </div>
             </div>`;
         }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem;padding:10px 0">주문 없음</div>';
@@ -1937,7 +1938,7 @@ class BhasApp {
             <h2 style="margin:0;font-size:1.1rem;display:flex;align-items:center;gap:8px"><i class="ph ${icon}" style="color:var(--primary)"></i>${title}</h2>
             ${sub ? `<span style="font-size:0.78rem;color:var(--text-muted)">${sub}</span>` : ''}</div>`;
         const panel = (title, bodyHTML, right) => `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.7rem"><span style="font-size:0.86rem;font-weight:700">${title}</span>${right || ''}</div>${bodyHTML}</div>`;
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.85rem;border-bottom:2px solid var(--card-border)"><span style="font-size:0.94rem;font-weight:800;color:var(--text-main)">${title}</span>${right || ''}</div>${bodyHTML}</div>`;
 
         // ── BI 스타일: 스파크라인 · KPI카드 · 도넛 · 일별차트 ──
         const daysBackSeries = fn => { const a = []; for (let i = 13; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); a.push(fn(localYMD(d))); } return a; };
@@ -1956,7 +1957,7 @@ class BhasApp {
         const mdMax = Math.max(1, ...monthDaily);
         const spark = (vals, color) => { const w = 130, h = 36; if (!vals.some(v => v > 0)) return `<svg width="${w}" height="${h}" style="width:100%;max-width:${w}px"></svg>`; const max = Math.max(...vals, 1), n = vals.length; const X = i => (n <= 1 ? w : i / (n - 1) * w); const Y = v => h - 4 - (v / max) * (h - 9); const line = vals.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(''); const gid = 'sg' + color.replace('#', ''); return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;width:100%;max-width:${w}px"><defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${line}L${w},${h}L0,${h}Z" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`; };
         const deltaBadge = (pct, ref) => pct == null ? `<span style="font-size:0.68rem;color:var(--text-muted)">${ref} 기준 없음</span>` : `<span style="font-size:0.68rem;font-weight:700;color:${pct >= 0 ? '#16a34a' : '#dc2626'};background:${pct >= 0 ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.12)'};padding:2px 7px;border-radius:6px;white-space:nowrap">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% ${ref}</span>`;
-        const kpiCard = (label, big, unit, badge, color) => `<div class="glass" style="padding:1rem 1.15rem;border-radius:16px;border-top:3px solid ${color}">
+        const kpiCard = (label, big, unit, badge, color) => `<div class="glass" style="padding:1rem 1.15rem;border-radius:16px">
             <div style="font-size:0.76rem;color:var(--text-muted);font-weight:600">${label}</div>
             <div style="font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.15;margin-top:4px;white-space:nowrap">${big}<span style="font-size:0.72rem;font-weight:600">${unit}</span></div>
             <div style="margin-top:6px">${badge}</div>
@@ -1964,6 +1965,28 @@ class BhasApp {
         const donut = (entries, colors) => { const size = 116, r = size / 2 - 9, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r; const total = entries.reduce((s, e) => s + e[1], 0) || 1; let off = 0; const segs = entries.map(([l, v], i) => { const frac = v / total; const s = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colors[i % colors.length]}" stroke-width="15" stroke-dasharray="${Math.max(0, frac * circ - 1.5).toFixed(1)} ${circ.toFixed(1)}" stroke-dashoffset="${(-off * circ).toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"/>`; off += frac; return s; }).join(''); return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0">${segs}</svg>`; };
         const brandLegend = brandArr.length ? brandArr.map(([l, v], i) => `<div style="display:flex;align-items:center;gap:7px;font-size:0.8rem;padding:3px 0"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(l)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.8rem">이번달 매출 없음</span>';
         const barChart = `<div style="display:flex;align-items:flex-end;gap:2px;height:110px">${monthDaily.map((v, i) => { const h = v / mdMax * 100; const isT = (i + 1) === today.getDate(); return `<div style="flex:1;min-width:2px;background:${isT ? '#6366f1' : 'rgba(99,102,241,0.32)'};height:${Math.max(2, h)}%;border-radius:2px 2px 0 0"></div>`; }).join('')}</div><div style="display:flex;justify-content:space-between;font-size:0.66rem;color:var(--text-muted);margin-top:5px"><span>1일</span><span>오늘 ${mm}/${today.getDate()}</span><span>${daysIn}일</span></div>`;
+
+        // 채널별 스택바(브랜드 색상 비율)
+        const chanBrand = {}; CHAN_FIXED.forEach(c => chanBrand[c] = {});
+        monthRev.forEach(o => { let c = channelOf(o); if (!CHAN_FIXED.includes(c)) c = '기타'; const b = brandOf(o) || '기타'; chanBrand[c][b] = (chanBrand[c][b] || 0) + Number(o.pay_amount || 0); });
+        const chanTot = c => Object.values(chanBrand[c]).reduce((s, v) => s + v, 0);
+        const chanMaxT = Math.max(1, ...CHAN_FIXED.map(chanTot));
+        const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div style="margin-bottom:0.55rem">
+            <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${c}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(total) + '원' : '—'}</span></div>
+            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${on ? Math.max(3, total / chanMaxT * 100) : 0}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
+        </div>`; }).join('');
+        // 브랜드 색상 범례(채널 스택바 해설)
+        const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
+        // 주문상태 3개 개별 블록
+        const statBlocks = [['주문', stOrder, '#6366f1'], ['배송중', stShip, '#06b6d4'], ['교환·환불', stReturn, '#a855f7']].map(([l, n, c]) => `<div class="glass" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px">
+            <span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span>
+            <div><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${l}</div></div>
+        </div>`).join('');
+        // 최근주문 스크롤 패널(높이는 좌측 컬럼에 맞춤 → min-height:0 트릭)
+        const recentPanel = `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;display:flex;flex-direction:column;height:100%">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border);flex-shrink:0"><span style="font-size:0.94rem;font-weight:800">최근 주문</span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
+            <div style="flex:1;min-height:0;overflow-y:auto;padding-right:2px">${recentCompact}</div>
+        </div>`;
 
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
@@ -1980,18 +2003,15 @@ class BhasApp {
                 ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981')}
             </div>
-            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
+            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem">
                         ${panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">${donut(brandArr, palette)}<div style="flex:1;min-width:120px">${brandLegend}</div></div>`)}
-                        ${panel('채널별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', barBlock(chanArr, chanMax, (i, l) => CHCOL[l] || palette[i % palette.length]))}
+                        ${panel('채널별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `${chanStacked}<div style="margin-top:0.7rem;padding-top:0.6rem;border-top:1px solid var(--card-border)">${brandChips}</div>`)}
                     </div>
-                    ${panel('주문 상태', `<div style="display:flex;gap:1.4rem;flex-wrap:wrap">${[['주문', stOrder, '#6366f1'], ['배송중', stShip, '#06b6d4'], ['교환·환불', stReturn, '#a855f7']].map(([l, n, c]) => `<div style="flex:1;min-width:62px"><div style="font-size:1.35rem;font-weight:800;font-variant-numeric:tabular-nums;color:${c};line-height:1">${n.toLocaleString()}<span style="font-size:0.7rem;font-weight:600;color:var(--text-main)">건</span></div><div style="font-size:0.74rem;color:var(--text-muted);margin-top:3px">${l}</div></div>`).join('')}</div>`)}
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.9rem">${statBlocks}</div>
                 </div>
-                <div style="min-width:0">
-                    ${panel('최근 주문', recentCompact,
-                        `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span>`)}
-                </div>
+                <div style="min-width:0;min-height:0">${recentPanel}</div>
             </div>
 
             <!-- ═══ 블록 2: 생산 업무 ═══ -->
