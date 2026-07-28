@@ -104,21 +104,48 @@ function extractList(body) {
   return [];
 }
 
-// 3) 응답 → channel_orders 매핑 (TODO: 실제 JSON 필드명에 맞춰 조정)
+// 3) 응답 → channel_orders 매핑 — 실 응답 필드명 확정(2026-07, 실주문 50건 실측)
+//    성공 응답: { resultCode:"200", resultMessage:"success", data:{ list:[ {ordNo, ordPsnName, ...} ] } }
+//    주의: 목록 API엔 수령인/주소/연락처가 없음(상세조회 필요) → 우선 null. raw에 전체 보존.
+function parseTs(v) {
+  if (!v) return null;
+  const s = String(v);
+  // 'YYYY-MM-DD HH:mm:ss' → ISO. 'YYYYMMDDHHmmss' → 분해. 그 외 null.
+  if (/^\d{4}-\d\d-\d\d/.test(s)) return s.replace(' ', 'T');
+  const m = s.match(/^(\d{4})(\d\d)(\d\d)(\d\d)?(\d\d)?(\d\d)?$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}T${m[4] || '00'}:${m[5] || '00'}:${m[6] || '00'}`;
+  return null;
+}
 function mapOrder(o) {
   return {
     channel: 'eland',
     mall_key: MALL_KEY,
-    order_id: String(o.orderNo ?? o.orderCode ?? o.ordNo),
-    order_date: o.orderDate ?? o.ordDt ?? o.paymentDate ?? null,
-    buyer_name: o.ordererName ?? o.ordPsnName ?? null,
-    receiver_name: o.receiverName ?? o.rcvrName ?? null,
-    receiver_phone: o.receiverPhone ?? o.rcvrCellphone ?? null,
-    receiver_address: o.receiverAddress ?? o.rcvrAddr ?? null,
-    pay_amount: Number(o.payAmount ?? o.salePrice ?? o.ordAmt ?? 0),
-    status: 'new',
+    order_id: String(o.ordNo),
+    order_date: parseTs(o.ordTs),
+    buyer_name: o.ordPsnName ?? null,
+    receiver_name: null,      // 목록엔 마스킹/부재 → 배송관리 상세 API에서 채움(TODO)
+    receiver_phone: null,
+    receiver_address: null,
+    pay_amount: Number(o.sellAmount ?? o.sellPrice ?? 0),
+    channel_status: o.ordChangeScode != null ? String(o.ordChangeScode) : null,
+    status: 'new',            // 조회 orderCodes 1010~1060 = 배송준비 이하 → new
     raw: o,
   };
+}
+
+// 0) kidikidi 몰 레지스트리 보장 — mall_key는 malls FK라 먼저 존재해야 upsert 됨.
+//    하이헤이호 브랜드에 매핑(키디키디=하이헤이호 판매채널).
+async function ensureMall() {
+  const { data: existing } = await db.from('malls').select('mall_key').eq('mall_key', MALL_KEY).maybeSingle();
+  if (existing) return;
+  const { data: brand } = await db.from('brands').select('id')
+    .or('name.ilike.%하이헤이호%,name.ilike.%hiheyho%,name.ilike.%hiheiho%').maybeSingle();
+  const { error } = await db.from('malls').upsert({
+    mall_key: MALL_KEY, label: '키디키디(하이헤이호)', channel: 'eland',
+    brand_id: brand?.id ?? null, active: true, connected: true,
+  }, { onConflict: 'mall_key' });
+  if (error) console.warn('[kidikidi] malls 등록 경고:', error.message);
+  else console.log(`[kidikidi] malls 등록: kidikidi → brand ${brand?.id ?? '(미매핑)'}`);
 }
 
 async function run() {
@@ -126,18 +153,16 @@ async function run() {
   const from = new Date(Date.now() - 30 * 864e5); // 최근 30일
   const browser = await chromium.launch({ headless: true });
   try {
+    await ensureMall();
     const { page } = await login(browser);
     const data = await fetchOrders(page, ymd(from), ymd(to));
     const list = extractList(data);
     console.log(`[kidikidi] 주문 ${list.length}건 수집`);
-    if (!list.length) {
-      // 성공 envelope 구조 확인용 로그(첫 실주문 시 mapOrder 필드 확정에 사용)
-      console.log('[kidikidi] envelope keys:', JSON.stringify(Object.keys(data || {})));
-    }
     if (list.length) {
       const rows = list.map(mapOrder);
+      // 유니크 제약은 (mall_key, order_id) — 005 마이그레이션에서 (channel,order_id) 대체됨
       const { error } = await db.from('channel_orders')
-        .upsert(rows, { onConflict: 'channel,order_id', ignoreDuplicates: false });
+        .upsert(rows, { onConflict: 'mall_key,order_id', ignoreDuplicates: false });
       if (error) throw error;
       console.log(`[kidikidi] Supabase 저장 완료 ${rows.length}건`);
     }
