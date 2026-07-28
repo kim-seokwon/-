@@ -2005,10 +2005,7 @@ class BhasApp {
             </div>
             <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem">
-                        ${panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">${donut(brandArr, palette)}<div style="flex:1;min-width:120px">${brandLegend}</div></div>`)}
-                        ${panel('채널별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `${chanStacked}<div style="margin-top:0.7rem;padding-top:0.6rem;border-top:1px solid var(--card-border)">${brandChips}</div>`)}
-                    </div>
+                    ${panel('채널·브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>', `${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div>`)}
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.9rem">${statBlocks}</div>
                 </div>
                 <div style="min-width:0;min-height:0">${recentPanel}</div>
