@@ -1886,63 +1886,53 @@ class BhasApp {
             </div>
         </div>`;
 
-        // 매출 = 한 줄
-        const salesLine = `<div class="glass" style="padding:0.9rem 1.3rem;border-radius:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;cursor:pointer" onclick="app.switchView('sales')">
-            <span style="font-size:0.8rem;color:var(--text-muted)"><i class="ph ph-chart-line-up" style="color:#22c55e"></i> 이번달 매출</span>
-            <span style="font-size:1.35rem;font-weight:800;font-variant-numeric:tabular-nums">${won(sa.thisM)}<span style="font-size:0.85rem;font-weight:600">원</span></span>
-            ${sa.mom != null ? `<span style="font-size:0.78rem;font-weight:600;color:${sa.mom >= 0 ? '#10b981' : '#ef4444'}">전월 대비 ${sa.mom >= 0 ? '+' : ''}${sa.mom}%</span>` : ''}
-            ${monthTotal ? `<span style="font-size:0.78rem;color:var(--text-muted)">· 이번달 견적 ${won(monthTotal)}원</span>` : ''}
-            <span style="margin-left:auto;font-size:0.78rem;color:var(--primary);font-weight:600">매출 상세 →</span>
+        const cancelledCnt = orders.filter(o => this._isCancelled(o)).length;
+        // 한 화면 타일 그리드 — 스크롤 없이 한눈에
+        const tile = ({ accent, label, big, unit, sub, onclick, icon }) => `<div class="glass" style="padding:1.05rem 1.15rem;border-radius:16px;${accent ? `border-top:3px solid ${accent};` : ''}${onclick ? 'cursor:pointer;' : ''}"${onclick ? ` onclick="${onclick}"` : ''}>
+            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600">${icon ? `<i class="ph ${icon}"></i> ` : ''}${label}</div>
+            <div style="font-size:1.8rem;font-weight:800;line-height:1.2;font-variant-numeric:tabular-nums;margin-top:3px">${big}${unit ? `<span style="font-size:0.85rem;font-weight:600">${unit}</span>` : ''}</div>
+            <div style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;min-height:1.1em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub || ''}</div>
         </div>`;
+        const panel = (title, bodyHTML, onclick) => `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;${onclick ? 'cursor:pointer;' : ''}"${onclick ? ` onclick="${onclick}"` : ''}>
+            <div style="font-size:0.85rem;font-weight:700;margin-bottom:0.7rem;color:var(--text-main)">${title}</div>${bodyHTML}</div>`;
 
-        // 🔴 출고 카드 (제일 크게)
-        const shipCard = `<div class="glass" style="padding:1.4rem 1.5rem;border-radius:18px;border:1.5px solid ${shipQueue.length ? 'rgba(239,68,68,0.35)' : 'var(--card-border)'};background:${shipQueue.length ? 'linear-gradient(135deg,rgba(239,68,68,0.06),transparent)' : 'transparent'}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
-                <div>
-                    <div style="font-size:0.8rem;color:${shipQueue.length ? '#ef4444' : 'var(--text-muted)'};font-weight:700"><i class="ph ph-truck"></i> 출고 대기</div>
-                    <div style="font-size:2.4rem;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums">${shipQueue.length.toLocaleString()}<span style="font-size:1rem;font-weight:600">건</span></div>
-                    <div style="font-size:0.82rem;color:var(--text-muted);margin-top:2px">송장 미입력 <b style="color:${noInvoiceCnt ? '#ef4444' : 'inherit'}">${noInvoiceCnt.toLocaleString()}건</b></div>
-                </div>
-                <button onclick="app.switchView('orders')" style="padding:9px 16px;border-radius:10px;background:${shipQueue.length ? '#ef4444' : 'var(--primary)'};color:#fff;border:none;font-weight:700;font-size:0.85rem;cursor:pointer">출고 처리 →</button>
-            </div>
-            ${shipChanRow ? `<div style="margin-top:1rem;padding-top:0.9rem;border-top:1px solid var(--card-border)">${shipChanRow}</div>` : ''}
-            <div style="margin-top:0.9rem;padding:0.7rem 0.9rem;border-radius:10px;background:rgba(245,158,11,0.1);font-size:0.79rem;color:#f59e0b;line-height:1.5"><i class="ph ph-seal-check"></i> <b>출고 전 QC 검수 통과 확인</b> — 자수·검수 미확인 상태로 나가면 반품·재작업(월 수백만원). 검수 기록은 주문 상세에서.</div>
-        </div>`;
+        const compactOrders = (recentOrders || []).slice(0, 6).map(o => {
+            const ch = channelOf(o), br = brandOf(o), col = CHCOL[ch] || '#6366f1';
+            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.8rem">
+                <span style="width:7px;height:7px;border-radius:2px;background:${col};flex-shrink:0"></span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(o.receiver_name || o.buyer_name || '-')}${br ? ` · <span style="color:var(--text-muted)">${this._vesc(br)}</span>` : ''}</span>
+                <span style="color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0">${won(o.pay_amount || 0)}</span>
+            </div>`;
+        }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">주문 없음</div>';
 
         return `
-        <div class="fade-in" style="padding:1.5rem;max-width:1200px;margin:0 auto">
-            <div style="margin-bottom:1rem">
-                <h1 style="margin:0;font-size:1.5rem">👋 ${this._vesc(name)}님, 오늘 할 일</h1>
-                <p style="margin:5px 0 0;color:var(--text-muted);font-size:0.88rem">2179 운영 현황 · ${todayStr}</p>
+        <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
+                <h1 style="margin:0;font-size:1.35rem">👋 ${this._vesc(name)}님, 오늘 할 일</h1>
+                <span style="font-size:0.82rem;color:var(--text-muted)">2179 운영 현황 · ${todayStr}</span>
             </div>
-            ${salesLine}
 
-            ${sectionHead('ph-truck', '출고 · 검수', '오늘 내보낼 주문 + 품질 게이트')}
-            ${shipCard}
-
-            ${sectionHead('ph-shopping-bag-open', '오늘 주문 유입', todayStr)}
-            <div class="glass" style="padding:1.1rem 1.3rem;border-radius:16px;margin-bottom:0.8rem;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-                <span style="font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums">${todayOrders.length}<span style="font-size:0.85rem;font-weight:600">건</span></span>
-                <span style="font-size:0.85rem">${todayChanRow}</span>
+            <!-- 히어로 타일 4 -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:0.9rem;margin-bottom:0.9rem">
+                ${tile({ accent: shipQueue.length ? '#ef4444' : '#94a3b8', icon: 'ph-truck', label: '출고 대기', big: shipQueue.length.toLocaleString(), unit: '건', sub: `송장 미입력 ${noInvoiceCnt}건`, onclick: "app.switchView('orders')" })}
+                ${tile({ accent: '#3b82f6', icon: 'ph-shopping-bag-open', label: `오늘 주문 (${todayStr.slice(5)})`, big: todayOrders.length.toLocaleString(), unit: '건', sub: Object.keys(todayByChan).length ? Object.entries(todayByChan).map(([c, n]) => `${c} ${n}`).join(' · ') : '오늘 유입 없음', onclick: "app.switchView('orders')" })}
+                ${tile({ accent: delayedJobs ? '#f59e0b' : '#94a3b8', icon: 'ph-factory', label: '생산 리스크', big: (delayedJobs + soonJobs).toLocaleString(), unit: '건', sub: activeJobs.length ? `지연 ${delayedJobs} · 임박 ${soonJobs}` : '생산 미등록', onclick: "app.switchView('vendors')" })}
+                ${tile({ accent: '#22c55e', icon: 'ph-chart-line-up', label: '이번달 매출', big: won(sa.thisM), unit: '원', sub: sa.mom != null ? `전월 대비 ${sa.mom >= 0 ? '+' : ''}${sa.mom}%` : '집계 시작', onclick: "app.switchView('sales')" })}
             </div>
-            ${listCard('최근 주문', 'ph-clock-counter-clockwise', orderRows, '주문 없음')}
 
-            ${sectionHead('ph-factory', '생산 · 품질', '공장 작업 마감 리스크')}
-            ${stateCard('ph-factory', '생산 진행',
-                miniMetric([[activeJobs.length, '진행', '#6366f1'], [delayedJobs, '지연', '#ef4444'], [soonJobs, '임박 3일', '#f59e0b']]),
-                activeJobs.length ? '마감 임박·지연 물품을 먼저 챙기세요' : '생산 물품을 등록하면 공장 마감 지연·임박이 여기 떠요',
-                'vendors', '생산현황', delayedJobs > 0)}
+            ${shipQueue.length ? `<div class="glass" style="padding:0.7rem 1rem;border-radius:12px;background:rgba(245,158,11,0.1);font-size:0.79rem;color:#f59e0b;margin-bottom:0.9rem;line-height:1.45"><i class="ph ph-seal-check"></i> <b>출고 전 QC 검수 통과 확인</b> — 자수·검수 미확인 출고 = 반품·재작업(월 수백만원). 검수 기록은 주문 상세에서.</div>` : ''}
 
-            ${sectionHead('ph-cube', '재고 · 정산', '품절 임박 · 미수금')}
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem">
-                ${stateCard('ph-cube', '재고 부족',
-                    miniMetric([[lowStock, '안전재고 이하', '#ef4444'], [invItems.length, '등록 품목', '#6366f1']]),
-                    invItems.length ? (lowStock ? '품절 임박 품목을 보충하세요' : '재고 안정') : '재고를 등록하면 품절 임박 SKU가 여기 떠요',
-                    'inventory', '재고', lowStock > 0)}
-                ${stateCard('ph-receipt', '미수금 (컨설팅)',
-                    miniMetric([[unpaidList.length, '미발행/미수', '#f59e0b'], [Math.round(unpaidAmt / 10000), '만원', '#8b5cf6']]),
-                    unpaidList.length ? '세금계산서 발행·수금 확인' : '견적·세금계산서를 넣으면 미수금이 여기 떠요',
-                    'quotes', '견적', unpaidList.length > 0)}
+            <!-- 콘텐츠 2열 -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:0.9rem;margin-bottom:0.9rem">
+                ${panel('채널별 출고 대기', shipChanRow ? `<div style="line-height:2">${shipChanRow}</div>` : '<div style="color:var(--text-muted);font-size:0.82rem">출고 대기 없음</div>')}
+                ${panel('최근 주문', compactOrders, "app.switchView('orders')")}
+            </div>
+
+            <!-- 하단 정산 3열 -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem">
+                ${tile({ accent: lowStock ? '#ef4444' : '#94a3b8', icon: 'ph-cube', label: '재고 부족', big: lowStock.toLocaleString(), unit: '개', sub: invItems.length ? `등록 품목 ${invItems.length}` : '재고 미등록', onclick: "app.switchView('inventory')" })}
+                ${tile({ accent: unpaidList.length ? '#f59e0b' : '#94a3b8', icon: 'ph-receipt', label: '미수금(컨설팅)', big: unpaidAmt ? won(unpaidAmt) : '0', unit: '원', sub: unpaidList.length ? `미발행/미수 ${unpaidList.length}건` : '견적 없음', onclick: "app.switchView('quotes')" })}
+                ${tile({ accent: '#a855f7', icon: 'ph-arrow-u-up-left', label: '취소·반품', big: cancelledCnt.toLocaleString(), unit: '건', sub: '매출 제외분', onclick: "app.switchView('sales')" })}
             </div>
         </div>`;
     }
