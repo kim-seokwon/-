@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "무신사·29CM 통합 파트너 주문 수집 봇 — SSO 로그인(이메일 OTP는 Gmail 자동읽기) → 주문 API → Supabase",
+  "description": "29CM·무신사 통합 파트너 주문 수집 봇 — SSO 로그인(TOTP 자체생성) → 주문 API 응답 가로채기 → Supabase",
   "scripts": {
     "sync": "node sync.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "googleapis": "^140.0.0",
+    "otplib": "^12.0.1",
     "playwright": "^1.47.0"
   }
 }

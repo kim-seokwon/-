@@ -23,11 +23,12 @@
 | `NAVER_CLIENT_ID` | 커머스API센터(apicenter.commerce.naver.com) → 앱 등록 후 발급 |
 | `NAVER_CLIENT_SECRET` | 위 앱의 시크릿 |
 
-## 무신사·29CM — `musinsa-29cm-sync.yml`  ※ 주문 API 캡처 세션 후 활성화
+## 29CM·무신사 — `musinsa-29cm-sync.yml`  (주문 API·TOTP 확인됨, 로그인 폼 셀렉터만 최종확정 대기)
 | Secret | 값 |
 |---|---|
-| `MUSINSA_ID` / `MUSINSA_PW` | 통합 파트너 로그인 |
-| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | OTP 메일 읽기용 (읽기전용 scope) |
+| `MUSINSA_ID` / `MUSINSA_PW` | 통합 파트너 로그인 (partner-sso.one.musinsa.com) |
+| `MUSINSA_TOTP_SECRET` | 2FA=**TOTP(구글 OTP)**. 최초 등록 QR의 설정키(base32). 봇이 otplib로 6자리 자체생성. |
+> 주문 API 확인됨: `commerce-admin-api.29cm.co.kr/partner-admin/v4/orders`. 인증은 메모리 Bearer라 봇이 Playwright로 응답 가로채기. 29CM 주문량 적음(월 ~15건).
 
 ---
 ## 활성화 후
