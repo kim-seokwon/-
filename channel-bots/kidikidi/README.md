@@ -16,11 +16,13 @@
 | `SUPABASE_URL` | `https://czaykmmwzlcisozmbxpl.supabase.co` |
 | `SUPABASE_SERVICE_KEY` | Supabase service_role 키 (서버용) |
 
-## 마무리에 필요한 것 (TODO)
-- [ ] 로그인 페이지 실제 셀렉터 확정 (`sync.mjs`의 `login()` TODO)
-- [ ] 주문 API 응답 JSON 실제 필드명 확인 → `mapOrder()` 조정
-- [ ] 송장 등록 API 캡처 (주문배송관리 > 배송관리) → 송장 push 추가
-- [ ] TOTP 설정 키 확보
+## 마무리 상태 (2026-07 확정)
+- [x] 로그인 셀렉터 확정 — `#userId` / `#pwd` / `a#login` → TOTP `#otp_num` / `a#otp_certify` (실 DOM 확인)
+- [x] 주문 API URL 확정 — `d=on` + `ordMediaKcodes`/`cancelCodes`/`takebackCodes`/`exchangeCodes` 전체 파라미터 필요(누락 시 503). `sync.mjs`의 `orderUrl()`
+- [x] 응답 envelope `{resultCode, resultMessage, ...}` 처리 + `extractList()` 방어적 추출
+- [ ] **TOTP 설정 키 확보** ← 유일한 실행 블로커. 로그인 화면 "OTP 신규재등록(문자/이메일)"로 재등록 → 나오는 base32 "설정 키"를 `ELAND_TOTP_SECRET`(GitHub Secret)에 저장 (기존 인증기 무효화됨)
+- [ ] 첫 실주문 1건으로 성공 응답의 배열 key + 필드명 확정 → `mapOrder()` 미세조정 (지금은 방어적 추측)
+- [ ] 송장 등록 API 캡처 (주문배송관리 > 배송관리) → 송장 push 추가 (주문 수집엔 불필요)
 
 ## 로컬 테스트
 ```

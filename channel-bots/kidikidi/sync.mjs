@@ -30,37 +30,78 @@ const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSes
 function ymd(d) { return d.toISOString().slice(0, 10); }
 
 // 1) 로그인 → 세션쿠키가 담긴 Playwright context 반환
+//    로그인 페이지 셀렉터는 실제 DOM에서 확정함(2026-07):
+//    #userId, #pwd, a#login(로그인하기) → TOTP: #otp_num, a#otp_certify(인증하기)
 async function login(browser) {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
 
-  // TODO(셀렉터 확정): 실제 로그인 페이지에서 id/pw input name 확인 후 채우기
-  await page.fill('input[name="userId"], #userId, input[type="text"]', ELAND_ID);
-  await page.fill('input[name="password"], #password, input[type="password"]', ELAND_PW);
-  await page.click('button[type="submit"], .btn-login');
+  await page.fill('#userId', ELAND_ID);
+  await page.fill('#pwd', ELAND_PW);
+  await page.click('a#login');
 
-  // 2차 인증: TOTP 6자리 — 시크릿으로 자체 생성 (이메일/문자 필요 없음)
-  await page.waitForTimeout(1500);
-  if (await page.locator('input').first().isVisible().catch(() => false)) {
+  // 2차 인증: TOTP 6자리 — 설정키로 자체 생성 (문자/이메일 OTP 아님)
+  //   로그인 후 OTP 입력창(#otp_num)이 노출되면 채우고 '인증하기' 클릭
+  await page.waitForSelector('#otp_num', { state: 'visible', timeout: 15000 }).catch(() => {});
+  if (await page.locator('#otp_num').isVisible().catch(() => false)) {
     const code = authenticator.generate(ELAND_TOTP_SECRET);
-    await page.fill('input[type="text"], input[type="tel"], input[type="number"]', code);
-    await page.click('button:has-text("인증"), button[type="submit"], .btn-auth');
+    await page.fill('#otp_num', code);
+    await page.click('a#otp_certify');
   }
+  // 로그인 완료 대기: /main 진입 or 네트워크 안정
+  await page.waitForURL(/\/main/, { timeout: 20000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
+  if (/\/login/.test(page.url())) {
+    throw new Error('로그인 실패(여전히 /login). 아이디/비번/TOTP 설정키 확인');
+  }
   return { ctx, page };
 }
 
 // 2) 내부 주문 API 호출 (세션쿠키 자동 포함)
+//    실제 UI가 200 주는 요청을 그대로 재현(파라미터 누락 시 503). d=on 필수.
+function orderUrl(fromDate, toDate) {
+  const p = new URLSearchParams({
+    d: 'on',
+    fromSearchDate: fromDate, toSearchDate: toDate,
+    ordPsnInfoCondition: 'cellphone', receiverInfoCondition: 'name',
+    ordMediaKcodes: '10,20,30,40,50,60,70',
+    orderCodes: ORDER_CODES,
+    cancelCodes: '2010,2020,2030',
+    takebackCodes: '3010,3020,3030,3040,3045,3050,3060',
+    exchangeCodes: '4010,4020,4030,4040,4050,4045',
+    selStandardCategory1: '', selStandardCategory2: '',
+    selStandardCategory3: '', selStandardCategory4: '', standardCategoryNo: '',
+    page: '1', searchOrderStatus: 'true', size: '200', _: String(Date.now()),
+  });
+  return `${BASE}/o/order/lookup/orders?${p.toString()}`;
+}
+
 async function fetchOrders(page, fromDate, toDate) {
-  const url = `${BASE}/o/order/lookup/orders?d=on`
-    + `&fromSearchDate=${fromDate}&toSearchDate=${toDate}`
-    + `&ordPsnInfoCondition=cellphone&receiverInfoCondition=name`
-    + `&orderCodes=${encodeURIComponent(ORDER_CODES)}`
-    + `&searchOrderStatus=true&size=200&page=1&_=${Date.now()}`;
-  const res = await page.request.get(url);
-  if (!res.ok()) throw new Error(`주문 API 실패 ${res.status()}: ${await res.text()}`);
-  return res.json();
+  const res = await page.request.get(orderUrl(fromDate, toDate), {
+    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+  });
+  if (!res.ok()) throw new Error(`주문 API 실패 ${res.status()}: ${(await res.text()).slice(0, 300)}`);
+  const body = await res.json();
+  // 응답은 envelope: { resultCode, resultMessage, ... }. 400 → 로그인 만료
+  if (body && String(body.resultCode) === '400') {
+    throw new Error(`세션 만료(${body.resultMessage}). 재로그인 필요`);
+  }
+  return body;
+}
+
+// envelope 안에서 주문 배열 추출 (성공 응답 구조는 첫 실주문에서 최종 확정)
+function extractList(body) {
+  if (Array.isArray(body)) return body;
+  const data = body?.data ?? body?.result ?? body?.resultData ?? body;
+  for (const k of ['content', 'list', 'orders', 'items', 'rows', 'resultList']) {
+    if (Array.isArray(data?.[k])) return data[k];
+  }
+  // envelope 바로 아래에서도 탐색
+  for (const k of Object.keys(body || {})) {
+    if (Array.isArray(body[k])) return body[k];
+  }
+  return [];
 }
 
 // 3) 응답 → channel_orders 매핑 (TODO: 실제 JSON 필드명에 맞춰 조정)
@@ -87,8 +128,12 @@ async function run() {
   try {
     const { page } = await login(browser);
     const data = await fetchOrders(page, ymd(from), ymd(to));
-    const list = data.content ?? data.list ?? data.orders ?? data.data ?? [];
+    const list = extractList(data);
     console.log(`[kidikidi] 주문 ${list.length}건 수집`);
+    if (!list.length) {
+      // 성공 envelope 구조 확인용 로그(첫 실주문 시 mapOrder 필드 확정에 사용)
+      console.log('[kidikidi] envelope keys:', JSON.stringify(Object.keys(data || {})));
+    }
     if (list.length) {
       const rows = list.map(mapOrder);
       const { error } = await db.from('channel_orders')
