@@ -3191,6 +3191,30 @@ class BhasApp {
         </div>`;
         const channelStatus = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem;margin-top:1.3rem">${chanCard}${statCard}</div>`;
 
+        // 반품·교환 분석 (급증 감지 + 반복 반품 고객)
+        const retThis = (cancelledOrders || []).filter(o => inScope(o.order_date));
+        const retPrevKey = yearMode ? null : months[li - 1];
+        const retPrev = retPrevKey ? (cancelledOrders || []).filter(o => (o.order_date || '').startsWith(retPrevKey)) : [];
+        const totalInScope = ordersThisMonth + retThis.length;
+        const retRate = totalInScope ? Math.round(retThis.length / totalInScope * 100) : 0;
+        const spike = retPrev.length >= 2 && retThis.length >= retPrev.length * 1.8;
+        const byBuyer = {};
+        retThis.forEach(o => { const n = o.buyer_name || o.receiver_name || '미상'; (byBuyer[n] = byBuyer[n] || []).push(o); });
+        const repeat = Object.entries(byBuyer).filter(([, arr]) => arr.length >= 2).sort((a, b) => b[1].length - a[1].length);
+        const returnCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem;${spike ? 'border:1.5px solid rgba(239,68,68,0.45)' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:1rem">
+                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-arrow-u-up-left" style="color:#a855f7"></i> 반품·교환 분석 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(${shortLabel})</span></div>
+                ${spike ? `<span style="font-size:0.74rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.12);padding:3px 10px;border-radius:7px">⚠ 급증 — 직전 ${retPrev.length}건 → ${retThis.length}건</span>` : (retPrevKey ? `<span style="font-size:0.72rem;color:var(--text-muted)">직전 ${+retPrevKey.slice(5)}월 ${retPrev.length}건 → ${retThis.length}건</span>` : '')}
+            </div>
+            <div style="display:flex;gap:2.4rem;flex-wrap:wrap;margin-bottom:1.1rem">
+                <div><div style="font-size:1.6rem;font-weight:800;color:#a855f7;line-height:1">${retThis.length}<span style="font-size:0.8rem;font-weight:600">건</span></div><div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px">반품·교환</div></div>
+                <div><div style="font-size:1.6rem;font-weight:800;line-height:1;color:${retRate >= 15 ? '#ef4444' : 'var(--text-main)'}">${retRate}<span style="font-size:0.8rem;font-weight:600">%</span></div><div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px">반품률</div></div>
+                <div><div style="font-size:1.6rem;font-weight:800;line-height:1;color:${repeat.length ? '#ef4444' : 'var(--text-main)'}">${repeat.length}<span style="font-size:0.8rem;font-weight:600">명</span></div><div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px">반복 반품 고객</div></div>
+            </div>
+            <div style="font-size:0.82rem;font-weight:700;margin-bottom:6px">반복 반품 고객 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(2회 이상 — 어뷰징·품질 이슈 신호)</span></div>
+            ${repeat.length ? repeat.slice(0, 8).map(([n, arr]) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.83rem"><span>${this._vesc(n)}</span><span style="font-weight:700;color:${arr.length >= 3 ? '#ef4444' : '#f59e0b'}">${arr.length}회</span></div>`).join('') : '<div style="font-size:0.8rem;color:var(--text-muted);padding:6px 0">반복 반품 고객 없음 (정상)</div>'}
+        </div>`;
+
         // 브랜드 × 월 매트릭스 (참고용, 2개월 이상일 때만)
         const matrix = months.length > 1 ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;overflow-x:auto;margin-top:1.3rem">
             <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-table" style="color:var(--primary)"></i> 브랜드 × 월 매출</div>
@@ -3221,6 +3245,7 @@ class BhasApp {
             ${chart}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem">${brandBars}${topCard}</div>
             ${channelStatus}
+            ${returnCard}
             ${matrix}
             <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 리테일 = 몰 주문 결제금액 · 브하스(컨설팅) = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·환불은 채널 상태 연동 후 반영</p>
         </div>`;
