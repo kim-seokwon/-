@@ -3193,6 +3193,9 @@ class BhasApp {
 
         // 반품·교환 분석 (급증 감지 + 반복 반품 고객)
         const retThis = (cancelledOrders || []).filter(o => inScope(o.order_date));
+        const reasonCnt = {};
+        retThis.forEach(o => { const r = o.return_reason || (o.raw && (o.raw.return_reason || o.raw.cancelReason)) || null; if (r) reasonCnt[r] = (reasonCnt[r] || 0) + 1; });
+        const reasonArr = Object.entries(reasonCnt).sort((a, b) => b[1] - a[1]);
         const retPrevKey = yearMode ? null : months[li - 1];
         const retPrev = retPrevKey ? (cancelledOrders || []).filter(o => (o.order_date || '').startsWith(retPrevKey)) : [];
         const totalInScope = ordersThisMonth + retThis.length;
@@ -3211,6 +3214,8 @@ class BhasApp {
                 <div><div style="font-size:1.6rem;font-weight:800;line-height:1;color:${retRate >= 15 ? '#ef4444' : 'var(--text-main)'}">${retRate}<span style="font-size:0.8rem;font-weight:600">%</span></div><div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px">반품률</div></div>
                 <div><div style="font-size:1.6rem;font-weight:800;line-height:1;color:${repeat.length ? '#ef4444' : 'var(--text-main)'}">${repeat.length}<span style="font-size:0.8rem;font-weight:600">명</span></div><div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px">반복 반품 고객</div></div>
             </div>
+            <div style="font-size:0.82rem;font-weight:700;margin-bottom:6px">반품 사유</div>
+            <div style="margin-bottom:1rem">${reasonArr.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${reasonArr.map(([r, c]) => `<span style="font-size:0.78rem;background:rgba(168,85,247,0.12);color:#a855f7;padding:3px 10px;border-radius:8px;font-weight:600">${this._vesc(r)} ${c}</span>`).join('')}</div>` : '<div style="font-size:0.76rem;color:var(--text-muted)">사유 미태깅 — 반품 처리 시 사유(사이즈/품질/변심)를 입력하면 여기 집계돼요</div>'}</div>
             <div style="font-size:0.82rem;font-weight:700;margin-bottom:6px">반복 반품 고객 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(2회 이상 — 어뷰징·품질 이슈 신호)</span></div>
             ${repeat.length ? repeat.slice(0, 8).map(([n, arr]) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.83rem"><span>${this._vesc(n)}</span><span style="font-weight:700;color:${arr.length >= 3 ? '#ef4444' : '#f59e0b'}">${arr.length}회</span></div>`).join('') : '<div style="font-size:0.8rem;color:var(--text-muted);padding:6px 0">반복 반품 고객 없음 (정상)</div>'}
         </div>`;
@@ -3262,7 +3267,22 @@ class BhasApp {
                 <div style="height:7px;border-radius:4px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${Math.max(4, q / optMax * 100)}%;background:linear-gradient(90deg,#f59e0b,#fbbf24);border-radius:4px"></div></div>
             </div>`).join('')}</div>` : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.5rem 0">옵션 데이터 부족 — 주문 상품 옵션이 수집되면 사이즈·컬러 분포가 여기 떠요</div>'}
         </div>`;
-        const insights = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.3rem;margin-top:1.3rem">${netCard}${repeatCard}${optCard}</div>`;
+        // 운영 품질·이익 골격 (출고 리드타임 + QC + 원가마진 — 데이터 쌓이면 자동)
+        const leads = orders.filter(o => inScope(o.order_date) && o.shipped_at && o.order_date).map(o => (new Date(o.shipped_at) - new Date(o.order_date)) / 864e5).filter(x => x >= 0);
+        const avgLead = leads.length ? (leads.reduce((s, x) => s + x, 0) / leads.length) : null;
+        const hasCost = orders.some(o => (o.items || []).some(it => it.cost != null));
+        const qRow = (label, val) => `<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:0.83rem;color:var(--text-muted)">${label}</span><span style="font-weight:800;font-size:0.9rem">${val}</span></div>`;
+        const pend = t => `<span style="font-size:0.74rem;color:var(--text-muted);font-weight:500">${t}</span>`;
+        const qualityCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-gauge" style="color:#06b6d4"></i> 운영 품질 · 이익</div>
+            <div style="display:flex;flex-direction:column;gap:0.9rem">
+                ${qRow('평균 출고 리드타임', avgLead != null ? `${avgLead.toFixed(1)}일` : pend('출고 처리 시 집계'))}
+                ${qRow('QC 검수 통과율', pend('QC 기록 시 집계'))}
+                ${qRow('상품 원가 마진', hasCost ? '—' : pend('SKU 원가 입력 시'))}
+            </div>
+            <p style="margin:0.9rem 0 0;font-size:0.68rem;color:var(--text-muted)">* 출고일·QC·원가가 쌓이면 자동으로 채워져요</p>
+        </div>`;
+        const insights = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${netCard}${repeatCard}${optCard}${qualityCard}</div>`;
 
         // 브랜드 × 월 매트릭스 (참고용, 2개월 이상일 때만)
         const matrix = months.length > 1 ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;overflow-x:auto;margin-top:1.3rem">
@@ -3312,6 +3332,7 @@ class BhasApp {
         if (v === 'integrations' && !this._bsLoaded && !this._bsLoading) this.loadBrandSettings();
         if (v === 'orders' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'inventory' && !this._invLoaded && !this._invLoading) this.loadInventory();
+        if (v === 'inventory' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
         if (v === 'vendors' && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
@@ -3674,8 +3695,29 @@ class BhasApp {
             </tr>`;
         }).join('') || `<tr><td colspan="5" style="padding:1.5rem;text-align:center;color:var(--text-muted)">변동 내역이 없습니다.</td></tr>`;
 
+        // 품절 예측 · 재발주 (최근 30일 판매속도 × 현재고 × 리드타임)
+        const LEAD_DAYS = 14;
+        const now = Date.now(), WIN = 30;
+        const nameQty = {};
+        (this.orders || []).forEach(o => { if (!o.order_date) return; if ((now - new Date(o.order_date).getTime()) / 864e5 > WIN) return; (o.items || []).forEach(it => { const n = (it.product_name || '').trim(); if (n) nameQty[n] = (nameQty[n] || 0) + (Number(it.quantity) || 1); }); });
+        const velOf = (item) => { const nm = (item.name || '').trim(); if (!nm) return 0; let q = nameQty[nm] || 0; if (!q) for (const k in nameQty) { if (k.includes(nm) || nm.includes(k)) q += nameQty[k]; } return q / WIN; };
+        const reorderRows = (inv.items || []).map(i => { const v = velOf(i); const days = v > 0 ? Math.floor(i.on_hand / v) : null; return { i, v, days }; })
+            .filter(r => (r.days !== null && r.days <= LEAD_DAYS) || r.i.on_hand <= r.i.safety_stock)
+            .sort((a, b) => (a.days ?? 999) - (b.days ?? 999));
+        const reorderCard = `<div class="glass" style="padding:1.3rem 1.5rem;border-radius:16px;margin-bottom:1.5rem;border:1px solid ${reorderRows.length ? 'rgba(239,68,68,0.3)' : 'var(--card-border)'}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.9rem;gap:8px;flex-wrap:wrap">
+                <h3 style="margin:0;font-size:1.05rem;display:flex;align-items:center;gap:6px"><i class="ph ph-warning-diamond" style="color:#ef4444"></i> 품절 예측 · 재발주 알림</h3>
+                <span style="font-size:0.74rem;color:var(--text-muted)">리드타임 ${LEAD_DAYS}일 · 최근 30일 판매속도 기준</span>
+            </div>
+            ${reorderRows.length ? `<div style="display:flex;flex-direction:column;gap:8px">${reorderRows.slice(0, 8).map(({ i, v, days }) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;background:rgba(239,68,68,0.06)">
+                <div><span style="font-weight:700">${this._vesc(i.name || i.sku || '-')}</span> <span style="font-size:0.75rem;color:var(--text-muted)">재고 ${i.on_hand}${v > 0 ? ` · 일평균 ${v.toFixed(1)}개` : ''}</span></div>
+                <div>${days !== null ? `<span style="font-weight:800;color:${days <= 7 ? '#ef4444' : '#f59e0b'}">${days}일 후 품절</span>` : `<span style="color:#f59e0b;font-weight:700">안전재고 이하</span>`}</div>
+            </div>`).join('')}</div>` : '<div style="color:var(--text-muted);font-size:0.85rem;padding:0.3rem 0">✅ 재발주 필요 품목 없음<br><span style="font-size:0.76rem">* SKU 등록 + 카페24 재고동기화하면 판매속도 기반 "N일 후 품절" 예측이 자동으로 떠요.</span></div>'}
+        </div>`;
+
         return `
         <div class="glass" style="padding:2rem; border-radius:20px;">
+            ${reorderCard}
             <div class="mobile-responsive-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; gap:1rem; flex-wrap:wrap">
                 <h2 style="display:flex; align-items:center; gap:8px; font-size:1.5rem; margin:0"><i class="ph ph-package"></i> 재고 관리</h2>
                 <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
