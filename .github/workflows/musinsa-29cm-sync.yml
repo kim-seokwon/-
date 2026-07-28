@@ -1,0 +1,29 @@
+name: 무신사·29CM 주문 수집
+
+on:
+  schedule:
+    - cron: '30 * * * *'   # 매시간 30분 (다른 채널과 분산)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: channel-bots/musinsa-29cm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run sync
+        env:
+          MUSINSA_ID: ${{ secrets.MUSINSA_ID }}
+          MUSINSA_PW: ${{ secrets.MUSINSA_PW }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

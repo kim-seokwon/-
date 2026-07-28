@@ -1,0 +1,15 @@
+{
+  "name": "musinsa-29cm-order-bot",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "무신사·29CM 통합 파트너 주문 수집 봇 — SSO 로그인(이메일 OTP는 Gmail 자동읽기) → 주문 API → Supabase",
+  "scripts": {
+    "sync": "node sync.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "googleapis": "^140.0.0",
+    "playwright": "^1.47.0"
+  }
+}
