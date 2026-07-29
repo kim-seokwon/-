@@ -13,17 +13,17 @@
 //    SUPABASE_URL, SUPABASE_SERVICE_KEY
 // ============================================================
 import { chromium } from 'playwright';
-import { ImapFlow } from 'imapflow';
+import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
 
 const {
   MUSINSA_ID, MUSINSA_PW,
-  GMAIL_USER, GMAIL_APP_PASSWORD,
+  GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
   SUPABASE_URL, SUPABASE_SERVICE_KEY,
 } = process.env;
 
-if (!MUSINSA_ID || !MUSINSA_PW || !GMAIL_USER || !GMAIL_APP_PASSWORD || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (MUSINSA_ID/PW, GMAIL_USER/APP_PASSWORD, SUPABASE_* 필요)');
+if (!MUSINSA_ID || !MUSINSA_PW || !GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (MUSINSA_ID/PW, GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN, SUPABASE_* 필요)');
   process.exit(0);
 }
 
@@ -34,24 +34,26 @@ const MALL_KEY = '29cm';
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
 const ymd = d => d.toISOString().slice(0, 10);
 
-// Gmail IMAP에서 최근 29CM/무신사 인증코드(6자리) 읽기
-async function readEmailOtp({ sinceMs = Date.now() - 5 * 60000, timeoutMs = 90000 } = {}) {
+// Gmail API로 최근 29CM/무신사 인증코드(6자리) 읽기
+function gmailClient() {
+  const o = new google.auth.OAuth2(GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET);
+  o.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
+  return google.gmail({ version: 'v1', auth: o });
+}
+async function readEmailOtp({ afterEpochSec = Math.floor(Date.now() / 1000) - 180, timeoutMs = 90000 } = {}) {
+  const gmail = gmailClient();
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const client = new ImapFlow({ host: 'imap.gmail.com', port: 993, secure: true, auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD }, logger: false });
-    await client.connect();
-    try {
-      const lock = await client.getMailboxLock('INBOX');
-      try {
-        const uids = await client.search({ since: new Date(sinceMs), or: [{ from: '29cm' }, { from: 'musinsa' }, { subject: '인증' }] }, { uid: true });
-        for (const uid of uids.reverse().slice(0, 8)) {
-          const msg = await client.fetchOne(uid, { source: true }, { uid: true });
-          const text = msg.source.toString('utf-8');
-          const m = text.match(/\b(\d{6})\b/);
-          if (m) return m[1];
-        }
-      } finally { lock.release(); }
-    } finally { await client.logout().catch(() => {}); }
+    const q = `(from:29cm.co.kr OR from:musinsa.com OR subject:인증) after:${afterEpochSec}`;
+    const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: 8 });
+    for (const m of (list.data.messages || [])) {
+      const msg = await gmail.users.messages.get({ userId: 'me', id: m.id, format: 'full' });
+      const parts = [];
+      const walk = p => { if (p.body?.data) parts.push(Buffer.from(p.body.data, 'base64').toString('utf-8')); (p.parts || []).forEach(walk); };
+      walk(msg.data.payload || {});
+      const code = (parts.join('\n').match(/\b(\d{6})\b/) || [])[1];
+      if (code) return code;
+    }
     await new Promise(r => setTimeout(r, 4000));
   }
   throw new Error('OTP 메일에서 인증번호를 못 찾음');
