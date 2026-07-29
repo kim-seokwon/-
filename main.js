@@ -74,7 +74,8 @@ class BhasApp {
     init() {
         // ===== [임시] 샘플 제작 미리보기용 인증 우회 (Supabase 일시중단 중) =====
         // 원복: 아래 DEV_PREVIEW_SAMPLE = false 로만 바꾸면 됨.
-        const DEV_PREVIEW_SAMPLE = true;
+        // Supabase 재가동 완료 → 실제 로그인/데이터 로드 사용(false).
+        const DEV_PREVIEW_SAMPLE = false;
         if (DEV_PREVIEW_SAMPLE) {
             this.currentUser = { id: 'dev', name: '미리보기', role: 'MASTER', company_id: 'dev' };
             this.currentView = 'sample_maker';
