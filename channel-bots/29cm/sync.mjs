@@ -76,26 +76,31 @@ async function login(browser) {
   console.log('[29cm] 로그인 폼 입력 완료 → 제출');
   await page.click('button[type="submit"]');
 
-  // 2차 인증 화면 대기: '인증번호 받기' 버튼(이메일 탭 기본선택)이 뜰 때까지
-  const requestBtn = page.getByRole('button', { name: /인증번호 받기|인증번호 재요청/ });
+  // 2차 인증 화면 대기: 인증코드 입력칸(항상 존재)이 뜰 때까지
+  const codeInput = page.locator('input[name="code"], input[placeholder*="인증코드"]');
   try {
-    await requestBtn.waitFor({ state: 'visible', timeout: 30000 });
+    await codeInput.waitFor({ state: 'visible', timeout: 30000 });
   } catch (e) {
-    // 2차인증에 도달 못함 → 로그인 실패/봇탐지 가능. 현재 페이지 상태를 로그로 남김
     const title = await page.title().catch(() => '');
     const bodyTxt = (await page.evaluate(() => document.body.innerText).catch(() => '')).slice(0, 400);
     console.error(`[29cm] 2차인증 화면 미도달. title="${title}" body="${bodyTxt.replace(/\n/g, ' ')}"`);
     throw new Error('로그인 후 2차인증 화면에 도달하지 못함');
   }
+  console.log('[29cm] 2차인증 화면 도달');
 
-  // '이메일' 탭 라디오 명시적 선택(기본 선택이지만 안전하게), 이후 '인증번호 받기'
-  const emailRadio = page.locator('input[type="radio"]').nth(1);
-  await emailRadio.check().catch(() => {});
+  // '이메일' 탭 라디오 선택(기본 선택이지만 안전하게)
+  await page.locator('input[type="radio"]').nth(1).check().catch(() => {});
   await page.waitForTimeout(500);
-  await requestBtn.click();
-  const sentEpochSec = Math.floor(Date.now() / 1000); // 이 시점 이후 도착한 메일만 읽음
-  console.log('[29cm] 인증번호 받기 클릭 → 메일 대기');
-  await page.waitForTimeout(1500);
+  // '인증번호 받기'가 활성(=아직 미발송)이면 눌러 발송. 카운트다운/이미발송이면 스킵하고 최근 메일을 읽음.
+  const sentEpochSec = Math.floor(Date.now() / 1000) - 150; // 최근 2.5분 내 코드 허용
+  const reqBtn = page.getByRole('button', { name: /인증번호 받기/ });
+  if ((await reqBtn.count()) && (await reqBtn.isEnabled().catch(() => false))) {
+    await reqBtn.click();
+    console.log('[29cm] 인증번호 받기 클릭 → 메일 발송');
+    await page.waitForTimeout(1500);
+  } else {
+    console.log('[29cm] 인증번호 이미 발송됨(카운트다운) → 최근 메일 읽기');
+  }
 
   const code = await readEmailOtp({ afterEpochSec: sentEpochSec });
   console.log('[29cm] OTP 코드 수신 → 입력');
