@@ -172,7 +172,42 @@ async function ensureMall() {
   else console.log(`[kidikidi] malls 등록: kidikidi → brand ${brand?.id ?? '(미매핑)'}`);
 }
 
+// 진단: 로그인 후 배송/송장 관련 메뉴·API 엔드포인트 캡처(송장등록 API 역추적용)
+async function diag() {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const { ctx, page } = await login(browser);
+    const seen = new Set();
+    ctx.on('request', r => { const u = r.url(); if (/\/o\/|\/api\/|ajax|json|deliv|invoice|송장|ship/i.test(u)) seen.add(`${r.method()} ${u.split('?')[0]}`); });
+    console.log('[diag] 로그인 완료, url=', page.url());
+    // 메인 진입 후 메뉴 링크 덤프
+    await page.goto(`${BASE}/main`, { waitUntil: 'networkidle' }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const links = await page.evaluate(() => [...document.querySelectorAll('a')]
+      .map(a => ({ t: (a.innerText || '').trim().slice(0, 20), href: a.getAttribute('href') || '' }))
+      .filter(x => x.t && /배송|발송|출고|송장|운송장|주문|deliv|invoice|order/i.test(x.t + x.href)));
+    console.log('[diag] 배송/주문 메뉴 링크:', JSON.stringify(links.slice(0, 40)));
+    // 배송/발송 관련 링크 최대 3개 방문하며 API 캡처
+    const cand = links.filter(x => /배송|발송|출고|송장|deliv|ship/i.test(x.t + x.href) && x.href && x.href !== '#').slice(0, 3);
+    for (const c of cand) {
+      const url = c.href.startsWith('http') ? c.href : `${BASE}${c.href.startsWith('/') ? '' : '/'}${c.href}`;
+      await page.goto(url, { waitUntil: 'networkidle' }).catch(() => {});
+      await page.waitForTimeout(2000);
+      console.log(`[diag] 방문 "${c.t}" → ${url}`);
+    }
+    console.log('[diag] 캡처된 API 엔드포인트:\n' + [...seen].join('\n'));
+    // 최근 주문 1건의 전체 필드(배송/송장 필드 확인)
+    const to = new Date(), from = new Date(Date.now() - 30 * 864e5);
+    const res = await page.request.get(orderUrl(ymd(from), ymd(to), 1), { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+    const body = await res.json().catch(() => ({}));
+    const first = (extractList(body) || [])[0];
+    console.log('[diag] 주문객체 필드:', first ? JSON.stringify(Object.keys(first)) : '(주문없음)');
+    if (first) console.log('[diag] 주문객체 샘플:', JSON.stringify(first).slice(0, 1200));
+  } finally { await browser.close(); }
+}
+
 async function run() {
+  if (process.env.DIAG === '1') return diag();
   // 조회 기간: 기본 400일(전체 이력 확보). 정기 실행은 upsert 멱등이라 재조회 안전.
   const LOOKBACK = Number(process.env.LOOKBACK_DAYS || 400);
   const to = new Date();
