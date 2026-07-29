@@ -3277,10 +3277,11 @@ class BhasApp {
         const repeatRate = totBuyers ? Math.round(repBuyers / totBuyers * 100) : 0;
         const repeatOrders = bvals.filter(c => c >= 2).reduce((s, c) => s + c, 0), totOrdersB = bvals.reduce((s, c) => s + c, 0);
         const optCnt = {};
+        const isDeliveryOpt = t => /배송|택배|무료|delivery|shipping|수령|방법/i.test(t); // 사이즈·컬러 아닌 배송옵션 제외
         orders.forEach(o => {
             if (!inScope(o.order_date)) return;
-            (o.items || []).forEach(it => { (it.option_name || '').split(/[\/,]/).map(s => s.trim()).filter(Boolean).forEach(t => optCnt[t] = (optCnt[t] || 0) + (Number(it.quantity) || 1)); });
-            (((o.raw || {}).items) || []).forEach(it => { (it.uitem || '').split(/[\/,]/).map(s => s.trim()).filter(Boolean).forEach(t => optCnt[t] = (optCnt[t] || 0) + (Number(it.qty) || 1)); });
+            (o.items || []).forEach(it => { (it.option_name || '').split(/[\/,]/).map(s => s.trim()).filter(Boolean).filter(t => !isDeliveryOpt(t)).forEach(t => optCnt[t] = (optCnt[t] || 0) + (Number(it.quantity) || 1)); });
+            (((o.raw || {}).items) || []).forEach(it => { (it.uitem || '').split(/[\/,]/).map(s => s.trim()).filter(Boolean).filter(t => !isDeliveryOpt(t)).forEach(t => optCnt[t] = (optCnt[t] || 0) + (Number(it.qty) || 1)); });
         });
         const optArr = Object.entries(optCnt).sort((a, b) => b[1] - a[1]).slice(0, 8);
         const optMax = Math.max(1, ...optArr.map(x => x[1]));
@@ -3429,6 +3430,7 @@ class BhasApp {
         this.requestRender();
     }
     _mallLabel(key) { const m = (this.malls || []).find(m => m.mall_key === key); return m ? m.label : (key || '-'); }
+    _mallBrand(key) { const m = (this.malls || []).find(m => m.mall_key === key); if (!m) return null; return (mockData.brands || []).find(b => b.id === m.brand_id) || null; }
     _mallOptions(selected) {
         return `<option value="" style="background:#0f172a">몰 선택 안 함</option>` +
             (this.malls || []).map(m => `<option value="${m.mall_key}" style="background:#0f172a" ${m.mall_key === selected ? 'selected' : ''}>${m.label}</option>`).join('');
@@ -3458,23 +3460,29 @@ class BhasApp {
         this.requestRender();
     }
 
-    // 매출 집계용 전체 기간 주문(경량 컬럼만, 1000행 페이지네이션으로 전량 로드)
+    // 매출/분석용 전체 기간 주문 — 전체 컬럼 + 아이템 전량(1000행 페이지네이션).
+    // 인기상품·옵션·재구매·반품사유 카드가 items/buyer/raw 필드를 쓰므로 전체 컬럼 필요.
     async _loadSalesOrders() {
         try {
-            const cols = 'order_date,pay_amount,mall_key,channel,channel_status';
-            const all = [];
             const PAGE = 1000;
-            for (let from = 0; ; from += PAGE) {
-                const { data, error } = await this.supabase
-                    .from('channel_orders').select(cols)
-                    .order('order_date', { ascending: false })
-                    .range(from, from + PAGE - 1);
-                if (error) throw error;
-                const rows = data || [];
-                all.push(...rows);
-                if (rows.length < PAGE) break;   // 마지막 페이지
-            }
-            this.salesOrders = all;
+            const pageAll = async (build) => {
+                const acc = [];
+                for (let from = 0; ; from += PAGE) {
+                    const { data, error } = await build().range(from, from + PAGE - 1);
+                    if (error) throw error;
+                    const rows = data || [];
+                    acc.push(...rows);
+                    if (rows.length < PAGE) break;
+                }
+                return acc;
+            };
+            const [all, items] = await Promise.all([
+                pageAll(() => this.supabase.from('channel_orders').select('*').order('order_date', { ascending: false })),
+                pageAll(() => this.supabase.from('channel_order_items').select('*'))
+            ]);
+            const byOrder = {};
+            items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
+            this.salesOrders = all.map(o => ({ ...o, items: byOrder[o.id] || [] }));
         } catch (e) {
             this.salesOrders = null;  // 실패 시 _salesAgg가 this.orders로 폴백
         }
@@ -3518,7 +3526,7 @@ class BhasApp {
             <tr style="border-bottom:1px solid var(--card-border)">
                 <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" style="accent-color:var(--primary)"></td>
                 <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}</td>
-                <td style="padding:10px"><span style="font-size:0.72rem;padding:2px 8px;border-radius:10px;background:rgba(99,102,241,0.18);color:#a5b4fc">${this._mallLabel(o.mall_key)}</span></td>
+                <td style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1'; return `<span style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._mallLabel(o.mall_key)}</span>`; })()}</td>
                 <td style="padding:10px;color:var(--text-muted);font-size:0.82rem">${o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : '-'}</td>
                 <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
                 <td style="padding:10px;font-size:0.88rem">${prodCell}</td>
