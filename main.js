@@ -815,6 +815,8 @@ class BhasApp {
                         this.currentUser.company_id = companyProfile.id;
                         this.currentUser.brand_id = companyProfile.brand_id;
                         this.currentUser.name = companyProfile.name;
+                        this.currentUser.menu_access = companyProfile.menu_access || null;
+                        this.currentUser.brand_access = companyProfile.brand_access || null;
                     } else {
                         // 프로필이 없는 경우 기본 권한 및 ID 설정
                         const isMasterAccount = ['admin@bhas.com', 'ksw5363@gmail.com'].includes(authData.user.email);
@@ -878,6 +880,16 @@ class BhasApp {
             { id: 'user_management', label: '계정', icon: '<i class="ph ph-user-plus"></i>', group: 'admin', visible: perms.includes('user_management') },
             { id: 'brand_management', label: '브랜드', icon: '<i class="ph ph-shield-check"></i>', group: 'admin', visible: perms.includes('user_management') }
         ];
+        // 계정별 세분화 권한(menu_access) 반영: 설정돼 있으면 그 목록으로 가시성 결정.
+        // 단 계정/브랜드 관리는 항상 MASTER 전용(보안), 할일은 항상 노출. 없으면(null) 역할 기본값 유지.
+        const ma = Array.isArray(this.currentUser.menu_access) ? this.currentUser.menu_access : null;
+        if (ma) {
+            menuItems.forEach(it => {
+                if (it.id === 'user_management' || it.id === 'brand_management') it.visible = role === 'MASTER';
+                else if (it.id === 'all_todos') it.visible = true;
+                else it.visible = ma.includes(it.id);
+            });
+        }
         const navGroups = [
             { id: 'work', label: '업무관리' },
             { id: 'prod', label: '생산관리' },
@@ -895,6 +907,9 @@ class BhasApp {
             // brand_id 기준 필터링 (브랜드 관리 연동)
             products = mockData.products.filter(p => p.brand_id === this.selectedCompanyId);
         }
+        // 계정별 브랜드 접근 권한(brand_access) 추가 게이트 (설정된 경우만 제한)
+        const ab = this._allowedBrandIds();
+        if (ab) products = products.filter(p => ab.has(p.brand_id));
 
         const dashboardHtml = `
             <div class="dashboard fade-in">
@@ -1727,7 +1742,9 @@ class BhasApp {
             if (mall) { const b = (mockData.brands || []).find(x => x.id === mall.brand_id); return b ? b.name : (mall.label || '기타'); }
             return o.mall_key || o.channel || '기타';
         };
-        const allOrders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null);
+        // 매출은 전체 기간 집계 필요 → 경량 전량 로드(salesOrders) 우선, 없으면 orders(최근 500) 폴백
+        const srcOrders = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
+        const allOrders = srcOrders.filter(o => o.order_date && o.pay_amount != null);
         // 매출 집계는 취소/교환 제외
         const orders = allOrders.filter(o => !this._isCancelled(o));
         const cancelledOrders = allOrders.filter(o => this._isCancelled(o));
@@ -3014,6 +3031,15 @@ class BhasApp {
         if (!this._ordersLoaded || !this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">매출 데이터를 불러오는 중...</div>`;
         let { orders, cancelledOrders, events, months, brands, monthTotals, grand, consultingFromQuote } = this._salesAgg(12);
         const won = n => this._won(Math.round(n));
+        // 계정 브랜드 접근 제한(brand_access) — 설정된 경우 매출도 허용 브랜드로만 집계
+        const _allowedNames = this._allowedBrandIds() ? new Set(this._visibleBrands().map(b => b.name)) : null;
+        if (_allowedNames) {
+            brands = brands.filter(b => _allowedNames.has(b.name));
+            orders = orders.filter(o => _allowedNames.has(this._orderBrandName(o)));
+            cancelledOrders = cancelledOrders.filter(o => _allowedNames.has(this._orderBrandName(o)));
+            monthTotals = months.map((_, i) => brands.reduce((s, b) => s + (b.cells[i]?.amt || 0), 0));
+            grand = monthTotals.reduce((s, v) => s + v, 0);
+        }
         // 브랜드 필터(통합=ALL / 특정 브랜드) — 선택 시 orders/취소/월합계를 그 브랜드로 좁힘
         const brandNames = brands.map(b => b.name);
         const bf = brandNames.includes(this.salesViewBrand) ? this.salesViewBrand : 'ALL';
@@ -3401,7 +3427,8 @@ class BhasApp {
         try {
             const [ordersRes, itemsRes] = await Promise.all([
                 this.supabase.from('channel_orders').select('*').order('order_date', { ascending: false }).limit(500),
-                this.supabase.from('channel_order_items').select('*')
+                this.supabase.from('channel_order_items').select('*'),
+                this._loadSalesOrders()  // 매출 집계용 전체 기간(경량 컬럼, 페이지네이션)
             ]);
             const byOrder = {};
             (itemsRes.data || []).forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
@@ -3413,6 +3440,28 @@ class BhasApp {
         }
         this._ordersLoading = false;
         this.requestRender();
+    }
+
+    // 매출 집계용 전체 기간 주문(경량 컬럼만, 1000행 페이지네이션으로 전량 로드)
+    async _loadSalesOrders() {
+        try {
+            const cols = 'order_date,pay_amount,mall_key,channel,channel_status';
+            const all = [];
+            const PAGE = 1000;
+            for (let from = 0; ; from += PAGE) {
+                const { data, error } = await this.supabase
+                    .from('channel_orders').select(cols)
+                    .order('order_date', { ascending: false })
+                    .range(from, from + PAGE - 1);
+                if (error) throw error;
+                const rows = data || [];
+                all.push(...rows);
+                if (rows.length < PAGE) break;   // 마지막 페이지
+            }
+            this.salesOrders = all;
+        } catch (e) {
+            this.salesOrders = null;  // 실패 시 _salesAgg가 this.orders로 폴백
+        }
     }
 
     _orderStatusLabel(s) { return ({ new: '신규', ready: '배송준비', shipping: '배송중', done: '완료', hold: '보류' })[s] || s; }
@@ -5404,14 +5453,22 @@ class BhasApp {
             const cur = (this.brandCouriers || {})[b.id] || '우체국';
             return `<select class="integ-courier" data-brand="${b.id}" style="padding:6px 8px;font-size:0.78rem;border-radius:8px;border:1px solid var(--card-border);background:rgba(148,163,184,0.12);color:var(--text-main);min-width:96px">${couriers.map(c => `<option value="${c}" ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}</select>`;
         };
+        // 브랜드+채널 → 몰 매칭 (cafe24=채널, 봇채널=mall_key/eland)
+        const mallFor = (brand, chKey) => malls.find(m => m.brand_id === brand.id && (
+            chKey === 'cafe24' ? (m.channel || 'cafe24') === 'cafe24'
+                : (m.mall_key === chKey || (chKey === 'kidikidi' && m.channel === 'eland'))
+        ));
         const cell = (brand, ch) => {
+            const mall = mallFor(brand, ch.key);
             if (ch.key === 'cafe24') {
-                const mall = malls.find(m => m.brand_id === brand.id && (m.channel || 'cafe24') === 'cafe24');
-                if (mall && mall.connected) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span><button class="integ-auth" data-key="${mall.mall_key}" style="font-size:0.72rem;padding:3px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">재인증</button></div>`;
-                if (mall) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 미인증</span><button class="integ-auth btn-primary" data-key="${mall.mall_key}" style="font-size:0.72rem;padding:3px 10px;border-radius:7px">인증</button></div>`;
-                return `<button class="integ-connect" data-brand="${brand.id}" style="font-size:0.76rem;padding:5px 12px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
+                if (mall && mall.connected) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span><button class="integ-auth" data-key="${mall.mall_key}" style="font-size:0.7rem;padding:3px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">재인증</button></div>`;
+                if (mall) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 미인증</span><button class="integ-auth btn-primary" data-key="${mall.mall_key}" style="font-size:0.7rem;padding:3px 10px;border-radius:7px">인증</button></div>`;
+                return `<button class="integ-connect" data-brand="${brand.id}" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
             }
-            return `<span style="font-size:0.72rem;color:var(--text-muted);opacity:0.5">준비중</span>`;
+            // 봇 연동 채널(키디키디·29CM·무신사·스마트스토어): 몰이 있으면 실제 상태, 없으면 대시
+            if (mall && mall.connected) return `<span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span>`;
+            if (mall) return `<span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 준비</span>`;
+            return `<span style="font-size:0.9rem;color:var(--text-muted);opacity:0.35">—</span>`;
         };
         const rows = brands.length ? brands.map(b => `<tr style="border-bottom:1px solid var(--card-border)">
             <td style="padding:14px 10px;font-weight:600">${this._vesc(b.name)}</td>
@@ -5419,15 +5476,16 @@ class BhasApp {
             <td style="padding:14px 10px;text-align:center">${courierCell(b)}</td>
         </tr>`).join('') : `<tr><td colspan="${channels.length + 2}" style="padding:2.5rem;text-align:center;color:var(--text-muted)">브랜드가 없습니다. [브랜드 추가]로 시작하세요.</td></tr>`;
         return `
-        <div class="fade-in" style="padding:1.5rem;max-width:900px;margin:0 auto">
+        <div class="fade-in" style="padding:1.5rem;max-width:1080px;margin:0 auto">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
                 <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-plugs-connected"></i> 채널 연동</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별로 판매 채널을 연동하세요</p></div>
                 <button id="integ-addbrand-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 브랜드 추가</button>
             </div>
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;min-width:820px">
+                <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px">
+                    <colgroup><col style="width:16%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:14%"></colgroup>
                     <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.82rem;text-align:left">
-                        <th style="padding:12px 10px">브랜드</th>${channels.map(ch => `<th style="padding:12px 10px;text-align:center">${ch.label}${ch.active ? '' : ' <span style="font-size:0.66rem;opacity:0.6">(준비중)</span>'}</th>`).join('')}<th style="padding:12px 10px;text-align:center">택배사</th>
+                        <th style="padding:12px 10px">브랜드</th>${channels.map(ch => `<th style="padding:12px 6px;text-align:center">${ch.label}</th>`).join('')}<th style="padding:12px 10px;text-align:center">택배사</th>
                     </tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
@@ -5982,7 +6040,6 @@ class BhasApp {
         const idInput = document.getElementById('new-user-id');
         const pwInput = document.getElementById('new-user-pw');
         const roleSelect = document.getElementById('new-user-role');
-        const brandSelect = document.getElementById('new-user-brand');
         const saveBtn = document.getElementById('save-user-btn');
 
         nameInput.value = user.name || '';
@@ -5990,20 +6047,26 @@ class BhasApp {
         idInput.disabled = true; // 아이디 수정 불가 (Auth 연동 이슈 방지)
         pwInput.placeholder = '비밀번호 변경 시에만 입력하세요 (최소 6자)';
         roleSelect.value = user.role || 'CLIENT';
-        brandSelect.value = user.brand_id || '';
 
-        const brandContainer = document.getElementById('brand-selection-container');
-        brandContainer.style.display = roleSelect.value === 'CLIENT' ? 'block' : 'none';
+        // 기존 권한 체크박스 복원 (menu_access 없으면 역할 기본값)
+        const curMenu = Array.isArray(user.menu_access) && user.menu_access.length ? user.menu_access : this._defaultMenuAccess(user.role || 'CLIENT');
+        document.getElementById('perm-menu-container').innerHTML = this._renderPermMenuChecks(curMenu);
+        const curBrand = Array.isArray(user.brand_access) && user.brand_access.length ? user.brand_access : (user.brand_id ? [user.brand_id] : []);
+        document.querySelectorAll('.perm-brand-check').forEach(c => { c.checked = curBrand.includes(c.value); });
+        // 편집 모드에서는 권한 변경 시 자동 리셋하지 않도록 change 핸들러 무력화
+        roleSelect.onchange = null;
 
         saveBtn.innerText = '정보 수정';
         saveBtn.onclick = async () => {
             const newName = nameInput.value.trim();
             const newPw = pwInput.value.trim();
             const newRole = roleSelect.value;
-            const newBrandId = brandSelect.value;
+            const { menu_access, brand_access } = this._readPermChecks();
+            const newBrandId = newRole === 'CLIENT' ? (brand_access && brand_access[0]) || '' : '';
 
             if (!newName) { this.showToast('이름을 입력해주세요.'); return; }
             if (newPw && newPw.length < 6) { this.showToast('비밀번호는 최소 6자 이상이어야 합니다.'); return; }
+            if (newRole === 'CLIENT' && !newBrandId) { this.showToast('고객사(CLIENT) 계정은 브랜드 접근에서 최소 1개를 체크해야 합니다.'); return; }
 
             saveBtn.disabled = true;
             saveBtn.innerText = '수정 중...';
@@ -6011,23 +6074,30 @@ class BhasApp {
             try {
                 // 1. Supabase Auth 비밀번호 업데이트 (입력된 경우만)
                 if (newPw) {
-                    // 참고: 현재 세션이 MASTER이므로 타 사용자 PW 변경은 Admin API 필요할 수 있음. 
+                    // 참고: 현재 세션이 MASTER이므로 타 사용자 PW 변경은 Admin API 필요할 수 있음.
                     // 여기서는 단순 DB 정보 업데이트 위주로 처리하거나 알림.
                     const { error: authError } = await this.supabase.auth.updateUser({ password: newPw });
                     // Admin API 필요 시 무시
                 }
 
-                // 2. DB 업데이트
+                // 2. DB 업데이트 (기본 정보)
                 const { error: dbError } = await this.supabase
                     .from('companies')
-                    .update({ 
-                        name: newName, 
-                        role: newRole, 
-                        brand_id: newRole === 'CLIENT' ? (newBrandId || null) : null 
+                    .update({
+                        name: newName,
+                        role: newRole,
+                        brand_id: newRole === 'CLIENT' ? (newBrandId || null) : null
                     })
                     .eq('id', userId);
 
                 if (dbError) throw dbError;
+
+                // 2-2. 세분화 권한(menu_access/brand_access) — 컬럼 없을 수 있어 best-effort
+                const { error: permErr } = await this.supabase
+                    .from('companies')
+                    .update({ menu_access, brand_access })
+                    .eq('id', userId);
+                if (permErr) { console.warn('권한 저장 경고:', permErr.message); this.showToast('기본정보는 저장됨. 권한 컬럼 미적용(마이그레이션 필요).'); }
 
                 this.showToast('계정 정보가 수정되었습니다.');
                 modal.style.display = 'none';
@@ -6459,6 +6529,68 @@ class BhasApp {
         });
     }
 
+    // 계정 권한 체크박스에 노출할 배정 가능한 메뉴 (계정/브랜드 관리는 MASTER 전용이라 제외, 할일은 항상노출이라 제외)
+    _assignableMenus() {
+        return [
+            { g: '생산관리', items: [['dashboard','프로젝트'],['timeline','타임라인'],['sample_maker','샘플'],['vendors','생산현황'],['quotes','견적']] },
+            { g: '재고·판매', items: [['orders','주문'],['sales','매출'],['inventory','재고'],['integrations','연동']] },
+            { g: '업무관리', items: [['pages','페이지'],['kanban','보드'],['calendar','캘린더'],['table','표']] },
+            { g: '자료실', items: [['documents','문서']] }
+        ];
+    }
+    _defaultMenuAccess(role) {
+        const all = this._assignableMenus().flatMap(s => s.items.map(i => i[0]));
+        if (role === 'MASTER' || role === 'STAFF') return all;
+        return ['dashboard']; // CLIENT 기본: 프로젝트(대시보드)만
+    }
+    _renderPermMenuChecks(selected) {
+        const sel = new Set(selected || []);
+        return this._assignableMenus().map(sec => `
+            <div style="margin-bottom: 10px;">
+                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; letter-spacing: .04em;">${sec.g}</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                    ${sec.items.map(([id,label]) => `
+                        <label class="perm-chip" style="display:inline-flex; align-items:center; gap:5px; padding:5px 10px; border-radius:9px; background:rgba(var(--tint),0.05); border:1px solid var(--card-border); cursor:pointer; font-size:12px;">
+                            <input type="checkbox" class="perm-menu-check" value="${id}" ${sel.has(id)?'checked':''} style="accent-color: var(--accent, #6c8cff);">
+                            ${label}
+                        </label>`).join('')}
+                </div>
+            </div>`).join('');
+    }
+    _renderPermBrandChecks(selected) {
+        const sel = new Set(selected || []);
+        const brands = mockData.brands || [];
+        if (!brands.length) return '<div style="font-size:12px; color:var(--text-muted);">브랜드 없음</div>';
+        return `<div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${brands.map(b => `
+                <label class="perm-chip" style="display:inline-flex; align-items:center; gap:5px; padding:5px 10px; border-radius:9px; background:rgba(var(--tint),0.05); border:1px solid var(--card-border); cursor:pointer; font-size:12px;">
+                    <input type="checkbox" class="perm-brand-check" value="${b.id}" ${sel.has(b.id)?'checked':''} style="accent-color: var(--accent, #6c8cff);">
+                    ${b.name}
+                </label>`).join('')}
+        </div>`;
+    }
+    _readPermChecks() {
+        const menu = [...document.querySelectorAll('.perm-menu-check:checked')].map(c => c.value);
+        const brand = [...document.querySelectorAll('.perm-brand-check:checked')].map(c => c.value);
+        return { menu_access: menu, brand_access: brand.length ? brand : null };
+    }
+    _applyRoleDefaultsToPermChecks(role) {
+        const def = new Set(this._defaultMenuAccess(role));
+        document.querySelectorAll('.perm-menu-check').forEach(c => { c.checked = def.has(c.value); });
+    }
+    // 현재 로그인 계정이 조회 가능한 브랜드 id 집합. null=제한없음(전체). 설정된 경우에만 제한(회귀 없음).
+    _allowedBrandIds() {
+        const u = this.currentUser || {};
+        if (Array.isArray(u.brand_access) && u.brand_access.length) return new Set(u.brand_access);
+        return null;
+    }
+    // 브랜드 선택기/목록에 노출할 브랜드 (brand_access 반영)
+    _visibleBrands() {
+        const ab = this._allowedBrandIds();
+        const brands = mockData.brands || [];
+        return ab ? brands.filter(b => ab.has(b.id)) : brands;
+    }
+
     showAddUserModal() {
         let modal = document.getElementById('add-user-modal');
         if (!modal) {
@@ -6499,16 +6631,18 @@ class BhasApp {
                     </select>
                 </div>
 
-                <div id="brand-selection-container" class="login-field" style="margin-bottom: 2rem;">
-                    <label>배정 브랜드 (CLIENT 전용)</label>
-                    <select id="new-user-brand" class="glass" style="width: 100%; padding: 12px; border-radius: 12px; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--card-border);">
-                        <option value="">브랜드 선택 안함 (STAFF/MASTER 권장)</option>
-                        ${(mockData.brands || []).map(b => `
-                            <option value="${b.id}">${b.name}</option>
-                        `).join('')}
-                    </select>
+                <div class="login-field" style="margin-bottom: 1.25rem;">
+                    <label style="display:flex; align-items:center; gap:6px;"><i class="ph ph-squares-four"></i> 메뉴 접근 권한</label>
+                    <div style="font-size:11px; color:var(--text-muted); margin:2px 0 10px;">이 계정이 볼 수 있는 메뉴를 체크하세요 · 권한 변경 시 기본값이 자동 체크됨</div>
+                    <div id="perm-menu-container">${this._renderPermMenuChecks(this._defaultMenuAccess('CLIENT'))}</div>
                 </div>
-                
+
+                <div id="perm-brand-container" class="login-field" style="margin-bottom: 2rem;">
+                    <label style="display:flex; align-items:center; gap:6px;"><i class="ph ph-tag"></i> 브랜드 접근 (조회 허용)</label>
+                    <div style="font-size:11px; color:var(--text-muted); margin:2px 0 10px;">체크한 브랜드 데이터만 조회 가능 · 비우면 전체(MASTER/STAFF) 또는 배정 브랜드 기준</div>
+                    ${this._renderPermBrandChecks([])}
+                </div>
+
                 <div style="display: flex; gap: 10px;">
                     <button id="cancel-user-btn" style="flex: 1; padding: 12px; border-radius: 12px; background: rgba(var(--tint),0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer;">취소</button>
                     <button id="save-user-btn" class="btn-primary" style="flex: 1; padding: 12px; border-radius: 12px;">계정 생성</button>
@@ -6519,9 +6653,10 @@ class BhasApp {
         modal.style.display = 'flex';
 
         const roleSelect = document.getElementById('new-user-role');
-        const brandContainer = document.getElementById('brand-selection-container');
+        // 기본 CLIENT 선택 상태에 맞춰 메뉴 체크 초기화
+        this._applyRoleDefaultsToPermChecks(roleSelect.value);
         roleSelect.addEventListener('change', () => {
-            brandContainer.style.display = roleSelect.value === 'CLIENT' ? 'block' : 'none';
+            this._applyRoleDefaultsToPermChecks(roleSelect.value);
         });
 
         document.getElementById('cancel-user-btn').onclick = () => modal.style.display = 'none';
@@ -6620,11 +6755,13 @@ class BhasApp {
             { this.showToast('비밀번호는 최소 6자 이상이어야 합니다.'); return; }
         }
 
-        const brandId = document.getElementById('new-user-brand').value;
-        const brand = mockData.brands?.find(b => b.id === brandId);
+        // 메뉴/브랜드 접근 권한 체크박스 수집
+        const { menu_access, brand_access } = this._readPermChecks();
+        // CLIENT는 브랜드 접근 첫번째를 배정 브랜드(brand_id)로 사용
+        const brandId = role === 'CLIENT' ? (brand_access && brand_access[0]) || '' : '';
 
         if (role === 'CLIENT' && !brandId) {
-            { this.showToast('고객사(CLIENT) 계정은 반드시 브랜드를 선택해야 합니다.'); return; }
+            { this.showToast('고객사(CLIENT) 계정은 브랜드 접근에서 최소 1개를 체크해야 합니다.'); return; }
         }
 
         const email = `${username}@bhas.com`;
@@ -6657,6 +6794,12 @@ class BhasApp {
             });
 
             if (dbError) throw dbError;
+
+            // 세분화 권한(menu_access/brand_access) 저장 — create_company RPC엔 없는 컬럼이라 후속 업데이트
+            const { error: permErr } = await this.supabase.from('companies')
+                .update({ menu_access, brand_access })
+                .eq('username', username);
+            if (permErr) console.warn('권한 저장 경고:', permErr.message);
 
             this.showToast('새 계정이 추가되었습니다.');
             document.getElementById('add-user-modal').style.display = 'none';
