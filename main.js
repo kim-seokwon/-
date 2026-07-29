@@ -3020,6 +3020,7 @@ class BhasApp {
     setSalesYear(y) { this.salesViewYear = y; this.switchView('sales'); }
     setSalesMonth(m) { this.salesViewMonth = m; this.switchView('sales'); }
     setSalesBrand(b) { this.salesViewBrand = b; this.switchView('sales'); }
+    setSalesMatrixYear(y) { this.salesMatrixYear = y; this.switchView('sales'); }
     // 주문 → 브랜드명 매핑(_salesAgg의 mallBrand와 동일 규칙)
     _orderBrandName(o) {
         const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
@@ -3326,15 +3327,30 @@ class BhasApp {
         </div>`;
         const insights = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${netCard}${repeatCard}${optCard}${qualityCard}</div>`;
 
-        // 브랜드 × 월 매트릭스 (참고용, 2개월 이상일 때만)
-        const matrix = months.length > 1 ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;overflow-x:auto;margin-top:1.3rem">
-            <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-table" style="color:var(--primary)"></i> 브랜드 × 월 매출</div>
-            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;white-space:nowrap">
-                <thead><tr style="border-bottom:2px solid var(--card-border)"><th style="text-align:left;padding:8px 10px">브랜드</th>${months.map(m => `<th style="text-align:right;padding:8px 10px">${monthLabel(m)}</th>`).join('')}<th style="text-align:right;padding:8px 10px;border-left:1px solid var(--card-border)">합계</th></tr></thead>
-                <tbody>${brands.map((b, bi) => `<tr style="border-bottom:1px solid var(--card-border)"><td style="text-align:left;padding:8px 10px;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${palette[bi % palette.length]};margin-right:6px"></span>${this._vesc(b.name)}</td>${b.cells.map(c => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;color:${c.amt ? 'var(--text-main)' : 'var(--text-muted)'}">${c.amt ? won(c.amt) : '·'}</td>`).join('')}<td style="text-align:right;padding:8px 10px;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td></tr>`).join('')}</tbody>
-                <tfoot><tr style="border-top:2px solid var(--card-border);font-weight:800"><td style="text-align:left;padding:8px 10px">합계</td>${monthTotals.map(t => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums">${won(t)}</td>`).join('')}<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(grand)}</td></tr></tfoot>
-            </table>
-        </div>` : '';
+        // 브랜드 × 월 매트릭스 — 연도 선택해서 1년치(1~12월)씩 보기
+        const mtxYear = yearsAvail.includes(this.salesMatrixYear) ? this.salesMatrixYear : selY;
+        const mtxMonths = Array.from({ length: 12 }, (_, i) => `${mtxYear}-${String(i + 1).padStart(2, '0')}`);
+        const mIdx = k => months.indexOf(k);
+        // 해당 연도에 매출 있는 브랜드만 표시
+        const mtxBrands = brands.map((b, bi) => {
+            const cells = mtxMonths.map(k => { const ix = mIdx(k); return ix >= 0 ? b.cells[ix].amt : 0; });
+            return { name: b.name, color: palette[bi % palette.length], cells, total: cells.reduce((s, v) => s + v, 0) };
+        }).filter(b => b.total > 0);
+        const mtxColTotals = mtxMonths.map((k) => { const ix = mIdx(k); return ix >= 0 ? monthTotals[ix] : 0; });
+        const mtxGrand = mtxColTotals.reduce((s, v) => s + v, 0);
+        const matrix = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;overflow-x:auto;margin-top:1.3rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:0.9rem;flex-wrap:wrap">
+                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-table" style="color:var(--primary)"></i> 브랜드 × 월 매출 <span style="color:var(--text-muted);font-weight:600;font-size:0.82rem">· ${mtxYear}년</span></div>
+                <select onchange="app.setSalesMatrixYear(this.value)" style="padding:6px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.82rem;font-weight:700;cursor:pointer">
+                    ${yearsAvail.map(y => `<option value="${y}" ${y === mtxYear ? 'selected' : ''}>${y}년</option>`).join('')}
+                </select>
+            </div>
+            ${mtxBrands.length ? `<table style="width:100%;border-collapse:collapse;font-size:0.82rem;white-space:nowrap">
+                <thead><tr style="border-bottom:2px solid var(--card-border)"><th style="text-align:left;padding:8px 10px">브랜드</th>${mtxMonths.map(m => `<th style="text-align:right;padding:8px 10px">${+m.slice(5)}월</th>`).join('')}<th style="text-align:right;padding:8px 10px;border-left:1px solid var(--card-border)">합계</th></tr></thead>
+                <tbody>${mtxBrands.map(b => `<tr style="border-bottom:1px solid var(--card-border)"><td style="text-align:left;padding:8px 10px;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${b.color};margin-right:6px"></span>${this._vesc(b.name)}</td>${b.cells.map(c => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;color:${c ? 'var(--text-main)' : 'var(--text-muted)'}">${c ? won(c) : '·'}</td>`).join('')}<td style="text-align:right;padding:8px 10px;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td></tr>`).join('')}</tbody>
+                <tfoot><tr style="border-top:2px solid var(--card-border);font-weight:800"><td style="text-align:left;padding:8px 10px">합계</td>${mtxColTotals.map(t => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums">${t ? won(t) : '·'}</td>`).join('')}<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(mtxGrand)}</td></tr></tfoot>
+            </table>` : `<div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:0.85rem">${mtxYear}년 매출 데이터가 없습니다.</div>`}
+        </div>`;
 
         return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
