@@ -31,7 +31,7 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: { f
     const we = Math.min(ws + CHUNK, end.getTime());
     for (let offset = 0; ; offset += LIMIT) {
       const res = await cafe24Fetch(mallId, token,
-        `/api/v2/admin/orders?start_date=${ymd(new Date(ws))}&end_date=${ymd(new Date(we))}&embed=items,receivers&limit=${LIMIT}&offset=${offset}&order_status=N00,N10,N20,N21,N22,N30,N40`)
+        `/api/v2/admin/orders?start_date=${ymd(new Date(ws))}&end_date=${ymd(new Date(we))}&embed=items,receivers&limit=${LIMIT}&offset=${offset}&order_status=N00,N10,N20,N21,N22,N30,N40,N50`)
         .catch((e) => { throw new Error(`[${mall.mall_key}] 주문 조회: ` + e.message); });
       const page = res.orders || [];
       orderList.push(...page);
