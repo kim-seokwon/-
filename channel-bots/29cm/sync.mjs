@@ -43,19 +43,28 @@ function gmailClient() {
 async function readEmailOtp({ afterEpochSec = Math.floor(Date.now() / 1000) - 180, timeoutMs = 90000 } = {}) {
   const gmail = gmailClient();
   const started = Date.now();
+  const seen = new Set();
   while (Date.now() - started < timeoutMs) {
-    const q = `(from:29cm.co.kr OR from:musinsa.com OR subject:인증) after:${afterEpochSec}`;
-    const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: 8 });
+    // 발신자에 의존하지 않고 본문/제목 전체에서 관련 키워드 검색(29CM/무신사 OTP 메일 커버)
+    const q = `after:${afterEpochSec} (29CM OR 29cm OR MUSINSA OR 무신사 OR 인증 OR 인증번호 OR verification OR 파트너)`;
+    const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: 10 });
     for (const m of (list.data.messages || [])) {
       const msg = await gmail.users.messages.get({ userId: 'me', id: m.id, format: 'full' });
-      const parts = [];
+      const headers = msg.data.payload?.headers || [];
+      const subject = headers.find(h => h.name === 'Subject')?.value || '';
+      const from = headers.find(h => h.name === 'From')?.value || '';
+      seen.add(`${from} | ${subject}`);
+      const parts = [subject];
       const walk = p => { if (p.body?.data) parts.push(Buffer.from(p.body.data, 'base64').toString('utf-8')); (p.parts || []).forEach(walk); };
       walk(msg.data.payload || {});
-      const code = (parts.join('\n').match(/\b(\d{6})\b/) || [])[1];
+      const text = parts.join('\n');
+      // '인증' 근처 6자리 우선, 없으면 임의 6자리
+      const code = (text.match(/인증[^0-9]{0,25}(\d{6})/) || text.match(/(\d{6})[^0-9]{0,25}인증/) || text.match(/\b(\d{6})\b/) || [])[1];
       if (code) return code;
     }
     await new Promise(r => setTimeout(r, 4000));
   }
+  console.error('[29cm] OTP 메일 못 찾음. 최근 후보:', [...seen].slice(0, 10).join(' || ') || '(검색결과 0건)');
   throw new Error('OTP 메일에서 인증번호를 못 찾음');
 }
 
