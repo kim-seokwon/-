@@ -1,35 +1,29 @@
 // ============================================================
-//  29CM · 무신사(통합 파트너) 주문 수집 봇
-//  통합 SSO 로그인(ID/PW + TOTP 자체생성) → 주문 API 응답 가로채기 → Supabase
+//  29CM · 무신사(통합 파트너) 주문 수집 봇 — 이메일 OTP 자동
+//  로그인(ID/PW) → 이메일 2차인증 코드를 Gmail IMAP으로 자동 읽기 → 주문 API 응답 가로채기 → Supabase
 //
 //  로그인: partner-sso.one.musinsa.com/oauth/login?clientId=E9_PARTNER
-//    2FA = TOTP(구글 OTP). 최초 등록 QR의 설정키가 시크릿(키디키디와 동일 방식).
-//  29CM 주문 API(역추적 확인):
-//    GET https://commerce-admin-api.29cm.co.kr/partner-admin/v4/orders
-//        ?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD&dateConditionType=ORDERED_AT&page=1&size=50
-//    응답 envelope: { result, data:{...주문 배열...}, errorCode, message }
-//    인증 = 메모리 Bearer 토큰 → 스토리지/쿠키에 없음 → Playwright가 로그인 세션에서
-//    주문조회 페이지 진입 시 브라우저가 자동 인증하므로, 그 응답을 page.on('response')로 가로챈다.
+//    2FA: OTP(구글 인증기) 또는 이메일. 봇은 '이메일' 탭 선택 → 코드가 Gmail로 옴 → IMAP으로 읽음.
+//  29CM 주문 API(역추적): GET commerce-admin-api.29cm.co.kr/partner-admin/v4/orders
+//    인증=메모리 Bearer → page.on('response')로 주문응답 가로채기.
 //
 //  환경변수(GitHub Secrets):
-//    MUSINSA_ID, MUSINSA_PW, MUSINSA_TOTP_SECRET  (통합 파트너 로그인, TOTP 설정키)
+//    MUSINSA_ID, MUSINSA_PW              : 통합 파트너 로그인
+//    GMAIL_USER, GMAIL_APP_PASSWORD      : OTP 메일 수신 Gmail + 앱 비밀번호(16자, 2FA 계정에서 생성)
 //    SUPABASE_URL, SUPABASE_SERVICE_KEY
-//
-//  ⚠️ 로그인 폼(ID/PW) 셀렉터는 캡처 세션에서 최종 확정 필요(아래 TODO).
-//     주문 응답 실제 필드명도 첫 실주문에서 mapOrder 미세조정.
 // ============================================================
 import { chromium } from 'playwright';
-import { authenticator } from 'otplib';
+import { ImapFlow } from 'imapflow';
 import { createClient } from '@supabase/supabase-js';
 
 const {
-  MUSINSA_ID, MUSINSA_PW, MUSINSA_TOTP_SECRET,
+  MUSINSA_ID, MUSINSA_PW,
+  GMAIL_USER, GMAIL_APP_PASSWORD,
   SUPABASE_URL, SUPABASE_SERVICE_KEY,
 } = process.env;
 
-// 자격증명 미설정이면 조용히 skip(성공 종료) — GitHub Secrets 넣으면 자동 작동
-if (!MUSINSA_ID || !MUSINSA_PW || !MUSINSA_TOTP_SECRET || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.log('[29cm] 자격증명(Secrets) 미설정 — 수집 건너뜀. (MUSINSA_ID/PW/TOTP_SECRET, SUPABASE_* 설정 시 자동 시작)');
+if (!MUSINSA_ID || !MUSINSA_PW || !GMAIL_USER || !GMAIL_APP_PASSWORD || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (MUSINSA_ID/PW, GMAIL_USER/APP_PASSWORD, SUPABASE_* 필요)');
   process.exit(0);
 }
 
@@ -38,104 +32,109 @@ const ORDER_PAGE = 'https://partner-order.29cm.co.kr/list';
 const ORDER_API_RE = /commerce-admin-api\.29cm\.co\.kr\/partner-admin\/v4\/orders/;
 const MALL_KEY = '29cm';
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+const ymd = d => d.toISOString().slice(0, 10);
 
-function ymd(d) { return d.toISOString().slice(0, 10); }
+// Gmail IMAP에서 최근 29CM/무신사 인증코드(6자리) 읽기
+async function readEmailOtp({ sinceMs = Date.now() - 5 * 60000, timeoutMs = 90000 } = {}) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const client = new ImapFlow({ host: 'imap.gmail.com', port: 993, secure: true, auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD }, logger: false });
+    await client.connect();
+    try {
+      const lock = await client.getMailboxLock('INBOX');
+      try {
+        const uids = await client.search({ since: new Date(sinceMs), or: [{ from: '29cm' }, { from: 'musinsa' }, { subject: '인증' }] }, { uid: true });
+        for (const uid of uids.reverse().slice(0, 8)) {
+          const msg = await client.fetchOne(uid, { source: true }, { uid: true });
+          const text = msg.source.toString('utf-8');
+          const m = text.match(/\b(\d{6})\b/);
+          if (m) return m[1];
+        }
+      } finally { lock.release(); }
+    } finally { await client.logout().catch(() => {}); }
+    await new Promise(r => setTimeout(r, 4000));
+  }
+  throw new Error('OTP 메일에서 인증번호를 못 찾음');
+}
 
 async function login(browser) {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
 
-  // TODO(캡처): 통합 SSO ID/PW 실제 셀렉터 확정
+  // ID/PW (통합 SSO — 실측 확정 필요 시 셀렉터 보강)
   await page.fill('input[name="loginId"], input[type="text"], input[type="email"]', MUSINSA_ID);
   await page.fill('input[name="password"], input[type="password"]', MUSINSA_PW);
-  await page.click('button[type="submit"], .btn-login, button:has-text("로그인")');
+  await page.click('button:has-text("로그인"), button[type="submit"]');
+  await page.waitForTimeout(2500);
 
-  // 2FA = TOTP: OTP 입력칸에 자체생성 6자리 → 인증하기
-  await page.waitForTimeout(2000);
-  const otp = page.locator('input[placeholder*="인증"], input[type="tel"], input[type="text"]').first();
-  if (await otp.isVisible().catch(() => false)) {
-    await otp.fill(authenticator.generate(MUSINSA_TOTP_SECRET));
-    await page.click('button:has-text("인증"), button[type="submit"]');
-  }
+  // 2차 인증: '이메일' 탭 선택 → 코드 전송됨 → IMAP으로 읽어 입력
+  const emailTab = page.locator('button:has-text("이메일"), [role="tab"]:has-text("이메일")').first();
+  if (await emailTab.isVisible().catch(() => false)) await emailTab.click();
+  await page.waitForTimeout(1500);
+  const sentAt = Date.now() - 60000;
+  const code = await readEmailOtp({ sinceMs: sentAt });
+  await page.fill('input[placeholder*="인증"], input[type="tel"], input[type="text"]', code);
+  await page.click('button:has-text("인증"), button[type="submit"]');
   await page.waitForURL(/29cm\.co\.kr|partner-connect/, { timeout: 30000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
   return { ctx, page };
 }
 
-// 주문 조회 페이지 진입 → 브라우저가 인증된 orders API 호출 → 그 응답을 가로챈다
-async function fetchOrders(page, fromDate, toDate) {
-  const captured = new Promise((resolve) => {
-    page.on('response', async (res) => {
-      if (ORDER_API_RE.test(res.url())) {
-        try { resolve(await res.json()); } catch { resolve(null); }
-      }
-    });
-  });
-  const url = `${ORDER_PAGE}?fromDate=${fromDate}&toDate=${toDate}&dateConditionType=ORDERED_AT&periodTemplate=31&page=1&size=200`;
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  const body = await Promise.race([
-    captured,
-    new Promise((r) => setTimeout(() => r(null), 20000)),
-  ]);
-  if (!body) throw new Error('주문 API 응답 캡처 실패(로그인/셀렉터 확인)');
-  return body;
+// 주문조회 페이지 진입 → 인증된 orders API 응답 가로채기 (3개월 청킹)
+async function fetchWindow(page, fromDate, toDate) {
+  const captured = [];
+  const handler = async (res) => { if (ORDER_API_RE.test(res.url())) { try { captured.push(await res.json()); } catch {} } };
+  page.on('response', handler);
+  await page.goto(`${ORDER_PAGE}?fromDate=${fromDate}&toDate=${toDate}&dateConditionType=ORDERED_AT&page=1&size=100`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  page.off('response', handler);
+  const body = captured.find(b => b?.data);
+  return (body?.data?.content || body?.data?.list || []);
 }
 
-function extractList(body) {
-  const d = body?.data ?? body;
-  if (Array.isArray(d)) return d;
-  for (const k of ['content', 'list', 'orders', 'items', 'rows', 'orderList']) {
-    if (Array.isArray(d?.[k])) return d[k];
-  }
-  for (const k of Object.keys(d || {})) if (Array.isArray(d[k])) return d[k];
-  return [];
-}
-
-// TODO(첫 실주문에서 확정): 29CM orders 응답 실제 필드명. UI 컬럼 기준 추정 매핑.
 function mapOrder(o) {
   return {
-    channel: '29cm',
-    mall_key: MALL_KEY,
+    channel: '29cm', mall_key: MALL_KEY,
     order_id: String(o.orderNumber ?? o.orderNo ?? o.orderId ?? o.id),
     order_date: o.orderedAt ?? o.orderDate ?? o.paymentCompletedAt ?? null,
     buyer_name: o.ordererName ?? o.buyerName ?? null,
     receiver_name: o.receiverName ?? o.recipientName ?? null,
-    receiver_phone: o.receiverPhone ?? o.recipientMobile ?? null,
-    receiver_address: o.receiverAddress ?? o.address ?? null,
+    receiver_phone: o.receiverPhone ?? null, receiver_address: o.receiverAddress ?? null,
     pay_amount: Number(o.actualSalePrice ?? o.realSalePrice ?? o.salePrice ?? o.paymentAmount ?? 0),
-    channel_status: o.orderStatus ?? o.status ?? null,
-    status: 'new',
-    raw: o,
+    channel_status: o.orderStatus ?? o.status ?? null, status: 'new', raw: o,
   };
 }
 
 async function ensureMall() {
   const { data } = await db.from('malls').select('mall_key').eq('mall_key', MALL_KEY).maybeSingle();
   if (data) return;
-  // 29CM 브랜드(하이헤이호) 매핑
   const { data: brand } = await db.from('brands').select('id').or('name.ilike.%하이헤이호%,name.ilike.%hiheyho%').maybeSingle();
   await db.from('malls').upsert({ mall_key: MALL_KEY, label: '29CM', channel: '29cm', brand_id: brand?.id ?? null, active: true, connected: true }, { onConflict: 'mall_key' });
-  console.log('[29cm] malls 등록');
 }
 
 async function run() {
   await ensureMall();
-  const to = new Date(), from = new Date(Date.now() - 31 * 864e5);
   const browser = await chromium.launch({ headless: true });
   try {
     const { page } = await login(browser);
-    const data = await fetchOrders(page, ymd(from), ymd(to));
-    const list = extractList(data);
-    console.log(`[29cm] 주문 ${list.length}건`);
-    if (!list.length) { console.log('[29cm] envelope keys:', JSON.stringify(Object.keys(data || {}))); return; }
-    const rows = list.map(mapOrder).filter(r => r.order_id && r.order_id !== 'undefined');
-    const { error } = await db.from('channel_orders').upsert(rows, { onConflict: 'mall_key,order_id', ignoreDuplicates: false });
-    if (error) throw error;
-    console.log(`[29cm] Supabase 저장 ${rows.length}건`);
-  } finally {
-    await browser.close();
-  }
+    // 최근 400일을 88일 창으로 청킹
+    const all = [];
+    const end = Date.now(), CH = 88 * 864e5;
+    for (let ws = end - 400 * 864e5; ws <= end; ws += CH + 864e5) {
+      const we = Math.min(ws + CH, end);
+      all.push(...await fetchWindow(page, ymd(new Date(ws)), ymd(new Date(we))));
+    }
+    const byId = {};
+    for (const o of all) { const k = String(o.orderNumber ?? o.orderNo ?? o.orderId ?? o.id); if (k) byId[k] = o; }
+    const rows = Object.values(byId).map(mapOrder).filter(r => r.order_id && r.order_id !== 'undefined');
+    console.log(`[29cm] 주문 ${rows.length}건`);
+    if (rows.length) {
+      const { error } = await db.from('channel_orders').upsert(rows, { onConflict: 'mall_key,order_id' });
+      if (error) throw error;
+      console.log(`[29cm] Supabase 저장 ${rows.length}건`);
+    }
+  } finally { await browser.close(); }
 }
 
 run().catch(e => { console.error('[29cm] 실패:', e); process.exit(1); });
