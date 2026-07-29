@@ -17,13 +17,13 @@ import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
 
 const {
-  MUSINSA_ID, MUSINSA_PW,
+  CM29_ID, CM29_PW,
   GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
   SUPABASE_URL, SUPABASE_SERVICE_KEY,
 } = process.env;
 
-if (!MUSINSA_ID || !MUSINSA_PW || !GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (MUSINSA_ID/PW, GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN, SUPABASE_* 필요)');
+if (!CM29_ID || !CM29_PW || !GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (CM29_ID/PW, GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN, SUPABASE_* 필요)');
   process.exit(0);
 }
 
@@ -65,8 +65,8 @@ async function login(browser) {
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
 
   // ID/PW (통합 SSO — 실측 확정 필요 시 셀렉터 보강)
-  await page.fill('input[name="loginId"], input[type="text"], input[type="email"]', MUSINSA_ID);
-  await page.fill('input[name="password"], input[type="password"]', MUSINSA_PW);
+  await page.fill('input[name="loginId"], input[type="text"], input[type="email"]', CM29_ID);
+  await page.fill('input[name="password"], input[type="password"]', CM29_PW);
   await page.click('button:has-text("로그인"), button[type="submit"]');
   await page.waitForTimeout(2500);
 
