@@ -17,6 +17,12 @@ const {
   SUPABASE_URL, SUPABASE_SERVICE_KEY,
 } = process.env;
 
+// 자격증명 미설정이면 조용히 skip(성공 종료) — GitHub Secrets 넣으면 자동 작동
+if (!NAVER_CLIENT_ID || !NAVER_CLIENT_SECRET || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.log('[smartstore] 자격증명(Secrets) 미설정 — 수집 건너뜀. (NAVER_CLIENT_ID/SECRET, SUPABASE_* 설정 시 자동 시작)');
+  process.exit(0);
+}
+
 const BASE = 'https://api.commerce.naver.com/external';
 const MALL_KEY = 'smartstore';
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });

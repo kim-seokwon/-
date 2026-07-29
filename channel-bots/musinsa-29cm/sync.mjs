@@ -27,6 +27,12 @@ const {
   SUPABASE_URL, SUPABASE_SERVICE_KEY,
 } = process.env;
 
+// 자격증명 미설정이면 조용히 skip(성공 종료) — GitHub Secrets 넣으면 자동 작동
+if (!MUSINSA_ID || !MUSINSA_PW || !MUSINSA_TOTP_SECRET || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.log('[29cm] 자격증명(Secrets) 미설정 — 수집 건너뜀. (MUSINSA_ID/PW/TOTP_SECRET, SUPABASE_* 설정 시 자동 시작)');
+  process.exit(0);
+}
+
 const LOGIN_URL = 'https://partner-sso.one.musinsa.com/oauth/login?clientId=E9_PARTNER&platform=29cm&redirectUri=https%3A%2F%2Fpartner-auth.29cm.co.kr%2F';
 const ORDER_PAGE = 'https://partner-order.29cm.co.kr/list';
 const ORDER_API_RE = /commerce-admin-api\.29cm\.co\.kr\/partner-admin\/v4\/orders/;
