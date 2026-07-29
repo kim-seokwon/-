@@ -70,14 +70,18 @@ async function login(browser) {
   await page.click('button:has-text("로그인"), button[type="submit"]');
   await page.waitForTimeout(2500);
 
-  // 2차 인증: '이메일' 탭 선택 → 코드 전송됨 → IMAP으로 읽어 입력
+  // 2차 인증(파트너 통합계정 인증): '이메일' 탭 → '인증번호 받기' 눌러 메일 발송 → Gmail로 읽어 입력 → '인증하기'
   const emailTab = page.locator('button:has-text("이메일"), [role="tab"]:has-text("이메일")').first();
   if (await emailTab.isVisible().catch(() => false)) await emailTab.click();
-  await page.waitForTimeout(1500);
-  const sentAt = Date.now() - 60000;
-  const code = await readEmailOtp({ sinceMs: sentAt });
-  await page.fill('input[placeholder*="인증"], input[type="tel"], input[type="text"]', code);
-  await page.click('button:has-text("인증"), button[type="submit"]');
+  await page.waitForTimeout(1000);
+  // '인증번호 받기'를 눌러야 실제로 OTP 메일이 발송됨(이게 없으면 메일이 안 옴)
+  const requestBtn = page.locator('button:has-text("인증번호 받기"), button:has-text("인증번호")').first();
+  await requestBtn.click();
+  const sentEpochSec = Math.floor(Date.now() / 1000); // 이 시점 이후 도착한 메일만 읽음
+  await page.waitForTimeout(2000);
+  const code = await readEmailOtp({ afterEpochSec: sentEpochSec });
+  await page.fill('input[placeholder*="인증코드"], input[placeholder*="인증"], input[type="tel"]', code);
+  await page.click('button:has-text("인증하기"), button:has-text("인증")');
   await page.waitForURL(/29cm\.co\.kr|partner-connect/, { timeout: 30000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
   return { ctx, page };
