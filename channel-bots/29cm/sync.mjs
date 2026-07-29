@@ -106,15 +106,19 @@ async function login(browser) {
   // '이메일' 탭 라디오 선택(기본 선택이지만 안전하게)
   await page.locator('input[type="radio"]').nth(1).check().catch(() => {});
   await page.waitForTimeout(500);
-  // '인증번호 받기'가 활성(=아직 미발송)이면 눌러 발송. 카운트다운/이미발송이면 스킵하고 최근 메일을 읽음.
-  const reqBtn = page.getByRole('button', { name: /인증번호 받기/ });
-  if ((await reqBtn.count()) && (await reqBtn.isEnabled().catch(() => false))) {
-    await reqBtn.click();
-    console.log('[29cm] 인증번호 받기 클릭 → 메일 발송');
-    await page.waitForTimeout(1500);
-  } else {
-    console.log('[29cm] 인증번호 이미 발송됨(카운트다운) → 최근 메일 읽기');
+  // '인증번호 받기'/'인증번호 재요청' 버튼을 무조건 눌러 새 코드 발송(스킵하지 않음).
+  // 재요청 쿨다운 중이면 활성화될 때까지 최대 65초 대기 후 클릭.
+  const reqBtn = page.getByRole('button', { name: /인증번호 받기|인증번호 재요청/ }).first();
+  await reqBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
+  for (let i = 0; i < 14; i++) {
+    if (await reqBtn.isEnabled().catch(() => false)) break;
+    console.log('[29cm] 재요청 쿨다운 대기...');
+    await page.waitForTimeout(5000);
   }
+  const clickedAt = new Date();
+  await reqBtn.click({ timeout: 10000 });
+  console.log(`[29cm] 인증번호 발송 클릭 (${clickedAt.toISOString()}) → 메일 대기`);
+  await page.waitForTimeout(3000);
 
   const code = await readEmailOtp();
   console.log('[29cm] OTP 코드 수신 → 입력');
