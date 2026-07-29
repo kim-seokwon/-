@@ -993,7 +993,7 @@ class BhasApp {
                                     <button class="breadcrumb-back-btn btn-secondary" style="padding: 6px 12px; border-radius: 8px; font-size: 0.85rem;"><i class="ph ph-arrow-left"></i> 뒤로</button>
                                     <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                                         ${p?.name || '상세보기'}
-                                        <span class="company-tag" style="border-color: ${bColor}; color: white; background: ${bColor}20; border-width: 2.5px; font-size: 0.8rem;">
+                                        <span class="company-tag" style="border-color: ${bColor}; color: ${this._contrastText(bColor)}; background: ${bColor}; border-width: 1px; font-size: 0.8rem;">
                                             <i class="ph ph-buildings"></i> ${bName}
                                         </span>
                                     </h1>
@@ -2092,7 +2092,7 @@ class BhasApp {
                 return `
                     <div class="project-card glass fade-in" data-id="${product.id}" style="cursor: pointer; border: 1px solid ${brandColor}20;">
                         <div class="card-header" style="margin-bottom: 12px;">
-                            <span class="company-tag" style="border-color: ${brandColor}; color: white; background: ${brandColor}20; border-width: 2.5px;">
+                            <span class="company-tag" style="border-color: ${brandColor}; color: ${this._contrastText(brandColor)}; background: ${brandColor}; border-width: 1px;">
                                 <i class="ph ph-buildings"></i> ${brandName}
                             </span>
                             <span class="deadline" style="font-size: 0.75rem; color: var(--text-muted);">~ ${this.formatDateToUI(product.deadline)}</span>
@@ -2161,7 +2161,7 @@ class BhasApp {
                         <div class="glass" style="border-radius: 16px; overflow: hidden; margin-bottom: 2rem; border: 1px solid ${brandColor}30;">
                             <div style="background: ${brandColor}10; padding: 12px 16px; border-bottom: 1px solid ${brandColor}20; display: flex; align-items: center; justify-content: space-between;">
                                 <h3 style="font-size: 1rem; color: white; display: flex; align-items: center; gap: 8px; margin: 0;">
-                                    <span class="company-tag" style="border-color: ${brandColor}; color: white; background: ${brandColor}20; border-width: 2.5px; scale: 0.9;">
+                                    <span class="company-tag" style="border-color: ${brandColor}; color: ${this._contrastText(brandColor)}; background: ${brandColor}; border-width: 1px; scale: 0.9;">
                                         <i class="ph ph-buildings"></i> ${groupName}
                                     </span>
                                 </h3>
@@ -2962,7 +2962,7 @@ class BhasApp {
                         <div class="tl-row-head">
                             <div class="tl-row-title">
                                 <span class="tl-pname">${p.name}</span>
-                                <span class="company-tag tl-brand" style="border-color:${bColor}; color:#fff; background:${bColor}22;"><i class="ph ph-buildings"></i> ${this._brandName(p)}</span>
+                                <span class="company-tag tl-brand" style="border-color:${bColor}; color:${this._contrastText(bColor)}; background:${bColor};"><i class="ph ph-buildings"></i> ${this._brandName(p)}</span>
                             </div>
                             <div class="tl-row-meta">
                                 ${deadlineChip}
@@ -3432,6 +3432,16 @@ class BhasApp {
     }
     _mallLabel(key) { const m = (this.malls || []).find(m => m.mall_key === key); return m ? m.label : (key || '-'); }
     _mallBrand(key) { const m = (this.malls || []).find(m => m.mall_key === key); if (!m) return null; return (mockData.brands || []).find(b => b.id === m.brand_id) || null; }
+    // 배경색 명도로 읽기 좋은 글자색(흰/검) 자동 선택
+    _contrastText(hex) {
+        if (typeof hex !== 'string' || hex[0] !== '#') return '#ffffff';
+        let c = hex.slice(1);
+        if (c.length === 3) c = c.split('').map(x => x + x).join('');
+        if (c.length < 6) return '#ffffff';
+        const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return lum > 0.6 ? '#1a1a1a' : '#ffffff';
+    }
     _mallOptions(selected) {
         return `<option value="" style="background:#0f172a">몰 선택 안 함</option>` +
             (this.malls || []).map(m => `<option value="${m.mall_key}" style="background:#0f172a" ${m.mall_key === selected ? 'selected' : ''}>${m.label}</option>`).join('');
