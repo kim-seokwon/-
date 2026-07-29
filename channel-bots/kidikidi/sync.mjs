@@ -66,7 +66,7 @@ async function login(browser) {
 
 // 2) 내부 주문 API 호출 (세션쿠키 자동 포함)
 //    실제 UI가 200 주는 요청을 그대로 재현(파라미터 누락 시 503). d=on 필수.
-function orderUrl(fromDate, toDate) {
+function orderUrl(fromDate, toDate, pageNo) {
   const p = new URLSearchParams({
     d: 'on',
     fromSearchDate: fromDate, toSearchDate: toDate,
@@ -78,22 +78,40 @@ function orderUrl(fromDate, toDate) {
     exchangeCodes: '4010,4020,4030,4040,4050,4045',
     selStandardCategory1: '', selStandardCategory2: '',
     selStandardCategory3: '', selStandardCategory4: '', standardCategoryNo: '',
-    page: '1', searchOrderStatus: 'true', size: '200', _: String(Date.now()),
+    page: String(pageNo), searchOrderStatus: 'true', size: '200', _: String(Date.now()),
   });
   return `${BASE}/o/order/lookup/orders?${p.toString()}`;
 }
 
-async function fetchOrders(page, fromDate, toDate) {
-  const res = await page.request.get(orderUrl(fromDate, toDate), {
-    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-  });
-  if (!res.ok()) throw new Error(`주문 API 실패 ${res.status()}: ${(await res.text()).slice(0, 300)}`);
-  const body = await res.json();
-  // 응답은 envelope: { resultCode, resultMessage, ... }. 400 → 로그인 만료
-  if (body && String(body.resultCode) === '400') {
-    throw new Error(`세션 만료(${body.resultMessage}). 재로그인 필요`);
+// 한 날짜창의 모든 페이지 수집 (200줄씩 페이지네이션)
+async function fetchWindow(page, fromDate, toDate) {
+  const acc = [];
+  for (let pageNo = 1; pageNo <= 100; pageNo++) {
+    const res = await page.request.get(orderUrl(fromDate, toDate, pageNo), {
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    if (!res.ok()) throw new Error(`주문 API 실패 ${res.status()}: ${(await res.text()).slice(0, 300)}`);
+    const body = await res.json();
+    if (body && String(body.resultCode) === '400') throw new Error(`세션 만료(${body.resultMessage}). 재로그인 필요`);
+    const list = extractList(body);
+    acc.push(...list);
+    if (list.length < 200) break;   // 마지막 페이지
+    await page.waitForTimeout(400);  // 연타 방지(E·LAND 봇감지)
   }
-  return body;
+  return acc;
+}
+
+// 전체 기간을 90일 창으로 청킹 + 각 창 페이지네이션
+async function fetchOrders(page, fromDate, toDate) {
+  const CHUNK = 89 * 864e5;
+  const startMs = new Date(fromDate).getTime(), endMs = new Date(toDate).getTime();
+  const all = [];
+  for (let ws = startMs; ws <= endMs; ws += CHUNK + 864e5) {
+    const we = Math.min(ws + CHUNK, endMs);
+    const win = await fetchWindow(page, ymd(new Date(ws)), ymd(new Date(we)));
+    all.push(...win);
+  }
+  return all;
 }
 
 // envelope 안에서 주문 배열 추출 (성공 응답 구조는 첫 실주문에서 최종 확정)
@@ -155,17 +173,22 @@ async function ensureMall() {
 }
 
 async function run() {
+  // 조회 기간: 기본 400일(전체 이력 확보). 정기 실행은 upsert 멱등이라 재조회 안전.
+  const LOOKBACK = Number(process.env.LOOKBACK_DAYS || 400);
   const to = new Date();
-  const from = new Date(Date.now() - 30 * 864e5); // 최근 30일
+  const from = new Date(Date.now() - LOOKBACK * 864e5);
   const browser = await chromium.launch({ headless: true });
   try {
     await ensureMall();
     const { page } = await login(browser);
-    const data = await fetchOrders(page, ymd(from), ymd(to));
-    const list = extractList(data);
-    console.log(`[kidikidi] 주문 ${list.length}건 수집`);
-    if (list.length) {
-      const rows = list.map(mapOrder);
+    const list = await fetchOrders(page, ymd(from), ymd(to));  // 전체 페이지·창 수집된 배열
+    // 주문번호 단위 중복 제거(품목별 여러 줄 → 대표 1건, 금액 합산)
+    const byOrd = {};
+    for (const o of list) { const k = String(o.ordNo); if (!byOrd[k]) { byOrd[k] = mapOrder(o); byOrd[k].pay_amount = 0; } byOrd[k].pay_amount += Number(o.sellAmount ?? o.sellPrice ?? 0); }
+    const deduped = Object.values(byOrd);
+    console.log(`[kidikidi] 주문 라인 ${list.length} → 주문 ${deduped.length}건`);
+    if (deduped.length) {
+      const rows = deduped;
       // 유니크 제약은 (mall_key, order_id) — 005 마이그레이션에서 (channel,order_id) 대체됨
       const { error } = await db.from('channel_orders')
         .upsert(rows, { onConflict: 'mall_key,order_id', ignoreDuplicates: false });
