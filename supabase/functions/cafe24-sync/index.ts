@@ -8,8 +8,9 @@ import { admin, cafe24Fetch, cors, ensureToken, getActiveMalls, getMall, log, Ma
 
 function ymd(d: Date) { return d.toISOString().slice(0, 10); }
 
-async function syncMall(db: ReturnType<typeof admin>, mall: MallState) {
-  const summary: Record<string, unknown> = { mall: mall.mall_key, dry_run: mall.dry_run };
+async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: { from?: string; to?: string } = {}) {
+  const backfill = !!opts.from;
+  const summary: Record<string, unknown> = { mall: mall.mall_key, dry_run: mall.dry_run, backfill };
   const token = await ensureToken(db, mall);
   const mallId = mall.cafe24_mall_id!;
 
@@ -20,12 +21,24 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState) {
   const byVariant = new Map<string, { item: string; pno: string | null }>();
   for (const l of (listings || [])) byVariant.set(l.channel_variant_code, { item: l.inventory_item_id, pno: l.channel_product_no });
 
-  const start = mall.last_order_synced_at ? new Date(mall.last_order_synced_at) : new Date(Date.now() - 2 * 86400000);
-  const end = new Date();
-  const orders = await cafe24Fetch(mallId, token,
-    `/api/v2/admin/orders?start_date=${ymd(start)}&end_date=${ymd(end)}&embed=items,receivers&limit=100&order_status=N00,N10,N20,N21,N22,N30,N40`)
-    .catch((e) => { throw new Error(`[${mall.mall_key}] 주문 조회: ` + e.message); });
-  const orderList = orders.orders || [];
+  // 조회 범위: 백필(from/to 지정) or 증분(last_synced~now, 없으면 2일)
+  const start = opts.from ? new Date(opts.from) : (mall.last_order_synced_at ? new Date(mall.last_order_synced_at) : new Date(Date.now() - 2 * 86400000));
+  const end = opts.to ? new Date(opts.to) : new Date();
+  // 카페24 주문조회는 한 번에 최대 ~90일 → 청킹 + 오프셋 페이지네이션으로 전체 수집
+  const orderList: any[] = [];
+  const CHUNK = 89 * 86400000, LIMIT = 100;
+  for (let ws = start.getTime(); ws <= end.getTime(); ws += CHUNK + 86400000) {
+    const we = Math.min(ws + CHUNK, end.getTime());
+    for (let offset = 0; ; offset += LIMIT) {
+      const res = await cafe24Fetch(mallId, token,
+        `/api/v2/admin/orders?start_date=${ymd(new Date(ws))}&end_date=${ymd(new Date(we))}&embed=items,receivers&limit=${LIMIT}&offset=${offset}&order_status=N00,N10,N20,N21,N22,N30,N40`)
+        .catch((e) => { throw new Error(`[${mall.mall_key}] 주문 조회: ` + e.message); });
+      const page = res.orders || [];
+      orderList.push(...page);
+      if (page.length < LIMIT) break;
+      if (offset > 5000) break; // 안전 상한
+    }
+  }
 
   // 주문 저장(신규만) + 재고 차감
   let storedOrders = 0, deducted = 0;
@@ -120,14 +133,14 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState) {
   if (mall.dry_run) summary.would_push = intended;
   await log(db, mall.mall_key, "push_inventory", mall.dry_run ? "dry_run" : "ok", { pushed, intended: mall.dry_run ? intended : undefined });
 
-  await saveMall(db, mall.mall_key, { last_order_synced_at: end.toISOString() });
+  if (!backfill) await saveMall(db, mall.mall_key, { last_order_synced_at: end.toISOString() });
   return summary;
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
   const db = admin();
-  let body: { mall?: string } = {};
+  let body: { mall?: string; from?: string; to?: string } = {};
   try { body = await req.json(); } catch { /* no body */ }
 
   const malls = body.mall
@@ -141,7 +154,7 @@ Deno.serve(async (req) => {
 
   const results: unknown[] = [];
   for (const m of malls) {
-    try { results.push(await syncMall(db, m)); }
+    try { results.push(await syncMall(db, m, { from: body.from, to: body.to })); }
     catch (e) { await log(db, m.mall_key, "error", "error", { error: String(e) }); results.push({ mall: m.mall_key, ok: false, error: String(e) }); }
   }
   // 단일 몰 호출이면 평탄화해서 반환(프론트 호환)
