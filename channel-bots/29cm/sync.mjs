@@ -1,29 +1,28 @@
 // ============================================================
-//  29CM · 무신사(통합 파트너) 주문 수집 봇 — 이메일 OTP 자동
-//  로그인(ID/PW) → 이메일 2차인증 코드를 Gmail IMAP으로 자동 읽기 → 주문 API 응답 가로채기 → Supabase
+//  29CM · 무신사(통합 파트너) 주문 수집 봇 — TOTP(인증앱) 2차인증
+//  로그인(ID/PW) → 2차인증 'OTP' 탭 → TOTP 코드 자체 생성(otplib) → 주문 API 응답 가로채기 → Supabase
 //
 //  로그인: partner-sso.one.musinsa.com/oauth/login?clientId=E9_PARTNER
-//    2FA: OTP(구글 인증기) 또는 이메일. 봇은 '이메일' 탭 선택 → 코드가 Gmail로 옴 → IMAP으로 읽음.
+//    2FA 화면: 'OTP'(인증앱) / '이메일' 라디오 탭. 봇은 OTP 탭 선택 후 TOTP 코드 입력.
 //  29CM 주문 API(역추적): GET commerce-admin-api.29cm.co.kr/partner-admin/v4/orders
 //    인증=메모리 Bearer → page.on('response')로 주문응답 가로채기.
 //
 //  환경변수(GitHub Secrets):
-//    MUSINSA_ID, MUSINSA_PW              : 통합 파트너 로그인
-//    GMAIL_USER, GMAIL_APP_PASSWORD      : OTP 메일 수신 Gmail + 앱 비밀번호(16자, 2FA 계정에서 생성)
+//    CM29_ID, CM29_PW          : 통합 파트너 로그인
+//    CM29_TOTP_SECRET          : 29CM 보안설정에서 등록한 인증앱 secret(base32)
 //    SUPABASE_URL, SUPABASE_SERVICE_KEY
 // ============================================================
 import { chromium } from 'playwright';
-import { google } from 'googleapis';
+import { authenticator } from 'otplib';
 import { createClient } from '@supabase/supabase-js';
 
 const {
-  CM29_ID, CM29_PW,
-  GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
+  CM29_ID, CM29_PW, CM29_TOTP_SECRET,
   SUPABASE_URL, SUPABASE_SERVICE_KEY,
 } = process.env;
 
-if (!CM29_ID || !CM29_PW || !GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (CM29_ID/PW, GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN, SUPABASE_* 필요)');
+if (!CM29_ID || !CM29_PW || !CM29_TOTP_SECRET || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (CM29_ID/PW, CM29_TOTP_SECRET, SUPABASE_* 필요)');
   process.exit(0);
 }
 
@@ -34,46 +33,10 @@ const MALL_KEY = '29cm';
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
 const ymd = d => d.toISOString().slice(0, 10);
 
-// Gmail API로 최근 29CM/무신사 인증코드(6자리) 읽기
-function gmailClient() {
-  const o = new google.auth.OAuth2(GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET);
-  o.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
-  return google.gmail({ version: 'v1', auth: o });
+// TOTP 코드 생성(공백 제거 — QR 옆 secret에 공백이 있어도 허용)
+function totpCode() {
+  return authenticator.generate(CM29_TOTP_SECRET.replace(/\s+/g, ''));
 }
-async function readEmailOtp({ timeoutMs = 90000 } = {}) {
-  const gmail = gmailClient();
-  const started = Date.now();
-  const seen = new Set();
-  const scan = async (id) => {
-    const msg = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
-    const headers = msg.data.payload?.headers || [];
-    const subject = headers.find(h => h.name === 'Subject')?.value || '';
-    const from = headers.find(h => h.name === 'From')?.value || '';
-    seen.add(`${from} | ${subject}`);
-    const parts = [subject];
-    const walk = p => { if (p.body?.data) parts.push(Buffer.from(p.body.data, 'base64').toString('utf-8')); (p.parts || []).forEach(walk); };
-    walk(msg.data.payload || {});
-    const text = parts.join('\n');
-    return (text.match(/인증[^0-9]{0,25}(\d{6})/) || text.match(/(\d{6})[^0-9]{0,25}인증/) || text.match(/\b(\d{6})\b/) || [])[1];
-  };
-  while (Date.now() - started < timeoutMs) {
-    // 스팸/휴지통 포함. 키워드 우선 → 없으면 최근 1시간 전체 메일 스캔(발신자/제목 무관 6자리 추출)
-    for (const q of [
-      `newer_than:1h (29CM OR 29cm OR MUSINSA OR 무신사 OR 인증 OR 인증번호 OR verification OR 파트너)`,
-      `newer_than:1h`,
-    ]) {
-      const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: 15, includeSpamTrash: true });
-      for (const m of (list.data.messages || [])) {
-        const code = await scan(m.id);
-        if (code) return code;
-      }
-    }
-    await new Promise(r => setTimeout(r, 4000));
-  }
-  console.error('[29cm] OTP 메일 못 찾음. 메일함 최근 1시간 목록:', [...seen].slice(0, 15).join(' || ') || '(메일 0건 — 이 계정으로 메일이 안 옴)');
-  throw new Error('OTP 메일에서 인증번호를 못 찾음');
-}
-
 async function login(browser) {
   const ctx = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -103,25 +66,24 @@ async function login(browser) {
   }
   console.log('[29cm] 2차인증 화면 도달');
 
-  // '이메일' 탭 라디오 선택(기본 선택이지만 안전하게)
-  await page.locator('input[type="radio"]').nth(1).check().catch(() => {});
+  // 'OTP'(인증앱) 탭 라디오 선택(라디오: idx0=OTP, idx1=이메일)
+  await page.locator('input[type="radio"]').nth(0).check().catch(() => {});
   await page.waitForTimeout(500);
-  // '인증번호 받기'가 활성(=아직 미발송)이면 눌러 발송. 카운트다운/이미발송이면 스킵하고 최근 메일을 읽음.
-  const reqBtn = page.getByRole('button', { name: /인증번호 받기/ });
-  if ((await reqBtn.count()) && (await reqBtn.isEnabled().catch(() => false))) {
-    await reqBtn.click();
-    console.log('[29cm] 인증번호 받기 클릭 → 메일 발송');
-    await page.waitForTimeout(1500);
-  } else {
-    console.log('[29cm] 인증번호 이미 발송됨(카운트다운) → 최근 메일 읽기');
-  }
 
-  const code = await readEmailOtp();
-  console.log('[29cm] OTP 코드 수신 → 입력');
+  // TOTP 코드 생성 후 입력. 30초 경계 근처면 다음 창까지 대기해 안정적으로.
+  const remain = 30 - (Math.floor(Date.now() / 1000) % 30);
+  if (remain <= 3) await page.waitForTimeout((remain + 1) * 1000);
+  const code = totpCode();
+  console.log('[29cm] TOTP 코드 생성 → 입력');
   await page.fill('input[name="code"], input[placeholder*="인증코드"]', code);
   await page.getByRole('button', { name: /인증하기/ }).click();
   await page.waitForURL(/29cm\.co\.kr|partner-connect|partner-order/, { timeout: 30000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
+  // 로그인 실패 시(코드 오류 등) 화면 상태 로그
+  if (/partner-sso|oauth\/login/.test(page.url())) {
+    const bodyTxt = (await page.evaluate(() => document.body.innerText).catch(() => '')).slice(0, 300);
+    console.error(`[29cm] 로그인 미완료(여전히 로그인 페이지). body="${bodyTxt.replace(/\n/g, ' ')}"`);
+  }
   console.log('[29cm] 로그인 완료');
   return { ctx, page };
 }

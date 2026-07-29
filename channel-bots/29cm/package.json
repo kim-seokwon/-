@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "29CM 파트너 주문 수집 봇 — 29Connect 로그인 + 이메일OTP(Gmail API 자동읽기) → 주문 API 가로채기 → Supabase",
+  "description": "29CM 파트너 주문 수집 봇 — 29Connect 로그인 + TOTP(인증앱) 2차인증 → 주문 API 가로채기 → Supabase",
   "scripts": {
     "sync": "node sync.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "googleapis": "^144.0.0",
+    "otplib": "^12.0.1",
     "playwright": "^1.47.0"
   }
 }
