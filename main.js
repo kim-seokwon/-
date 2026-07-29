@@ -3450,7 +3450,8 @@ class BhasApp {
                 <div style="display:flex;gap:10px;flex-wrap:wrap">
                     <button class="btn-secondary" id="oms-sync-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-arrows-clockwise"></i> 카페24 주문 수집</button>
                     <button class="btn-secondary" id="oms-export-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-download-simple"></i> 송장양식 다운로드</button>
-                    <button class="btn-primary" id="oms-upload-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem"><i class="ph ph-upload-simple"></i> 송장번호 업로드</button>
+                    <button class="btn-primary" id="oms-epost-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem;background:#e11d48"><i class="ph ph-package"></i> 우체국 발번+송장등록</button>
+                    <button class="btn-secondary" id="oms-upload-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem"><i class="ph ph-upload-simple"></i> 송장번호 업로드</button>
                     <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">
                 </div>
             </div>
@@ -3469,9 +3470,8 @@ class BhasApp {
             </div>
             <div style="margin-top:1rem;padding:1rem;background:rgba(var(--tint),0.03);border-radius:12px;font-size:0.82rem;color:var(--text-muted);line-height:1.7">
                 <b style="color:#e2e8f0">송장 처리 흐름</b><br>
-                ① <b>송장양식 다운로드</b> → 택배사 프로그램에서 운송장 출력 →
-                ② 운송장번호 받은 파일을 <b>송장번호 업로드</b>(CSV: 주문번호,택배사,송장번호) →
-                ③ 카페24에 배송중+운송장 자동 등록 ${ls && ls.result === 'dry_run' ? '<span style="color:#f59e0b">(현재 dry-run: 카페24 전송 없이 2179만 갱신)</span>' : ''}
+                <b style="color:#fb7185">■ 자동(권장):</b> 주문 체크(또는 배송대상 전체) → <b>우체국 발번+송장등록</b> 한 번이면 → 우체국 계약택배 발번(운송장번호) → 카페24 등 채널에 배송중+송장 자동 입력까지 끝.<br>
+                <b style="color:#94a3b8">■ 수동(택배사 직접):</b> ① 송장양식 다운로드 → 택배사 프로그램 출력 → ② 송장번호 업로드(CSV) → ③ 카페24 자동 등록 ${ls && ls.result === 'dry_run' ? '<span style="color:#f59e0b">(현재 dry-run)</span>' : ''}
             </div>
         </div>`;
     }
@@ -3489,6 +3489,8 @@ class BhasApp {
         if (syncBtn) syncBtn.onclick = () => this.runCafe24Sync();
         const exportBtn = document.getElementById('oms-export-btn');
         if (exportBtn) exportBtn.onclick = () => this.exportInvoiceTemplate();
+        const epostBtn = document.getElementById('oms-epost-btn');
+        if (epostBtn) epostBtn.onclick = () => this.issueEpostWaybills();
         const upBtn = document.getElementById('oms-upload-btn');
         const fileEl = document.getElementById('oms-invoice-file');
         if (upBtn && fileEl) {
@@ -3518,6 +3520,64 @@ class BhasApp {
         a.download = `송장양식_${today}_${targets.length}건.csv`;
         document.body.appendChild(a); a.click(); a.remove();
         this.showToast(`${targets.length}건 송장양식을 내려받았습니다.`);
+    }
+
+    async issueEpostWaybills() {
+        // 선택된 주문(체크) 없으면 배송대상 전체, 이미 송장 있는 건 제외
+        const checked = [...this.appContainer.querySelectorAll('.oms-chk:checked')].map(c => String(c.dataset.id));
+        let targets = (this.orders || []).filter(o => o.status === 'new' || o.status === 'ready');
+        if (checked.length) targets = targets.filter(o => checked.includes(String(o.order_id)));
+        targets = targets.filter(o => !o.invoice_no);
+        if (!targets.length) { this.showToast('발번할 배송대상 주문이 없습니다. (체크 없으면 배송대상 전체 대상)'); return; }
+
+        const ok = await this.showConfirm(`${targets.length}건을 우체국 계약택배로 <b>실제 발번</b>하고, 받은 운송장번호를 채널(카페24 등)에 자동 등록합니다. 계속할까요?`, '우체국 발번 + 송장등록');
+        if (!ok) return;
+        this.showToast(`${targets.length}건 우체국 발번 중...`);
+
+        const digits = s => String(s || '').replace(/[^0-9]/g, '');
+        const orders = targets.map(o => ({
+            orderNo: String(o.order_id),
+            ordCompNm: this._mallLabel(o.mall_key) || '브하스',
+            recNm: o.receiver_name || o.buyer_name || '수취인',
+            recZip: digits(o.receiver_zipcode),
+            recAddr1: o.receiver_address || '', recAddr2: o.receiver_address_detail || '.',
+            recMob: digits(o.receiver_phone),
+            goodsNm: this._orderItemsSummary(o) || '상품',
+            qty: this._orderQtySum(o) || 1, weight: 1, volume: 60, contCd: '021',
+        }));
+
+        let results = [];
+        try {
+            const { data, error } = await this.supabase.functions.invoke('courier-issue', { body: { test: false, orders } });
+            if (error) throw error;
+            results = data?.results || [];
+        } catch (e) { this.showToast('발번 실패: ' + (e.message || e)); return; }
+
+        const issued = {}; const fails = [];
+        results.forEach(r => { if (r.ok && r.regiNo) issued[String(r.orderNo)] = r.regiNo; else fails.push(`${r.orderNo}: ${r.message || '실패'}`); });
+        const issuedIds = Object.keys(issued);
+        if (!issuedIds.length) { this.showToast(`발번 0건. ${fails[0] || ''}`); return; }
+        this.showToast(`${issuedIds.length}건 발번 완료 → 채널에 송장 등록 중...`);
+
+        // 채널 write-back: 카페24 몰은 cafe24-shipping, 그 외 채널은 channel_orders 직접 갱신
+        const byCafe = {}; const others = [];
+        targets.forEach(o => {
+            const regi = issued[String(o.order_id)]; if (!regi) return;
+            const isCafe = o.channel === 'cafe24' || /hiheiho|tovee|rohi|myho|thehime/.test(o.mall_key || '');
+            if (isCafe) (byCafe[o.mall_key] = byCafe[o.mall_key] || []).push({ order_id: o.order_id, invoice_no: regi, courier_name: '우체국택배' });
+            else others.push({ mall_key: o.mall_key, order_id: o.order_id, regi });
+        });
+        let backOk = 0;
+        for (const mk of Object.keys(byCafe)) {
+            try { const { data, error } = await this.supabase.functions.invoke('cafe24-shipping', { body: { mall: mk, orders: byCafe[mk] } }); if (error) throw error; backOk += (data?.success || 0); }
+            catch (e) { this.showToast(`[${this._mallLabel(mk)}] 송장등록 실패: ${e.message || e}`); }
+        }
+        for (const x of others) {
+            try { await this.supabase.from('channel_orders').update({ invoice_no: x.regi, courier: '우체국택배', status: 'shipping' }).eq('mall_key', x.mall_key).eq('order_id', String(x.order_id)); backOk++; } catch (e) { /* ignore */ }
+        }
+        this.showToast(`발번 ${issuedIds.length}건 / 송장등록 ${backOk}건 완료${fails.length ? ` · 발번실패 ${fails.length}건` : ''}`);
+        this._ordersLoaded = false;
+        await this.loadOrders();
     }
 
     _parseCsv(text) {

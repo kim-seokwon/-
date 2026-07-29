@@ -103,6 +103,18 @@ async function getApprNo() {
   const xml = await epostCall("api.GetApprNo.jparcel", { custNo: CUSTNO });
   return xerr(xml) ?? { apprNo: xf(xml, "apprNo"), payTypeNm: xf(xml, "payTypeNm"), postNm: xf(xml, "postNm") };
 }
+// 등록된 공급지 조회 → 첫 공급지의 officeSer 등 리턴
+async function getOfficeInfo() {
+  const xml = await epostCall("api.GetOfficeInfo.jparcel", { custNo: CUSTNO });
+  const err = xerr(xml);
+  if (err) return err;
+  return {
+    officeSer: xf(xml, "officeSer"), officeNm: xf(xml, "officeNm"),
+    officeZip: xf(xml, "officeZip"), officeAddr: xf(xml, "officeAddr"),
+    officeTelno: xf(xml, "officeTelno"), contactNm: xf(xml, "contactNm"),
+    officeDivCd: xf(xml, "officeDivCd"), raw: xml.slice(0, 1500),
+  };
+}
 async function insertOffice(office: Record<string, unknown>) {
   const fields = {
     custNo: CUSTNO,
@@ -130,6 +142,7 @@ Deno.serve(async (req) => {
     const action = body.action ?? "issue";
     if (action === "cust-no") return j(await getCustNo(body.memberID));
     if (action === "appr-no") return j(await getApprNo());
+    if (action === "get-office") return j(await getOfficeInfo());
     if (action === "setup-office") return j(await insertOffice(body.office ?? {}));
     // 기본: 발번(여러 주문 일괄). body.test=true 면 testYn=Y
     const testYn = body.test ? "Y" : "N";
