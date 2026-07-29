@@ -60,30 +60,50 @@ async function readEmailOtp({ afterEpochSec = Math.floor(Date.now() / 1000) - 18
 }
 
 async function login(browser) {
-  const ctx = await browser.newContext();
+  const ctx = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+    viewport: { width: 1280, height: 900 },
+    locale: 'ko-KR',
+  });
+  // 자동화 탐지 우회(navigator.webdriver 숨김)
+  await ctx.addInitScript(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
   const page = await ctx.newPage();
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
 
-  // ID/PW (통합 SSO — 실측 확정 필요 시 셀렉터 보강)
-  await page.fill('input[name="loginId"], input[type="text"], input[type="email"]', CM29_ID);
-  await page.fill('input[name="password"], input[type="password"]', CM29_PW);
-  await page.click('button:has-text("로그인"), button[type="submit"]');
-  await page.waitForTimeout(2500);
+  // 실측 셀렉터: 아이디=name=id / 비번=name=password / 로그인=button[type=submit]
+  await page.fill('input[name="id"], input[type="text"]', CM29_ID);
+  await page.fill('input[name="password"]', CM29_PW);
+  console.log('[29cm] 로그인 폼 입력 완료 → 제출');
+  await page.click('button[type="submit"]');
 
-  // 2차 인증(파트너 통합계정 인증): '이메일' 탭 → '인증번호 받기' 눌러 메일 발송 → Gmail로 읽어 입력 → '인증하기'
-  const emailTab = page.locator('button:has-text("이메일"), [role="tab"]:has-text("이메일")').first();
-  if (await emailTab.isVisible().catch(() => false)) await emailTab.click();
-  await page.waitForTimeout(1000);
-  // '인증번호 받기'를 눌러야 실제로 OTP 메일이 발송됨(이게 없으면 메일이 안 옴)
-  const requestBtn = page.locator('button:has-text("인증번호 받기"), button:has-text("인증번호")').first();
+  // 2차 인증 화면 대기: '인증번호 받기' 버튼(이메일 탭 기본선택)이 뜰 때까지
+  const requestBtn = page.getByRole('button', { name: /인증번호 받기|인증번호 재요청/ });
+  try {
+    await requestBtn.waitFor({ state: 'visible', timeout: 30000 });
+  } catch (e) {
+    // 2차인증에 도달 못함 → 로그인 실패/봇탐지 가능. 현재 페이지 상태를 로그로 남김
+    const title = await page.title().catch(() => '');
+    const bodyTxt = (await page.evaluate(() => document.body.innerText).catch(() => '')).slice(0, 400);
+    console.error(`[29cm] 2차인증 화면 미도달. title="${title}" body="${bodyTxt.replace(/\n/g, ' ')}"`);
+    throw new Error('로그인 후 2차인증 화면에 도달하지 못함');
+  }
+
+  // '이메일' 탭 라디오 명시적 선택(기본 선택이지만 안전하게), 이후 '인증번호 받기'
+  const emailRadio = page.locator('input[type="radio"]').nth(1);
+  await emailRadio.check().catch(() => {});
+  await page.waitForTimeout(500);
   await requestBtn.click();
   const sentEpochSec = Math.floor(Date.now() / 1000); // 이 시점 이후 도착한 메일만 읽음
-  await page.waitForTimeout(2000);
+  console.log('[29cm] 인증번호 받기 클릭 → 메일 대기');
+  await page.waitForTimeout(1500);
+
   const code = await readEmailOtp({ afterEpochSec: sentEpochSec });
-  await page.fill('input[placeholder*="인증코드"], input[placeholder*="인증"], input[type="tel"]', code);
-  await page.click('button:has-text("인증하기"), button:has-text("인증")');
-  await page.waitForURL(/29cm\.co\.kr|partner-connect/, { timeout: 30000 }).catch(() => {});
+  console.log('[29cm] OTP 코드 수신 → 입력');
+  await page.fill('input[name="code"], input[placeholder*="인증코드"]', code);
+  await page.getByRole('button', { name: /인증하기/ }).click();
+  await page.waitForURL(/29cm\.co\.kr|partner-connect|partner-order/, { timeout: 30000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
+  console.log('[29cm] 로그인 완료');
   return { ctx, page };
 }
 
@@ -121,7 +141,10 @@ async function ensureMall() {
 
 async function run() {
   await ensureMall();
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+  });
   try {
     const { page } = await login(browser);
     // 최근 400일을 88일 창으로 청킹
