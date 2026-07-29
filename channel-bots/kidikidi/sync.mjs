@@ -187,14 +187,24 @@ async function diag() {
       .map(a => ({ t: (a.innerText || '').trim().slice(0, 20), href: a.getAttribute('href') || '' }))
       .filter(x => x.t && /배송|발송|출고|송장|운송장|주문|deliv|invoice|order/i.test(x.t + x.href)));
     console.log('[diag] 배송/주문 메뉴 링크:', JSON.stringify(links.slice(0, 40)));
-    // 배송/발송 관련 링크 최대 3개 방문하며 API 캡처
-    const cand = links.filter(x => /배송|발송|출고|송장|deliv|ship/i.test(x.t + x.href) && x.href && x.href !== '#').slice(0, 3);
-    for (const c of cand) {
-      const url = c.href.startsWith('http') ? c.href : `${BASE}${c.href.startsWith('/') ? '' : '/'}${c.href}`;
-      await page.goto(url, { waitUntil: 'networkidle' }).catch(() => {});
-      await page.waitForTimeout(2000);
-      console.log(`[diag] 방문 "${c.t}" → ${url}`);
+    // 메뉴가 href="#"(JS onclick)이므로 텍스트로 클릭해서 들어감. 배송/출고 관련 메뉴 순회.
+    for (const label of ['주문배송관리', '배송관리', '출고배송관리', '주문조회']) {
+      try {
+        const el = page.getByText(label, { exact: true }).first();
+        if (await el.isVisible().catch(() => false)) {
+          await el.click({ timeout: 4000 }).catch(() => {});
+          await page.waitForTimeout(2500);
+          console.log(`[diag] 클릭 "${label}" → url=${page.url()}`);
+        }
+      } catch (e) { /* skip */ }
     }
+    // 출고배송관리 페이지의 JS에서 송장/발송 관련 API 경로 문자열 추출
+    const jsHits = await page.evaluate(() => {
+      const html = document.documentElement.outerHTML;
+      const m = html.match(/\/o\/[a-zA-Z0-9_\/.-]*(deliv|invoice|송장|ship|send|출고|발송|regist|save)[a-zA-Z0-9_\/.-]*/gi) || [];
+      return [...new Set(m)].slice(0, 30);
+    }).catch(() => []);
+    console.log('[diag] 페이지 내 송장/발송 API 경로 후보:', JSON.stringify(jsHits));
     console.log('[diag] 캡처된 API 엔드포인트:\n' + [...seen].join('\n'));
     // 최근 주문 1건의 전체 필드(배송/송장 필드 확인)
     const to = new Date(), from = new Date(Date.now() - 30 * 864e5);
