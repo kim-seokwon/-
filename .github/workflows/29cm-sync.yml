@@ -1,4 +1,4 @@
-name: 무신사·29CM 주문 수집
+name: 29CM 주문 수집
 
 on:
   schedule:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: channel-bots/musinsa-29cm
+        working-directory: channel-bots/29cm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
