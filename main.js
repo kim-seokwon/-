@@ -3002,11 +3002,27 @@ class BhasApp {
     // ============================================================
     setSalesYear(y) { this.salesViewYear = y; this.switchView('sales'); }
     setSalesMonth(m) { this.salesViewMonth = m; this.switchView('sales'); }
+    setSalesBrand(b) { this.salesViewBrand = b; this.switchView('sales'); }
+    // 주문 → 브랜드명 매핑(_salesAgg의 mallBrand와 동일 규칙)
+    _orderBrandName(o) {
+        const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
+        if (mall) { const b = (mockData.brands || []).find(x => x.id === mall.brand_id); return b ? b.name : (mall.label || '기타'); }
+        return o.mall_key || o.channel || '기타';
+    }
 
     renderSales() {
         if (!this._ordersLoaded || !this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">매출 데이터를 불러오는 중...</div>`;
-        const { orders, cancelledOrders, events, months, brands, monthTotals, grand, consultingFromQuote } = this._salesAgg(12);
+        let { orders, cancelledOrders, events, months, brands, monthTotals, grand, consultingFromQuote } = this._salesAgg(12);
         const won = n => this._won(Math.round(n));
+        // 브랜드 필터(통합=ALL / 특정 브랜드) — 선택 시 orders/취소/월합계를 그 브랜드로 좁힘
+        const brandNames = brands.map(b => b.name);
+        const bf = brandNames.includes(this.salesViewBrand) ? this.salesViewBrand : 'ALL';
+        const brandRec = bf === 'ALL' ? null : brands.find(b => b.name === bf);
+        const monthTotalsView = bf === 'ALL' ? monthTotals : (brandRec ? brandRec.cells.map(c => c.amt) : months.map(() => 0));
+        if (bf !== 'ALL') {
+            orders = orders.filter(o => this._orderBrandName(o) === bf);
+            cancelledOrders = cancelledOrders.filter(o => this._orderBrandName(o) === bf);
+        }
         const monthLabel = m => { const [y, mm] = m.split('-'); return `${+mm}월<span style="color:var(--text-muted);font-size:0.7rem">'${y.slice(2)}</span>`; };
 
         if (!events.length) return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto"><h1 style="font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1><div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted);margin-top:1rem">매출 데이터가 없습니다.<br>리테일(토비·하이헤이호·로하이스튜디오)은 몰 주문이 수집되면, 브하스는 세금계산서(견적)가 등록되면 자동 집계됩니다.</div></div>`;
@@ -3026,8 +3042,8 @@ class BhasApp {
         const idxOf = k => months.indexOf(k);
         const curKey = scopeMonths[scopeMonths.length - 1] || latest;
         const li = idxOf(curKey);
-        const thisM = scopeMonths.reduce((s, k) => s + (idxOf(k) >= 0 ? monthTotals[idxOf(k)] : 0), 0);
-        const prevM = yearMode ? 0 : (monthTotals[li - 1] || 0);
+        const thisM = scopeMonths.reduce((s, k) => s + (idxOf(k) >= 0 ? monthTotalsView[idxOf(k)] : 0), 0);
+        const prevM = yearMode ? 0 : (monthTotalsView[li - 1] || 0);
         const daysInMonth = yearMode ? 12 : new Date(cy, cmo, 0).getDate();
         const inScope = d => { const dt = new Date(d); if (dt.getFullYear() !== cy) return false; return yearMode ? true : (dt.getMonth() + 1 === cmo); };
         const inCur = inScope;
@@ -3049,7 +3065,7 @@ class BhasApp {
         });
         // 차트 시리즈: 단일월=일별, 연간전체=월별(1~12)
         const chartSeries = yearMode
-            ? Array.from({ length: 12 }, (_, i) => { const k = `${selY}-${String(i + 1).padStart(2, '0')}`; const idx = idxOf(k); return idx >= 0 ? monthTotals[idx] : 0; })
+            ? Array.from({ length: 12 }, (_, i) => { const k = `${selY}-${String(i + 1).padStart(2, '0')}`; const idx = idxOf(k); return idx >= 0 ? monthTotalsView[idx] : 0; })
             : daily.slice(0, daysInMonth);
         const topProducts = Object.entries(prodQty).sort((a, b) => b[1] - a[1]).slice(0, 6);
         const topQtyMax = Math.max(1, ...topProducts.map(p => p[1]));
@@ -3057,7 +3073,7 @@ class BhasApp {
 
         // 브랜드 선택기간 (점유율)
         const brandNow = brands.map((b, i) => ({ name: b.name, kind: b.kind, amt: scopeMonths.reduce((s, k) => s + (idxOf(k) >= 0 ? b.cells[idxOf(k)].amt : 0), 0), color: palette[i % palette.length] }))
-            .filter(b => b.amt > 0).sort((a, b) => b.amt - a.amt);
+            .filter(b => b.amt > 0 && (bf === 'ALL' || b.name === bf)).sort((a, b) => b.amt - a.amt);
         const brandNowMax = Math.max(1, ...brandNow.map(b => b.amt));
 
         // KPI (전월대비는 지난달이 유의미할 때만 %, 아니면 절대금액 델타)
@@ -3298,9 +3314,13 @@ class BhasApp {
             <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
                 <div>
                     <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-line-up"></i> 매출 현황</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${periodLabel} 기준 · 자사몰 주문 + 컨설팅 자동 집계</p>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem"><b style="color:var(--primary)">${bf === 'ALL' ? '전체 브랜드 통합' : this._vesc(bf)}</b> · ${periodLabel} 기준</p>
                 </div>
-                <div style="display:flex;gap:8px;align-items:center">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <select onchange="app.setSalesBrand(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid ${bf !== 'ALL' ? 'var(--primary)' : 'var(--card-border)'};background:${bf !== 'ALL' ? 'rgba(99,102,241,0.12)' : 'transparent'};color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
+                        <option value="ALL" ${bf === 'ALL' ? 'selected' : ''}>전체 브랜드(통합)</option>
+                        ${brands.map(b => `<option value="${this._vesc(b.name)}" ${bf === b.name ? 'selected' : ''}>${this._vesc(b.name)}</option>`).join('')}
+                    </select>
                     <select onchange="app.setSalesYear(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         ${yearsAvail.map(y => `<option value="${y}" ${y === selY ? 'selected' : ''}>${y}년</option>`).join('')}
                     </select>
