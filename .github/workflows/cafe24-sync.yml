@@ -1,0 +1,27 @@
+name: 카페24 주문 수집
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # 15분마다 (메인 채널이라 자주). GitHub 스케줄은 수분 지연될 수 있음.
+  workflow_dispatch:          # 수동 실행 버튼
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: cafe24-sync Edge Function 호출
+        run: |
+          echo "카페24 주문 수집 호출..."
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
+            "$SUPABASE_URL/functions/v1/cafe24-sync" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP $code"
+          cat /tmp/resp.json
+          echo
+          # 2xx 아니면 실패 처리
+          [ "${code:0:1}" = "2" ] || { echo "::error::cafe24-sync 실패 (HTTP $code)"; exit 1; }
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
