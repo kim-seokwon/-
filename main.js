@@ -1896,8 +1896,8 @@ class BhasApp {
             <div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.14)"><div style="height:100%;width:${on ? Math.max(3, amt / max * 100) : 0}%;background:${c};border-radius:5px"></div></div>
         </div>`; }).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.6rem 0">이번달 매출 없음</div>';
 
-        // ── 주문 상태: 주문 / 배송중 / 교환·환불 ──
-        const allO = this.orders || [];
+        // ── 주문 상태: 주문 / 배송중 / 교환·환불 (전체 기간 기준 — 최근500 상한 아님) ──
+        const allO = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
         const stOrder = allO.filter(o => notCancelled(o) && (o.status === 'new' || o.status === 'ready')).length;
         const stShip = allO.filter(o => o.status === 'shipping').length;
         const stReturn = allO.filter(o => this._isCancelled(o)).length;
@@ -2031,7 +2031,7 @@ class BhasApp {
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.9rem">${statBlocks}</div>
                 </div>
                 <div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;min-width:0">
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border)"><span style="font-size:0.94rem;font-weight:800">최근 주문 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">${(this.orders || []).length}건</span></span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border)"><span style="font-size:0.94rem;font-weight:800">최근 주문 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">전체 ${((this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || [])).length.toLocaleString()}건</span></span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
                     <div style="max-height:360px;overflow-y:auto;margin-right:-6px;padding-right:6px">${recentCompact}</div>
                 </div>
             </div>
