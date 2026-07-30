@@ -1913,8 +1913,10 @@ class BhasApp {
         // 주문 = 접수됐지만 배송 시작 안 됨(신규/배송준비), 취소·반품·교환 제외
         const stOrder = allO.filter(o => !this._isCancelled(o) && (o.status === 'new' || o.status === 'ready')).length;
         const stShip = allO.filter(o => o.status === 'shipping').length;
-        const stExchange = allO.filter(o => this._isExchange(o)).length;
-        const refundO = allO.filter(o => this._isRefund(o));
+        // 교환·환불은 이번달(monthKey)만 집계
+        const inThisMonth = o => localYMD(o.order_date).startsWith(monthKey);
+        const stExchange = allO.filter(o => this._isExchange(o) && inThisMonth(o)).length;
+        const refundO = allO.filter(o => this._isRefund(o) && inThisMonth(o));
         const stRefund = refundO.length;
         const refundTotal = refundO.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
 
@@ -2013,10 +2015,10 @@ class BhasApp {
         const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
         // 주문상태 3개 개별 블록
         const statBlocks = [
-            ['주문', stOrder, '#6366f1', '배송 시작 전'],
+            ['배송전', stOrder, '#6366f1', '미출고 주문'],
             ['배송중', stShip, '#06b6d4', ''],
-            ['교환', stExchange, '#f59e0b', ''],
-            ['환불', stRefund, '#a855f7', refundTotal ? `환불총액 ${won(refundTotal)}원` : '']
+            ['교환', stExchange, '#f59e0b', `${mm}월`],
+            ['환불', stRefund, '#a855f7', refundTotal ? `${mm}월 · 환불총액 ${won(refundTotal)}원` : `${mm}월`]
         ].map(([l, n, c, sub]) => `<div class="glass" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px">
             <span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span>
             <div style="min-width:0"><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${l}</div>${sub ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ''}</div>
