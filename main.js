@@ -1849,7 +1849,7 @@ class BhasApp {
     }
 
     // 매출 집계 (홈·매출뷰 공용)
-    //  · 리테일(토비·하이헤이호·로하이스튜디오): 몰 주문 pay_amount (mall→brand)
+    //  · 판매 브랜드(malls→brand_id 로 매핑된 브랜드): 몰 주문 pay_amount
     //  · 브하스(컨설팅): 발행된 세금계산서(견적 tax_status='issued') 기준
     // 채널이 제공하는 상태값을 그대로 취합해 주문 상태 판정(추론 X)
     // 반환: 'pre'(배송전) | 'shipping'(배송중) | 'done'(배송완료) | 'cancel'(취소) | 'return'(반품) | 'exchange'(교환)
@@ -3297,7 +3297,7 @@ class BhasApp {
 
     renderSales() {
         if (!this._ordersLoaded || !this._mallsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">매출 데이터를 불러오는 중...</div>`;
-        let { orders, cancelledOrders, events, months, brands, monthTotals, grand, consultingFromQuote } = this._salesAgg(12);
+        let { orders, cancelledOrders, months, brands, monthTotals, grand, consultingFromQuote } = this._salesAgg(12);
         const won = n => this._won(Math.round(n));
         // 계정 브랜드 접근 제한(brand_access) — 설정된 경우 매출도 허용 브랜드로만 집계
         const _allowedNames = this._allowedBrandIds() ? new Set(this._visibleBrands().map(b => b.name)) : null;
@@ -3320,7 +3320,14 @@ class BhasApp {
         }
         const monthLabel = m => { const [y, mm] = m.split('-'); return `${+mm}월<span style="color:var(--text-muted);font-size:0.7rem">'${y.slice(2)}</span>`; };
 
-        if (!events.length) return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto"><h1 style="font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1><div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted);margin-top:1rem">매출 데이터가 없습니다.<br>리테일(토비·하이헤이호·로하이스튜디오)은 몰 주문이 수집되면, 브하스는 세금계산서(견적)가 등록되면 자동 집계됩니다.</div></div>`;
+        // 빈 화면 판정은 브랜드 집계 유무로. (events 는 서버 집계 경로에서 안 쓰므로 항상 빈 배열이다)
+        if (!brands.length) {
+            // 브랜드명을 문장에 박아두면 브랜드가 바뀔 때마다 안내문이 거짓이 된다 → 등록된 브랜드에서 그때그때 뽑는다
+            const names = (mockData.brands || []).map(b => b.name).filter(Boolean);
+            const shown = names.slice(0, 3).map(n => this._vesc(n)).join(' · ');
+            const salesWord = names.length ? `판매 브랜드(${shown}${names.length > 3 ? ` 외 ${names.length - 3}개` : ''})` : '판매 브랜드';
+            return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto"><h1 style="font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1><div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted);margin-top:1rem">매출 데이터가 없습니다.<br>${salesWord}는 몰 주문이 수집되면, 컨설팅은 세금계산서(견적)가 등록되면 자동 집계됩니다.</div></div>`;
+        }
 
         const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
         const wonMan = n => (Math.abs(n) >= 10000 ? this._won(Math.round(n / 10000)) + '만' : this._won(Math.round(n)));
@@ -3790,7 +3797,7 @@ class BhasApp {
                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${repeatCard}${netCard}${chanCard}${statCard}</div>
                    ${returnCard}
                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${qualityCard}</div>`}
-            <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 리테일 = 몰 주문 결제금액 · 브하스(컨설팅) = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·환불은 채널 상태 연동 후 반영</p>
+            <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 판매 브랜드 = 몰 주문 결제금액 · 컨설팅 = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·반품·교환은 집계에서 제외</p>
         </div>`;
     }
 
