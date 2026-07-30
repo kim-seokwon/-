@@ -11,6 +11,7 @@
 //    EPOST_CUSTNO  : 고객번호   EPOST_APPRNO : 계약승인번호   EPOST_OFFICESER : 공급지코드
 // ============================================================
 import { seedEncryptEcbHex } from "./seed128.ts";
+import { requireUser } from "../_shared/auth.ts";
 
 const BASE = "http://ship.epost.go.kr";
 const REGKEY = Deno.env.get("EPOST_REGKEY") ?? "";
@@ -136,6 +137,9 @@ async function insertOffice(office: Record<string, unknown>) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
   const j = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: cors({ "Content-Type": "application/json" }) });
+  // 실제 송장 발번 = 요금·계약 영향 → 로그인 사용자만 (설정 상태도 미인증자에게 노출 안 함)
+  const auth = await requireUser(req);
+  if (auth instanceof Response) return auth;
   if (!REGKEY || !SECKEY) return j({ ok: false, error: "EPOST_REGKEY/EPOST_SECKEY 시크릿 미설정" }, 500);
   try {
     const body = await req.json().catch(() => ({}));

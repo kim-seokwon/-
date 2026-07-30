@@ -10,6 +10,8 @@
 //  ⚠️ 팝빌 LinkHub 인증(토큰+서명)은 팝빌 키 발급 후 실호출로 최종 검증 필요.
 //     매핑 로직·발행 파라미터는 팝빌 Taxinvoice 규격 기준.
 // ============================================================
+import { requireUser } from "../_shared/auth.ts";
+
 const LINKID = Deno.env.get("POPBILL_LINKID") ?? "";
 const SECRETKEY = Deno.env.get("POPBILL_SECRETKEY") ?? "";
 const CORPNUM = (Deno.env.get("POPBILL_CORPNUM") ?? "2798803052").replace(/[^0-9]/g, "");
@@ -97,6 +99,9 @@ function mapTaxinvoice(q: Record<string, any>, opt: Record<string, any>) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
   const j = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: cors({ "Content-Type": "application/json" }) });
+  // 세금계산서 발행 = 법적 효력 문서 → 로그인 사용자만 (설정 상태도 미인증자에게 노출 안 함)
+  const auth = await requireUser(req);
+  if (auth instanceof Response) return auth;
   if (!LINKID || !SECRETKEY) return j({ ok: false, error: "POPBILL_LINKID/SECRETKEY 시크릿 미설정" }, 500);
   try {
     const { quote, email, supplyDate, purposeType } = await req.json();

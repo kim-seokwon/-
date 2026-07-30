@@ -3523,8 +3523,9 @@ class BhasApp {
         this.requestRender();
     }
 
-    // 매출/분석용 전체 기간 주문 — 전체 컬럼 + 아이템 전량(1000행 페이지네이션).
-    // 인기상품·옵션·재구매·반품사유 카드가 items/buyer/raw 필드를 쓰므로 전체 컬럼 필요.
+    // 매출/분석용 전체 기간 주문 — 경량 뷰(channel_orders_slim) + 아이템 전량(1000행 페이지네이션).
+    // raw 원본은 주문당 ~13KB라 전량 로드하면 수십~수백MB → 019 뷰가 집계에 쓰는 raw 필드만
+    // 같은 모양으로 재구성해서 내려준다(shipping_status / items[status,order_status,uitem,qty] / 반품사유).
     async _loadSalesOrders() {
         try {
             const PAGE = 1000;
@@ -3540,7 +3541,7 @@ class BhasApp {
                 return acc;
             };
             const [all, items] = await Promise.all([
-                pageAll(() => this.supabase.from('channel_orders').select('*').order('order_date', { ascending: false })),
+                pageAll(() => this.supabase.from('channel_orders_slim').select('*').order('order_date', { ascending: false })),
                 pageAll(() => this.supabase.from('channel_order_items').select('*'))
             ]);
             const byOrder = {};

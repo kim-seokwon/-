@@ -3,6 +3,7 @@
 //  - dry_run=true : 카페24 전송 없이 channel_orders 만 갱신(흐름 미리보기)
 //  - dry_run=false: 카페24에 운송장 등록 → 배송중 → 브하스도 갱신
 import { admin, cafe24Fetch, cors, ensureToken, getMall, log } from "../_shared/cafe24.ts";
+import { requireUser } from "../_shared/auth.ts";
 
 const COURIER_CODE: Record<string, string> = {
   "CJ대한통운": "0001", "CJ": "0001", "우체국": "0006", "우체국택배": "0006",
@@ -12,6 +13,9 @@ const COURIER_CODE: Record<string, string> = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
+  // 카페24 운송장 등록 = 고객에게 배송중 알림이 나가는 외부 쓰기 → 로그인 사용자만
+  const auth = await requireUser(req);
+  if (auth instanceof Response) return auth;
   const db = admin();
 
   let payload: { mall?: string; orders?: Array<{ order_id: string; courier_code?: string; courier_name?: string; invoice_no: string }> };

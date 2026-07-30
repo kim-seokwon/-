@@ -11,6 +11,8 @@
 //                         DROP_ADDR="인천 중구 영종 ... 사무실 주소" \
 //                         DROP_CONTACT="010-0000-0000"
 // ============================================================
+import { requireUser } from "../_shared/auth.ts";
+
 const ENDPOINT = Deno.env.get("KAKAO_QUICK_ENDPOINT") ?? "";
 const KEY = Deno.env.get("KAKAO_QUICK_KEY") ?? "";
 const DROP_ADDR = Deno.env.get("DROP_ADDR") ?? "";
@@ -29,6 +31,9 @@ Deno.serve(async (req) => {
   if (!ENDPOINT || !KEY) {
     return j({ ok: false, error: "KAKAO_QUICK_ENDPOINT/KEY 시크릿 미설정 (비즈니스 계약 후 발급)" }, 500);
   }
+  // 퀵 예약 = 실제 요금 발생 → 로그인 사용자만
+  const auth = await requireUser(req);
+  if (auth instanceof Response) return auth;
   try {
     const { jobId, title, qty, vendor, pickupAddr, pickupContact, memo } = await req.json();
 
