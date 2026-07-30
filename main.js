@@ -582,13 +582,56 @@ class BhasApp {
     }
 
     setState(newState) {
+        const viewChanged = 'currentView' in newState && newState.currentView !== this.currentView;
         Object.assign(this, newState);
+        // 화면이 바뀌는 setState도 뒤로가기 대상에 넣는다(switchView 안 타는 경로가 있음)
+        if (viewChanged && this.currentView !== 'login') this._pushHistory();
         this.requestRender();
     }
 
     switchView(viewId) {
         this.currentView = viewId;
+        this._pushHistory();
         this.render();
+    }
+
+    // ── 브라우저 뒤로가기 연동 ──
+    // 원래 history 연동이 아예 없어서 트랙패드/뒤로가기 제스처가 앱 화면이 아니라 사이트를 떠났음.
+    // 화면 전환마다 pushState 하고, popstate 에서 그 상태로 복원한다(렌더만, 다시 push 안 함).
+    _historyState() {
+        return {
+            bhas: true,
+            view: this.currentView,
+            salesViewBrand: this.salesViewBrand ?? null,
+            salesViewYear: this.salesViewYear ?? null,
+            salesViewMonth: this.salesViewMonth ?? null,
+            activeProjectId: this.activeProjectId ?? null,
+        };
+    }
+    _pushHistory() {
+        if (this._restoringHistory) return;   // popstate 복원 중엔 새 항목을 쌓지 않음
+        const st = this._historyState();
+        const cur = history.state;
+        // 같은 상태면 중복으로 쌓지 않음(같은 메뉴 연타 시 뒤로가기가 헛돌지 않게)
+        if (cur && cur.bhas && JSON.stringify(cur) === JSON.stringify(st)) return;
+        try { history.pushState(st, '', location.pathname + location.search); } catch (e) { /* 무시 */ }
+    }
+    _initHistory() {
+        if (this._historyBound) return;
+        this._historyBound = true;
+        try { history.replaceState(this._historyState(), '', location.pathname + location.search); } catch (e) { /* 무시 */ }
+        window.addEventListener('popstate', (e) => {
+            const st = e.state;
+            if (!st || !st.bhas) return;   // 우리 항목이 아니면 브라우저 기본 동작
+            this._restoringHistory = true;
+            this.currentView = st.view || 'home';
+            this.salesViewBrand = st.salesViewBrand ?? 'ALL';
+            this.salesViewYear = st.salesViewYear ?? undefined;
+            this.salesViewMonth = st.salesViewMonth ?? undefined;
+            this.activeProjectId = st.activeProjectId ?? null;
+            this.render();
+            this._restoringHistory = false;
+        });
     }
 
     toggleTheme() {
@@ -605,6 +648,7 @@ class BhasApp {
     render() {
         if (this._isRendering) return;
         this._isRendering = true;
+        if (this.currentUser) this._initHistory();   // 로그인 후 1회 — 뒤로가기 연동 시작
 
         try {
             this.appContainer.innerHTML = '';
@@ -1189,7 +1233,7 @@ class BhasApp {
 
         // 이벤트 바인딩
         this.appContainer.querySelectorAll('.breadcrumb-back-btn').forEach(btn => {
-            btn.onclick = () => this.setState({ currentView: 'dashboard' });
+            btn.onclick = () => this.setState({ currentView: 'dashboard', activeProjectId: null });
         });
         
         this.bindDashboardEvents();
@@ -3199,28 +3243,34 @@ class BhasApp {
                     (ordersThisMonth + cancelThisCnt) && cancelThisCnt / (ordersThisMonth + cancelThisCnt) >= 0.15 ? '#ef4444' : undefined)}
         </div>`;
 
-        // SVG 에어리어 차트 (단일월=일별 / 연간전체=월별)
+        // SVG 차트 (단일월=일별 / 연간전체=월별)
+        //  브랜드가 2개 이상이면 브랜드별 선(색만 다르게, 면 채움 없음) — 브랜드끼리 바로 비교.
+        //  이때 y축은 '브랜드 개별 최대값'으로 잡아야 선이 바닥에 눌리지 않는다(합계 기준이면 다 깔림).
         const cs = chartSeries, N = cs.length;
-        const maxDaily = Math.max(1, ...cs);
+        const multi = stackSeries.length > 1;
+        const maxDaily = multi
+            ? Math.max(1, ...stackSeries.flatMap(s => s.values))
+            : Math.max(1, ...cs);
         const W = 760, H = 168, padX = 8, padTop = 20, padBot = 8;
         const xAt = i => padX + (W - 2 * padX) * (N > 1 ? i / (N - 1) : 0.5);
         const yAt = v => padTop + (H - padTop - padBot) * (1 - v / maxDaily);
         const linePts = cs.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`);
         const line = 'M ' + linePts.join(' L ');
         const area = `${line} L ${xAt(N - 1).toFixed(1)},${(H - padBot).toFixed(1)} L ${xAt(0).toFixed(1)},${(H - padBot).toFixed(1)} Z`;
-        // 브랜드 스택 영역: 아래에서부터 누적해 각 브랜드 색으로 채움(어느 브랜드가 그날을 만들었는지 보임)
-        const stacked = stackSeries.length > 1;
-        let _cum = Array(N).fill(0);
-        const stackPaths = stacked ? stackSeries.map(s => {
-            const lower = _cum.slice();
-            const upper = _cum.map((v, i) => v + (s.values[i] || 0));
-            _cum = upper;
-            const up = upper.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(' L ');
-            const dn = lower.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).reverse().join(' L ');
-            return `<path d="M ${up} L ${dn} Z" fill="${s.color}" fill-opacity="0.75"><title>${this._vesc(s.name)}</title></path>`;
+        const brandLines = multi ? stackSeries.map(s => {
+            const pts = s.values.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(' L ');
+            return `<path d="M ${pts}" fill="none" stroke="${s.color}" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><title>${this._vesc(s.name)}</title></path>`;
         }).join('') : '';
-        const peakI = cs.indexOf(maxDaily);
-        const peakLabel = yearMode ? `${peakI + 1}월` : `${peakI + 1}일`;
+        // 최고점: 브랜드별 모드면 '어느 브랜드의 어느 날'이 최고인지
+        let peakI, peakLabel, peakBrand = null;
+        if (multi) {
+            let best = { v: -1, i: 0, s: null };
+            stackSeries.forEach(s => s.values.forEach((v, i) => { if (v > best.v) best = { v, i, s }; }));
+            peakI = best.i; peakBrand = best.s;
+        } else {
+            peakI = cs.indexOf(maxDaily);
+        }
+        peakLabel = yearMode ? `${peakI + 1}월` : `${peakI + 1}일`;
         const gid = 'sg' + Math.floor(cy * 100 + (cmo || 0));
         // x축 라벨: 전 구간(일별=1~말일 / 연간=1~12월)을 데이터 포인트 위치에 정확히 맞춰 SVG 안에 그림.
         //  좁은 화면에서 겹치지 않게 5·10일 단위만 진하게, 나머지는 흐리게.
@@ -3238,19 +3288,18 @@ class BhasApp {
         const axisTicks = cs.map((_, i) => `<line x1="${xAt(i).toFixed(1)}" y1="${H - padBot}" x2="${xAt(i).toFixed(1)}" y2="${H - padBot + 3}" stroke="var(--card-border)" stroke-width="1" opacity="0.6"/>`).join('');
         const chart = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-bottom:1.3rem">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.6rem">
-                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> ${yearMode ? `${cy}년 월별 매출` : `${shortLabel} 일별 매출`}${stacked ? ' <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">브랜드별</span>' : ''}</div>
-                <div style="font-size:0.78rem;color:var(--text-muted)">최고 <b style="color:var(--text-main)">${peakLabel}</b> · ${wonMan(maxDaily)}원</div>
+                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> ${yearMode ? `${cy}년 월별 매출` : `${shortLabel} 일별 매출`}${multi ? ' <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">브랜드별</span>' : ''}</div>
+                <div style="font-size:0.78rem;color:var(--text-muted)">최고 ${peakBrand ? `<b style="color:${peakBrand.color}">${this._vesc(peakBrand.name)}</b> ` : ''}<b style="color:var(--text-main)">${peakLabel}</b> · ${wonMan(maxDaily)}원</div>
             </div>
             <svg viewBox="0 0 ${W} ${H + AXIS}" style="width:100%;height:${H + AXIS}px;display:block">
                 <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity="0.32"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0.02"/></linearGradient></defs>
                 ${[0.33, 0.66].map(f => `<line x1="${padX}" y1="${(padTop + (H - padTop - padBot) * f).toFixed(1)}" x2="${W - padX}" y2="${(padTop + (H - padTop - padBot) * f).toFixed(1)}" stroke="var(--card-border)" stroke-width="1" stroke-dasharray="2 5" opacity="0.55"/>`).join('')}
-                ${stacked ? stackPaths : `<path d="${area}" fill="url(#${gid})"/>`}
-                <path d="${line}" fill="none" stroke="${stacked ? 'var(--text-main)' : 'var(--primary)'}" stroke-width="${stacked ? 1.4 : 2.2}" stroke-linejoin="round" stroke-linecap="round" opacity="${stacked ? 0.55 : 1}"/>
-                <circle cx="${xAt(peakI).toFixed(1)}" cy="${yAt(maxDaily).toFixed(1)}" r="4" fill="var(--primary)" stroke="#fff" stroke-width="1.5"/>
+                ${multi ? brandLines : `<path d="${area}" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="var(--primary)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`}
+                <circle cx="${xAt(peakI).toFixed(1)}" cy="${yAt(maxDaily).toFixed(1)}" r="4" fill="${peakBrand ? peakBrand.color : 'var(--primary)'}" stroke="#fff" stroke-width="1.5"/>
                 <line x1="${padX}" y1="${H - padBot}" x2="${W - padX}" y2="${H - padBot}" stroke="var(--card-border)" stroke-width="1" opacity="0.8"/>
                 ${axisTicks}${axisLabels}
             </svg>
-            ${stacked ? `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:0.6rem">${stackSeries.map(s => `<span style="font-size:0.74rem;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:3px;background:${s.color}"></span>${this._vesc(s.name)}</span>`).join('')}</div>` : ''}
+            ${multi ? `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:0.6rem">${stackSeries.map(s => `<span style="font-size:0.74rem;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:3px;background:${s.color}"></span>${this._vesc(s.name)}</span>`).join('')}</div>` : ''}
         </div>`;
 
         // ── 브랜드 카드 (개요 화면의 본체) — 클릭하면 그 브랜드 상세로 들어감 ──
