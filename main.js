@@ -1899,6 +1899,17 @@ class BhasApp {
         const monthKey = todayStr.slice(0, 7);
         const mm = today.getMonth() + 1;
 
+        // ── 마지막 동기화 시각(몰 수집기 last_order_synced_at 최신값) ──
+        const syncTimes = (this.malls || []).map(m => m.last_order_synced_at).filter(Boolean).map(t => new Date(t).getTime());
+        const lastSync = syncTimes.length ? Math.max(...syncTimes) : null;
+        const syncMins = lastSync != null ? Math.floor((Date.now() - lastSync) / 60000) : null;
+        const syncAgoTxt = syncMins == null ? '동기화 정보 없음'
+            : syncMins < 1 ? '방금 동기화'
+                : syncMins < 60 ? `${syncMins}분 전 동기화`
+                    : `${Math.floor(syncMins / 60)}시간 ${syncMins % 60}분 전 동기화`;
+        const syncColor = syncMins == null ? 'var(--text-muted)' : (syncMins <= 15 ? '#10b981' : (syncMins <= 70 ? '#f59e0b' : '#ef4444'));
+        const syncBadge = `<span style="font-size:0.72rem;color:${syncColor};font-weight:600"><i class="ph ph-arrows-clockwise"></i> ${syncAgoTxt}</span>`;
+
         // ── 매출: 오늘 / 주간(7일) / 이번달 (취소 제외) ──
         const revOrders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null && notCancelled(o));
         const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
@@ -2056,7 +2067,7 @@ class BhasApp {
             </div>
 
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
-            ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적`)}
+            ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:0.9rem;margin-bottom:0.9rem">
                 ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#6366f1')}
                 ${kpiCard('주간 매출 (7일)', won(weekSales), '원', deltaBadge(weekDelta, 'vs 지난주'), '#3b82f6')}
