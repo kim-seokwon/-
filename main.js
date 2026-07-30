@@ -1729,24 +1729,40 @@ class BhasApp {
     // 매출 집계 (홈·매출뷰 공용)
     //  · 리테일(토비·하이헤이호·로하이스튜디오): 몰 주문 pay_amount (mall→brand)
     //  · 브하스(컨설팅): 발행된 세금계산서(견적 tax_status='issued') 기준
-    // 취소/반품/교환 주문 판별 (매출 집계에서 제외) — channel_status 코드 기준
-    _isCancelled(o) {
+    // 채널이 제공하는 상태값을 그대로 취합해 주문 상태 판정(추론 X)
+    // 반환: 'pre'(배송전) | 'shipping'(배송중) | 'done'(배송완료) | 'cancel'(취소) | 'return'(반품) | 'exchange'(교환)
+    _orderState(o) {
+        const raw = o.raw || {};
+        const isCafe24 = (o.channel || 'cafe24') === 'cafe24';
+        if (isCafe24) {
+            // 아이템 상태코드 우선(클레임): C=취소 R=반품 E=교환
+            const codes = (raw.items || []).map(it => String(it.status || it.order_status || ''));
+            if (codes.some(c => /^C/i.test(c))) return 'cancel';
+            if (codes.some(c => /^R/i.test(c))) return 'return';
+            if (codes.some(c => /^E/i.test(c))) return 'exchange';
+            // 배송상태 F/M/T
+            const ss = raw.shipping_status;
+            if (ss === 'T') return 'done';
+            if (ss === 'M') return 'shipping';
+            if (ss === 'F') return 'pre';
+            // 폴백: 아이템 N코드
+            if (codes.some(c => /^N(4|5)/.test(c))) return 'done';
+            if (codes.some(c => /^N3/.test(c))) return 'shipping';
+            return 'pre';
+        }
+        // eland/키디키디 등 숫자코드: 2취소·3반품·4교환·1정상
         const cs = String(o.channel_status || '');
-        if ((o.channel || 'cafe24') === 'cafe24') return /^(C|R|E)/i.test(cs);  // cafe24: Cancel/Return/Exchange
-        return /^[234]/.test(cs);                                               // eland/키디키디: 2취소·3반품·4교환
+        if (/^2/.test(cs)) return 'cancel';
+        if (/^3/.test(cs)) return 'return';
+        if (/^4/.test(cs)) return 'exchange';
+        return 'done';  // 정상건(세부 배송상태 미제공 → 완료 처리)
     }
-    // 환불(취소+반품 = 금액 환급) 판별
-    _isRefund(o) {
-        const cs = String(o.channel_status || '');
-        if ((o.channel || 'cafe24') === 'cafe24') return /^(C|R)/i.test(cs);    // cafe24: Cancel/Return
-        return /^[23]/.test(cs);                                                // eland: 2취소·3반품
-    }
-    // 교환 판별 (금액 환급 없음)
-    _isExchange(o) {
-        const cs = String(o.channel_status || '');
-        if ((o.channel || 'cafe24') === 'cafe24') return /^E/i.test(cs);        // cafe24: Exchange
-        return /^4/.test(cs);                                                   // eland: 4교환
-    }
+    // 취소/반품/교환 (매출 집계에서 제외)
+    _isCancelled(o) { const s = this._orderState(o); return s === 'cancel' || s === 'return' || s === 'exchange'; }
+    // 환불(취소+반품 = 금액 환급)
+    _isRefund(o) { const s = this._orderState(o); return s === 'cancel' || s === 'return'; }
+    // 교환(금액 환급 없음)
+    _isExchange(o) { return this._orderState(o) === 'exchange'; }
 
     _salesAgg(limitMonths = 12) {
         const ym = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
@@ -1909,16 +1925,16 @@ class BhasApp {
         </div>`; }).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.6rem 0">이번달 매출 없음</div>';
 
         // ── 주문 상태: 주문(배송 시작 전) / 배송중 / 교환 / 환불 (전체 기간 기준) ──
-        // ⚠️ 내부 status는 수집 시 전부 'new'로 저장돼 과거 배송완료분까지 '미출고'로 잡힘.
-        //    카페24 실제 배송상태(channel_status)가 null이라 정확한 미출고 판별 불가 →
-        //    운영 관점으로 "이번달 주문 中 송장 미발급(우체국 발번 전) & 취소류 아님"을 배송전으로 집계.
+        // 채널 제공 상태 그대로 집계. 배송전/배송중=실제 미출고(전체 운영), 교환/환불=이번달.
         const allO = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
         const inThisMonth = o => localYMD(o.order_date).startsWith(monthKey);
+        const stateOf = new Map();
+        const st = o => { let s = stateOf.get(o); if (s === undefined) { s = this._orderState(o); stateOf.set(o, s); } return s; };
+        const stOrder = allO.filter(o => st(o) === 'pre').length;        // 배송전(실제 미출고)
+        const stShip = allO.filter(o => st(o) === 'shipping').length;    // 배송중
         const monthO = allO.filter(inThisMonth);
-        const stOrder = monthO.filter(o => !this._isCancelled(o) && !o.invoice_no && o.status !== 'shipping' && o.status !== 'done').length;
-        const stShip = monthO.filter(o => o.status === 'shipping' || (o.invoice_no && o.status !== 'done' && !this._isCancelled(o))).length;
-        const stExchange = monthO.filter(o => this._isExchange(o)).length;
-        const refundO = monthO.filter(o => this._isRefund(o));
+        const stExchange = monthO.filter(o => st(o) === 'exchange').length;
+        const refundO = monthO.filter(o => st(o) === 'cancel' || st(o) === 'return');
         const stRefund = refundO.length;
         const refundTotal = refundO.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
 
@@ -2017,7 +2033,7 @@ class BhasApp {
         const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
         // 주문상태 3개 개별 블록
         const statBlocks = [
-            ['배송전', stOrder, '#6366f1', '송장 발급 전'],
+            ['배송전', stOrder, '#6366f1', '미출고'],
             ['배송중', stShip, '#06b6d4', ''],
             ['교환', stExchange, '#f59e0b', ''],
             ['환불', stRefund, '#a855f7', refundTotal ? `환불총액 ${won(refundTotal)}원` : '']
