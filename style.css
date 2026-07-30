@@ -2182,3 +2182,106 @@ body.light .stepper-section h2 { color: var(--text-main); }
 .sidebar.nav-collapsed .nav-links li > div { justify-content: center; }
 .sidebar.nav-collapsed .nav-bottom { flex-direction: column; gap: 12px; padding: 12px 0; }
 .sidebar.nav-collapsed .nav-bottom #logout-btn { justify-content: center; }
+
+/* ============================================================
+   모바일(≤768px) — 폰에서 실제로 쓸 수 있게
+   데스크톱 사이드바를 가로로 눕히면 메뉴 17개가 한 줄에 들어가 못 쓴다.
+   전용 하단바(자주 쓰는 4개 + 전체 시트)로 대체한다.
+   ============================================================ */
+.mobile-bottom-nav { display: none; }
+.mobile-menu-sheet { display: none; }
+
+@media screen and (max-width: 768px) {
+    /* 데스크톱 사이드바는 통째로 숨김 (기존 가로 눕히기 규칙 무력화) */
+    .dashboard > nav.sidebar { display: none !important; }
+
+    .mobile-bottom-nav {
+        display: flex;
+        position: fixed; left: 0; right: 0; bottom: 0;
+        height: calc(62px + env(safe-area-inset-bottom, 0px));
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        background: rgba(15, 23, 42, 0.96);
+        backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+        border-top: 1px solid rgba(255, 255, 255, 0.09);
+        z-index: 1000;
+        box-sizing: border-box;
+    }
+    body.light .mobile-bottom-nav { background: rgba(255, 255, 255, 0.97); border-top-color: rgba(0,0,0,0.08); }
+
+    .mobile-bottom-nav .mbn-item {
+        flex: 1 1 0; min-width: 0;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+        background: none; border: none; cursor: pointer;
+        color: var(--text-muted); font-size: 0.68rem; font-weight: 600;
+        padding: 6px 2px;
+    }
+    .mobile-bottom-nav .mbn-item i { font-size: 1.35rem; }
+    .mobile-bottom-nav .mbn-item.active { color: var(--primary); }
+    .mobile-bottom-nav .mbn-item span { white-space: nowrap; }
+
+    /* 전체 메뉴 시트 */
+    .mobile-menu-sheet {
+        display: block;
+        position: fixed; inset: 0; z-index: 1002;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    }
+    .mms-panel {
+        position: absolute; left: 0; right: 0; bottom: 0;
+        max-height: 82vh; display: flex; flex-direction: column;
+        /* --card-bg 는 반투명이라 딤이 비쳐 글씨가 안 읽힘 → 시트는 불투명 단색 */
+        background: #0f172a;
+        border-top-left-radius: 20px; border-top-right-radius: 20px;
+        border-top: 1px solid var(--card-border);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        animation: mmsUp 0.18s ease-out;
+    }
+    @keyframes mmsUp { from { transform: translateY(14px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+    .mms-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 18px 10px; font-size: 0.98rem; font-weight: 800; color: var(--text-main);
+    }
+    .mms-head button { background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 0; }
+    .mms-body { overflow-y: auto; padding: 0 14px 8px; -webkit-overflow-scrolling: touch; }
+    .mms-group { margin-bottom: 14px; }
+    .mms-group-label { font-size: 0.74rem; font-weight: 700; color: var(--text-muted); padding: 4px 4px 8px; }
+    .mms-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .mms-item {
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+        padding: 12px 4px; border-radius: 14px; cursor: pointer;
+        background: rgba(148, 163, 184, 0.10); border: 1px solid transparent;
+        color: var(--text-main); font-size: 0.72rem; font-weight: 600;
+    }
+    .mms-item i { font-size: 1.35rem; color: var(--primary); }
+    .mms-item.active { background: rgba(99, 102, 241, 0.16); border-color: var(--primary); color: var(--primary); }
+    .mms-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .mms-foot {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 12px 18px 16px; border-top: 1px solid var(--card-border);
+        font-size: 0.78rem; color: var(--text-muted);
+    }
+    body.light .mms-panel { background: #ffffff; }
+    body.light .mms-item { background: rgba(15, 23, 42, 0.05); }
+    body.light .mms-head, body.light .mms-item { color: #0f172a; }
+
+    .mms-foot button {
+        background: rgba(239, 68, 68, 0.12); color: #ef4444; border: none;
+        padding: 7px 13px; border-radius: 10px; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+    }
+
+    /* 콘텐츠: 화면 폭이 좁으니 여백을 줄이고 하단바만큼 자리를 비운다.
+       각 화면이 인라인 style로 padding을 박아둬서 !important 로 덮는다. */
+    .main-content { padding: 66px 0 calc(84px + env(safe-area-inset-bottom, 0px)) 0 !important; }
+    /* 각 화면이 인라인 padding을 박아둬서 좌우만 !important로 좁힌다(위/아래 인라인 값은 유지) */
+    .main-content > * { padding-left: 0.85rem !important; padding-right: 0.85rem !important; }
+
+    .main-content h1 { font-size: 1.2rem !important; }
+
+    /* KPI 4장이 세로로 길게 늘어지지 않게 2열 고정 */
+    .kpi-grid { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
+    .kpi-grid > div { padding: 0.85rem 0.9rem !important; }
+    .kpi-grid > div > div:nth-child(2) { font-size: 1.2rem !important; }
+
+    /* 표는 잘리지 말고 가로 스크롤 */
+    .main-content table { font-size: 0.76rem !important; }
+}

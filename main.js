@@ -1023,6 +1023,52 @@ class BhasApp {
                     </ul>
                 </nav>
 
+                <!-- 모바일 전용 하단바 — 데스크톱 사이드바를 그대로 가로로 눕히면 메뉴 17개가
+                     한 줄에 들어가 못 쓴다. 자주 쓰는 4개 + '전체'(시트)로 나눈다. -->
+                ${(() => {
+                    const quick = [
+                        { id: 'home', label: '홈', icon: 'ph-house-line' },
+                        { id: 'orders', label: '주문', icon: 'ph-shopping-bag-open' },
+                        { id: 'sales', label: '매출', icon: 'ph-chart-line-up' },
+                        { id: 'inventory', label: '재고', icon: 'ph-package' },
+                    ].filter(q => q.id === 'home' || menuItems.some(m => m.id === q.id && m.visible));
+                    const inQuick = quick.some(q => q.id === this.currentView);
+                    return `<nav class="mobile-bottom-nav">
+                        ${quick.map(q => `<button class="mbn-item ${this.currentView === q.id ? 'active' : ''}" data-view="${q.id}">
+                            <i class="ph ${q.icon}"></i><span>${q.label}</span>
+                        </button>`).join('')}
+                        <button class="mbn-item ${(!inQuick || this.mobileMenuOpen) ? 'active' : ''}" id="mbn-more">
+                            <i class="ph ph-dots-three-outline"></i><span>전체</span>
+                        </button>
+                    </nav>
+                    ${this.mobileMenuOpen ? `<div class="mobile-menu-sheet" id="mobile-menu-sheet">
+                        <div class="mms-panel">
+                            <div class="mms-head">
+                                <span>전체 메뉴</span>
+                                <button id="mms-close" aria-label="닫기"><i class="ph ph-x"></i></button>
+                            </div>
+                            <div class="mms-body">
+                                ${navGroups.map(g => {
+                                    const items = menuItems.filter(i => i.group === g.id && i.visible);
+                                    if (!items.length) return '';
+                                    return `<div class="mms-group">
+                                        <div class="mms-group-label">${g.label}</div>
+                                        <div class="mms-grid">
+                                            ${items.map(it => `<button class="mms-item ${this.currentView === it.id ? 'active' : ''}" data-view="${it.id}">
+                                                ${it.icon}<span>${it.label}</span>
+                                            </button>`).join('')}
+                                        </div>
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                            <div class="mms-foot">
+                                <span>${name} · ${role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사')}</span>
+                                <button id="mms-logout"><i class="ph ph-power"></i> 로그아웃</button>
+                            </div>
+                        </div>
+                    </div>` : ''}`;
+                })()}
+
                 <div class="top-toolbar">
                     <div class="tt-search" id="open-search-btn" title="통합 검색 (단축키 /)">
                         <i class="ph ph-magnifying-glass"></i>
@@ -1250,6 +1296,21 @@ class BhasApp {
         this.appContainer.querySelectorAll('.breadcrumb-back-btn').forEach(btn => {
             btn.onclick = () => this.setState({ currentView: 'dashboard', activeProjectId: null });
         });
+
+        // 모바일 하단바 · 전체메뉴 시트
+        this.appContainer.querySelectorAll('.mobile-bottom-nav .mbn-item[data-view]').forEach(btn => {
+            btn.onclick = () => { this.mobileMenuOpen = false; this.switchView(btn.dataset.view); };
+        });
+        const moreBtn = this.appContainer.querySelector('#mbn-more');
+        if (moreBtn) moreBtn.onclick = () => { this.mobileMenuOpen = !this.mobileMenuOpen; this.render(); };
+        const mmsClose = this.appContainer.querySelector('#mms-close');
+        if (mmsClose) mmsClose.onclick = () => { this.mobileMenuOpen = false; this.render(); };
+        const sheet = this.appContainer.querySelector('#mobile-menu-sheet');
+        // 바깥(딤) 클릭으로 닫기 — 패널 안쪽 클릭은 무시
+        if (sheet) sheet.onclick = (e) => { if (e.target === sheet) { this.mobileMenuOpen = false; this.render(); } };
+        this.appContainer.querySelectorAll('.mms-item[data-view]').forEach(btn => {
+            btn.onclick = () => { this.mobileMenuOpen = false; this.switchView(btn.dataset.view); };
+        });
         
         this.bindDashboardEvents();
         if (this.currentView === 'detail') this.bindDetailEvents();
@@ -1265,6 +1326,8 @@ class BhasApp {
         if (logoutBtn) logoutBtn.onclick = doLogout;
         const mobileLogoutBtn = document.getElementById('mobile-logout-btn');
         if (mobileLogoutBtn) mobileLogoutBtn.onclick = doLogout;
+        const mmsLogout = document.getElementById('mms-logout');
+        if (mmsLogout) mmsLogout.onclick = () => { this.mobileMenuOpen = false; doLogout(); };
 
         const companyFilter = document.getElementById('global-company-filter');
         if (companyFilter) {
@@ -3244,7 +3307,7 @@ class BhasApp {
             <div style="font-size:1.55rem;font-weight:800;margin-top:5px;font-variant-numeric:tabular-nums;line-height:1.1">${val}</div>
             ${sub ? `<div style="font-size:0.75rem;margin-top:3px;color:${subColor || 'var(--text-muted)'};font-weight:600">${sub}</div>` : ''}
         </div>`;
-        const cards = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:1.3rem">
+        const cards = `<div class="kpi-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:1.3rem">
             ${kpi(`${shortLabel} 매출`, `${won(thisM)}<span style="font-size:1rem;font-weight:600">원</span>`,
                 (momSane ? `전월 대비 ${delta >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta / prevM * 100))}%` : (prevM > 0 ? `지난달 ${wonMan(prevM)}원` : '집계 시작')) + (cancelThisCnt ? ` · 취소 ${cancelThisCnt}건 제외` : ''),
                 momSane ? (delta >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)')}
