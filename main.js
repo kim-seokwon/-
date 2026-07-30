@@ -3133,14 +3133,24 @@ class BhasApp {
         const cancelThisCnt = cancelThis.length;
         const cancelThisAmt = cancelThis.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
 
-        // 선택 기간 집계 + 인기상품 (몰 주문)
+        // 브랜드 색상은 이름 기준으로 고정(차트·카드·매트릭스가 항상 같은 색을 쓰게)
+        const colorOf = (name) => { const i = brands.findIndex(b => b.name === name); return palette[(i < 0 ? 0 : i) % palette.length]; };
+
+        // 선택 기간 집계 + 인기상품 (몰 주문) + 브랜드별 일자 시리즈
         const daily = Array(31).fill(0);
+        const dailyByBrand = {};   // 브랜드명 → 일별(31) 매출
+        const cntByBrand = {};     // 브랜드명 → 주문건수
         const prodQty = {};
         let ordersThisMonth = 0;
         orders.forEach(o => {
             if (!inScope(o.order_date)) return;
             ordersThisMonth++;
-            daily[new Date(o.order_date).getDate() - 1] += Number(o.pay_amount) || 0;
+            const amt = Number(o.pay_amount) || 0;
+            const d = new Date(o.order_date);
+            daily[d.getDate() - 1] += amt;
+            const bn = this._orderBrandName(o) || '기타';
+            (dailyByBrand[bn] = dailyByBrand[bn] || Array(31).fill(0))[d.getDate() - 1] += amt;
+            cntByBrand[bn] = (cntByBrand[bn] || 0) + 1;
             (o.items || []).forEach(it => { const n = it.product_name || it.variant_code || '상품'; prodQty[n] = (prodQty[n] || 0) + (Number(it.quantity) || 1); });
         });
         // 차트 시리즈: 단일월=일별, 연간전체=월별(1~12)
@@ -3152,9 +3162,20 @@ class BhasApp {
         const aov = ordersThisMonth ? thisM / ordersThisMonth : 0;
 
         // 브랜드 선택기간 (점유율)
-        const brandNow = brands.map((b, i) => ({ name: b.name, kind: b.kind, amt: scopeMonths.reduce((s, k) => s + (idxOf(k) >= 0 ? b.cells[idxOf(k)].amt : 0), 0), color: palette[i % palette.length] }))
+        const brandNow = brands.map((b) => ({ name: b.name, kind: b.kind, amt: scopeMonths.reduce((s, k) => s + (idxOf(k) >= 0 ? b.cells[idxOf(k)].amt : 0), 0), color: colorOf(b.name) }))
             .filter(b => b.amt > 0 && (bf === 'ALL' || b.name === bf)).sort((a, b) => b.amt - a.amt);
         const brandNowMax = Math.max(1, ...brandNow.map(b => b.amt));
+
+        // 차트를 브랜드별로 쌓기 위한 시리즈(개요 화면에서만 분리, 브랜드 상세는 단색 1개)
+        //  연간모드는 브랜드×월 셀에서, 단일월은 위에서 만든 일별 집계에서 가져온다.
+        const stackSeries = brandNow.map(b => {
+            const rec = brands.find(x => x.name === b.name);
+            const values = yearMode
+                ? Array.from({ length: 12 }, (_, i) => { const ix = idxOf(`${selY}-${String(i + 1).padStart(2, '0')}`); return ix >= 0 ? (rec?.cells[ix]?.amt || 0) : 0; })
+                : (dailyByBrand[b.name] || Array(31).fill(0)).slice(0, daysInMonth);
+            return { name: b.name, color: b.color, values, total: b.amt };
+        // 값이 전부 0인 시리즈는 범례만 지저분해짐(예: 컨설팅은 몰 주문이 아니라 일별 분포가 없음)
+        }).filter(s => s.values.some(v => v > 0));
 
         // KPI (전월대비는 지난달이 유의미할 때만 %, 아니면 절대금액 델타)
         const delta = thisM - prevM;
@@ -3170,7 +3191,12 @@ class BhasApp {
                 momSane ? (delta >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)')}
             ${kpi(`${shortLabel} 주문`, `${ordersThisMonth.toLocaleString()}<span style="font-size:1rem;font-weight:600">건</span>`, `전체 누적 ${orders.length.toLocaleString()}건`)}
             ${kpi('객단가', `${won(aov)}<span style="font-size:1rem;font-weight:600">원</span>`, '주문 1건당 평균')}
-            ${kpi('판매 브랜드', `${brandNow.length}<span style="font-size:1rem;font-weight:600">개</span>`, brandNow.slice(0, 2).map(b => b.name).join(' · ') || '—')}
+            ${bf === 'ALL'
+                ? kpi('판매 브랜드', `${brandNow.length}<span style="font-size:1rem;font-weight:600">개</span>`, brandNow.slice(0, 2).map(b => b.name).join(' · ') || '—')
+                // 브랜드 상세에선 '브랜드 개수'가 무의미 → 반품·교환률로 대체
+                : kpi('반품·교환률', `${(ordersThisMonth + cancelThisCnt) ? Math.round(cancelThisCnt / (ordersThisMonth + cancelThisCnt) * 100) : 0}<span style="font-size:1rem;font-weight:600">%</span>`,
+                    `${cancelThisCnt}건 · 환불 ${wonMan(cancelThisAmt)}원`,
+                    (ordersThisMonth + cancelThisCnt) && cancelThisCnt / (ordersThisMonth + cancelThisCnt) >= 0.15 ? '#ef4444' : undefined)}
         </div>`;
 
         // SVG 에어리어 차트 (단일월=일별 / 연간전체=월별)
@@ -3182,6 +3208,17 @@ class BhasApp {
         const linePts = cs.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`);
         const line = 'M ' + linePts.join(' L ');
         const area = `${line} L ${xAt(N - 1).toFixed(1)},${(H - padBot).toFixed(1)} L ${xAt(0).toFixed(1)},${(H - padBot).toFixed(1)} Z`;
+        // 브랜드 스택 영역: 아래에서부터 누적해 각 브랜드 색으로 채움(어느 브랜드가 그날을 만들었는지 보임)
+        const stacked = stackSeries.length > 1;
+        let _cum = Array(N).fill(0);
+        const stackPaths = stacked ? stackSeries.map(s => {
+            const lower = _cum.slice();
+            const upper = _cum.map((v, i) => v + (s.values[i] || 0));
+            _cum = upper;
+            const up = upper.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(' L ');
+            const dn = lower.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).reverse().join(' L ');
+            return `<path d="M ${up} L ${dn} Z" fill="${s.color}" fill-opacity="0.75"><title>${this._vesc(s.name)}</title></path>`;
+        }).join('') : '';
         const peakI = cs.indexOf(maxDaily);
         const peakLabel = yearMode ? `${peakI + 1}월` : `${peakI + 1}일`;
         const gid = 'sg' + Math.floor(cy * 100 + (cmo || 0));
@@ -3201,32 +3238,68 @@ class BhasApp {
         const axisTicks = cs.map((_, i) => `<line x1="${xAt(i).toFixed(1)}" y1="${H - padBot}" x2="${xAt(i).toFixed(1)}" y2="${H - padBot + 3}" stroke="var(--card-border)" stroke-width="1" opacity="0.6"/>`).join('');
         const chart = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-bottom:1.3rem">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.6rem">
-                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> ${yearMode ? `${cy}년 월별 매출` : `${shortLabel} 일별 매출`}</div>
+                <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> ${yearMode ? `${cy}년 월별 매출` : `${shortLabel} 일별 매출`}${stacked ? ' <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">브랜드별</span>' : ''}</div>
                 <div style="font-size:0.78rem;color:var(--text-muted)">최고 <b style="color:var(--text-main)">${peakLabel}</b> · ${wonMan(maxDaily)}원</div>
             </div>
             <svg viewBox="0 0 ${W} ${H + AXIS}" style="width:100%;height:${H + AXIS}px;display:block">
                 <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity="0.32"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0.02"/></linearGradient></defs>
                 ${[0.33, 0.66].map(f => `<line x1="${padX}" y1="${(padTop + (H - padTop - padBot) * f).toFixed(1)}" x2="${W - padX}" y2="${(padTop + (H - padTop - padBot) * f).toFixed(1)}" stroke="var(--card-border)" stroke-width="1" stroke-dasharray="2 5" opacity="0.55"/>`).join('')}
-                <path d="${area}" fill="url(#${gid})"/>
-                <path d="${line}" fill="none" stroke="var(--primary)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+                ${stacked ? stackPaths : `<path d="${area}" fill="url(#${gid})"/>`}
+                <path d="${line}" fill="none" stroke="${stacked ? 'var(--text-main)' : 'var(--primary)'}" stroke-width="${stacked ? 1.4 : 2.2}" stroke-linejoin="round" stroke-linecap="round" opacity="${stacked ? 0.55 : 1}"/>
                 <circle cx="${xAt(peakI).toFixed(1)}" cy="${yAt(maxDaily).toFixed(1)}" r="4" fill="var(--primary)" stroke="#fff" stroke-width="1.5"/>
                 <line x1="${padX}" y1="${H - padBot}" x2="${W - padX}" y2="${H - padBot}" stroke="var(--card-border)" stroke-width="1" opacity="0.8"/>
                 ${axisTicks}${axisLabels}
             </svg>
+            ${stacked ? `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:0.6rem">${stackSeries.map(s => `<span style="font-size:0.74rem;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:3px;background:${s.color}"></span>${this._vesc(s.name)}</span>`).join('')}</div>` : ''}
         </div>`;
 
-        // 브랜드 점유율 바 (이번 달)
-        const brandBars = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-ranking" style="color:var(--primary)"></i> ${shortLabel} 브랜드별 매출</div>
-            <div style="display:flex;flex-direction:column;gap:0.9rem">
-            ${brandNow.map(b => `<div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-                    <span style="font-size:0.85rem;font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${b.color};margin-right:7px"></span>${this._vesc(b.name)}${b.kind === 'consulting' ? ' <span style="font-size:0.62rem;font-weight:700;color:#8b5cf6;background:rgba(139,92,246,0.14);padding:1px 6px;border-radius:6px">컨설팅</span>' : ''}</span>
-                    <span style="font-size:0.85rem;font-weight:800;font-variant-numeric:tabular-nums">${won(b.amt)}<span style="font-size:0.72rem;color:var(--text-muted);font-weight:500"> · ${thisM ? Math.round(b.amt / thisM * 100) : 0}%</span></span>
+        // ── 브랜드 카드 (개요 화면의 본체) — 클릭하면 그 브랜드 상세로 들어감 ──
+        //  전체 합산 지표는 작전 짜는 데 쓸모가 없으니, 개요는 "얼마·어디서"만 보여주고
+        //  상품·사이즈·재구매 같은 디테일은 전부 브랜드 안으로 넣는다.
+        const spark = (vals, color) => {
+            const n = vals.length, mx = Math.max(1, ...vals);
+            const w = 200, h = 34;
+            const px = i => (n > 1 ? (w * i / (n - 1)) : w / 2);
+            const py = v => h - (h - 3) * (v / mx);
+            const pts = vals.map((v, i) => `${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' L ');
+            return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block">
+                <path d="M ${pts} L ${w},${h} L 0,${h} Z" fill="${color}" fill-opacity="0.16"/>
+                <path d="M ${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/>
+            </svg>`;
+        };
+        const brandCards = brandNow.map(b => {
+            const rec = brands.find(x => x.name === b.name);
+            const prevAmt = (!yearMode && rec && li > 0) ? (rec.cells[li - 1]?.amt || 0) : 0;
+            const d = b.amt - prevAmt;
+            const sane = prevAmt > 0 && prevAmt >= b.amt * 0.05;
+            const cnt = cntByBrand[b.name] || 0;
+            const bAov = cnt ? b.amt / cnt : 0;
+            const vals = yearMode
+                ? Array.from({ length: 12 }, (_, i) => { const ix = idxOf(`${selY}-${String(i + 1).padStart(2, '0')}`); return ix >= 0 ? (rec?.cells[ix]?.amt || 0) : 0; })
+                : (dailyByBrand[b.name] || Array(31).fill(0)).slice(0, daysInMonth);
+            return `<div class="glass" onclick="app.setSalesBrand('${this._vesc(b.name).replace(/'/g, "\\'")}')"
+                style="padding:1.15rem 1.25rem;border-radius:18px;cursor:pointer;border-left:4px solid ${b.color};transition:transform .12s"
+                onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:0.7rem">
+                    <span style="font-size:0.95rem;font-weight:800">${this._vesc(b.name)}${b.kind === 'consulting' ? ' <span style="font-size:0.62rem;font-weight:700;color:#8b5cf6;background:rgba(139,92,246,0.14);padding:1px 6px;border-radius:6px">컨설팅</span>' : ''}</span>
+                    <span style="font-size:0.72rem;color:var(--text-muted);white-space:nowrap">자세히 <i class="ph ph-arrow-right"></i></span>
                 </div>
-                <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${Math.max(3, b.amt / brandNowMax * 100)}%;background:${b.color};border-radius:5px"></div></div>
-            </div>`).join('')}
-            </div>
+                <div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${won(b.amt)}<span style="font-size:0.9rem;font-weight:600">원</span></div>
+                <div style="display:flex;gap:10px;align-items:baseline;margin-top:5px;font-size:0.75rem;color:var(--text-muted);font-weight:600">
+                    <span>점유율 ${thisM ? Math.round(b.amt / thisM * 100) : 0}%</span>
+                    ${sane ? `<span style="color:${d >= 0 ? '#10b981' : '#ef4444'}">전월 ${d >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(d / prevAmt * 100))}%</span>` : ''}
+                </div>
+                <div style="margin:0.7rem 0 0.4rem">${spark(vals, b.color)}</div>
+                <div style="display:flex;justify-content:space-between;font-size:0.74rem;color:var(--text-muted);border-top:1px solid var(--card-border);padding-top:7px">
+                    <span>주문 <b style="color:var(--text-main)">${cnt.toLocaleString()}</b>건</span>
+                    <span>객단가 <b style="color:var(--text-main)">${won(bAov)}</b>원</span>
+                </div>
+            </div>`;
+        }).join('');
+        const brandGrid = `<div style="margin-top:1.3rem">
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.8rem"><i class="ph ph-squares-four" style="color:var(--primary)"></i> 브랜드별 지표 <span style="font-size:0.74rem;color:var(--text-muted);font-weight:500">— 카드를 누르면 상품·사이즈·재구매까지 상세히 봐요</span></div>
+            ${brandNow.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.1rem">${brandCards}</div>`
+                : `<div class="glass" style="padding:2rem;border-radius:18px;text-align:center;color:var(--text-muted);font-size:0.85rem">${periodLabel}에 매출이 있는 브랜드가 없습니다.</div>`}
         </div>`;
 
         // 인기 상품 TOP (이번 달, 수량 기준)
@@ -3297,7 +3370,6 @@ class BhasApp {
             </div>`; }).join('')}
             </div>
         </div>`;
-        const channelStatus = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem;margin-top:1.3rem">${chanCard}${statCard}</div>`;
 
         // 반품·교환 분석 (급증 감지 + 반복 반품 고객)
         const retThis = (cancelledOrders || []).filter(o => inScope(o.order_date));
@@ -3391,7 +3463,6 @@ class BhasApp {
             </div>
             <p style="margin:0.9rem 0 0;font-size:0.68rem;color:var(--text-muted)">* 출고일·QC·원가가 쌓이면 자동으로 채워져요</p>
         </div>`;
-        const insights = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${netCard}${repeatCard}${optCard}${qualityCard}</div>`;
 
         // 브랜드 × 월 매트릭스 — 연도 선택해서 1년치(1~12월)씩 보기
         const mtxYear = yearsAvail.includes(this.salesMatrixYear) ? this.salesMatrixYear : selY;
@@ -3421,8 +3492,13 @@ class BhasApp {
         return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
                 <div>
-                    <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-line-up"></i> 매출 현황</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem"><b style="color:var(--primary)">${bf === 'ALL' ? '전체 브랜드 통합' : this._vesc(bf)}</b> · ${periodLabel} 기준</p>
+                    ${bf === 'ALL' ? '' : `<button onclick="app.setSalesBrand('ALL')" style="margin-bottom:7px;padding:5px 12px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);font-size:0.78rem;font-weight:700;cursor:pointer"><i class="ph ph-arrow-left"></i> 전체 매출로</button>`}
+                    <h1 style="margin:0;font-size:1.45rem">${bf === 'ALL'
+                        ? '<i class="ph ph-chart-line-up"></i> 매출 현황'
+                        : `<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${colorOf(bf)};margin-right:9px"></span>${this._vesc(bf)}`}</h1>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${bf === 'ALL'
+                        ? `<b style="color:var(--primary)">전체 브랜드 통합</b> · ${periodLabel} 기준`
+                        : `브랜드 상세 · ${periodLabel} 기준`}</p>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                     <select onchange="app.setSalesBrand(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid ${bf !== 'ALL' ? 'var(--primary)' : 'var(--card-border)'};background:${bf !== 'ALL' ? 'rgba(99,102,241,0.12)' : 'transparent'};color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
@@ -3440,11 +3516,16 @@ class BhasApp {
             </div>
             ${cards}
             ${chart}
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem">${brandBars}${topCard}</div>
-            ${channelStatus}
-            ${returnCard}
-            ${insights}
-            ${matrix}
+            ${bf === 'ALL'
+                // 개요: 전체가 얼마고 어느 채널에서 나오는지 + 브랜드 카드(여기서 브랜드로 들어감)
+                ? `${chanCard}
+                   ${brandGrid}
+                   ${matrix}`
+                // 브랜드 상세: 작전 짜는 지표 전부
+                : `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem">${topCard}${optCard}</div>
+                   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${repeatCard}${netCard}${chanCard}${statCard}</div>
+                   ${returnCard}
+                   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${qualityCard}</div>`}
             <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 리테일 = 몰 주문 결제금액 · 브하스(컨설팅) = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·환불은 채널 상태 연동 후 반영</p>
         </div>`;
     }
