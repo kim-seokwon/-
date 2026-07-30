@@ -1735,6 +1735,18 @@ class BhasApp {
         if ((o.channel || 'cafe24') === 'cafe24') return /^(C|R|E)/i.test(cs);  // cafe24: Cancel/Return/Exchange
         return /^[234]/.test(cs);                                               // eland/키디키디: 2취소·3반품·4교환
     }
+    // 환불(취소+반품 = 금액 환급) 판별
+    _isRefund(o) {
+        const cs = String(o.channel_status || '');
+        if ((o.channel || 'cafe24') === 'cafe24') return /^(C|R)/i.test(cs);    // cafe24: Cancel/Return
+        return /^[23]/.test(cs);                                                // eland: 2취소·3반품
+    }
+    // 교환 판별 (금액 환급 없음)
+    _isExchange(o) {
+        const cs = String(o.channel_status || '');
+        if ((o.channel || 'cafe24') === 'cafe24') return /^E/i.test(cs);        // cafe24: Exchange
+        return /^4/.test(cs);                                                   // eland: 4교환
+    }
 
     _salesAgg(limitMonths = 12) {
         const ym = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
@@ -1896,11 +1908,15 @@ class BhasApp {
             <div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.14)"><div style="height:100%;width:${on ? Math.max(3, amt / max * 100) : 0}%;background:${c};border-radius:5px"></div></div>
         </div>`; }).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.6rem 0">이번달 매출 없음</div>';
 
-        // ── 주문 상태: 주문 / 배송중 / 교환·환불 (전체 기간 기준 — 최근500 상한 아님) ──
+        // ── 주문 상태: 주문(배송 시작 전) / 배송중 / 교환 / 환불 (전체 기간 기준) ──
         const allO = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
-        const stOrder = allO.filter(o => notCancelled(o) && (o.status === 'new' || o.status === 'ready')).length;
+        // 주문 = 접수됐지만 배송 시작 안 됨(신규/배송준비), 취소·반품·교환 제외
+        const stOrder = allO.filter(o => !this._isCancelled(o) && (o.status === 'new' || o.status === 'ready')).length;
         const stShip = allO.filter(o => o.status === 'shipping').length;
-        const stReturn = allO.filter(o => this._isCancelled(o)).length;
+        const stExchange = allO.filter(o => this._isExchange(o)).length;
+        const refundO = allO.filter(o => this._isRefund(o));
+        const stRefund = refundO.length;
+        const refundTotal = refundO.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
 
         // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
         const recentCompact = (this.orders || []).slice(0, 40).map(o => {
@@ -1996,9 +2012,14 @@ class BhasApp {
         // 브랜드 색상 범례(채널 스택바 해설)
         const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
         // 주문상태 3개 개별 블록
-        const statBlocks = [['주문', stOrder, '#6366f1'], ['배송중', stShip, '#06b6d4'], ['교환·환불', stReturn, '#a855f7']].map(([l, n, c]) => `<div class="glass" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px">
+        const statBlocks = [
+            ['주문', stOrder, '#6366f1', '배송 시작 전'],
+            ['배송중', stShip, '#06b6d4', ''],
+            ['교환', stExchange, '#f59e0b', ''],
+            ['환불', stRefund, '#a855f7', refundTotal ? `환불총액 ${won(refundTotal)}원` : '']
+        ].map(([l, n, c, sub]) => `<div class="glass" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px">
             <span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span>
-            <div><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${l}</div></div>
+            <div style="min-width:0"><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${l}</div>${sub ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ''}</div>
         </div>`).join('');
         // 브랜드별 매출 합계 + 비율(%)
         const brandGrand = brandArr.reduce((s, [, v]) => s + v, 0) || 1;
