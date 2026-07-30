@@ -3185,22 +3185,34 @@ class BhasApp {
         const peakI = cs.indexOf(maxDaily);
         const peakLabel = yearMode ? `${peakI + 1}월` : `${peakI + 1}일`;
         const gid = 'sg' + Math.floor(cy * 100 + (cmo || 0));
-        const xL = yearMode ? ['1월', '6월', '12월'] : ['1일', `${Math.round(daysInMonth / 2)}일`, `${daysInMonth}일`];
+        // x축 라벨: 전 구간(일별=1~말일 / 연간=1~12월)을 데이터 포인트 위치에 정확히 맞춰 SVG 안에 그림.
+        //  좁은 화면에서 겹치지 않게 5·10일 단위만 진하게, 나머지는 흐리게.
+        const AXIS = 17;
+        const axisLabels = cs.map((_, i) => {
+            const n = i + 1;
+            const strong = yearMode || n === 1 || n === N || n % 5 === 0;
+            // 연간(12개)은 자리가 넉넉해 '월'까지, 일별(최대 31개)은 숫자만(첫·마지막만 '일')
+            const txt = yearMode ? `${n}월` : (n === 1 || n === N ? `${n}일` : `${n}`);
+            return `<text x="${xAt(i).toFixed(1)}" y="${H + 11}" text-anchor="middle"
+                font-size="9" font-weight="${strong ? 700 : 400}"
+                fill="${i === peakI ? 'var(--primary)' : 'var(--text-muted)'}"
+                opacity="${strong || i === peakI ? 1 : 0.45}">${txt}</text>`;
+        }).join('');
+        const axisTicks = cs.map((_, i) => `<line x1="${xAt(i).toFixed(1)}" y1="${H - padBot}" x2="${xAt(i).toFixed(1)}" y2="${H - padBot + 3}" stroke="var(--card-border)" stroke-width="1" opacity="0.6"/>`).join('');
         const chart = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-bottom:1.3rem">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.6rem">
                 <div style="font-size:0.92rem;font-weight:700"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> ${yearMode ? `${cy}년 월별 매출` : `${shortLabel} 일별 매출`}</div>
                 <div style="font-size:0.78rem;color:var(--text-muted)">최고 <b style="color:var(--text-main)">${peakLabel}</b> · ${wonMan(maxDaily)}원</div>
             </div>
-            <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
+            <svg viewBox="0 0 ${W} ${H + AXIS}" style="width:100%;height:${H + AXIS}px;display:block">
                 <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity="0.32"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0.02"/></linearGradient></defs>
                 ${[0.33, 0.66].map(f => `<line x1="${padX}" y1="${(padTop + (H - padTop - padBot) * f).toFixed(1)}" x2="${W - padX}" y2="${(padTop + (H - padTop - padBot) * f).toFixed(1)}" stroke="var(--card-border)" stroke-width="1" stroke-dasharray="2 5" opacity="0.55"/>`).join('')}
                 <path d="${area}" fill="url(#${gid})"/>
                 <path d="${line}" fill="none" stroke="var(--primary)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
                 <circle cx="${xAt(peakI).toFixed(1)}" cy="${yAt(maxDaily).toFixed(1)}" r="4" fill="var(--primary)" stroke="#fff" stroke-width="1.5"/>
+                <line x1="${padX}" y1="${H - padBot}" x2="${W - padX}" y2="${H - padBot}" stroke="var(--card-border)" stroke-width="1" opacity="0.8"/>
+                ${axisTicks}${axisLabels}
             </svg>
-            <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--text-muted);margin-top:2px;padding:0 4px">
-                <span>${xL[0]}</span><span>${xL[1]}</span><span>${xL[2]}</span>
-            </div>
         </div>`;
 
         // 브랜드 점유율 바 (이번 달)
