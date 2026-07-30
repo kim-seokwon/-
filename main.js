@@ -619,11 +619,25 @@ class BhasApp {
     _initHistory() {
         if (this._historyBound) return;
         this._historyBound = true;
-        try { history.replaceState(this._historyState(), '', location.pathname + location.search); } catch (e) { /* 무시 */ }
+        const url = location.pathname + location.search;
+        try {
+            // 바닥 항목(floor)을 하나 깔고 그 위에 현재 화면을 쌓는다.
+            // → 어느 화면에서 뒤로가기를 하든 최소 한 번은 앱 안(홈)에 남고, 사이트를 통째로 떠나지 않는다.
+            history.replaceState({ bhas: true, floor: true, view: 'home' }, '', url);
+            history.pushState(this._historyState(), '', url);
+        } catch (e) { /* 무시 */ }
         window.addEventListener('popstate', (e) => {
             const st = e.state;
             if (!st || !st.bhas) return;   // 우리 항목이 아니면 브라우저 기본 동작
             this._restoringHistory = true;
+            if (st.floor) {
+                // 바닥까지 왔다 = 더 돌아갈 앱 화면이 없음 → 홈만 보여주고 머문다(여기서 한 번 더 누르면 이탈).
+                this.currentView = 'home';
+                this.activeProjectId = null;
+                this.render();
+                this._restoringHistory = false;
+                return;
+            }
             this.currentView = st.view || 'home';
             this.salesViewBrand = st.salesViewBrand ?? 'ALL';
             this.salesViewYear = st.salesViewYear ?? undefined;
@@ -1043,11 +1057,12 @@ class BhasApp {
                                     </h1>
                                 </div>
                             `;
-                        })() : this.currentView !== 'dashboard' ? `
+                        })() : this.currentView === 'all_todos' ? `
                             <div style="margin-bottom: 0.25rem;">
                                 <button class="breadcrumb-back-btn btn-secondary" style="padding: 6px 12px; border-radius: 8px; font-size: 0.85rem;"><i class="ph ph-arrow-left"></i> 뒤로</button>
                             </div>
                         ` : ''}
+                        <!-- '뒤로'는 하위 화면(프로젝트 상세·할일 전체)에서만. 홈·매출·주문 같은 최상위 메뉴엔 갈 곳이 없어 안 띄운다 -->
                         <div class="header-top-row">
                             <div class="header-title-section" style="display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;">
                                 ${(role === 'MASTER' || role === 'STAFF') && this.currentView === 'dashboard' ? `
@@ -2127,7 +2142,7 @@ class BhasApp {
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.9rem">${statBlocks}</div>
                 </div>
                 <div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;min-width:0">
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border)"><span style="font-size:0.94rem;font-weight:800">최근 주문 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">전체 ${((this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || [])).length.toLocaleString()}건</span></span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border)"><span style="font-size:0.94rem;font-weight:800">최근 주문</span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
                     <div style="max-height:360px;overflow-y:auto;margin-right:-6px;padding-right:6px">${recentCompact}</div>
                 </div>
             </div>
