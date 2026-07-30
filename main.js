@@ -1909,14 +1909,16 @@ class BhasApp {
         </div>`; }).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.6rem 0">이번달 매출 없음</div>';
 
         // ── 주문 상태: 주문(배송 시작 전) / 배송중 / 교환 / 환불 (전체 기간 기준) ──
+        // ⚠️ 내부 status는 수집 시 전부 'new'로 저장돼 과거 배송완료분까지 '미출고'로 잡힘.
+        //    카페24 실제 배송상태(channel_status)가 null이라 정확한 미출고 판별 불가 →
+        //    운영 관점으로 "이번달 주문 中 송장 미발급(우체국 발번 전) & 취소류 아님"을 배송전으로 집계.
         const allO = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
-        // 주문 = 접수됐지만 배송 시작 안 됨(신규/배송준비), 취소·반품·교환 제외
-        const stOrder = allO.filter(o => !this._isCancelled(o) && (o.status === 'new' || o.status === 'ready')).length;
-        const stShip = allO.filter(o => o.status === 'shipping').length;
-        // 교환·환불은 이번달(monthKey)만 집계
         const inThisMonth = o => localYMD(o.order_date).startsWith(monthKey);
-        const stExchange = allO.filter(o => this._isExchange(o) && inThisMonth(o)).length;
-        const refundO = allO.filter(o => this._isRefund(o) && inThisMonth(o));
+        const monthO = allO.filter(inThisMonth);
+        const stOrder = monthO.filter(o => !this._isCancelled(o) && !o.invoice_no && o.status !== 'shipping' && o.status !== 'done').length;
+        const stShip = monthO.filter(o => o.status === 'shipping' || (o.invoice_no && o.status !== 'done' && !this._isCancelled(o))).length;
+        const stExchange = monthO.filter(o => this._isExchange(o)).length;
+        const refundO = monthO.filter(o => this._isRefund(o));
         const stRefund = refundO.length;
         const refundTotal = refundO.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
 
@@ -2015,10 +2017,10 @@ class BhasApp {
         const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
         // 주문상태 3개 개별 블록
         const statBlocks = [
-            ['배송전', stOrder, '#6366f1', '미출고 주문'],
+            ['배송전', stOrder, '#6366f1', '송장 발급 전'],
             ['배송중', stShip, '#06b6d4', ''],
-            ['교환', stExchange, '#f59e0b', `${mm}월`],
-            ['환불', stRefund, '#a855f7', refundTotal ? `${mm}월 · 환불총액 ${won(refundTotal)}원` : `${mm}월`]
+            ['교환', stExchange, '#f59e0b', ''],
+            ['환불', stRefund, '#a855f7', refundTotal ? `환불총액 ${won(refundTotal)}원` : '']
         ].map(([l, n, c, sub]) => `<div class="glass" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px">
             <span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span>
             <div style="min-width:0"><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${l}</div>${sub ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ''}</div>
