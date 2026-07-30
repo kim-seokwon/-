@@ -928,10 +928,11 @@ body {
 }
 
 .toast {
+    /* --card-bg 는 라이트모드에서 흰색이라 color:white 면 글씨가 안 보였음(드래그해야 읽힘) */
     background: var(--card-bg);
     backdrop-filter: var(--glass-blur);
     border: 1px solid var(--primary);
-    color: white;
+    color: var(--text-main);
     padding: 12px 20px;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
