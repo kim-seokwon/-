@@ -7065,6 +7065,18 @@ class BhasApp {
                 </label>`).join('')}
         </div>`;
     }
+    // supabase-js 의 functions.invoke 는 4xx/5xx 를 error 로 던지면서 본문을 data 에 안 담는다.
+    // 그대로 두면 서버가 보낸 진짜 사유("메모가 있어 못 지움" 등)가 사라지고 "실패했습니다"만 남는다.
+    async _invokeFn(name, body) {
+        const { data, error } = await this.supabase.functions.invoke(name, { body });
+        if (!error) return data || {};
+        try {
+            const parsed = await error.context.json();   // 서버가 보낸 { ok:false, error:"..." }
+            if (parsed && typeof parsed === 'object') return parsed;
+        } catch (e) { /* 본문이 JSON 이 아니면 아래 기본 메시지 */ }
+        return { ok: false, error: error.message || '요청에 실패했습니다.' };
+    }
+
     // 비밀번호 변경 — 서버(admin-users)에서 auth.admin.updateUserById 로 처리.
     // 로그인 계정이 아직 없는 프로필(예전 방식으로 만들어진 행)이면 그 자리에서 연결해준다.
     async changeAccountPassword(companyId, username) {
@@ -7072,26 +7084,20 @@ class BhasApp {
         if (pw === null) return;
         if (pw.trim().length < 6) { this.showToast('비밀번호는 6자 이상이어야 합니다.'); return; }
         this.showToast('비밀번호 변경 중...');
-        const call = (action) => this.supabase.functions.invoke('admin-users', {
-            body: { action, company_id: companyId, password: pw.trim() },
-        });
-        let { data, error } = await call('set-password');
-        if (!error && data && !data.ok && /로그인 계정이 없습니다/.test(data.error || '')) {
+        const call = (action) => this._invokeFn('admin-users', { action, company_id: companyId, password: pw.trim() });
+        let res = await call('set-password');
+        if (!res.ok && /로그인 계정이 없습니다/.test(res.error || '')) {
             if (!confirm(`${username} 은(는) 아직 로그인 계정이 없습니다. 지금 만들까요?`)) return;
-            ({ data, error } = await call('link-auth'));
+            res = await call('link-auth');
         }
-        if (error) { this.showToast('비밀번호 변경에 실패했습니다.'); return; }
-        this.showToast(data?.ok ? `완료 — ${data.email} 로 새 비밀번호 사용` : (data?.error || '실패'));
+        this.showToast(res.ok ? `완료 — ${res.email} 로 새 비밀번호 사용` : (res.error || '비밀번호 변경에 실패했습니다.'));
     }
 
     // 계정 삭제 — companies 행과 auth 사용자를 같이 지운다(둘 중 하나만 남으면 유령 계정이 됨)
     async deleteAccount(companyId, name) {
         if (!confirm(`'${name}' 계정을 삭제할까요?\n로그인 계정도 같이 삭제됩니다. (사진·문서는 남고 작성자 표시만 사라집니다)`)) return;
-        const { data, error } = await this.supabase.functions.invoke('admin-users', {
-            body: { action: 'delete', company_id: companyId },
-        });
-        if (error) { this.showToast('삭제에 실패했습니다.'); return; }
-        if (!data?.ok) { this.showToast(data?.error || '삭제에 실패했습니다.'); return; }
+        const res = await this._invokeFn('admin-users', { action: 'delete', company_id: companyId });
+        if (!res.ok) { this.showToast(res.error || '삭제에 실패했습니다.'); return; }
         this.showToast('계정을 삭제했습니다.');
         await this.loadInitialData();
         this.requestRender();
@@ -7300,15 +7306,12 @@ class BhasApp {
         try {
             // 계정 생성은 서버(admin-users)에서. 브라우저 signUp()은 만든 사람의 세션을 새 계정으로
             // 바꿔버리고, 이메일 확인이 켜져 있으면 auth 사용자가 아예 안 생겨 로그인이 안 됐음.
-            const { data, error } = await this.supabase.functions.invoke('admin-users', {
-                body: {
-                    action: 'create',
-                    name, username, password, role,
-                    brand_id: brandId || null, menu_access, brand_access,
-                },
+            const data = await this._invokeFn('admin-users', {
+                action: 'create',
+                name, username, password, role,
+                brand_id: brandId || null, menu_access, brand_access,
             });
-            if (error) throw error;
-            if (!data?.ok) { this.showToast(data?.error || '계정 생성에 실패했습니다.'); return; }
+            if (!data.ok) { this.showToast(data.error || '계정 생성에 실패했습니다.'); return; }
 
             this.showToast(`계정 생성 완료 — ${data.email} 로 바로 로그인됩니다.`);
             document.getElementById('add-user-modal').style.display = 'none';
