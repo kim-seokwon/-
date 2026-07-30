@@ -2269,7 +2269,7 @@ class BhasApp {
                 ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981')}
             </div>
-            <div style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
+            <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
                     ${panel('채널·브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>', `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
                         <div style="flex:1;min-width:240px">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>
@@ -3837,8 +3837,15 @@ class BhasApp {
     async loadMalls() {
         this._mallsLoading = true;
         try {
-            const { data } = await this.supabase.from('malls').select('*').order('created_at', { ascending: true });
-            this.malls = data || [];
+            // 동기화 시각(last_order_synced_at)은 malls 가 아니라 channel_sync_state 에 있고
+            // 그 테이블은 토큰이 들어 있어 서비스롤 전용 → 비밀값 뺀 024 뷰에서 합류시킨다.
+            const [mallsRes, syncRes] = await Promise.all([
+                this.supabase.from('malls').select('*').order('created_at', { ascending: true }),
+                this.supabase.from('channel_sync_status').select('*'),
+            ]);
+            const syncBy = {};
+            (syncRes.data || []).forEach(s => { syncBy[s.mall_key] = s; });
+            this.malls = (mallsRes.data || []).map(m => ({ ...m, ...(syncBy[m.mall_key] || {}) }));
             this._mallsLoaded = true;
         } catch (e) { this.malls = []; this._mallsLoaded = true; }
         this._mallsLoading = false;

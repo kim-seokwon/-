@@ -2286,3 +2286,19 @@ body.light .stepper-section h2 { color: var(--text-main); }
     /* 표는 잘리지 말고 가로 스크롤 */
     .main-content table { font-size: 0.76rem !important; }
 }
+
+/* 모바일 추가 보정 — 실제 아이폰에서 확인된 것 */
+@media screen and (max-width: 768px) {
+    /* 상단바가 아이폰 상태바(노치) 영역과 겹쳐 제목이 잘렸음 → 안전영역만큼 밀고,
+       본문 상단 여백도 같은 값으로 맞춘다. */
+    .mobile-top-bar {
+        height: calc(60px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: env(safe-area-inset-top, 0px) !important;
+        align-items: flex-end !important;
+        padding-bottom: 10px !important;
+    }
+    .main-content { padding-top: calc(72px + env(safe-area-inset-top, 0px)) !important; }
+
+    /* 홈의 7fr/3fr 2단 분할은 402px에서 양쪽 다 눌려 글자가 깨짐 → 한 줄로 */
+    .home-split { grid-template-columns: 1fr !important; }
+}
