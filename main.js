@@ -1886,14 +1886,72 @@ class BhasApp {
     // 교환(금액 환급 없음)
     _isExchange(o) { return this._orderState(o) === 'exchange'; }
 
+    // 매출 집계 — 서버(sales_monthly 뷰)에서 이미 집계된 결과로 구성.
+    //  주문 전량(12,000건·6MB)을 내려받아 JS에서 돌리던 걸 대체. 집계본은 ~18KB.
+    //  집계본이 아직 없으면(로딩 전·실패) 기존 클라이언트 집계로 폴백해서 화면이 비지 않게 한다.
     _salesAgg(limitMonths = 12) {
+        const agg = this.salesAggData;
+        if (agg && agg.monthly) return this._salesAggFromServer(limitMonths);
+        return this._salesAggFromOrders(limitMonths);
+    }
+
+    _salesAggFromServer(limitMonths = 12) {
+        const CANCELLED = new Set(['cancel', 'return', 'exchange']);
+        const rows = this.salesAggData.monthly;
+        // 브하스 컨설팅은 몰 주문이 아니라 견적/세금계산서 → 클라이언트에서 합류(견적은 건수가 적어 부담 없음)
+        const quotes = (this.quotes || []).filter(q => q.total_amount);
+        const anyIssued = quotes.some(q => q.tax_status === 'issued');
+        const consulting = [];
+        quotes.forEach(q => {
+            if (anyIssued && q.tax_status !== 'issued') return;
+            const d = q.tax_supply_date || q.quote_date; if (!d) return;
+            const dt = new Date(d);
+            consulting.push({ ym: `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`, amt: Number(q.total_amount) || 0 });
+        });
+
+        let months = [...new Set([...rows.map(r => r.ym), ...consulting.map(c => c.ym)])].sort();
+        if (months.length > limitMonths) months = months.slice(-limitMonths);
+        const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
+
+        const byBrand = {};
+        const mk = (name, kind) => byBrand[name] || (byBrand[name] = {
+            name, kind, cells: months.map(() => ({ amt: 0, cnt: 0 })), total: 0, cnt: 0,
+        });
+        rows.forEach(r => {
+            if (!(r.ym in monthIdx) || CANCELLED.has(r.state)) return;   // 매출은 취소·반품·교환 제외
+            const rec = mk(r.brand_name, 'order');
+            const c = rec.cells[monthIdx[r.ym]];
+            c.amt += Number(r.amt) || 0; c.cnt += r.cnt || 0;
+            rec.total += Number(r.amt) || 0; rec.cnt += r.cnt || 0;
+        });
+        consulting.forEach(c => {
+            if (!(c.ym in monthIdx)) return;
+            const rec = mk('브하스 (컨설팅)', 'consulting');
+            const cell = rec.cells[monthIdx[c.ym]];
+            cell.amt += c.amt; cell.cnt += 1; rec.total += c.amt; rec.cnt += 1;
+        });
+
+        const brands = Object.values(byBrand).sort((a, b) => b.total - a.total);
+        const monthTotals = months.map((_, i) => brands.reduce((s, b) => s + b.cells[i].amt, 0));
+        const grand = monthTotals.reduce((s, x) => s + x, 0);
+        const thisM = monthTotals[monthTotals.length - 1] || 0, prevM = monthTotals[monthTotals.length - 2] || 0;
+        // orders/cancelledOrders 는 '선택 기간+브랜드'만 따로 받아온 슬라이스(상세 카드 전용). 없으면 빈 배열.
+        const scoped = this.salesScoped || { orders: [], cancelled: [] };
+        return {
+            orders: scoped.orders, cancelledOrders: scoped.cancelled, events: [],
+            months, monthIdx, brands, monthTotals, grand, thisM, prevM,
+            mom: prevM ? Math.round((thisM - prevM) / prevM * 100) : null,
+            consultingFromQuote: !anyIssued, hasSales: grand > 0, fromServer: true,
+        };
+    }
+
+    _salesAggFromOrders(limitMonths = 12) {
         const ym = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
         const mallBrand = (o) => {
             const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
             if (mall) { const b = (mockData.brands || []).find(x => x.id === mall.brand_id); return b ? b.name : (mall.label || '기타'); }
             return o.mall_key || o.channel || '기타';
         };
-        // 매출은 전체 기간 집계 필요 → 경량 전량 로드(salesOrders) 우선, 없으면 orders(최근 500) 폴백
         const srcOrders = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
         const allOrders = srcOrders.filter(o => o.order_date && o.pay_amount != null);
         // 매출 집계는 취소/교환 제외
@@ -1924,7 +1982,7 @@ class BhasApp {
         const grand = monthTotals.reduce((s, x) => s + x, 0);
         const thisM = monthTotals[monthTotals.length - 1] || 0, prevM = monthTotals[monthTotals.length - 2] || 0;
         const mom = prevM ? Math.round((thisM - prevM) / prevM * 100) : null;
-        return { orders, cancelledOrders, events, months, monthIdx, brands, monthTotals, grand, thisM, prevM, mom, consultingFromQuote: !anyIssued };
+        return { orders, cancelledOrders, events, months, monthIdx, brands, monthTotals, grand, thisM, prevM, mom, consultingFromQuote: !anyIssued, hasSales: orders.length > 0, fromServer: false };
     }
 
     renderHome(products) {
@@ -1988,7 +2046,8 @@ class BhasApp {
         // 매출 위젯 (홈)
         const sa = this._salesAgg(6);
         const maxM = Math.max(1, ...sa.monthTotals);
-        const salesCard = sa.orders.length ? `
+        // 집계본 기반이면 orders는 비어 있으므로 hasSales(총 매출>0)로 판단
+        const salesCard = (sa.hasSales ?? sa.orders.length) ? `
             <div class="glass" style="padding:1.3rem 1.4rem;border-radius:16px;margin-bottom:1.5rem;cursor:pointer" onclick="app.switchView('sales')">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
                     <div style="font-size:0.95rem;font-weight:700;display:flex;align-items:center;gap:7px"><i class="ph ph-chart-line-up" style="color:var(--primary)"></i> 매출 현황</div>
@@ -2059,17 +2118,31 @@ class BhasApp {
 
         // ── 주문 상태: 주문(배송 시작 전) / 배송중 / 교환 / 환불 (전체 기간 기준) ──
         // 채널 제공 상태 그대로 집계. 배송전/배송중=실제 미출고(전체 운영), 교환/환불=이번달.
-        const allO = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
-        const inThisMonth = o => localYMD(o.order_date).startsWith(monthKey);
-        const stateOf = new Map();
-        const st = o => { let s = stateOf.get(o); if (s === undefined) { s = this._orderState(o); stateOf.set(o, s); } return s; };
-        const stOrder = allO.filter(o => st(o) === 'pre').length;        // 배송전(실제 미출고)
-        const stShip = allO.filter(o => st(o) === 'shipping').length;    // 배송중
-        const monthO = allO.filter(inThisMonth);
-        const stExchange = monthO.filter(o => st(o) === 'exchange').length;
-        const refundO = monthO.filter(o => st(o) === 'cancel' || st(o) === 'return');
-        const stRefund = refundO.length;
-        const refundTotal = refundO.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
+        // 서버 집계본(order_state_totals: 전체기간 상태별 / sales_monthly: 이번달 교환·환불) 우선.
+        // 집계본이 없으면 기존처럼 로드된 주문에서 계산(폴백).
+        let stOrder, stShip, stExchange, stRefund, refundTotal;
+        const agg = this.salesAggData;
+        if (agg?.stateTotals && agg?.monthly) {
+            const sum = (st) => agg.stateTotals.filter(r => r.state === st).reduce((s, r) => s + (r.cnt || 0), 0);
+            stOrder = sum('pre'); stShip = sum('shipping');
+            const mo = agg.monthly.filter(r => r.ym === monthKey);
+            stExchange = mo.filter(r => r.state === 'exchange').reduce((s, r) => s + (r.cnt || 0), 0);
+            const ref = mo.filter(r => r.state === 'cancel' || r.state === 'return');
+            stRefund = ref.reduce((s, r) => s + (r.cnt || 0), 0);
+            refundTotal = ref.reduce((s, r) => s + (Number(r.amt) || 0), 0);
+        } else {
+            const allO = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
+            const inThisMonth = o => localYMD(o.order_date).startsWith(monthKey);
+            const stateOf = new Map();
+            const st = o => { let s = stateOf.get(o); if (s === undefined) { s = this._orderState(o); stateOf.set(o, s); } return s; };
+            stOrder = allO.filter(o => st(o) === 'pre').length;
+            stShip = allO.filter(o => st(o) === 'shipping').length;
+            const monthO = allO.filter(inThisMonth);
+            stExchange = monthO.filter(o => st(o) === 'exchange').length;
+            const refundO = monthO.filter(o => st(o) === 'cancel' || st(o) === 'return');
+            stRefund = refundO.length;
+            refundTotal = refundO.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
+        }
 
         // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
         const recentCompact = (this.orders || []).slice(0, 40).map(o => {
@@ -3196,6 +3269,24 @@ class BhasApp {
     setSalesMonth(m) { this.salesViewMonth = m; this.switchView('sales'); }
     setSalesBrand(b) { this.salesViewBrand = b; this.switchView('sales'); }
     setSalesMatrixYear(y) { this.salesMatrixYear = y; this.switchView('sales'); }
+    // 현재 매출 화면이 보고 있는 기간 → 슬라이스 조회 범위(KST 기준 [from, to))
+    _salesScopeRange() {
+        const agg = this.salesAggData?.monthly;
+        const months = agg ? [...new Set(agg.map(r => r.ym))].sort() : [];
+        const latest = months[months.length - 1] || new Date().toISOString().slice(0, 7);
+        const years = [...new Set(months.map(m => m.slice(0, 4)))];
+        const y = years.includes(this.salesViewYear) ? this.salesViewYear : latest.slice(0, 4);
+        const monthsOfY = months.filter(m => m.startsWith(y));
+        const validM = monthsOfY.map(m => +m.slice(5));
+        const m = (this.salesViewMonth === 'ALL' || validM.includes(+this.salesViewMonth))
+            ? this.salesViewMonth : (+(monthsOfY[monthsOfY.length - 1] || latest).slice(5));
+        // KST(+09:00) 경계로 잘라야 서버 집계(Asia/Seoul)와 같은 구간을 본다
+        if (m === 'ALL') return { from: `${y}-01-01T00:00:00+09:00`, to: `${+y + 1}-01-01T00:00:00+09:00` };
+        const mm = String(+m).padStart(2, '0');
+        const ny = +m === 12 ? +y + 1 : +y, nm = String(+m === 12 ? 1 : +m + 1).padStart(2, '0');
+        return { from: `${y}-${mm}-01T00:00:00+09:00`, to: `${ny}-${nm}-01T00:00:00+09:00` };
+    }
+
     // 주문 → 브랜드명 매핑(_salesAgg의 mallBrand와 동일 규칙)
     _orderBrandName(o) {
         const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
@@ -3224,6 +3315,7 @@ class BhasApp {
         if (bf !== 'ALL') {
             orders = orders.filter(o => this._orderBrandName(o) === bf);
             cancelledOrders = cancelledOrders.filter(o => this._orderBrandName(o) === bf);
+            this._salesNeedScope = bf;   // 렌더 후 이 브랜드+기간 슬라이스를 받아온다(아래 ensureViewData)
         }
         const monthLabel = m => { const [y, mm] = m.split('-'); return `${+mm}월<span style="color:var(--text-muted);font-size:0.7rem">'${y.slice(2)}</span>`; };
 
@@ -3252,27 +3344,60 @@ class BhasApp {
         const shortLabel = yearMode ? `${cy}년 연간` : `${cmo}월`;
         const periodLabel = yearMode ? `${cy}년 전체` : `${cy}년 ${cmo}월`;
         const cancelThis = (cancelledOrders || []).filter(o => inScope(o.order_date));
-        const cancelThisCnt = cancelThis.length;
-        const cancelThisAmt = cancelThis.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
+        // 취소·반품·교환 건수/금액도 서버 집계본에서(슬라이스가 없어도 정확)
+        let cancelThisCnt = cancelThis.length;
+        let cancelThisAmt = cancelThis.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
+        if (this.salesAggData?.monthly) {
+            const CANCELLED = new Set(['cancel', 'return', 'exchange']);
+            cancelThisCnt = 0; cancelThisAmt = 0;
+            this.salesAggData.monthly.forEach(r => {
+                if (!CANCELLED.has(r.state)) return;
+                if (!scopeMonths.includes(r.ym)) return;
+                if (_allowedNames && !_allowedNames.has(r.brand_name)) return;
+                if (bf !== 'ALL' && r.brand_name !== bf) return;
+                cancelThisCnt += r.cnt || 0;
+                cancelThisAmt += Number(r.amt) || 0;
+            });
+        }
 
         // 브랜드 색상은 이름 기준으로 고정(차트·카드·매트릭스가 항상 같은 색을 쓰게)
         const colorOf = (name) => { const i = brands.findIndex(b => b.name === name); return palette[(i < 0 ? 0 : i) % palette.length]; };
 
-        // 선택 기간 집계 + 인기상품 (몰 주문) + 브랜드별 일자 시리즈
+        // 선택 기간 집계 + 브랜드별 일자 시리즈
+        //  일별/건수는 서버 집계본(sales_daily)에서. 인기상품은 원본 아이템이 필요해 브랜드 상세 슬라이스에서.
         const daily = Array(31).fill(0);
         const dailyByBrand = {};   // 브랜드명 → 일별(31) 매출
         const cntByBrand = {};     // 브랜드명 → 주문건수
         const prodQty = {};
         let ordersThisMonth = 0;
+        const aggDaily = this.salesAggData?.daily;
+        if (aggDaily) {
+            aggDaily.forEach(r => {
+                const [y, m, dd] = r.d.split('-').map(Number);
+                if (y !== cy || (!yearMode && m !== cmo)) return;
+                if (_allowedNames && !_allowedNames.has(r.brand_name)) return;
+                if (bf !== 'ALL' && r.brand_name !== bf) return;
+                const amt = Number(r.amt) || 0;
+                daily[dd - 1] += amt;
+                (dailyByBrand[r.brand_name] = dailyByBrand[r.brand_name] || Array(31).fill(0))[dd - 1] += amt;
+                cntByBrand[r.brand_name] = (cntByBrand[r.brand_name] || 0) + (r.cnt || 0);
+                ordersThisMonth += r.cnt || 0;
+            });
+        } else {
+            orders.forEach(o => {
+                if (!inScope(o.order_date)) return;
+                ordersThisMonth++;
+                const amt = Number(o.pay_amount) || 0;
+                const d = new Date(o.order_date);
+                daily[d.getDate() - 1] += amt;
+                const bn = this._orderBrandName(o) || '기타';
+                (dailyByBrand[bn] = dailyByBrand[bn] || Array(31).fill(0))[d.getDate() - 1] += amt;
+                cntByBrand[bn] = (cntByBrand[bn] || 0) + 1;
+            });
+        }
+        // 인기상품은 항상 슬라이스(orders)에서 — 브랜드 상세에서만 쓰인다
         orders.forEach(o => {
             if (!inScope(o.order_date)) return;
-            ordersThisMonth++;
-            const amt = Number(o.pay_amount) || 0;
-            const d = new Date(o.order_date);
-            daily[d.getDate() - 1] += amt;
-            const bn = this._orderBrandName(o) || '기타';
-            (dailyByBrand[bn] = dailyByBrand[bn] || Array(31).fill(0))[d.getDate() - 1] += amt;
-            cntByBrand[bn] = (cntByBrand[bn] || 0) + 1;
             (o.items || []).forEach(it => { const n = it.product_name || it.variant_code || '상품'; prodQty[n] = (prodQty[n] || 0) + (Number(it.quantity) || 1); });
         });
         // 차트 시리즈: 단일월=일별, 연간전체=월별(1~12)
@@ -3460,7 +3585,18 @@ class BhasApp {
             return mk || ch || 'cafe24';
         };
         const chanSum = {}, chanCnt = {};
-        orders.forEach(o => { if (!inCur(o.order_date)) return; const c = platformKey(o); chanSum[c] = (chanSum[c] || 0) + (Number(o.pay_amount) || 0); chanCnt[c] = (chanCnt[c] || 0) + 1; });
+        if (this.salesAggData?.channel && bf === 'ALL' && !_allowedNames) {
+            // 개요 화면은 서버 집계본(플랫폼×월)에서 — 주문 원본 없이도 채널 구성이 나온다
+            const CANCELLED = new Set(['cancel', 'return', 'exchange']);
+            this.salesAggData.channel.forEach(r => {
+                if (CANCELLED.has(r.state) || !scopeMonths.includes(r.ym)) return;
+                chanSum[r.platform] = (chanSum[r.platform] || 0) + (Number(r.amt) || 0);
+                chanCnt[r.platform] = (chanCnt[r.platform] || 0) + (r.cnt || 0);
+            });
+        } else {
+            // 브랜드 상세(또는 브랜드 접근제한)는 그 브랜드 슬라이스에서 계산해야 정확
+            orders.forEach(o => { if (!inCur(o.order_date)) return; const c = platformKey(o); chanSum[c] = (chanSum[c] || 0) + (Number(o.pay_amount) || 0); chanCnt[c] = (chanCnt[c] || 0) + 1; });
+        }
         // 연동된 채널 집합 (이번 달 매출 0이어도 '연동됨' 표시)
         const connectedSet = new Set();
         (this.malls || []).forEach(m => {
@@ -3665,6 +3801,11 @@ class BhasApp {
         if ((v === 'orders' || v === 'inventory' || v === 'integrations' || v === 'sales') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
+        // 브랜드 상세는 상품·옵션·재구매·반품 카드용으로 그 브랜드+기간 주문만 따로 받아온다
+        if (v === 'sales' && this._ordersLoaded && this._mallsLoaded && this.salesViewBrand && this.salesViewBrand !== 'ALL') {
+            const r = this._salesScopeRange();
+            if (r) this._loadSalesScope(this.salesViewBrand, r.from, r.to);
+        }
         if (v === 'integrations' && !this._bsLoaded && !this._bsLoading) this.loadBrandSettings();
         if (v === 'orders' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'inventory' && !this._invLoaded && !this._invLoading) this.loadInventory();
@@ -3726,14 +3867,17 @@ class BhasApp {
     async loadOrders() {
         this._ordersLoading = true;
         try {
-            const [ordersRes, itemsRes] = await Promise.all([
-                this.supabase.from('channel_orders').select('*').order('order_date', { ascending: false }).limit(500),
-                this.supabase.from('channel_order_items').select('*'),
-                this._loadSalesOrders()  // 매출 집계용 전체 기간(경량 컬럼, 페이지네이션)
+            const { data: ordersData, error } = await this.supabase.from('channel_orders')
+                .select('*').order('order_date', { ascending: false }).limit(500);
+            if (error) throw error;
+            const list = ordersData || [];
+            const [items] = await Promise.all([
+                this._itemsFor(list.map(o => o.id)),   // 전량(24,000행) 대신 이 500건 것만
+                this._loadSalesAgg(),                  // 매출은 서버 집계본만(주문 원본 안 받음)
             ]);
             const byOrder = {};
-            (itemsRes.data || []).forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
-            this.orders = (ordersRes.data || []).map(o => ({ ...o, items: byOrder[o.id] || [] }));
+            items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
+            this.orders = list.map(o => ({ ...o, items: byOrder[o.id] || [] }));
             this._ordersLoaded = true;
         } catch (e) {
             this.showToast('주문을 불러오지 못했습니다. (스키마 설치 필요할 수 있음)');
@@ -3743,33 +3887,76 @@ class BhasApp {
         this.requestRender();
     }
 
-    // 매출/분석용 전체 기간 주문 — 경량 뷰(channel_orders_slim) + 아이템 전량(1000행 페이지네이션).
-    // raw 원본은 주문당 ~13KB라 전량 로드하면 수십~수백MB → 019 뷰가 집계에 쓰는 raw 필드만
-    // 같은 모양으로 재구성해서 내려준다(shipping_status / items[status,order_status,uitem,qty] / 반품사유).
-    async _loadSalesOrders() {
+    // 주문 id 목록에 해당하는 아이템만. URL 길이 제한이 있어 100개씩 끊어서 요청.
+    async _itemsFor(ids) {
+        if (!ids || !ids.length) return [];
+        const out = [];
+        for (let i = 0; i < ids.length; i += 100) {
+            const { data } = await this.supabase.from('channel_order_items').select('*')
+                .in('channel_order_id', ids.slice(i, i + 100));
+            out.push(...(data || []));
+        }
+        return out;
+    }
+
+    // 매출 집계본 — 서버(021 뷰)에서 이미 집계된 결과. 주문 12,000건(6MB) 대신 ~115KB.
+    async _loadSalesAgg() {
+        const pageAll = async (table) => {
+            const PAGE = 1000, acc = [];
+            for (let from = 0; ; from += PAGE) {
+                const { data, error } = await this.supabase.from(table).select('*').range(from, from + PAGE - 1);
+                if (error) throw error;
+                const rows = data || [];
+                acc.push(...rows);
+                if (rows.length < PAGE) break;
+            }
+            return acc;
+        };
         try {
-            const PAGE = 1000;
-            const pageAll = async (build) => {
-                const acc = [];
-                for (let from = 0; ; from += PAGE) {
-                    const { data, error } = await build().range(from, from + PAGE - 1);
-                    if (error) throw error;
-                    const rows = data || [];
-                    acc.push(...rows);
-                    if (rows.length < PAGE) break;
-                }
-                return acc;
-            };
-            const [all, items] = await Promise.all([
-                pageAll(() => this.supabase.from('channel_orders_slim').select('*').order('order_date', { ascending: false })),
-                pageAll(() => this.supabase.from('channel_order_items').select('*'))
+            const [monthly, daily, channel, stateTotals] = await Promise.all([
+                pageAll('sales_monthly'), pageAll('sales_daily'),
+                pageAll('sales_channel_monthly'), pageAll('order_state_totals'),
             ]);
+            this.salesAggData = { monthly, daily, channel, stateTotals };
+        } catch (e) {
+            this.salesAggData = null;   // 실패 시 _salesAgg가 클라이언트 집계로 폴백
+        }
+    }
+
+    // 브랜드 상세용 주문 슬라이스 — 인기상품·옵션·재구매·반품 카드는 원본 주문이 필요하다.
+    // 전체가 아니라 '선택 브랜드 + 선택 기간'만 받으므로 수백 건이면 끝난다.
+    async _loadSalesScope(brandName, fromISO, toISO) {
+        const key = `${brandName}|${fromISO}|${toISO}`;
+        if (this._salesScopeKey === key || this._salesScopeLoading) return;
+        this._salesScopeLoading = true;
+        try {
+            const mallKeys = (this.malls || [])
+                .filter(m => {
+                    const b = (mockData.brands || []).find(x => x.id === m.brand_id);
+                    return (b ? b.name : (m.label || m.mall_key)) === brandName;
+                })
+                .map(m => m.mall_key);
+            let q = this.supabase.from('channel_orders_slim').select('*')
+                .gte('order_date', fromISO).lt('order_date', toISO);
+            if (mallKeys.length) q = q.in('mall_key', mallKeys);
+            const { data, error } = await q.order('order_date', { ascending: false });
+            if (error) throw error;
+            const rows = data || [];
+            const items = await this._itemsFor(rows.map(o => o.id));
             const byOrder = {};
             items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
-            this.salesOrders = all.map(o => ({ ...o, items: byOrder[o.id] || [] }));
+            const withItems = rows.map(o => ({ ...o, items: byOrder[o.id] || [] }));
+            this.salesScoped = {
+                orders: withItems.filter(o => o.pay_amount != null && !this._isCancelled(o)),
+                cancelled: withItems.filter(o => this._isCancelled(o)),
+            };
+            this._salesScopeKey = key;
         } catch (e) {
-            this.salesOrders = null;  // 실패 시 _salesAgg가 this.orders로 폴백
+            this.salesScoped = { orders: [], cancelled: [] };
+            this._salesScopeKey = key;
         }
+        this._salesScopeLoading = false;
+        this.requestRender();
     }
 
     _orderStatusLabel(s) { return ({ new: '신규', ready: '배송준비', shipping: '배송중', done: '완료', hold: '보류' })[s] || s; }
