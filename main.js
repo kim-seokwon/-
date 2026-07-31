@@ -10,6 +10,17 @@ const SUPABASE_URL = 'https://czaykmmwzlcisozmbxpl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_JfMXgnspGcTtJKncR-l4gQ_XXzopFMk';
 const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
+// 운영 기준 시간대는 한국(Asia/Seoul). UTC의 월말/월초 경계 때문에
+// 8월 1일 새벽이 7월로 보이지 않도록 모든 화면 기준일을 여기서 만든다.
+const KST_DATE = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const kstYMD = (value = new Date()) => {
+    const p = Object.fromEntries(KST_DATE.formatToParts(new Date(value)).map(x => [x.type, x.value]));
+    return `${p.year}-${p.month}-${p.day}`;
+};
+const kstYM = (value = new Date()) => kstYMD(value).slice(0, 7);
+
 class BhasApp {
     constructor() {
         this.currentUser = null;
@@ -1905,11 +1916,11 @@ class BhasApp {
         quotes.forEach(q => {
             if (anyIssued && q.tax_status !== 'issued') return;
             const d = q.tax_supply_date || q.quote_date; if (!d) return;
-            const dt = new Date(d);
-            consulting.push({ ym: `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`, amt: Number(q.total_amount) || 0 });
+            consulting.push({ ym: kstYM(d), amt: Number(q.total_amount) || 0 });
         });
 
-        let months = [...new Set([...rows.map(r => r.ym), ...consulting.map(c => c.ym)])].sort();
+        // 매출이 아직 0원이어도 현재 월을 반드시 표시한다.
+        let months = [...new Set([...rows.map(r => r.ym), ...consulting.map(c => c.ym), kstYM()])].sort();
         if (months.length > limitMonths) months = months.slice(-limitMonths);
         const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
 
@@ -1946,7 +1957,7 @@ class BhasApp {
     }
 
     _salesAggFromOrders(limitMonths = 12) {
-        const ym = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
+        const ym = d => kstYM(d);
         const mallBrand = (o) => {
             const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
             if (mall) { const b = (mockData.brands || []).find(x => x.id === mall.brand_id); return b ? b.name : (mall.label || '기타'); }
@@ -1968,7 +1979,7 @@ class BhasApp {
             events.push({ m: ym(d), brand: '브하스 (컨설팅)', amt: Number(q.total_amount) || 0, kind: 'consulting' });
         });
 
-        let months = [...new Set(events.map(e => e.m))].sort();
+        let months = [...new Set([...events.map(e => e.m), kstYM()])].sort();
         if (months.length > limitMonths) months = months.slice(-limitMonths);
         const monthIdx = Object.fromEntries(months.map((m, i) => [m, i]));
         const byBrand = {};
@@ -1998,7 +2009,7 @@ class BhasApp {
         const vjobs = vendors.flatMap(v => (v.jobs || []).map(j => ({ ...j, _v: v.name })));
         const activeJobs = vjobs.filter(j => j.status !== 'done');
         const quotes = this.quotes || [];
-        const thisMonth = new Date().toISOString().slice(0, 7);
+        const thisMonth = kstYM();
         const monthTotal = quotes.filter(q => (q.quote_date || '').startsWith(thisMonth)).reduce((s, q) => s + (q.total_amount || 0), 0);
         const recentQuotes = quotes.slice(0, 5);
         const malls = (this.malls || []).filter(m => (m.channel || 'cafe24') === 'cafe24');
@@ -3274,7 +3285,7 @@ class BhasApp {
     _salesScopeRange() {
         const agg = this.salesAggData?.monthly;
         const months = agg ? [...new Set(agg.map(r => r.ym))].sort() : [];
-        const latest = months[months.length - 1] || new Date().toISOString().slice(0, 7);
+        const latest = months[months.length - 1] || kstYM();
         const years = [...new Set(months.map(m => m.slice(0, 4)))];
         const y = years.includes(this.salesViewYear) ? this.salesViewYear : latest.slice(0, 4);
         const monthsOfY = months.filter(m => m.startsWith(y));
@@ -4094,7 +4105,7 @@ class BhasApp {
         });
         const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
         const a = document.createElement('a');
-        const today = new Date().toISOString().slice(0, 10);
+        const today = kstYMD();
         a.href = URL.createObjectURL(blob);
         a.download = `송장양식_${today}_${targets.length}건.csv`;
         document.body.appendChild(a); a.click(); a.remove();
@@ -6112,7 +6123,7 @@ class BhasApp {
         <div class="glass modal-content fade-in vmodal" style="width:94%;max-width:720px;padding:1.8rem;border-radius:20px;max-height:92vh;overflow-y:auto">
             <h2 style="margin:0 0 1.2rem;font-size:1.2rem"><i class="ph ph-receipt"></i> ${q ? '견적서 수정' : '새 견적서'}</h2>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;align-items:end">
-                <div><label style="font-size:0.74rem;color:var(--text-muted)">견적일</label><input id="q-date" type="date" class="login-input" value="${q?.quote_date || new Date().toISOString().slice(0, 10)}"></div>
+                <div><label style="font-size:0.74rem;color:var(--text-muted)">견적일</label><input id="q-date" type="date" class="login-input" value="${q?.quote_date || kstYMD()}"></div>
                 <div style="font-size:0.82rem;color:var(--text-muted);padding-bottom:11px">유효기간 <b id="q-valid-lbl" style="color:var(--text-main)">견적일 +7일</b></div>
             </div>
             <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);margin:8px 0 6px">고객사 (거래처)</div>
@@ -6328,7 +6339,7 @@ class BhasApp {
             <h2 style="margin:0 0 1rem;font-size:1.15rem"><i class="ph ph-file-text"></i> 세금계산서 발행</h2>
             <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px">${this._vesc(q.client_name)} ${q.client_biz_no ? '(' + this._vesc(q.client_biz_no) + ')' : '<span style="color:#ef4444">사업자번호 없음</span>'} · 합계 <b style="color:var(--text-main)">${this._won(q.total_amount)}원</b></div>
             <div style="display:flex;flex-direction:column;gap:10px">
-                <div><label style="font-size:0.74rem;color:var(--text-muted)">작성일자 (= 실제 공급/납품일)</label><input id="tx-date" type="date" class="login-input" value="${new Date().toISOString().slice(0, 10)}"></div>
+                <div><label style="font-size:0.74rem;color:var(--text-muted)">작성일자 (= 실제 공급/납품일)</label><input id="tx-date" type="date" class="login-input" value="${kstYMD()}"></div>
                 <div><label style="font-size:0.74rem;color:var(--text-muted)">공급받는자 이메일</label><input id="tx-email" class="login-input" placeholder="세금계산서 받을 이메일" value="${this._vesc(email)}"></div>
                 <div style="display:flex;gap:14px;padding:2px"><label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer"><input type="radio" name="tx-purpose" value="영수" checked style="accent-color:var(--primary)"> 영수</label><label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer"><input type="radio" name="tx-purpose" value="청구" style="accent-color:var(--primary)"> 청구</label></div>
             </div>
