@@ -12,6 +12,7 @@
 // ============================================================
 import { seedEncryptEcbHex } from "./seed128.ts";
 import { requireUser } from "../_shared/auth.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const BASE = "http://ship.epost.go.kr";
 const REGKEY = Deno.env.get("EPOST_REGKEY") ?? "";
@@ -138,8 +139,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
   const j = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: cors({ "Content-Type": "application/json" }) });
   // 실제 송장 발번 = 요금·계약 영향 → 로그인 사용자만 (설정 상태도 미인증자에게 노출 안 함)
-  const auth = await requireUser(req);
+  const auth = await requireUser(req, { roles: ["MASTER", "STAFF"] });
   if (auth instanceof Response) return auth;
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   if (!REGKEY || !SECKEY) return j({ ok: false, error: "EPOST_REGKEY/EPOST_SECKEY 시크릿 미설정" }, 500);
   try {
     const body = await req.json().catch(() => ({}));
@@ -150,9 +152,46 @@ Deno.serve(async (req) => {
     if (action === "setup-office") return j(await insertOffice(body.office ?? {}));
     // 기본: 발번(여러 주문 일괄). body.test=true 면 testYn=Y
     const testYn = body.test ? "Y" : "N";
-    const orders = Array.isArray(body.orders) ? body.orders : [];
+    const orders = Array.isArray(body.orders) ? body.orders.slice(0, 200) : [];
     const results = [];
-    for (const o of orders) results.push(await insertOrder(o, testYn));
+    for (const o of orders) {
+      const mallKey = String(o.mallKey || "");
+      const orderNo = String(o.orderNo || "");
+      if (!mallKey || !orderNo) { results.push({ ok: false, orderNo, message: "mallKey/orderNo 필요" }); continue; }
+      const { data: existing } = await db.from("shipment_jobs").select("*")
+        .eq("mall_key", mallKey).eq("order_id", orderNo).maybeSingle();
+      if (existing?.invoice_no) {
+        results.push({ ok: true, orderNo, regiNo: existing.invoice_no, idempotent: true });
+        continue;
+      }
+      if (!body.test) {
+        const { data: claimed, error: lockErr } = await db.rpc("claim_shipment_job", {
+          p_mall_key: mallKey, p_order_id: orderNo, p_courier: "우체국택배", p_actor: auth.id,
+        });
+        if (lockErr) { results.push({ ok: false, orderNo, message: lockErr.message }); continue; }
+        if (!claimed) {
+          const { data: current } = await db.from("shipment_jobs").select("invoice_no,status")
+            .eq("mall_key", mallKey).eq("order_id", orderNo).maybeSingle();
+          if (current?.invoice_no) results.push({ ok: true, orderNo, regiNo: current.invoice_no, idempotent: true });
+          else results.push({ ok: false, orderNo, message: `이미 처리 중 (${current?.status || "pending"})` });
+          continue;
+        }
+      }
+      const issued = await insertOrder(o, testYn);
+      if (!body.test) {
+        if (issued.ok && issued.regiNo) {
+          await db.from("shipment_jobs").update({
+            invoice_no: issued.regiNo, provider_request_id: issued.reqNo || null,
+            status: "issued", issued_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          }).eq("mall_key", mallKey).eq("order_id", orderNo);
+        } else {
+          const issueMessage = "message" in issued ? issued.message : "발번 실패";
+          await db.from("shipment_jobs").update({ status: "failed", last_error: issueMessage || "발번 실패", updated_at: new Date().toISOString() })
+            .eq("mall_key", mallKey).eq("order_id", orderNo);
+        }
+      }
+      results.push(issued);
+    }
     return j({ ok: true, testYn, results });
   } catch (e) {
     return j({ ok: false, error: String(e) }, 500);

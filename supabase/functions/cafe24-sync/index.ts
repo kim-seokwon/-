@@ -40,6 +40,20 @@ function stateSig(o: any) {
   return `${o.shipping_status || ""}|${o.order_status || ""}|${codes}`;
 }
 
+// 현재 주문 원본이 실제로 점유해야 하는 재고를 옵션별로 합산한다.
+// 같은 주문에 동일 옵션이 여러 줄이어도 원장 멱등키는 한 개만 생긴다.
+function consumedByVariant(o: any) {
+  const out = new Map<string, number>();
+  for (const it of (o?.items || [])) {
+    const vc = String(it.variant_code || "");
+    const qty = Number(it.quantity || 0);
+    if (!vc || !qty) continue;
+    if (/^[CR]/i.test(String(it.status || it.order_status || ""))) continue;
+    out.set(vc, (out.get(vc) || 0) + qty);
+  }
+  return out;
+}
+
 // 상태변경 재동기화: 신규 삽입·재고차감 없이 기존 주문의 상태만 최신화.
 //  증분 pull은 최근 2일 + N상태만 보므로, 오래된 주문이 뒤늦게 취소/반품/교환돼도 반영되지 않는다.
 //  → 상태 필터 없이 최근 N일을 재조회해 raw/channel_status 를 갱신한다.
@@ -51,6 +65,11 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
 
   const orders = await fetchOrders(mall.mall_key, mallId, token, start, end, null);
   if (!orders.length) return { scanned: 0, updated: 0, missing: 0 };
+
+  const { data: listings } = await db.from("channel_listings")
+    .select("id, inventory_item_id, channel_variant_code")
+    .eq("channel", "cafe24").eq("mall_key", mall.mall_key).not("channel_variant_code", "is", null);
+  const listingByVariant = new Map((listings || []).map((l: any) => [String(l.channel_variant_code), l]));
 
   // 기존 행 로드 (order_id 청크로 나눠 in())
   const ids = orders.map((o: any) => String(o.order_id));
@@ -71,6 +90,24 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
     const before = stateSig(cur.raw || {});
     const after = stateSig(o);
     if (before === after) continue;
+
+    // 늦은 취소/반품/재활성화도 원장에 보상분을 남긴다.
+    const oldUse = consumedByVariant(cur.raw || {});
+    const newUse = consumedByVariant(o);
+    for (const vc of new Set([...oldUse.keys(), ...newUse.keys()])) {
+      const delta = (oldUse.get(vc) || 0) - (newUse.get(vc) || 0);
+      const listing: any = listingByVariant.get(vc);
+      if (!delta || !listing) continue;
+      const { error: invErr } = await db.rpc("apply_channel_inventory_adjustment", {
+        p_inventory_item_id: listing.inventory_item_id,
+        p_listing_id: listing.id,
+        p_delta: delta,
+        p_reason: "channel_reconcile",
+        p_ref: `${mall.mall_key}:${o.order_id}:${vc}:${after}`,
+        p_note: `${mall.mall_key} 주문 ${o.order_id} 상태 보정`,
+      });
+      if (invErr) throw new Error(`[${mall.mall_key}] 재고보정(${o.order_id}/${vc}): ${invErr.message}`);
+    }
     const r = (o.receivers && o.receivers[0]) || {};
     const { error } = await db.from("channel_orders").update({
       raw: o,
@@ -106,8 +143,8 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: Syn
   const { data: listings } = await db.from("channel_listings")
     .select("id, inventory_item_id, channel_product_no, channel_variant_code, allocated, sold")
     .eq("channel", "cafe24").eq("mall_key", mall.mall_key).not("channel_variant_code", "is", null);
-  const byVariant = new Map<string, { item: string; pno: string | null }>();
-  for (const l of (listings || [])) byVariant.set(l.channel_variant_code, { item: l.inventory_item_id, pno: l.channel_product_no });
+  const byVariant = new Map<string, { item: string; pno: string | null; listingId: string }>();
+  for (const l of (listings || [])) byVariant.set(l.channel_variant_code, { item: l.inventory_item_id, pno: l.channel_product_no, listingId: l.id });
 
   // 조회 범위: 백필(from/to 지정) or 증분(last_synced~now, 없으면 2일)
   const start = opts.from ? new Date(opts.from) : (mall.last_order_synced_at ? new Date(mall.last_order_synced_at) : new Date(Date.now() - 2 * 86400000));
@@ -149,36 +186,20 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: Syn
 
     // 재고 차감(원장, 멱등: ref = mall:order:variant)
     if (byVariant.size > 0) {
-      const rows: Array<{ inventory_item_id: string; delta: number; reason: string; ref: string; note: string }> = [];
-      for (const o of orderList) for (const it of (o.items || [])) {
-        const vc = it.variant_code; const qty = Number(it.quantity || 0);
-        if (!vc || !qty || !byVariant.has(vc)) continue;
-        // 취소(C)·반품(R) 아이템은 출고되지 않았거나 재입고됨 → 차감 대상 아님. 교환(E)은 동수량 재출고라 차감 유지.
-        if (/^[CR]/i.test(String(it.status || it.order_status || ""))) continue;
-        rows.push({ inventory_item_id: byVariant.get(vc)!.item, delta: -qty, reason: "cafe24_order",
-          ref: `${mall.mall_key}:${o.order_id}:${vc}`, note: `${mall.mall_key} 주문 ${o.order_id}` });
-      }
-      if (rows.length) {
-        const refs = rows.map((r) => r.ref);
-        const { data: ex } = await db.from("inventory_ledger").select("ref").eq("reason", "cafe24_order").in("ref", refs);
-        const seen = new Set((ex || []).map((e) => e.ref));
-        const fresh = rows.filter((r) => !seen.has(r.ref));
-        if (fresh.length) {
-          const { error } = await db.from("inventory_ledger").insert(fresh);
-          if (error && error.code !== "23505") throw new Error(`[${mall.mall_key}] 원장: ` + error.message);
-          deducted = fresh.length;
-          // 채널 배정 차감 + 판매 누적 (분배/재분배 기반)
-          const byVc: Record<string, number> = {};
-          for (const r of fresh) { const vc = r.ref.split(":").pop()!; byVc[vc] = (byVc[vc] || 0) + Math.abs(r.delta); }
-          for (const [vc, q] of Object.entries(byVc)) {
-            const lst = (listings || []).find((l) => l.channel_variant_code === vc);
-            if (lst) {
-              await db.from("channel_listings").update({
-                allocated: Math.max((lst.allocated || 0) - q, 0),
-                sold: (lst.sold || 0) + q,
-              }).eq("id", lst.id);
-            }
-          }
+      for (const o of orderList) {
+        for (const [vc, qty] of consumedByVariant(o)) {
+          const mapped = byVariant.get(vc);
+          if (!mapped) continue;
+          const { data: applied, error } = await db.rpc("apply_channel_inventory_adjustment", {
+            p_inventory_item_id: mapped.item,
+            p_listing_id: mapped.listingId,
+            p_delta: -qty,
+            p_reason: "cafe24_order",
+            p_ref: `${mall.mall_key}:${o.order_id}:${vc}`,
+            p_note: `${mall.mall_key} 주문 ${o.order_id}`,
+          });
+          if (error) throw new Error(`[${mall.mall_key}] 원장(${o.order_id}/${vc}): ${error.message}`);
+          if (applied) deducted++;
         }
       }
     }

@@ -23,7 +23,7 @@ function deny(msg: string, extra: Record<string, string> = {}) {
 // 성공 시 사용자 정보, 실패 시 즉시 반환할 401 Response 를 돌려준다.
 //   const auth = await requireUser(req);
 //   if (auth instanceof Response) return auth;
-export async function requireUser(req: Request, opts: { master?: boolean } = {}): Promise<AuthedUser | Response> {
+export async function requireUser(req: Request, opts: { master?: boolean; roles?: string[] } = {}): Promise<AuthedUser | Response> {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return deny("인증 필요 — 로그인 후 이용하세요");
 
@@ -44,5 +44,8 @@ export async function requireUser(req: Request, opts: { master?: boolean } = {})
   const role = profile?.role ?? null;
 
   if (opts.master && role !== "MASTER") return deny("권한 없음 — 마스터 계정만 가능합니다");
+  if (opts.roles?.length && (!role || !opts.roles.includes(role))) {
+    return deny("권한 없음 — 허용된 담당자만 실행할 수 있습니다");
+  }
   return { id: data.user.id, email, role };
 }

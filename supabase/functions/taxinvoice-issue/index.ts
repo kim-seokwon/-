@@ -11,6 +11,7 @@
 //     매핑 로직·발행 파라미터는 팝빌 Taxinvoice 규격 기준.
 // ============================================================
 import { requireUser } from "../_shared/auth.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const LINKID = Deno.env.get("POPBILL_LINKID") ?? "";
 const SECRETKEY = Deno.env.get("POPBILL_SECRETKEY") ?? "";
@@ -100,14 +101,29 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
   const j = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: cors({ "Content-Type": "application/json" }) });
   // 세금계산서 발행 = 법적 효력 문서 → 로그인 사용자만 (설정 상태도 미인증자에게 노출 안 함)
-  const auth = await requireUser(req);
+  const auth = await requireUser(req, { roles: ["MASTER", "STAFF"] });
   if (auth instanceof Response) return auth;
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   if (!LINKID || !SECRETKEY) return j({ ok: false, error: "POPBILL_LINKID/SECRETKEY 시크릿 미설정" }, 500);
+  let activeQuoteId: string | null = null;
   try {
-    const { quote, email, supplyDate, purposeType } = await req.json();
+    const { quote_id, email, supplyDate, purposeType } = await req.json();
+    if (!quote_id) return j({ ok: false, error: "quote_id 없음" }, 400);
+    const { data: quote, error: quoteErr } = await db.from("quotes").select("*").eq("id", quote_id).single();
+    if (quoteErr || !quote) return j({ ok: false, error: "견적을 찾을 수 없습니다" }, 404);
     if (!quote?.client_biz_no) return j({ ok: false, error: "공급받는자 사업자번호 없음" }, 400);
     if (!email) return j({ ok: false, error: "공급받는자 이메일 없음" }, 400);
     if (!supplyDate) return j({ ok: false, error: "작성일자(공급일) 없음" }, 400);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(supplyDate)) return j({ ok: false, error: "공급일 형식 오류" }, 400);
+    if (String(quote.client_biz_no).replace(/\D/g, "").length !== 10) return j({ ok: false, error: "사업자번호 형식 오류" }, 400);
+    const itemSupply = (quote.items || []).reduce((s: number, it: any) => s + Number(it.qty || 0) * Number(it.price || 0), 0);
+    if (itemSupply !== Number(quote.supply_amount || 0) || Number(quote.total_amount || 0) !== Number(quote.supply_amount || 0) + Number(quote.tax_amount || 0)) {
+      return j({ ok: false, error: "견적 품목 합계와 공급가액/세액 합계가 일치하지 않습니다" }, 400);
+    }
+    const { data: claimed, error: claimErr } = await db.rpc("claim_tax_invoice", { p_quote_id: quote_id });
+    if (claimErr) return j({ ok: false, error: claimErr.message }, 500);
+    if (!claimed) return j({ ok: false, error: "이미 발행됐거나 다른 발행 작업이 진행 중입니다" }, 409);
+    activeQuoteId = quote_id;
 
     const mgtKey = "Q" + (quote.id || "").replace(/-/g, "").slice(0, 23);
     const invoice = mapTaxinvoice(quote, { email, supplyDate, purposeType });
@@ -124,9 +140,18 @@ Deno.serve(async (req) => {
       body: JSON.stringify(invoice),
     });
     const out = await res.json();
-    if (out.code && out.code < 0) return j({ ok: false, error: out.message, code: out.code, mgtKey });
+    if (out.code && out.code < 0) {
+      await db.from("quotes").update({ tax_status: "failed", tax_last_error: out.message || String(out.code) }).eq("id", quote_id);
+      return j({ ok: false, error: out.message, code: out.code, mgtKey });
+    }
+    await db.from("quotes").update({
+      tax_status: "issued", tax_mgtkey: mgtKey, tax_supply_date: supplyDate,
+      tax_issued_at: new Date().toISOString(), tax_last_error: null,
+    }).eq("id", quote_id);
+    await db.from("operation_audit").insert({ actor_id: auth.id, actor_email: auth.email, action: "taxinvoice.issue", entity_type: "quote", entity_id: quote_id, result: "ok", detail: { mgtKey } });
     return j({ ok: true, mgtKey, ntsConfirmNum: out.ntsConfirmNum, result: out });
   } catch (e) {
+    if (activeQuoteId) await db.from("quotes").update({ tax_status: "failed", tax_last_error: String(e) }).eq("id", activeQuoteId).eq("tax_status", "issuing");
     return j({ ok: false, error: String(e) }, 500);
   }
 });

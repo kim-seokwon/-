@@ -4115,6 +4115,7 @@ class BhasApp {
 
         const digits = s => String(s || '').replace(/[^0-9]/g, '');
         const orders = targets.map(o => ({
+            mallKey: String(o.mall_key || ''),
             orderNo: String(o.order_id),
             ordCompNm: this._mallLabel(o.mall_key) || '브하스',
             recNm: o.receiver_name || o.buyer_name || '수취인',
@@ -5886,12 +5887,11 @@ class BhasApp {
         this.showToast('카카오퀵 픽업 요청 중...');
         try {
             const { data, error } = await this.supabase.functions.invoke('kakao-quick', {
-                body: { jobId: d.jobId, title: d.title, qty: d.qty, vendor: d.vendorName },
+                body: { jobId: d.jobId },
             });
             if (error) throw error;
             if (!data || data.ok === false) throw new Error(data && data.error ? data.error : '응답 오류');
             d.quick = data;
-            await this.supabase.from('vendor_jobs').update({ quick_status: data }).eq('id', d.jobId);
             const job = (this.vendors || []).flatMap(v => v.jobs || []).find(j => j.id === d.jobId);
             if (job) job.quick_status = data;
             this.showToast('카카오퀵 픽업 예약 완료');
@@ -6349,9 +6349,8 @@ class BhasApp {
         if (!email) { this.showToast('공급받는자 이메일을 입력하세요.'); return; }
         this.showToast('발행 중...');
         try {
-            const { data, error } = await this.supabase.functions.invoke('taxinvoice-issue', { body: { quote: q, email, supplyDate, purposeType } });
+            const { data, error } = await this.supabase.functions.invoke('taxinvoice-issue', { body: { quote_id: q.id, email, supplyDate, purposeType } });
             if (error || !data || !data.ok) { this.showToast('발행 실패: ' + ((data && data.error) || (error && error.message) || '팝빌 미설정/키 필요')); return; }
-            await this.supabase.from('quotes').update({ tax_status: 'issued', tax_mgtkey: data.mgtKey, tax_supply_date: supplyDate, tax_issued_at: new Date().toISOString() }).eq('id', q.id);
             this.closeGlobalModal(); this._quotesLoaded = false; await this.loadQuotes();
             this.showToast('세금계산서 발행 완료');
         } catch (e) { this.showToast('발행 오류: ' + (e.message || e)); }
@@ -6584,10 +6583,8 @@ class BhasApp {
             try {
                 // 1. Supabase Auth 비밀번호 업데이트 (입력된 경우만)
                 if (newPw) {
-                    // 참고: 현재 세션이 MASTER이므로 타 사용자 PW 변경은 Admin API 필요할 수 있음.
-                    // 여기서는 단순 DB 정보 업데이트 위주로 처리하거나 알림.
-                    const { error: authError } = await this.supabase.auth.updateUser({ password: newPw });
-                    // Admin API 필요 시 무시
+                    const pwRes = await this._invokeFn('admin-users', { action: 'set-password', company_id: userId, password: newPw });
+                    if (!pwRes.ok) throw new Error(pwRes.error || '비밀번호 변경 실패');
                 }
 
                 // 2. DB 업데이트 (기본 정보)

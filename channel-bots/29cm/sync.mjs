@@ -40,12 +40,14 @@ function gmailClient() {
   o.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
   return google.gmail({ version: 'v1', auth: o });
 }
-async function readEmailOtp({ timeoutMs = 90000 } = {}) {
+async function readEmailOtp({ timeoutMs = 90000, notBeforeMs = Date.now() - 5 * 60_000 } = {}) {
   const gmail = gmailClient();
   const started = Date.now();
   const seen = new Set();
   const scan = async (id) => {
     const msg = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
+    const receivedAt = Number(msg.data.internalDate || 0);
+    if (receivedAt && receivedAt < notBeforeMs) return null;
     const headers = msg.data.payload?.headers || [];
     const subject = headers.find(h => h.name === 'Subject')?.value || '';
     const from = headers.find(h => h.name === 'From')?.value || '';
@@ -59,8 +61,8 @@ async function readEmailOtp({ timeoutMs = 90000 } = {}) {
   while (Date.now() - started < timeoutMs) {
     // 스팸/휴지통 포함. 키워드 우선 → 없으면 최근 1시간 전체 메일 스캔(발신자/제목 무관 6자리 추출)
     for (const q of [
-      `newer_than:1h (29CM OR 29cm OR MUSINSA OR 무신사 OR 인증 OR 인증번호 OR verification OR 파트너)`,
-      `newer_than:1h`,
+      `newer_than:15m (29CM OR 29cm OR MUSINSA OR 무신사 OR 인증 OR 인증번호 OR verification OR 파트너)`,
+      `newer_than:15m`,
     ]) {
       const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: 15, includeSpamTrash: true });
       for (const m of (list.data.messages || [])) {
@@ -106,21 +108,21 @@ async function login(browser) {
   // '이메일' 탭 라디오 선택(기본 선택이지만 안전하게)
   await page.locator('input[type="radio"]').nth(1).check().catch(() => {});
   await page.waitForTimeout(500);
-  // '인증번호 받기'/'인증번호 재요청' 버튼을 무조건 눌러 새 코드 발송(스킵하지 않음).
-  // 재요청 쿨다운 중이면 활성화될 때까지 최대 65초 대기 후 클릭.
+  // 2차 인증 화면 진입 시 첫 메일은 자동 발송되는 경우가 있다.
+  // 재요청 버튼이 비활성인 동안 기다렸다 강제 클릭하면 쿨다운이 긴 계정에서 계속 실패하므로,
+  // 활성일 때만 새 메일을 요청하고 아니면 이미 발송된 최신 메일을 바로 읽는다.
   const reqBtn = page.getByRole('button', { name: /인증번호 받기|인증번호 재요청/ }).first();
   await reqBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
-  for (let i = 0; i < 14; i++) {
-    if (await reqBtn.isEnabled().catch(() => false)) break;
-    console.log('[29cm] 재요청 쿨다운 대기...');
-    await page.waitForTimeout(5000);
+  let otpNotBefore = Date.now() - 2 * 60_000;
+  if (await reqBtn.isEnabled().catch(() => false)) {
+    otpNotBefore = Date.now() - 10_000;
+    await reqBtn.click({ timeout: 10000 });
+    console.log(`[29cm] 인증번호 새 발송 요청 (${new Date().toISOString()}) → 메일 대기`);
+  } else {
+    console.log('[29cm] 인증번호가 이미 발송됨(재요청 쿨다운) → 최신 메일 바로 확인');
   }
-  const clickedAt = new Date();
-  await reqBtn.click({ timeout: 10000 });
-  console.log(`[29cm] 인증번호 발송 클릭 (${clickedAt.toISOString()}) → 메일 대기`);
-  await page.waitForTimeout(3000);
 
-  const code = await readEmailOtp();
+  const code = await readEmailOtp({ notBeforeMs: otpNotBefore });
   console.log('[29cm] OTP 코드 수신 → 입력');
   await page.fill('input[name="code"], input[placeholder*="인증코드"]', code);
   await page.getByRole('button', { name: /인증하기/ }).click();

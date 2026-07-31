@@ -1,0 +1,13 @@
+project_id = "bhas-management"
+
+[api]
+enabled = true
+
+[db]
+major_version = 17
+
+[auth]
+enabled = true
+
+[storage]
+enabled = true
