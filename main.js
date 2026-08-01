@@ -3871,6 +3871,8 @@ class BhasApp {
     }
     _mallLabel(key) { const m = (this.malls || []).find(m => m.mall_key === key); return m ? m.label : (key || '-'); }
     _mallBrand(key) { const m = (this.malls || []).find(m => m.mall_key === key); if (!m) return null; return (mockData.brands || []).find(b => b.id === m.brand_id) || null; }
+    _mallChannel(key) { const m = (this.malls || []).find(m => m.mall_key === key); return String(m?.channel || '').toLowerCase(); }
+    _isCafe24Order(o) { return String(o?.channel || this._mallChannel(o?.mall_key) || '').toLowerCase() === 'cafe24'; }
     // 배경색 명도로 읽기 좋은 글자색(흰/검) 자동 선택
     _contrastText(hex) {
         if (typeof hex !== 'string' || hex[0] !== '#') return '#ffffff';
@@ -3985,7 +3987,7 @@ class BhasApp {
         this.requestRender();
     }
 
-    _orderStatusLabel(s) { return ({ new: '신규', ready: '배송준비', shipping: '배송중', done: '완료', hold: '보류' })[s] || s; }
+    _orderStatusLabel(s) { return ({ new: '신규', ready: '채널등록대기', shipping: '배송중', done: '완료', hold: '보류' })[s] || s; }
     _orderItemsSummary(o) {
         const its = o.items || [];
         if (!its.length) return '-';
@@ -4150,23 +4152,30 @@ class BhasApp {
         if (!issuedIds.length) { this.showToast(`발번 0건. ${fails[0] || ''}`); return; }
         this.showToast(`${issuedIds.length}건 발번 완료 → 채널에 송장 등록 중...`);
 
-        // 채널 write-back: 카페24 몰은 cafe24-shipping, 그 외 채널은 channel_orders 직접 갱신
+        // 채널 write-back: 카페24만 API 등록. 다른 채널은 송장번호를 보존하되
+        // 실제 채널 반영 전이므로 배송중으로 속이지 않고 '채널등록대기'로 둔다.
         const byCafe = {}; const others = [];
         targets.forEach(o => {
             const regi = issued[String(o.order_id)]; if (!regi) return;
-            const isCafe = o.channel === 'cafe24' || /hiheiho|tovee|rohi|myho|thehime/.test(o.mall_key || '');
+            const isCafe = this._isCafe24Order(o);
             if (isCafe) (byCafe[o.mall_key] = byCafe[o.mall_key] || []).push({ order_id: o.order_id, invoice_no: regi, courier_name: '우체국택배' });
             else others.push({ mall_key: o.mall_key, order_id: o.order_id, regi });
         });
-        let backOk = 0;
+        let backOk = 0, pending = 0;
         for (const mk of Object.keys(byCafe)) {
             try { const { data, error } = await this.supabase.functions.invoke('cafe24-shipping', { body: { mall: mk, orders: byCafe[mk] } }); if (error) throw error; backOk += (data?.success || 0); }
             catch (e) { this.showToast(`[${this._mallLabel(mk)}] 송장등록 실패: ${e.message || e}`); }
         }
         for (const x of others) {
-            try { await this.supabase.from('channel_orders').update({ invoice_no: x.regi, courier: '우체국택배', status: 'shipping' }).eq('mall_key', x.mall_key).eq('order_id', String(x.order_id)); backOk++; } catch (e) { /* ignore */ }
+            try {
+                const { error } = await this.supabase.from('channel_orders')
+                    .update({ invoice_no: x.regi, courier: '우체국택배', status: 'ready' })
+                    .eq('mall_key', x.mall_key).eq('order_id', String(x.order_id));
+                if (error) throw error;
+                pending++;
+            } catch (e) { this.showToast(`[${this._mallLabel(x.mall_key)}] 송장 저장 실패: ${e.message || e}`); }
         }
-        this.showToast(`발번 ${issuedIds.length}건 / 송장등록 ${backOk}건 완료${fails.length ? ` · 발번실패 ${fails.length}건` : ''}`);
+        this.showToast(`발번 ${issuedIds.length}건 / 채널등록 ${backOk}건${pending ? ` / 등록대기 ${pending}건` : ''}${fails.length ? ` · 발번실패 ${fails.length}건` : ''}`);
         this._ordersLoaded = false;
         await this.loadOrders();
     }
@@ -4216,16 +4225,17 @@ class BhasApp {
         if (!orders.length) { this.showToast('유효한 행이 없습니다.'); return; }
 
         // 주문번호로 몰 매칭 후 몰별로 그룹
-        const byMall = {};
+        const byMall = {}; const localOnly = [];
         let unmatched = 0;
         orders.forEach(o => {
             const found = (this.orders || []).find(x => String(x.order_id) === String(o.order_id));
             const mk = found?.mall_key;
             if (!mk) { unmatched++; return; }
-            (byMall[mk] = byMall[mk] || []).push(o);
+            if (this._isCafe24Order(found)) (byMall[mk] = byMall[mk] || []).push(o);
+            else localOnly.push({ ...o, mall_key: mk });
         });
         const mallKeys = Object.keys(byMall);
-        if (!mallKeys.length) { this.showToast('업로드한 주문번호가 수집된 주문과 매칭되지 않습니다. (먼저 주문 수집)'); return; }
+        if (!mallKeys.length && !localOnly.length) { this.showToast('업로드한 주문번호가 수집된 주문과 매칭되지 않습니다. (먼저 주문 수집)'); return; }
 
         const ok = await this.showConfirm(`${orders.length - unmatched}건의 운송장을 카페24에 배송중으로 등록합니다.${unmatched ? ` (미매칭 ${unmatched}건 제외)` : ''} 계속할까요?`, '송장 일괄 등록');
         if (!ok) return;
@@ -4241,7 +4251,16 @@ class BhasApp {
                 this.showToast(`[${this._mallLabel(mk)}] 등록 실패: ` + (e.message || e));
             }
         }
-        this.showToast(dry ? `${totalOk}건 처리(dry-run: 카페24 전송 없이 2179만 갱신)` : `${totalOk}건 배송중 등록 완료`);
+        let pending = 0;
+        for (const o of localOnly) {
+            const { error } = await this.supabase.from('channel_orders').update({
+                invoice_no: o.invoice_no, courier: o.courier_name || '', status: 'ready',
+            }).eq('mall_key', o.mall_key).eq('order_id', String(o.order_id));
+            if (!error) pending++;
+        }
+        this.showToast(dry
+            ? `${totalOk}건 미리보기 완료(카페24·2179 데이터 변경 없음)`
+            : `${totalOk}건 배송중 등록${pending ? ` / 비카페24 채널등록대기 ${pending}건` : ''}`);
         this._ordersLoaded = false;
         await this.loadOrders();
     }
@@ -5534,7 +5553,7 @@ class BhasApp {
                 return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid rgba(148,163,184,0.12)">
                     <button class="vjob-toggle" data-id="${j.id}" title="완료 토글" style="flex:0 0 auto;width:18px;height:18px;border-radius:5px;border:2px solid ${done?'#10b981':'rgba(148,163,184,0.5)'};background:${done?'#10b981':'transparent'};cursor:pointer;color:#fff;font-size:0.7rem;line-height:1;padding:0">${done?'✓':''}</button>
                     <div style="flex:1;min-width:0">
-                        <div style="font-size:0.88rem;font-weight:600;${done?'text-decoration:line-through;color:var(--text-muted)':''}">${this._vesc(j.title)}${j.qty?` <span style="color:var(--text-muted);font-weight:400">·${j.qty}장</span>`:''}${j.qc_status==='passed'?' <span style="font-size:0.66rem;font-weight:700;color:#10b981;background:rgba(16,185,129,0.12);padding:1px 6px;border-radius:6px">검수완료</span>':''}${j.quick_status?' <span style="font-size:0.66rem;font-weight:700;color:#191600;background:#FEE500;padding:1px 6px;border-radius:6px">퀵예약</span>':''}</div>
+                        <div style="font-size:0.88rem;font-weight:600;${done?'text-decoration:line-through;color:var(--text-muted)':''}">${this._vesc(j.title)}${j.qty?` <span style="color:var(--text-muted);font-weight:400">·${j.qty}장</span>`:''}${j.qc_status==='passed'?' <span style="font-size:0.66rem;font-weight:700;color:#10b981;background:rgba(16,185,129,0.12);padding:1px 6px;border-radius:6px">검수완료</span>':''}${j.quick_status?.ok===true?' <span style="font-size:0.66rem;font-weight:700;color:#191600;background:#FEE500;padding:1px 6px;border-radius:6px">퀵예약</span>':''}${!j.tech_pack_id?' <span style="font-size:0.66rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);padding:1px 6px;border-radius:6px">지시서 미연결</span>':''}</div>
                         <div style="font-size:0.75rem;color:var(--text-muted)">${this._vesc(j.stage)}${ddText?' · '+ddText:''}</div>
                     </div>
                     ${done?'':`<button class="vjob-qc" data-id="${j.id}" title="출고 검수 · 카카오퀵" style="flex:0 0 auto;background:none;border:none;color:${j.qc_status==='passed'?'#10b981':'var(--primary)'};cursor:pointer;padding:2px 4px;font-size:1.05rem"><i class="ph ph-clipboard-text"></i></button>`}
@@ -5696,8 +5715,8 @@ class BhasApp {
                     <input id="vj-stage" class="login-input" placeholder="단계 (예: 봉제)" value="진행중">
                     <input id="vj-qty" type="number" class="login-input" placeholder="수량">
                 </div>
-                <label style="font-size:0.8rem;color:var(--text-muted)">작업지시서 연결 <span style="color:var(--primary)">(검수 체크리스트 자동생성)</span></label>
-                <select id="vj-pack" class="login-input"><option value="">— 없음 —</option>${(this._techPacks || []).map(t => `<option value="${t.id}">${this._vesc(t.style_name)}${t.style_no ? ` (${t.style_no})` : ''}</option>`).join('')}</select>
+                <label style="font-size:0.8rem;color:var(--text-muted)">작업지시서 연결 <span style="color:#ef4444">*필수</span> <span style="color:var(--primary)">(검수 체크리스트 자동생성)</span></label>
+                <select id="vj-pack" class="login-input"><option value="">— 작업지시서를 선택하세요 —</option>${(this._techPacks || []).map(t => `<option value="${t.id}">${this._vesc(t.style_name)}${t.style_no ? ` (${t.style_no})` : ''}</option>`).join('')}</select>
                 <label style="font-size:0.8rem;color:var(--text-muted)">마감(스케줄)</label>
                 <input id="vj-due" type="date" class="login-input">
             </div>
@@ -5714,13 +5733,15 @@ class BhasApp {
         const title = document.getElementById('vj-title').value.trim();
         if (!title) { this.showToast('품목명은 필수입니다.'); return; }
         const qtyRaw = document.getElementById('vj-qty').value;
+        const packId = (document.getElementById('vj-pack') && document.getElementById('vj-pack').value) || null;
+        if (!packId) { this.showToast('작업지시서를 반드시 연결해야 생산 물품을 등록할 수 있습니다.'); return; }
         const row = {
             vendor_id: vendorId,
             title,
             stage: document.getElementById('vj-stage').value.trim() || '진행중',
             qty: qtyRaw ? parseInt(qtyRaw,10) : null,
             due_date: document.getElementById('vj-due').value || null,
-            tech_pack_id: (document.getElementById('vj-pack') && document.getElementById('vj-pack').value) || null,
+            tech_pack_id: packId,
         };
         const { error } = await this.supabase.from('vendor_jobs').insert([row]);
         if (error) { this.showToast('추가 실패: ' + error.message); return; }
@@ -5805,7 +5826,8 @@ class BhasApp {
         const c = document.getElementById('global-modal-container'); if (!c) return;
         const allChecked = d.checklist.every(x => x.checked);
         const hasPhoto = d.photos.length >= 1;
-        const passed = allChecked && hasPhoto;
+        const hasPack = !!d.packId;
+        const passed = hasPack && allChecked && hasPhoto;
         c.innerHTML = `
         <div class="glass modal-content fade-in vmodal" style="width:94%;max-width:560px;padding:1.6rem;border-radius:20px;position:relative;max-height:92vh;overflow-y:auto">
             <h2 style="margin:0 0 0.3rem;font-size:1.15rem"><i class="ph ph-clipboard-text"></i> 출고 검수 · 카카오퀵</h2>
@@ -5842,7 +5864,7 @@ class BhasApp {
             <p style="margin:0 0 1.2rem;font-size:0.78rem;color:var(--text-muted)">완성품 사진을 올리고 위 지시서 항목과 하나씩 대조하세요. 자수·프린트 누락이 여기서 걸립니다.</p>
 
             <div style="padding:12px 14px;border-radius:12px;background:${passed ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)'};border:1px solid ${passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'};margin-bottom:1rem;font-size:0.85rem;color:${passed ? '#10b981' : '#ef4444'};font-weight:600">
-                ${passed ? '<i class="ph ph-check-circle"></i> 검수 통과 — 퀵 호출 가능' : `<i class="ph ph-warning"></i> ${!allChecked ? '미확인 항목 있음' : ''}${(!allChecked && !hasPhoto) ? ' · ' : ''}${!hasPhoto ? '완성 사진 없음' : ''}`}
+                ${passed ? '<i class="ph ph-check-circle"></i> 검수 통과 — 출고 가능' : `<i class="ph ph-warning"></i> ${!hasPack ? '작업지시서 미연결' : ''}${(!hasPack && !allChecked) ? ' · ' : ''}${!allChecked ? '미확인 항목 있음' : ''}${((!hasPack || !allChecked) && !hasPhoto) ? ' · ' : ''}${!hasPhoto ? '완성 사진 없음' : ''}`}
             </div>
 
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
@@ -5852,7 +5874,7 @@ class BhasApp {
                     <button id="qc-quick" ${passed ? '' : 'disabled'} style="padding:9px 18px;border-radius:10px;border:none;font-weight:700;${passed ? 'background:#FEE500;color:#191600;cursor:pointer' : 'background:rgba(148,163,184,0.2);color:var(--text-muted);cursor:not-allowed'}"><i class="ph ph-scooter"></i> 카카오퀵 호출</button>
                 </div>
             </div>
-            ${d.quick ? `<p style="margin:0.8rem 0 0;font-size:0.8rem;color:#10b981"><i class="ph ph-check"></i> 퀵 예약됨${d.quick.trackingNo ? ` · ${this._vesc(d.quick.trackingNo)}` : ''}</p>` : ''}
+            ${d.quick?.ok === true ? `<p style="margin:0.8rem 0 0;font-size:0.8rem;color:#10b981"><i class="ph ph-check"></i> 퀵 예약됨${d.quick.trackingNo ? ` · ${this._vesc(d.quick.trackingNo)}` : ''}</p>` : ''}
         </div>`;
 
         const packSel = document.getElementById('qc-pack');
@@ -5883,18 +5905,19 @@ class BhasApp {
 
     async saveQc() {
         const d = this._qcDraft; if (!d) return;
-        const passed = d.checklist.every(x => x.checked) && d.photos.length >= 1;
+        const passed = !!d.packId && d.checklist.every(x => x.checked) && d.photos.length >= 1;
         const patch = { qc_checklist: d.checklist, qc_photos: d.photos, qc_status: passed ? 'passed' : 'pending', tech_pack_id: d.packId || null };
         const { error } = await this.supabase.from('vendor_jobs').update(patch).eq('id', d.jobId);
-        if (error) { this.showToast('검수 저장 실패 (012_vendor_qc.sql 설치 필요): ' + error.message); return; }
+        if (error) { this.showToast('검수 저장 실패: ' + error.message); return false; }
         const job = (this.vendors || []).flatMap(v => v.jobs || []).find(j => j.id === d.jobId);
         if (job) Object.assign(job, patch);
         this.showToast('검수 저장됨');
+        return true;
     }
 
     async callKakaoQuick() {
         const d = this._qcDraft; if (!d) return;
-        await this.saveQc();
+        if (!await this.saveQc()) return;
         this.showToast('카카오퀵 픽업 요청 중...');
         try {
             const { data, error } = await this.supabase.functions.invoke('kakao-quick', {

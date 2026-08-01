@@ -5,15 +5,20 @@ on:
     - cron: '15 * * * *'   # 매시간 15분 (키디키디와 시간대 분산)
   workflow_dispatch:
 
+concurrency:
+  group: smartstore-order-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: channel-bots/smartstore
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - run: npm install

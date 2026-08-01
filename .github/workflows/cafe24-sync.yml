@@ -5,9 +5,14 @@ on:
     - cron: '*/15 * * * *'   # 15분마다 (메인 채널이라 자주). GitHub 스케줄은 수분 지연될 수 있음.
   workflow_dispatch:          # 수동 실행 버튼
 
+concurrency:
+  group: cafe24-order-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: cafe24-sync Edge Function 호출
         run: |

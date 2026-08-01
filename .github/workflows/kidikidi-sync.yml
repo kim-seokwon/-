@@ -5,15 +5,20 @@ on:
     - cron: '0 * * * *'   # 매시간 (UTC). 필요시 조정.
   workflow_dispatch:        # 수동 실행 버튼
 
+concurrency:
+  group: kidikidi-order-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: channel-bots/kidikidi
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - run: npm install

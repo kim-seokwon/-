@@ -5,9 +5,14 @@ on:
     - cron: '30 * * * *'   # 매시간 30분 (다른 채널과 분산)
   workflow_dispatch:
 
+concurrency:
+  group: 29cm-order-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: channel-bots/29cm
