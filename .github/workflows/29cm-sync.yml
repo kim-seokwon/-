@@ -1,8 +1,8 @@
 name: 29CM 주문 수집
 
 on:
-  schedule:
-    - cron: '30 * * * *'   # 매시간 30분 (다른 채널과 분산)
+  # Gmail OTP 수신 계정 재연결 전까지 정기 실행을 중지한다.
+  # 실패 알림만 반복되고 주문은 수집되지 않으므로, 연결 복구 후 schedule을 다시 켠다.
   workflow_dispatch:
 
 concurrency:
