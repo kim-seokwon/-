@@ -6120,9 +6120,25 @@ class BhasApp {
         this._epostHealth = { ...(this._epostHealth || {}), safeLoading: true };
         this.requestRender();
         try {
-            const { data, error } = await this.supabase.functions.invoke('courier-issue', { body: { action: 'safe-test' } });
+            // 먼저 등록 공급지를 읽은 뒤 전화번호를 숫자로 정규화한다.
+            // 서버 safe-test가 구버전이어도 기존 testYn=Y 경로로 안전하게 검증 가능하다.
+            const { data: office, error: officeError } = await this.supabase.functions.invoke('courier-issue', { body: { action: 'get-office' } });
+            if (officeError) throw officeError;
+            if (!office?.officeZip || !office?.officeAddr) throw new Error(office?.message || '공급지 정보 없음');
+            const phone = String(office.officeTelno || '01000000000').replace(/\D/g, '') || '01000000000';
+            const orderNo = `BHAS-TEST-${Date.now()}`;
+            const order = {
+                mallKey: 'epost_test', orderNo, ordCompNm: 'BHAS API TEST', inqTelCn: phone,
+                ordNm: office.contactNm || 'BHAS 테스트', ordZip: office.officeZip,
+                ordAddr1: office.officeAddr, ordAddr2: '테스트 접수', ordTel: phone,
+                recNm: office.contactNm || 'BHAS 테스트', recZip: office.officeZip,
+                recAddr1: office.officeAddr, recAddr2: '테스트 접수', recTel: phone,
+                goodsNm: '의류 API 테스트', qty: 1, weight: 1, volume: 60, printYn: 'N',
+            };
+            const { data, error } = await this.supabase.functions.invoke('courier-issue', { body: { test: true, orders: [order] } });
             if (error) throw error;
-            if (!data?.ok || !data?.test) throw new Error(data?.message || data?.error || '테스트 응답 없음');
+            const result = data?.results?.[0];
+            if (!data?.ok || data?.testYn !== 'Y' || !result?.ok) throw new Error(result?.message || data?.error || '테스트 응답 없음');
             this._epostHealth = { ...(this._epostHealth || {}), safeLoading: false, safeOk: true };
             this.showToast('우체국 안전 테스트 성공 · 실접수/요금/배송 변경 없음');
         } catch (e) {

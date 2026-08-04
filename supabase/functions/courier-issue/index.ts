@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
       if ("code" in office) return j({ ok: false, error: office.message || office.code });
       if (!office.officeZip || !office.officeAddr) return j({ ok: false, error: "우체국 공급지 주소/우편번호를 찾을 수 없습니다" });
       const testOrderNo = `BHAS-TEST-${Date.now()}`;
-      const phone = office.officeTelno || "01000000000";
+      const phone = String(office.officeTelno || "01000000000").replace(/\D/g, "") || "01000000000";
       const result = await insertOrder({
         orderNo: testOrderNo,
         ordCompNm: "BHAS API TEST",
