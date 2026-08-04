@@ -6009,7 +6009,7 @@ class BhasApp {
             if (ch.key === 'cafe24') {
                 if (mall && mall.connected) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span><button class="integ-auth" data-key="${mall.mall_key}" style="font-size:0.7rem;padding:3px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">재인증</button></div>`;
                 if (mall) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 미인증</span><button class="integ-auth btn-primary" data-key="${mall.mall_key}" style="font-size:0.7rem;padding:3px 10px;border-radius:7px">인증</button></div>`;
-                return `<button class="integ-connect" data-brand="${brand.id}" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
+                return `<button class="integ-channel-connect" data-brand="${brand.id}" data-channel="cafe24" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
             }
             const connection = (this.channelConnections || []).find(x => x.brand_id === brand.id && x.channel === ch.key);
             if (mall?.connected || connection?.status === 'connected') return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.68rem;border:0;background:transparent;color:var(--text-muted);cursor:pointer">설정</button></div>`;
@@ -6053,7 +6053,6 @@ class BhasApp {
         const add = document.getElementById('integ-addbrand-btn');
         if (add) add.onclick = () => this.showAddBrandModal();
         this.appContainer.querySelectorAll('.integ-auth').forEach(x => x.onclick = () => this.authMall(x.dataset.key));
-        this.appContainer.querySelectorAll('.integ-connect').forEach(x => x.onclick = () => this.showCafe24Modal(x.dataset.brand));
         this.appContainer.querySelectorAll('.integ-channel-connect').forEach(x => x.onclick = () => this.showChannelConnectModal(x.dataset.brand, x.dataset.channel));
         this.appContainer.querySelectorAll('.integ-courier').forEach(s => s.onchange = () => this.saveBrandCourier(s.dataset.brand, s.value));
         const epostTest = document.getElementById('integ-epost-test');
@@ -6062,12 +6061,12 @@ class BhasApp {
     showChannelConnectModal(brandId, channel) {
         const brand = (mockData.brands || []).find(b => b.id === brandId);
         const specs = {
+            cafe24: { label: '카페24', fields: [['mall_id','카페24 몰 아이디 (주소의 xxx.cafe24.com 중 xxx)','text'],['client_id','앱 Client ID','text'],['client_secret','앱 Client Secret','password']] },
             musinsa: { label: '무신사', fields: [['account_id','계정 아이디','text'],['password','비밀번호','password']] },
             '29cm': { label: '29CM', fields: [['account_id','29Connect 아이디','text'],['password','비밀번호','password'],['otp_email','인증번호 수신 이메일 (선택)','email']] },
             kidikidi: { label: '키디키디', fields: [['account_id','파트너 계정 아이디','text'],['password','비밀번호','password'],['totp_secret','OTP 설정키 (사용 중인 경우)','password']] },
             smartstore: { label: '스마트스토어', fields: [['client_id','API Client ID','text'],['client_secret','API Client Secret','password']] },
         };
-        if (channel === 'cafe24') { this.showCafe24Modal(brandId); return; }
         const spec = specs[channel];
         if (!spec) { this.showToast('지원하지 않는 채널입니다.'); return; }
         const c = document.getElementById('global-modal-container');
@@ -6081,6 +6080,7 @@ class BhasApp {
     }
     async saveChannelConnection(brandId, channel) {
         const button = document.getElementById('channel-connect-save');
+        const authWindow = channel === 'cafe24' ? window.open('', '_blank') : null;
         const credentials = {};
         document.querySelectorAll('.channel-credential').forEach(x => { if (x.value.trim()) credentials[x.dataset.key] = x.value.trim(); });
         if (button) { button.disabled = true; button.textContent = '연결 중...'; }
@@ -6088,11 +6088,13 @@ class BhasApp {
             const { data, error } = await this.supabase.functions.invoke('channel-connect', { body: { brand_id: brandId, channel, credentials } });
             if (error) throw error;
             if (!data?.ok) throw new Error(data?.error || '연결 정보를 저장하지 못했습니다.');
+            if (authWindow && data.mall_key) authWindow.location.href = this._oauthUrl(data.mall_key);
             this.closeGlobalModal();
             this._mallsLoaded = false;
             await this.loadMalls();
-            this.showToast('정보 저장 완료 · 채널 인증을 준비했습니다.');
+            this.showToast(channel === 'cafe24' ? '정보 저장 완료 · 새 탭에서 카페24 로그인만 완료하세요.' : '정보 저장 완료 · 채널 인증을 준비했습니다.');
         } catch (e) {
+            if (authWindow) authWindow.close();
             this.showToast('연동 실패: ' + (e?.message || String(e)));
             if (button) { button.disabled = false; button.textContent = '저장하고 연결'; }
         }
