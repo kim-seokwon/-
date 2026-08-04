@@ -72,8 +72,10 @@ CREATE TABLE IF NOT EXISTS shipment_jobs (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_shipment_invoice
   ON shipment_jobs(courier, invoice_no) WHERE invoice_no IS NOT NULL;
 ALTER TABLE shipment_jobs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS shipment_jobs_select ON shipment_jobs;
 CREATE POLICY shipment_jobs_select ON shipment_jobs FOR SELECT
   USING (get_user_role() IN ('MASTER','STAFF'));
+DROP POLICY IF EXISTS shipment_jobs_write ON shipment_jobs;
 CREATE POLICY shipment_jobs_write ON shipment_jobs FOR ALL
   USING (get_user_role() IN ('MASTER','STAFF'))
   WITH CHECK (get_user_role() IN ('MASTER','STAFF'));
@@ -157,6 +159,7 @@ CREATE TABLE IF NOT EXISTS operation_audit (
 );
 CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit(created_at DESC);
 ALTER TABLE operation_audit ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS operation_audit_select ON operation_audit;
 CREATE POLICY operation_audit_select ON operation_audit FOR SELECT
   USING (get_user_role() = 'MASTER');
 

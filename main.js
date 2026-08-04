@@ -3857,13 +3857,15 @@ class BhasApp {
         try {
             // 동기화 시각(last_order_synced_at)은 malls 가 아니라 channel_sync_state 에 있고
             // 그 테이블은 토큰이 들어 있어 서비스롤 전용 → 비밀값 뺀 024 뷰에서 합류시킨다.
-            const [mallsRes, syncRes] = await Promise.all([
+            const [mallsRes, syncRes, connectionRes] = await Promise.all([
                 this.supabase.from('malls').select('*').order('created_at', { ascending: true }),
                 this.supabase.from('channel_sync_status').select('*'),
+                this.supabase.from('channel_connection_status').select('*'),
             ]);
             const syncBy = {};
             (syncRes.data || []).forEach(s => { syncBy[s.mall_key] = s; });
             this.malls = (mallsRes.data || []).map(m => ({ ...m, ...(syncBy[m.mall_key] || {}) }));
+            this.channelConnections = connectionRes.data || [];
             this._mallsLoaded = true;
         } catch (e) { this.malls = []; this._mallsLoaded = true; }
         this._mallsLoading = false;
@@ -6009,10 +6011,12 @@ class BhasApp {
                 if (mall) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 미인증</span><button class="integ-auth btn-primary" data-key="${mall.mall_key}" style="font-size:0.7rem;padding:3px 10px;border-radius:7px">인증</button></div>`;
                 return `<button class="integ-connect" data-brand="${brand.id}" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
             }
-            // 봇 연동 채널(키디키디·29CM·무신사·스마트스토어): 몰이 있으면 실제 상태, 없으면 대시
-            if (mall && mall.connected) return `<span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span>`;
-            if (mall) return `<span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 준비</span>`;
-            return `<span style="font-size:0.9rem;color:var(--text-muted);opacity:0.35">—</span>`;
+            const connection = (this.channelConnections || []).find(x => x.brand_id === brand.id && x.channel === ch.key);
+            if (mall?.connected || connection?.status === 'connected') return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.68rem;border:0;background:transparent;color:var(--text-muted);cursor:pointer">설정</button></div>`;
+            const pending = connection?.status === 'credentials_saved' || connection?.status === 'auth_required';
+            const failed = connection?.status === 'error';
+            if (pending || failed) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.7rem;font-weight:700;color:${failed ? '#ef4444' : '#f59e0b'}">${failed ? '● 오류' : '○ 인증 필요'}</span><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.7rem;padding:4px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--primary);cursor:pointer">다시 연동</button></div>`;
+            return `<button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(59,130,246,0.45);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
         };
         const rows = brands.length ? brands.map(b => `<tr style="border-bottom:1px solid var(--card-border)">
             <td style="padding:14px 10px;font-weight:600">${this._vesc(b.name)}</td>
@@ -6041,7 +6045,7 @@ class BhasApp {
                     <tbody>${rows}</tbody>
                 </table>
             </div>
-            <p style="margin:1rem 0 0;color:var(--text-muted);font-size:0.8rem"><i class="ph ph-info"></i> 카페24 [연동] → 몰 정보·Client ID/Secret 입력 → 인증(카페24 로그인)하면 연동됩니다. 로하이스튜디오처럼요.</p>
+            <p style="margin:1rem 0 0;color:var(--text-muted);font-size:0.8rem"><i class="ph ph-shield-check"></i> + 연동에서 채널별 필수 정보만 입력하세요. 비밀번호와 API 키는 화면에 다시 노출되지 않습니다.</p>
         </div>`;
     }
 
@@ -6050,9 +6054,48 @@ class BhasApp {
         if (add) add.onclick = () => this.showAddBrandModal();
         this.appContainer.querySelectorAll('.integ-auth').forEach(x => x.onclick = () => this.authMall(x.dataset.key));
         this.appContainer.querySelectorAll('.integ-connect').forEach(x => x.onclick = () => this.showCafe24Modal(x.dataset.brand));
+        this.appContainer.querySelectorAll('.integ-channel-connect').forEach(x => x.onclick = () => this.showChannelConnectModal(x.dataset.brand, x.dataset.channel));
         this.appContainer.querySelectorAll('.integ-courier').forEach(s => s.onchange = () => this.saveBrandCourier(s.dataset.brand, s.value));
         const epostTest = document.getElementById('integ-epost-test');
         if (epostTest) epostTest.onclick = () => this.testEpostConnection();
+    }
+    showChannelConnectModal(brandId, channel) {
+        const brand = (mockData.brands || []).find(b => b.id === brandId);
+        const specs = {
+            musinsa: { label: '무신사', fields: [['account_id','계정 아이디','text'],['password','비밀번호','password']] },
+            '29cm': { label: '29CM', fields: [['account_id','29Connect 아이디','text'],['password','비밀번호','password'],['otp_email','인증번호 수신 이메일 (선택)','email']] },
+            kidikidi: { label: '키디키디', fields: [['account_id','파트너 계정 아이디','text'],['password','비밀번호','password'],['totp_secret','OTP 설정키 (사용 중인 경우)','password']] },
+            smartstore: { label: '스마트스토어', fields: [['client_id','API Client ID','text'],['client_secret','API Client Secret','password']] },
+        };
+        if (channel === 'cafe24') { this.showCafe24Modal(brandId); return; }
+        const spec = specs[channel];
+        if (!spec) { this.showToast('지원하지 않는 채널입니다.'); return; }
+        const c = document.getElementById('global-modal-container');
+        c.innerHTML = `<div class="glass modal-content fade-in vmodal" style="width:90%;max-width:480px;padding:2rem;border-radius:20px">
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:1.2rem"><div><h2 style="margin:0;font-size:1.2rem">${this._vesc(brand?.name || '')} · ${spec.label}</h2><p style="margin:5px 0 0;color:var(--text-muted);font-size:.8rem">필요한 정보만 입력하면 안전하게 저장하고 연결을 준비합니다.</p></div><button onclick="app.closeGlobalModal()" style="border:0;background:transparent;color:var(--text-muted);font-size:1.3rem;cursor:pointer">×</button></div>
+            <div style="display:flex;flex-direction:column;gap:10px">${spec.fields.map(([key,label,type]) => `<label style="font-size:.78rem;color:var(--text-muted)">${label}<input class="login-input channel-credential" data-key="${key}" type="${type}" autocomplete="off" style="margin-top:5px;width:100%"></label>`).join('')}</div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:1.3rem"><button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 16px;border-radius:9px">취소</button><button id="channel-connect-save" class="btn-primary" style="padding:9px 18px;border-radius:9px">저장하고 연결</button></div>
+        </div>`;
+        c.style.display = 'flex';
+        document.getElementById('channel-connect-save').onclick = () => this.saveChannelConnection(brandId, channel);
+    }
+    async saveChannelConnection(brandId, channel) {
+        const button = document.getElementById('channel-connect-save');
+        const credentials = {};
+        document.querySelectorAll('.channel-credential').forEach(x => { if (x.value.trim()) credentials[x.dataset.key] = x.value.trim(); });
+        if (button) { button.disabled = true; button.textContent = '연결 중...'; }
+        try {
+            const { data, error } = await this.supabase.functions.invoke('channel-connect', { body: { brand_id: brandId, channel, credentials } });
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || '연결 정보를 저장하지 못했습니다.');
+            this.closeGlobalModal();
+            this._mallsLoaded = false;
+            await this.loadMalls();
+            this.showToast('정보 저장 완료 · 채널 인증을 준비했습니다.');
+        } catch (e) {
+            this.showToast('연동 실패: ' + (e?.message || String(e)));
+            if (button) { button.disabled = false; button.textContent = '저장하고 연결'; }
+        }
     }
     async testEpostConnection() {
         this._epostHealth = { loading: true };
