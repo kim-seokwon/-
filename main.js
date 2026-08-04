@@ -6019,11 +6019,18 @@ class BhasApp {
             ${channels.map(ch => `<td style="padding:14px 10px;text-align:center">${cell(b, ch)}</td>`).join('')}
             <td style="padding:14px 10px;text-align:center">${courierCell(b)}</td>
         </tr>`).join('') : `<tr><td colspan="${channels.length + 2}" style="padding:2.5rem;text-align:center;color:var(--text-muted)">브랜드가 없습니다. [브랜드 추가]로 시작하세요.</td></tr>`;
+        const ep = this._epostHealth;
+        const epColor = ep?.ok ? '#22c55e' : (ep?.error ? '#ef4444' : '#f59e0b');
+        const epText = ep?.ok ? `계약 연결 정상${ep.postNm ? ` · ${this._vesc(ep.postNm)}` : ''}` : (ep?.error ? `연결 오류 · ${this._vesc(ep.error)}` : '실제 계약 API 확인 필요');
         return `
         <div class="fade-in" style="padding:1.5rem;max-width:1080px;margin:0 auto">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
                 <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-plugs-connected"></i> 채널 연동</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별로 판매 채널을 연동하세요</p></div>
                 <button id="integ-addbrand-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 브랜드 추가</button>
+            </div>
+            <div class="glass" style="padding:1rem 1.2rem;border-radius:14px;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div><div style="font-size:0.9rem;font-weight:700"><i class="ph ph-package" style="color:#e11d48"></i> 우체국 계약택배</div><div style="font-size:0.78rem;color:${epColor};margin-top:3px">● ${epText}</div></div>
+                <button id="integ-epost-test" class="btn-secondary" style="padding:8px 14px;border-radius:9px" ${ep?.loading ? 'disabled' : ''}><i class="ph ph-plugs-connected"></i> ${ep?.loading ? '확인 중...' : '연결 테스트'}</button>
             </div>
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
                 <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px">
@@ -6044,6 +6051,23 @@ class BhasApp {
         this.appContainer.querySelectorAll('.integ-auth').forEach(x => x.onclick = () => this.authMall(x.dataset.key));
         this.appContainer.querySelectorAll('.integ-connect').forEach(x => x.onclick = () => this.showCafe24Modal(x.dataset.brand));
         this.appContainer.querySelectorAll('.integ-courier').forEach(s => s.onchange = () => this.saveBrandCourier(s.dataset.brand, s.value));
+        const epostTest = document.getElementById('integ-epost-test');
+        if (epostTest) epostTest.onclick = () => this.testEpostConnection();
+    }
+    async testEpostConnection() {
+        this._epostHealth = { loading: true };
+        this.requestRender();
+        try {
+            const { data, error } = await this.supabase.functions.invoke('courier-issue', { body: { action: 'appr-no' } });
+            if (error) throw error;
+            if (!data?.apprNo) throw new Error(data?.message || data?.error || '승인번호 응답 없음');
+            this._epostHealth = { ok: true, postNm: data.postNm || '', payTypeNm: data.payTypeNm || '' };
+            this.showToast('우체국 계약택배 연결 정상');
+        } catch (e) {
+            this._epostHealth = { ok: false, error: e?.message || String(e) };
+            this.showToast('우체국 연결 오류: ' + this._epostHealth.error);
+        }
+        this.requestRender();
     }
     async loadBrandSettings() {
         this._bsLoading = true;
