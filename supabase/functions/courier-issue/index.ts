@@ -150,6 +150,49 @@ Deno.serve(async (req) => {
     if (action === "appr-no") return j(await getApprNo());
     if (action === "get-office") return j(await getOfficeInfo());
     if (action === "setup-office") return j(await insertOffice(body.office ?? {}));
+    // 안전한 종단간 점검: 우체국 등록 공급지를 발송/수취지로 사용하고 testYn=Y로만 호출한다.
+    // 실제 접수·집하·요금·shipment_jobs 저장·쇼핑몰 송장등록은 절대 수행하지 않는다.
+    if (action === "safe-test") {
+      const office = await getOfficeInfo();
+      if ("code" in office) return j({ ok: false, error: office.message || office.code });
+      if (!office.officeZip || !office.officeAddr) return j({ ok: false, error: "우체국 공급지 주소/우편번호를 찾을 수 없습니다" });
+      const testOrderNo = `BHAS-TEST-${Date.now()}`;
+      const phone = office.officeTelno || "01000000000";
+      const result = await insertOrder({
+        orderNo: testOrderNo,
+        ordCompNm: "BHAS API TEST",
+        inqTelCn: phone,
+        ordNm: office.contactNm || "BHAS 테스트",
+        ordZip: office.officeZip,
+        ordAddr1: office.officeAddr,
+        ordAddr2: "테스트 접수",
+        ordTel: phone,
+        recNm: office.contactNm || "BHAS 테스트",
+        recZip: office.officeZip,
+        recAddr1: office.officeAddr,
+        recAddr2: "테스트 접수",
+        recTel: phone,
+        goodsNm: "의류 API 테스트",
+        qty: 1,
+        weight: 1,
+        volume: 60,
+        printYn: "N",
+      }, "Y");
+      const failureMessage = "message" in result ? result.message : "테스트 실패";
+      await db.from("operation_audit").insert({
+        actor_id: auth.id, actor_email: auth.email, action: "epost.safe_test",
+        entity_type: "epost", entity_id: testOrderNo,
+        result: result.ok ? "ok" : "failed",
+        detail: { testYn: "Y", message: result.ok ? "test response received" : failureMessage },
+      });
+      return j({
+        ok: result.ok,
+        test: true,
+        orderNo: testOrderNo,
+        responseReceived: Boolean(result.regiNo || result.reqNo),
+        message: result.ok ? "우체국 테스트 접수 응답 정상" : failureMessage,
+      }, result.ok ? 200 : 400);
+    }
     // 기본: 발번(여러 주문 일괄). body.test=true 면 testYn=Y
     const testYn = body.test ? "Y" : "N";
     const orders = Array.isArray(body.orders) ? body.orders.slice(0, 200) : [];

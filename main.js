@@ -6034,7 +6034,7 @@ class BhasApp {
             </div>
             <div class="glass" style="padding:1rem 1.2rem;border-radius:14px;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
                 <div><div style="font-size:0.9rem;font-weight:700"><i class="ph ph-package" style="color:#e11d48"></i> 우체국 계약택배</div><div style="font-size:0.78rem;color:${epColor};margin-top:3px">● ${epText}</div></div>
-                <button id="integ-epost-test" class="btn-secondary" style="padding:8px 14px;border-radius:9px" ${ep?.loading ? 'disabled' : ''}><i class="ph ph-plugs-connected"></i> ${ep?.loading ? '확인 중...' : '연결 테스트'}</button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap"><button id="integ-epost-test" class="btn-secondary" style="padding:8px 14px;border-radius:9px" ${ep?.loading ? 'disabled' : ''}><i class="ph ph-plugs-connected"></i> ${ep?.loading ? '확인 중...' : '연결 테스트'}</button><button id="integ-epost-safe-test" class="btn-primary" style="padding:8px 14px;border-radius:9px" ${ep?.safeLoading ? 'disabled' : ''}><i class="ph ph-shield-check"></i> ${ep?.safeLoading ? '테스트 중...' : '안전 테스트 발번'}</button></div>
             </div>
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
                 <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px">
@@ -6057,6 +6057,8 @@ class BhasApp {
         this.appContainer.querySelectorAll('.integ-courier').forEach(s => s.onchange = () => this.saveBrandCourier(s.dataset.brand, s.value));
         const epostTest = document.getElementById('integ-epost-test');
         if (epostTest) epostTest.onclick = () => this.testEpostConnection();
+        const epostSafeTest = document.getElementById('integ-epost-safe-test');
+        if (epostSafeTest) epostSafeTest.onclick = () => this.runEpostSafeTest();
     }
     showChannelConnectModal(brandId, channel) {
         const brand = (mockData.brands || []).find(b => b.id === brandId);
@@ -6111,6 +6113,21 @@ class BhasApp {
         } catch (e) {
             this._epostHealth = { ok: false, error: e?.message || String(e) };
             this.showToast('우체국 연결 오류: ' + this._epostHealth.error);
+        }
+        this.requestRender();
+    }
+    async runEpostSafeTest() {
+        this._epostHealth = { ...(this._epostHealth || {}), safeLoading: true };
+        this.requestRender();
+        try {
+            const { data, error } = await this.supabase.functions.invoke('courier-issue', { body: { action: 'safe-test' } });
+            if (error) throw error;
+            if (!data?.ok || !data?.test) throw new Error(data?.message || data?.error || '테스트 응답 없음');
+            this._epostHealth = { ...(this._epostHealth || {}), safeLoading: false, safeOk: true };
+            this.showToast('우체국 안전 테스트 성공 · 실접수/요금/배송 변경 없음');
+        } catch (e) {
+            this._epostHealth = { ...(this._epostHealth || {}), safeLoading: false, safeOk: false };
+            this.showToast('우체국 안전 테스트 실패: ' + (e?.message || String(e)));
         }
         this.requestRender();
     }
