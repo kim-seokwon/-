@@ -9,6 +9,7 @@
 //       POST <func-url> {restatus:false}       → 재동기화 건너뛰기
 //       POST <func-url> {mode:"restatus", restatus_from:"2025-01-01"}  → 재동기화만 전체기간
 import { admin, cafe24Fetch, cors, ensureToken, getActiveMalls, getMall, log, MallState, saveMall } from "../_shared/cafe24.ts";
+import { requireUser } from "../_shared/auth.ts";
 
 function ymd(d: Date) { return d.toISOString().slice(0, 10); }
 
@@ -131,7 +132,47 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
   return { scanned: orders.length, updated, missing };
 }
 
-interface SyncOpts { from?: string; to?: string; restatus?: boolean; restatus_days?: number; restatus_from?: string }
+interface SyncOpts { from?: string; to?: string; restatus?: boolean; restatus_days?: number; restatus_from?: string; push_inventory?: boolean }
+
+// 카페24를 총재고 기준으로 쓰는 초기/실사 동기화.
+// 이미 매핑된 품목만 읽어 오므로, 미매핑 상품이나 카페24 수량에는 절대 쓰지 않는다.
+async function pullInventoryMall(db: ReturnType<typeof admin>, mall: MallState) {
+  const token = await ensureToken(db, mall);
+  const { data: listings } = await db.from("channel_listings")
+    .select("id, inventory_item_id, channel_product_no, channel_variant_code")
+    .eq("channel", "cafe24").eq("mall_key", mall.mall_key)
+    .not("channel_product_no", "is", null).not("channel_variant_code", "is", null);
+  let checked = 0, adjusted = 0, skipped = 0;
+  const examples: Array<Record<string, unknown>> = [];
+  for (const listing of (listings || []) as any[]) {
+    try {
+      const data = await cafe24Fetch(mall.cafe24_mall_id!, token,
+        `/api/v2/admin/products/${listing.channel_product_no}/variants/${listing.channel_variant_code}/inventories`);
+      const inv = data.inventory || (Array.isArray(data.inventories) ? data.inventories[0] : null) || data;
+      const target = Number(inv?.quantity);
+      if (!Number.isFinite(target) || target < 0) { skipped++; continue; }
+      const { data: item } = await db.from("inventory_items").select("on_hand, safety_stock").eq("id", listing.inventory_item_id).maybeSingle();
+      if (!item) { skipped++; continue; }
+      const delta = target - Number(item.on_hand || 0);
+      if (delta !== 0) {
+        const { error } = await db.from("inventory_ledger").insert([{
+          inventory_item_id: listing.inventory_item_id, delta, reason: "adjust",
+          ref: `cafe24-stock:${mall.mall_key}:${listing.channel_variant_code}:${new Date().toISOString()}`,
+          note: `카페24 기준 재고 동기화 (${item.on_hand} → ${target})`, created_by: "cafe24-sync"
+        }]);
+        if (error) throw error;
+        adjusted++;
+      }
+      if (Number.isFinite(Number(inv?.safety_inventory))) {
+        await db.from("inventory_items").update({ safety_stock: Number(inv.safety_inventory) }).eq("id", listing.inventory_item_id);
+      }
+      checked++;
+      if (examples.length < 20) examples.push({ variant_code: listing.channel_variant_code, before: item.on_hand, after: target });
+    } catch (e) { skipped++; if (examples.length < 20) examples.push({ variant_code: listing.channel_variant_code, error: String(e) }); }
+  }
+  await log(db, mall.mall_key, "pull_inventory", skipped ? "warn" : "ok", { checked, adjusted, skipped, examples });
+  return { mall: mall.mall_key, checked, adjusted, skipped, examples };
+}
 
 async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: SyncOpts = {}) {
   const backfill = !!opts.from;
@@ -214,7 +255,13 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: Syn
     summary.restatus = await restatusMall(db, mall, { days: opts.restatus_days, from: opts.restatus_from });
   }
 
-  // 현재고 push (dry_run 이면 로그만)
+  // 카페24가 총재고 기준이다. 명시적으로 요청한 경우에만 카페24로 수량을 쓴다.
+  if (opts.push_inventory !== true) {
+    summary.inventory_push = "skipped (cafe24 is source of truth)";
+    if (!backfill) await saveMall(db, mall.mall_key, { last_order_synced_at: end.toISOString() });
+    return summary;
+  }
+  // 현재고 push (명시적 수동 실행 + dry_run 이면 로그만)
   const itemIds = [...new Set((listings || []).map((l) => l.inventory_item_id))];
   let pushed = 0; const intended: Array<Record<string, unknown>> = [];
   const skippedNegative: Array<Record<string, unknown>> = [];
@@ -252,6 +299,8 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: Syn
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
+  const auth = await requireUser(req, { master: true });
+  if (auth instanceof Response) return auth;
   const db = admin();
   let body: SyncOpts & { mall?: string; mode?: string } = {};
   try { body = await req.json(); } catch { /* no body */ }
@@ -266,14 +315,17 @@ Deno.serve(async (req) => {
   }
 
   const onlyRestatus = body.mode === "restatus";
+  const inventoryPull = body.mode === "inventory-pull";
   const results: unknown[] = [];
   for (const m of malls) {
     try {
-      results.push(onlyRestatus
+      results.push(inventoryPull
+        ? await pullInventoryMall(db, m)
+        : onlyRestatus
         ? { mall: m.mall_key, restatus: await restatusMall(db, m, { days: body.restatus_days, from: body.restatus_from, to: body.to }) }
         : await syncMall(db, m, {
           from: body.from, to: body.to,
-          restatus: body.restatus, restatus_days: body.restatus_days, restatus_from: body.restatus_from,
+          restatus: body.restatus, restatus_days: body.restatus_days, restatus_from: body.restatus_from, push_inventory: body.push_inventory,
         }));
     }
     catch (e) { await log(db, m.mall_key, "error", "error", { error: String(e) }); results.push({ mall: m.mall_key, ok: false, error: String(e) }); }

@@ -4282,6 +4282,21 @@ class BhasApp {
         await this.loadOrders();
     }
 
+    async pullCafe24Inventory() {
+        if (!confirm('카페24 수량을 총재고 기준으로 가져옵니다.\n매핑된 품목의 브하스 재고가 카페24 수량으로 보정됩니다.')) return;
+        this.showToast('카페24 재고를 확인 중...');
+        try {
+            const { data, error } = await this.supabase.functions.invoke('cafe24-sync', { body: { mode: 'inventory-pull' } });
+            if (error) throw error;
+            const total = (data?.malls || []).reduce((n, r) => n + Number(r.adjusted || 0), 0);
+            this.showToast(`카페24 재고 반영 완료: ${total}개 품목 보정`);
+            this._invLoaded = false;
+            await this.loadInventory();
+        } catch (e) {
+            this.showToast('카페24 재고 불러오기 실패: ' + (e.message || e));
+        }
+    }
+
     // ============================================================
     //  재고 관리 (카페24 연동 대상)
     // ============================================================
@@ -4400,7 +4415,8 @@ class BhasApp {
                         <option value="all" style="background:#0f172a" ${(this.invSelectedBrand || 'all') === 'all' ? 'selected' : ''}>전체 브랜드</option>
                         ${(mockData.brands || []).map(b => `<option value="${b.id}" style="background:#0f172a" ${this.invSelectedBrand === b.id ? 'selected' : ''}>${b.name}</option>`).join('')}
                     </select>
-                    <button class="btn-secondary" id="inv-cafe24-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-plug-charging"></i> 카페24 연동</button>
+                    <button class="btn-secondary" id="inv-cafe24-pull-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-download-simple"></i> 카페24 재고 불러오기</button>
+                    <button class="btn-secondary" id="inv-cafe24-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-plug-charging"></i> 카페24 설정</button>
                     <button class="btn-primary" id="inv-add-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem">+ 품목 추가</button>
                 </div>
             </div>
@@ -4441,6 +4457,8 @@ class BhasApp {
         if (addBtn) addBtn.onclick = () => this.showInventoryItemModal();
         const cafeBtn = document.getElementById('inv-cafe24-btn');
         if (cafeBtn) cafeBtn.onclick = () => this.showCafe24Modal();
+        const cafePullBtn = document.getElementById('inv-cafe24-pull-btn');
+        if (cafePullBtn) cafePullBtn.onclick = () => this.pullCafe24Inventory();
         const logClear = document.getElementById('inv-log-clear');
         if (logClear) logClear.onclick = () => this.setState({ invLedgerItemId: null });
 
