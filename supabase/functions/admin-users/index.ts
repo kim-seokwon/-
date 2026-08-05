@@ -27,6 +27,11 @@ const admin = () => createClient(
 );
 
 const emailOf = (username: string) => (username.includes("@") ? username : `${username}@bhas.com`);
+const validPassword = (password: unknown) => {
+  const value = String(password || "");
+  // 직원 계정: 최소 10자 + 영문 + 숫자. 화면/로그에 비밀번호는 절대 기록하지 않는다.
+  return value.length >= 10 && /[A-Za-z]/.test(value) && /\d/.test(value);
+};
 
 // 이메일로 auth 사용자 찾기 (admin API 에 email 단건 조회가 없어 페이지를 훑는다)
 async function findAuthUser(db: ReturnType<typeof admin>, email: string) {
@@ -67,7 +72,7 @@ Deno.serve(async (req) => {
     if (action === "create") {
       const { name, username, password, role } = body;
       if (!name || !username || !password) return j({ ok: false, error: "이름·아이디·비밀번호가 필요합니다" }, 400);
-      if (String(password).length < 6) return j({ ok: false, error: "비밀번호는 6자 이상이어야 합니다" }, 400);
+      if (!validPassword(password)) return j({ ok: false, error: "비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다" }, 400);
       const email = emailOf(username);
 
       const existing = await findAuthUser(db, email);
@@ -97,7 +102,7 @@ Deno.serve(async (req) => {
 
     if (action === "set-password") {
       const { password } = body;
-      if (!password || String(password).length < 6) return j({ ok: false, error: "비밀번호는 6자 이상이어야 합니다" }, 400);
+      if (!validPassword(password)) return j({ ok: false, error: "비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다" }, 400);
       let username = body.username;
       if (!username && body.company_id) {
         const { data } = await db.from("companies").select("username").eq("id", body.company_id).maybeSingle();
@@ -115,7 +120,7 @@ Deno.serve(async (req) => {
     // 프로필만 있고 auth 계정이 없는 기존 행에 로그인 계정을 붙여준다
     if (action === "link-auth") {
       const { password } = body;
-      if (!password || String(password).length < 6) return j({ ok: false, error: "비밀번호는 6자 이상이어야 합니다" }, 400);
+      if (!validPassword(password)) return j({ ok: false, error: "비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다" }, 400);
       const { data: c } = await db.from("companies").select("username").eq("id", body.company_id).maybeSingle();
       if (!c?.username) return j({ ok: false, error: "대상 계정을 찾을 수 없습니다" }, 404);
       const email = emailOf(c.username);

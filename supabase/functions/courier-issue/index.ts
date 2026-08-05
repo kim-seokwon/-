@@ -138,8 +138,9 @@ async function insertOffice(office: Record<string, unknown>) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
   const j = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: cors({ "Content-Type": "application/json" }) });
-  // 실제 송장 발번 = 요금·계약 영향 → 로그인 사용자만 (설정 상태도 미인증자에게 노출 안 함)
-  const auth = await requireUser(req, { roles: ["MASTER", "STAFF"] });
+  // 송장 발번·공급지 조회는 계약/수취인 정보와 요금에 영향을 준다.
+  // 운영 전환 전에는 마스터 계정만 접근하도록 잠근다.
+  const auth = await requireUser(req, { master: true });
   if (auth instanceof Response) return auth;
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   if (!REGKEY || !SECKEY) return j({ ok: false, error: "EPOST_REGKEY/EPOST_SECKEY 시크릿 미설정" }, 500);

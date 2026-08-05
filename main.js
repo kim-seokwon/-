@@ -6690,7 +6690,7 @@ class BhasApp {
         nameInput.value = user.name || '';
         idInput.value = user.username || '';
         idInput.disabled = true; // 아이디 수정 불가 (Auth 연동 이슈 방지)
-        pwInput.placeholder = '비밀번호 변경 시에만 입력하세요 (최소 6자)';
+        pwInput.placeholder = '변경 시에만 입력하세요 (영문·숫자 포함 10자 이상)';
         roleSelect.value = user.role || 'CLIENT';
 
         // 기존 권한 체크박스 복원 (menu_access 없으면 역할 기본값)
@@ -6710,8 +6710,9 @@ class BhasApp {
             const newBrandId = newRole === 'CLIENT' ? (brand_access && brand_access[0]) || '' : '';
 
             if (!newName) { this.showToast('이름을 입력해주세요.'); return; }
-            if (newPw && newPw.length < 6) { this.showToast('비밀번호는 최소 6자 이상이어야 합니다.'); return; }
+            if (newPw && !this._isStrongPassword(newPw)) { this.showToast('비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.'); return; }
             if (newRole === 'CLIENT' && !newBrandId) { this.showToast('고객사(CLIENT) 계정은 브랜드 접근에서 최소 1개를 체크해야 합니다.'); return; }
+            if (newRole === 'STAFF' && !(brand_access && brand_access.length)) { this.showToast('직원 계정은 접근 가능한 브랜드를 최소 1개 체크해야 합니다.'); return; }
 
             saveBtn.disabled = true;
             saveBtn.innerText = '수정 중...';
@@ -7227,9 +7228,9 @@ class BhasApp {
     // 비밀번호 변경 — 서버(admin-users)에서 auth.admin.updateUserById 로 처리.
     // 로그인 계정이 아직 없는 프로필(예전 방식으로 만들어진 행)이면 그 자리에서 연결해준다.
     async changeAccountPassword(companyId, username) {
-        const pw = prompt(`${username} 계정의 새 비밀번호 (6자 이상)`);
+        const pw = prompt(`${username} 계정의 새 비밀번호 (영문·숫자 포함 10자 이상)`);
         if (pw === null) return;
-        if (pw.trim().length < 6) { this.showToast('비밀번호는 6자 이상이어야 합니다.'); return; }
+        if (!this._isStrongPassword(pw.trim())) { this.showToast('비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.'); return; }
         this.showToast('비밀번호 변경 중...');
         const call = (action) => this._invokeFn('admin-users', { action, company_id: companyId, password: pw.trim() });
         let res = await call('set-password');
@@ -7255,14 +7256,20 @@ class BhasApp {
         const brand = [...document.querySelectorAll('.perm-brand-check:checked')].map(c => c.value);
         return { menu_access: menu, brand_access: brand.length ? brand : null };
     }
+    _isStrongPassword(password) {
+        return String(password || '').length >= 10 && /[A-Za-z]/.test(password) && /\d/.test(password);
+    }
     _applyRoleDefaultsToPermChecks(role) {
         const def = new Set(this._defaultMenuAccess(role));
         document.querySelectorAll('.perm-menu-check').forEach(c => { c.checked = def.has(c.value); });
     }
-    // 현재 로그인 계정이 조회 가능한 브랜드 id 집합. null=제한없음(전체). 설정된 경우에만 제한(회귀 없음).
+    // 현재 로그인 계정이 조회 가능한 브랜드 id 집합.
+    // MASTER만 null(전체)이며, STAFF/CLIENT는 반드시 명시적으로 배정된 브랜드만 본다.
     _allowedBrandIds() {
         const u = this.currentUser || {};
         if (Array.isArray(u.brand_access) && u.brand_access.length) return new Set(u.brand_access);
+        if (u.role === 'STAFF') return new Set(u.brand_id ? [u.brand_id] : []);
+        if (u.role === 'CLIENT') return new Set(u.brand_id ? [u.brand_id] : []);
         return null;
     }
     // 브랜드 선택기/목록에 노출할 브랜드 (brand_access 반영)
@@ -7300,7 +7307,7 @@ class BhasApp {
                 
                 <div class="login-field" style="margin-bottom: 1.5rem;">
                     <label>비밀번호</label>
-                    <input type="password" id="new-user-pw" class="login-input" placeholder="비밀번호 설정 (최소 6자)">
+                    <input type="password" id="new-user-pw" class="login-input" placeholder="영문·숫자 포함 10자 이상">
                 </div>
                 
                 <div class="login-field" style="margin-bottom: 1.5rem;">
@@ -7320,7 +7327,7 @@ class BhasApp {
 
                 <div id="perm-brand-container" class="login-field" style="margin-bottom: 2rem;">
                     <label style="display:flex; align-items:center; gap:6px;"><i class="ph ph-tag"></i> 브랜드 접근 (조회 허용)</label>
-                    <div style="font-size:11px; color:var(--text-muted); margin:2px 0 10px;">체크한 브랜드 데이터만 조회 가능 · 비우면 전체(MASTER/STAFF) 또는 배정 브랜드 기준</div>
+                    <div style="font-size:11px; color:var(--text-muted); margin:2px 0 10px;">체크한 브랜드 데이터만 조회 가능 · 직원/고객사 계정은 최소 1개를 반드시 선택</div>
                     ${this._renderPermBrandChecks([])}
                 </div>
 
@@ -7432,8 +7439,8 @@ class BhasApp {
             { this.showToast('모든 정보를 입력해주세요.'); return; }
         }
 
-        if (password.length < 6) {
-            { this.showToast('비밀번호는 최소 6자 이상이어야 합니다.'); return; }
+        if (!this._isStrongPassword(password)) {
+            { this.showToast('비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.'); return; }
         }
 
         // 메뉴/브랜드 접근 권한 체크박스 수집
@@ -7443,6 +7450,9 @@ class BhasApp {
 
         if (role === 'CLIENT' && !brandId) {
             { this.showToast('고객사(CLIENT) 계정은 브랜드 접근에서 최소 1개를 체크해야 합니다.'); return; }
+        }
+        if (role === 'STAFF' && !(brand_access && brand_access.length)) {
+            { this.showToast('직원 계정은 접근 가능한 브랜드를 최소 1개 체크해야 합니다.'); return; }
         }
 
         const email = `${username}@bhas.com`;

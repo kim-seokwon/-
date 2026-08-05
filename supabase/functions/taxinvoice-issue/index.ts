@@ -100,8 +100,8 @@ function mapTaxinvoice(q: Record<string, any>, opt: Record<string, any>) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
   const j = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: cors({ "Content-Type": "application/json" }) });
-  // 세금계산서 발행 = 법적 효력 문서 → 로그인 사용자만 (설정 상태도 미인증자에게 노출 안 함)
-  const auth = await requireUser(req, { roles: ["MASTER", "STAFF"] });
+  // 세금계산서 발행은 법적 효력 문서다. 마스터만 실행할 수 있다.
+  const auth = await requireUser(req, { master: true });
   if (auth instanceof Response) return auth;
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   if (!LINKID || !SECRETKEY) return j({ ok: false, error: "POPBILL_LINKID/SECRETKEY 시크릿 미설정" }, 500);
