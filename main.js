@@ -3855,13 +3855,15 @@ class BhasApp {
     async loadMalls() {
         this._mallsLoading = true;
         try {
-            // 동기화 시각(last_order_synced_at)은 malls 가 아니라 channel_sync_state 에 있고
-            // 그 테이블은 토큰이 들어 있어 서비스롤 전용 → 비밀값 뺀 024 뷰에서 합류시킨다.
-            const [mallsRes, syncRes, connectionRes] = await Promise.all([
+            // 동기화 원본 테이블에는 토큰이 있어 직접 읽지 않는다.
+            // 상태값만 반환하는 관리자 전용 RPC로 합류한다.
+            const [mallsRes, statusRes] = await Promise.all([
                 this.supabase.from('malls').select('*').order('created_at', { ascending: true }),
-                this.supabase.from('channel_sync_status').select('*'),
-                this.supabase.from('channel_connection_status').select('*'),
+                this.supabase.rpc('get_channel_operational_status'),
             ]);
+            const status = statusRes.data || {};
+            const syncRes = { data: status.sync || [] };
+            const connectionRes = { data: status.connections || [] };
             const syncBy = {};
             (syncRes.data || []).forEach(s => { syncBy[s.mall_key] = s; });
             this.malls = (mallsRes.data || []).map(m => ({ ...m, ...(syncBy[m.mall_key] || {}) }));
