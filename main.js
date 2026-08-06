@@ -1890,8 +1890,8 @@ class BhasApp {
         if (/^4/.test(cs)) return 'exchange';
         return 'done';  // 정상건(세부 배송상태 미제공 → 완료 처리)
     }
-    // 취소/반품/교환 (매출 집계에서 제외)
-    _isCancelled(o) { const s = this._orderState(o); return s === 'cancel' || s === 'return' || s === 'exchange'; }
+    // 취소/반품만 매출에서 제외. 교환은 결제금액이 유지되므로 매출을 제거하면 안 된다.
+    _isCancelled(o) { const s = this._orderState(o); return s === 'cancel' || s === 'return'; }
     // 환불(취소+반품 = 금액 환급)
     _isRefund(o) { const s = this._orderState(o); return s === 'cancel' || s === 'return'; }
     // 교환(금액 환급 없음)
@@ -1907,7 +1907,7 @@ class BhasApp {
     }
 
     _salesAggFromServer(limitMonths = 12) {
-        const CANCELLED = new Set(['cancel', 'return', 'exchange']);
+        const CANCELLED = new Set(['cancel', 'return']);
         const rows = this.salesAggData.monthly;
         // 브하스 컨설팅은 몰 주문이 아니라 견적/세금계산서 → 클라이언트에서 합류(견적은 건수가 적어 부담 없음)
         const quotes = (this.quotes || []).filter(q => q.total_amount);
@@ -1965,7 +1965,7 @@ class BhasApp {
         };
         const srcOrders = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
         const allOrders = srcOrders.filter(o => o.order_date && o.pay_amount != null);
-        // 매출 집계는 취소/교환 제외
+        // 교환은 결제금액이 유지되는 정상 매출이다.
         const orders = allOrders.filter(o => !this._isCancelled(o));
         const cancelledOrders = allOrders.filter(o => this._isCancelled(o));
         const events = [];
@@ -2102,13 +2102,25 @@ class BhasApp {
         const syncColor = syncMins == null ? 'var(--text-muted)' : (syncMins <= 15 ? '#10b981' : (syncMins <= 70 ? '#f59e0b' : '#ef4444'));
         const syncBadge = `<span style="font-size:0.72rem;color:${syncColor};font-weight:600"><i class="ph ph-arrows-clockwise"></i> ${syncAgoTxt}</span>`;
 
-        // ── 매출: 오늘 / 주간(7일) / 이번달 (취소 제외) ──
+        // ── 금액: 서버 재무집계 우선. 주문/실결제/환불/순매출을 한 금액으로 섞지 않는다. ──
+        const financialDaily = this.salesAggData?.financialDaily || [];
+        const financialFor = (from, to) => financialDaily.filter(r => r.d >= from && r.d <= to).reduce((a, r) => ({
+            order: a.order + (Number(r.order_amount) || 0),
+            paid: a.paid + (Number(r.actual_paid_amount) || 0),
+            refund: a.refund + (Number(r.refund_amount) || 0),
+            net: a.net + (Number(r.net_sales_amount) || 0),
+            count: a.count + (Number(r.order_count) || 0),
+        }), { order: 0, paid: 0, refund: 0, net: 0, count: 0 });
         const revOrders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null && notCancelled(o));
         const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
         const sumBetween = (from, to) => revOrders.filter(o => { const d = localYMD(o.order_date); return d >= from && d <= to; }).reduce((s, o) => s + Number(o.pay_amount || 0), 0);
-        const todaySales = sumBetween(todayStr, todayStr);
-        const weekSales = sumBetween(localYMD(weekAgo), todayStr);
-        const monthSales = sumBetween(monthKey + '-01', todayStr);
+        const hasFinancial = financialDaily.length > 0;
+        const todayFinancial = financialFor(todayStr, todayStr);
+        const weekFinancial = financialFor(localYMD(weekAgo), todayStr);
+        const monthFinancial = financialFor(monthKey + '-01', todayStr);
+        const todaySales = hasFinancial ? todayFinancial.net : sumBetween(todayStr, todayStr);
+        const weekSales = hasFinancial ? weekFinancial.net : sumBetween(localYMD(weekAgo), todayStr);
+        const monthSales = hasFinancial ? monthFinancial.net : sumBetween(monthKey + '-01', todayStr);
 
         // ── 브랜드별 / 채널별 (이번달) ──
         const monthRev = revOrders.filter(o => localYMD(o.order_date).startsWith(monthKey));
@@ -2140,7 +2152,7 @@ class BhasApp {
             stExchange = mo.filter(r => r.state === 'exchange').reduce((s, r) => s + (r.cnt || 0), 0);
             const ref = mo.filter(r => r.state === 'cancel' || r.state === 'return');
             stRefund = ref.reduce((s, r) => s + (r.cnt || 0), 0);
-            refundTotal = ref.reduce((s, r) => s + (Number(r.amt) || 0), 0);
+            refundTotal = hasFinancial ? monthFinancial.refund : ref.reduce((s, r) => s + (Number(r.refund_amount) || 0), 0);
         } else {
             const allO = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
             const inThisMonth = o => localYMD(o.order_date).startsWith(monthKey);
@@ -2152,7 +2164,7 @@ class BhasApp {
             stExchange = monthO.filter(o => st(o) === 'exchange').length;
             const refundO = monthO.filter(o => st(o) === 'cancel' || st(o) === 'return');
             stRefund = refundO.length;
-            refundTotal = refundO.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
+            refundTotal = refundO.reduce((s, o) => s + (Number(o.refund_amount) || 0), 0);
         }
 
         // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
@@ -2280,9 +2292,10 @@ class BhasApp {
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
             ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:0.9rem;margin-bottom:0.9rem">
-                ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#6366f1')}
-                ${kpiCard('주간 매출 (7일)', won(weekSales), '원', deltaBadge(weekDelta, 'vs 지난주'), '#3b82f6')}
-                ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
+                ${kpiCard('주문금액', won(hasFinancial ? monthFinancial.order : monthSales), '원', `${mm}월 주문 기준`, '#64748b')}
+                ${kpiCard('실결제금액', won(hasFinancial ? monthFinancial.paid : monthSales), '원', `${mm}월 결제 기준`, '#3b82f6')}
+                ${kpiCard('환불금액', won(hasFinancial ? monthFinancial.refund : 0), '원', `${mm}월 환불 기준`, '#a855f7')}
+                ${kpiCard(`${mm}월 순매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981')}
             </div>
             <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
@@ -3950,11 +3963,12 @@ class BhasApp {
             return acc;
         };
         try {
-            const [monthly, daily, channel, stateTotals] = await Promise.all([
+            const [monthly, daily, channel, stateTotals, financialDaily] = await Promise.all([
                 pageAll('sales_monthly'), pageAll('sales_daily'),
                 pageAll('sales_channel_monthly'), pageAll('order_state_totals'),
+                pageAll('dashboard_financial_daily'),
             ]);
-            this.salesAggData = { monthly, daily, channel, stateTotals };
+            this.salesAggData = { monthly, daily, channel, stateTotals, financialDaily };
         } catch (e) {
             this.salesAggData = null;   // 실패 시 _salesAgg가 클라이언트 집계로 폴백
         }

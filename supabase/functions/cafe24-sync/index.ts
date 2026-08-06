@@ -9,9 +9,51 @@
 //       POST <func-url> {restatus:false}       → 재동기화 건너뛰기
 //       POST <func-url> {mode:"restatus", restatus_from:"2025-01-01"}  → 재동기화만 전체기간
 import { admin, cafe24Fetch, cors, ensureToken, getActiveMalls, getMall, log, MallState, saveMall } from "../_shared/cafe24.ts";
-import { requireUser } from "../_shared/auth.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// Dashboard 개별 함수 배포는 _shared/auth.ts를 번들에 포함하지 못하는 경우가 있어
+// 동일한 인증 검증을 함수 내부에 둔다. anon key 자체는 사용자 세션이 아니므로 getUser로 확인한다.
+async function requireUser(req: Request, opts: { master?: boolean } = {}) {
+  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const deny = (error: string) => new Response(JSON.stringify({ ok: false, error }), {
+    status: 401, headers: cors({ "Content-Type": "application/json" }),
+  });
+  if (!token) return deny("인증 필요 — 로그인 후 이용하세요");
+  const anon = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { auth: { persistSession: false } });
+  const { data, error } = await anon.auth.getUser(token);
+  if (error || !data?.user) return deny("유효한 로그인 세션이 아닙니다");
+  if (opts.master) {
+    const service = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+    const username = (data.user.email || "").split("@")[0];
+    const { data: profile } = await service.from("companies").select("role").eq("username", username).maybeSingle();
+    if (profile?.role !== "MASTER") return deny("권한 없음 — 마스터 계정만 가능합니다");
+  }
+  return { id: data.user.id };
+}
 
 function ymd(d: Date) { return d.toISOString().slice(0, 10); }
+
+function money(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v === "string") {
+    const n = Number(v.replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+// 카페24 주문 응답의 금액을 원본과 함께 분리 보관한다.
+// 실제결제액이 없을 때만 주문금액을 폴백한다. 환불은 상태가 아니라 명시 금액 차이로만 계산한다.
+function financials(o: any, previous?: any) {
+  const orderAmount = money(o.payment_amount || o.order_amount || o.total_order_amount);
+  const actualPaid = money(o.actual_payment_amount || o.payment_amount || o.order_amount || o.total_order_amount);
+  const explicitRefund = money(o.refund_amount || o.cancel_amount || o.return_amount || o.refunded_amount);
+  const beforePaid = previous ? money(previous.actual_payment_amount || previous.payment_amount || previous.order_amount) : 0;
+  const inferredRefund = beforePaid > actualPaid ? beforePaid - actualPaid : 0;
+  const refundAmount = Math.max(explicitRefund, inferredRefund, 0);
+  const refundDate = o.refund_date || o.cancel_date || o.return_date || null;
+  return { orderAmount, actualPaid, refundAmount, refundDate };
+}
 
 // 주문 목록 페이지네이션 (기간 청킹 + 오프셋). statuses=null 이면 상태 필터 없이 전체 상태.
 async function fetchOrders(mallKey: string, mallId: string, token: string, start: Date, end: Date, statuses: string | null) {
@@ -74,11 +116,14 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
 
   // 기존 행 로드 (order_id 청크로 나눠 in())
   const ids = orders.map((o: any) => String(o.order_id));
-  const existing = new Map<string, { id: string; raw: any; channel_status: string | null }>();
+  const existing = new Map<string, { id: string; raw: any; channel_status: string | null; actual_paid_amount: number; refund_amount: number }>();
   for (let i = 0; i < ids.length; i += 200) {
-    const { data } = await db.from("channel_orders").select("id, order_id, raw, channel_status")
+    const { data } = await db.from("channel_orders").select("id, order_id, raw, channel_status, actual_paid_amount, refund_amount")
       .eq("mall_key", mall.mall_key).in("order_id", ids.slice(i, i + 200));
-    for (const r of (data || [])) existing.set(String(r.order_id), { id: r.id, raw: r.raw, channel_status: r.channel_status });
+    for (const r of (data || [])) existing.set(String(r.order_id), {
+      id: r.id, raw: r.raw, channel_status: r.channel_status,
+      actual_paid_amount: Number(r.actual_paid_amount || 0), refund_amount: Number(r.refund_amount || 0),
+    });
   }
 
   let updated = 0, missing = 0;
@@ -90,7 +135,9 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
     if (!cur) { missing++; if (missingIds.length < 50) missingIds.push(`${o.order_id}:${stateSig(o)}`); continue; }
     const before = stateSig(cur.raw || {});
     const after = stateSig(o);
-    if (before === after) continue;
+    const f = financials(o, cur.raw);
+    const financialChanged = f.actualPaid !== cur.actual_paid_amount || f.refundAmount > cur.refund_amount;
+    if (before === after && !financialChanged) continue;
 
     // 늦은 취소/반품/재활성화도 원장에 보상분을 남긴다.
     const oldUse = consumedByVariant(cur.raw || {});
@@ -113,6 +160,11 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
     const { error } = await db.from("channel_orders").update({
       raw: o,
       channel_status: o.order_status || cur.channel_status,
+      order_amount: f.orderAmount,
+      actual_paid_amount: f.actualPaid,
+      refund_amount: Math.max(Number(cur.refund_amount || 0), f.refundAmount),
+      refunded_at: f.refundAmount > 0 ? (f.refundDate || new Date().toISOString()) : null,
+      pay_amount: f.actualPaid || null,
       // 수취인 정보가 비어 있던 건만 보강(기존 값은 덮지 않음)
       ...(cur.raw?.receivers?.[0] ? {} : {
         receiver_name: r.name || null,
@@ -204,6 +256,7 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: Syn
     for (const o of orderList) {
       if (seenO.has(String(o.order_id))) continue;
       const r = (o.receivers && o.receivers[0]) || {};
+      const f = financials(o);
       const { data: inserted, error: oErr } = await db.from("channel_orders").insert([{
         channel: "cafe24", mall_key: mall.mall_key, order_id: String(o.order_id),
         order_date: o.order_date || o.payment_date || null,
@@ -211,7 +264,12 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: Syn
         receiver_name: r.name || null, receiver_phone: r.cellphone || r.phone || null,
         receiver_zipcode: r.zipcode || null,
         receiver_address: [r.address1, r.address2].filter(Boolean).join(" ") || r.address_full || null,
-        pay_amount: Number(o.payment_amount || o.actual_payment_amount || 0) || null,
+        // legacy pay_amount는 실결제액으로만 유지한다. 집계는 분리 컬럼을 사용.
+        pay_amount: f.actualPaid || null,
+        order_amount: f.orderAmount,
+        actual_paid_amount: f.actualPaid,
+        refund_amount: f.refundAmount,
+        refunded_at: f.refundAmount > 0 ? (f.refundDate || new Date().toISOString()) : null,
         channel_status: o.order_status || null, status: "new", raw: o,
       }]).select("id").single();
       if (oErr) { if (oErr.code === "23505") continue; throw new Error(`[${mall.mall_key}] 주문 저장: ` + oErr.message); }
