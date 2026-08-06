@@ -2253,11 +2253,16 @@ class BhasApp {
             ['배송전', stOrder, '#6366f1', '미출고'],
             ['배송중', stShip, '#06b6d4', ''],
             ['교환', stExchange, '#f59e0b', ''],
-            ['환불', stRefund, '#a855f7', refundTotal ? `환불총액 ${won(refundTotal)}원` : '']
-        ].map(([l, n, c, sub]) => `<div class="glass" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px">
-            <span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span>
-            <div style="min-width:0"><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${l}</div>${sub ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ''}</div>
-        </div>`).join('');
+            ['환불', stRefund, '#a855f7', refundTotal]
+        ].map(([l, n, c, sub]) => {
+            const isRefund = l === '환불';
+            return `<div class="glass" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px">
+                <span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span>
+                ${isRefund
+                    ? `<div style="min-width:0;display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%"><div><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">환불</div></div><div style="text-align:right;min-width:0"><div style="font-size:0.67rem;color:var(--text-muted);white-space:nowrap">환불총액</div><div style="font-size:0.9rem;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap">${sub ? `${won(sub)}원` : '—'}</div></div></div>`
+                    : `<div style="min-width:0"><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">${l}</div>${sub ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ''}</div>`}
+            </div>`;
+        }).join('');
         // 브랜드별 매출 합계 + 비율(%)
         const brandGrand = brandArr.reduce((s, [, v]) => s + v, 0) || 1;
         const brandTotals = brandArr.length ? brandArr.map(([b, v], i) => `<div style="display:flex;align-items:center;gap:7px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.82rem"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(b)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b><span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);min-width:34px;text-align:right;font-variant-numeric:tabular-nums">${Math.round(v / brandGrand * 100)}%</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">이번달 매출 없음</div>';
