@@ -357,8 +357,16 @@ async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: Syn
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
-  const auth = await requireUser(req, { master: true });
-  if (auth instanceof Response) return auth;
+  // pg_cron(서버-서버) 호출은 사용자 세션이 없다. 전용 시크릿 헤더로만 requireUser 우회.
+  //   - 헤더가 CRON_SECRET과 일치 → 통과 (스케줄 동기화용)
+  //   - 그 외 공개 호출은 계속 마스터 로그인 요구(401) → 7/30 보안 유지
+  const cronSecret = Deno.env.get("CRON_SECRET") || "";
+  const provided = (req.headers.get("x-cron-secret") || "").trim();
+  const isCron = cronSecret.length > 0 && provided.length === cronSecret.length && provided === cronSecret;
+  if (!isCron) {
+    const auth = await requireUser(req, { master: true });
+    if (auth instanceof Response) return auth;
+  }
   const db = admin();
   let body: SyncOpts & { mall?: string; mode?: string } = {};
   try { body = await req.json(); } catch { /* no body */ }
