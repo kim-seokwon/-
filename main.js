@@ -945,6 +945,7 @@ class BhasApp {
             { id: 'kanban', label: '보드', icon: '<i class="ph ph-kanban"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'calendar', label: '캘린더', icon: '<i class="ph ph-calendar-dots"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'table', label: '표', icon: '<i class="ph ph-table"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'sns', label: 'SNS', icon: '<i class="ph ph-instagram-logo"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'all_todos', label: '할일', icon: '<i class="ph ph-list-checks"></i>', group: 'work', visible: true },
             { id: 'documents', label: '문서', icon: '<i class="ph ph-folder-open"></i>', group: 'archive', visible: perms.includes('documents') },
             { id: 'user_management', label: '계정', icon: '<i class="ph ph-user-plus"></i>', group: 'admin', visible: perms.includes('user_management') },
@@ -3289,6 +3290,8 @@ class BhasApp {
             return this.renderQuotes();
         } else if (this.currentView === 'sales') {
             return this.renderSales();
+        } else if (this.currentView === 'sns') {
+            return this.renderSNS();
         }
     }
 
@@ -3831,6 +3834,139 @@ class BhasApp {
     }
 
     // ============================================================
+    //  SNS(인스타그램) 운영현황 — 팔로워 추이 · 주간 게시물 · 주간 스토리
+    //  ig_accounts(브랜드별 계정) × ig_snapshots(일/주 스냅샷).
+    //  수동 입력(source='manual')과 메타 자동수집(source='meta')을 같은 표로 본다.
+    //  posts_delta/stories_delta = 직전 기록 이후 올린 개수 → ISO주 합산 = 주간 지표.
+    // ============================================================
+    async loadIG() {
+        this._igLoading = true;
+        try {
+            const [accRes, snapRes] = await Promise.all([
+                this.supabase.from('ig_accounts').select('*'),
+                this.supabase.from('ig_snapshots').select('*').order('snap_date', { ascending: true }),
+            ]);
+            this.igAccounts = accRes.data || [];
+            this.igSnapshots = snapRes.data || [];
+            this._igLoaded = true;
+        } catch (e) { this.igAccounts = []; this.igSnapshots = []; this._igLoaded = true; }
+        this._igLoading = false;
+        this.requestRender();
+    }
+
+    // 스냅샷 날짜(YYYY-MM-DD)가 속한 주의 월요일 키
+    _igWeekKey(dateStr) {
+        const d = new Date(dateStr + 'T00:00:00');
+        const back = (d.getDay() + 6) % 7;   // 월=0
+        d.setDate(d.getDate() - back);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // 작은 선그래프(팔로워 추이)
+    _igSpark(points, color, w = 300, h = 66) {
+        if (!points.length) return `<div style="color:var(--text-muted);font-size:0.78rem;padding:14px 0">아직 기록이 없어요</div>`;
+        const ys = points.map(p => p.v);
+        const minY = Math.min(...ys), maxY = Math.max(...ys), spanY = Math.max(1, maxY - minY), n = points.length;
+        const px = i => (n === 1 ? w / 2 : (i / (n - 1)) * (w - 8) + 4);
+        const py = v => h - 6 - ((v - minY) / spanY) * (h - 16);
+        const d = points.map((p, i) => `${i ? 'L' : 'M'}${px(i).toFixed(1)},${py(p.v).toFixed(1)}`).join(' ');
+        return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="overflow:visible">
+            <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+            ${points.map((p, i) => `<circle cx="${px(i).toFixed(1)}" cy="${py(p.v).toFixed(1)}" r="2.2" fill="${color}"/>`).join('')}
+        </svg>`;
+    }
+
+    // 주간 막대(게시물/스토리)
+    _igBars(weeks, color) {
+        if (!weeks.length) return `<div style="color:var(--text-muted);font-size:0.76rem;padding:10px 0">기록 없음</div>`;
+        const max = Math.max(1, ...weeks.map(w => w.v));
+        return `<div style="display:flex;align-items:flex-end;gap:6px;height:74px">${weeks.map(w => `
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;justify-content:flex-end;height:100%">
+                <span style="font-size:0.66rem;font-weight:700;color:var(--text-main)">${w.v}</span>
+                <div style="width:100%;background:${color};border-radius:4px 4px 0 0;height:${Math.max(4, w.v / max * 46).toFixed(0)}px"></div>
+                <span style="font-size:0.6rem;color:var(--text-muted);white-space:nowrap">${w.label}</span>
+            </div>`).join('')}</div>`;
+    }
+
+    renderSNS() {
+        if (!this._igLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">SNS 데이터를 불러오는 중...</div>`;
+        const accounts = this.igAccounts || [];
+        const palette = ['#ec4899', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b'];
+        const esc = s => this._vesc ? this._vesc(s) : String(s ?? '');
+        const cards = accounts.map((a, idx) => {
+            const color = palette[idx % palette.length];
+            const snaps = (this.igSnapshots || []).filter(s => s.account_id === a.id).slice().sort((x, y) => (x.snap_date < y.snap_date ? -1 : 1));
+            const followerPts = snaps.filter(s => s.followers != null).map(s => ({ t: s.snap_date, v: Number(s.followers) }));
+            const cur = followerPts.length ? followerPts[followerPts.length - 1].v : null;
+            const first = followerPts.length ? followerPts[0].v : null;
+            const growth = (cur != null && first != null) ? cur - first : null;
+            const byWeek = {};
+            snaps.forEach(s => { const k = this._igWeekKey(s.snap_date); (byWeek[k] || (byWeek[k] = { posts: 0, stories: 0 })); byWeek[k].posts += Number(s.posts_delta || 0); byWeek[k].stories += Number(s.stories_delta || 0); });
+            const weekKeys = Object.keys(byWeek).sort().slice(-8);
+            const wlabel = k => { const [, m, d] = k.split('-'); return `${+m}/${+d}`; };
+            const postWeeks = weekKeys.map(k => ({ label: wlabel(k), v: byWeek[k].posts }));
+            const storyWeeks = weekKeys.map(k => ({ label: wlabel(k), v: byWeek[k].stories }));
+            const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
+            return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:1rem">
+                    <div>
+                        <div style="font-size:1.05rem;font-weight:800">${esc(this._brandNameById(a.brand_id))}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle}</div>
+                    </div>
+                    <div style="display:flex;gap:6px">
+                        <button onclick="app.igAddSnapshot('${a.id}')" class="btn-primary" style="font-size:0.74rem;padding:6px 11px;border-radius:8px"><i class="ph ph-plus"></i> 기록</button>
+                        <button onclick="app.igSetHandle('${a.id}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">계정</button>
+                    </div>
+                </div>
+                <div style="display:flex;gap:18px;margin-bottom:0.5rem;align-items:baseline">
+                    <div><span style="font-size:1.6rem;font-weight:900;color:${color}">${cur != null ? cur.toLocaleString() : '—'}</span><span style="font-size:0.76rem;color:var(--text-muted);margin-left:4px">팔로워</span></div>
+                    ${growth != null && growth !== 0 ? `<span style="font-size:0.82rem;font-weight:700;color:${growth >= 0 ? '#10b981' : '#ef4444'}">${growth >= 0 ? '▲' : '▼'} ${Math.abs(growth).toLocaleString()}</span>` : ''}
+                </div>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:2px">팔로워 추이</div>
+                ${this._igSpark(followerPts, color)}
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:0.9rem">
+                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 게시물</div>${this._igBars(postWeeks, '#8b5cf6')}</div>
+                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 스토리</div>${this._igBars(storyWeeks, '#f59e0b')}</div>
+                </div>
+            </div>`;
+        }).join('');
+        return `<div style="max-width:1100px;margin:0 auto">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;flex-wrap:wrap;gap:8px">
+                <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-instagram-logo"></i> SNS 운영현황</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별 팔로워 추이 · 주간 게시물/스토리</p></div>
+            </div>
+            ${accounts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.3rem">${cards}</div>` : `<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted)">등록된 인스타 계정이 없습니다.</div>`}
+            <p style="margin:1.1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* '기록' 버튼으로 이번 주 팔로워·게시물·스토리 수를 입력하세요. 메타 API 연결 시 자동수집으로 전환됩니다. (스토리는 24h 후 사라져 소급 불가 → 매주 기록 권장)</p>
+        </div>`;
+    }
+
+    igSetHandle(accountId) {
+        const a = (this.igAccounts || []).find(x => x.id === accountId); if (!a) return;
+        const v = window.prompt('인스타 핸들(@아이디)을 입력하세요', a.username || '');
+        if (v === null) return;
+        this.supabase.from('ig_accounts').update({ username: v.trim().replace(/^@/, '') || null, updated_at: new Date().toISOString() }).eq('id', accountId)
+            .then(({ error }) => { if (error) this.showToast('저장 실패: ' + error.message); else { this._igLoaded = false; this.loadIG(); } });
+    }
+
+    igAddSnapshot(accountId) {
+        const ymd = new Date().toISOString().slice(0, 10);
+        const dateStr = window.prompt('기록 날짜 (YYYY-MM-DD)', ymd); if (dateStr === null) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) { this.showToast('날짜 형식은 YYYY-MM-DD 예: ' + ymd); return; }
+        const f = window.prompt('현재 팔로워 수', ''); if (f === null) return;
+        const p = window.prompt('직전 기록 이후 올린 게시물 수', '0'); if (p === null) return;
+        const s = window.prompt('직전 기록 이후 올린 스토리 수', '0'); if (s === null) return;
+        const row = {
+            account_id: accountId,
+            snap_date: dateStr.trim(),
+            followers: f.trim() === '' ? null : (parseInt(f, 10) || 0),
+            posts_delta: parseInt(p, 10) || 0,
+            stories_delta: parseInt(s, 10) || 0,
+            source: 'manual',
+        };
+        this.supabase.from('ig_snapshots').upsert(row, { onConflict: 'account_id,snap_date' })
+            .then(({ error }) => { if (error) this.showToast('저장 실패: ' + error.message); else { this._igLoaded = false; this.loadIG(); this.showToast('기록됨'); } });
+    }
+
+    // ============================================================
     //  공용: 뷰 진입 시 데이터 lazy-load 디스패처
     // ============================================================
     ensureViewData() {
@@ -3850,6 +3986,7 @@ class BhasApp {
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
         if (v === 'vendors' && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+        if (v === 'sns' && !this._igLoaded && !this._igLoading) this.loadIG();
         if (v === 'quotes' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         if (v === 'home') {
             if (!this._ordersLoaded && !this._ordersLoading) this.loadOrders();
