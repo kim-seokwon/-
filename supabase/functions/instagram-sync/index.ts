@@ -1,0 +1,84 @@
+// 인스타그램 일일 수집기
+//  META_IG_TOKEN(장기 사용자 토큰)으로 me/accounts의 connected_instagram_account를 훑어,
+//  username이 ig_accounts와 매칭되는 계정의 followers_count / media_count를 ig_snapshots에 스냅샷 저장.
+//  posts_delta = 오늘 media_count - 직전 스냅샷 media_count (음수면 0).
+//  호출: pg_cron이 x-cron-secret 헤더로 매일 1회. (cafe24-sync와 동일 패턴)
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const GRAPH = "https://graph.facebook.com/v20.0";
+
+function cors(h: HeadersInit = {}) {
+  return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret", "Content-Type": "application/json", ...h };
+}
+function admin() {
+  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+}
+const norm = (u: string) => String(u || "").trim().toLowerCase().replace(/^@/, "");
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
+
+  // pg_cron 전용: x-cron-secret 일치해야 실행. (공개 호출 차단)
+  const cronSecret = Deno.env.get("CRON_SECRET") || "";
+  const provided = (req.headers.get("x-cron-secret") || "").trim();
+  if (!cronSecret || provided.length !== cronSecret.length || provided !== cronSecret) {
+    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401, headers: cors() });
+  }
+
+  const token = Deno.env.get("META_IG_TOKEN") || "";
+  if (!token) {
+    return new Response(JSON.stringify({ ok: false, error: "META_IG_TOKEN 미설정 — 시크릿에 장기 토큰을 넣으세요" }), { status: 200, headers: cors() });
+  }
+
+  const db = admin();
+  const today = new Date().toISOString().slice(0, 10);
+  const log = (result: string, detail: unknown) => db.from("sync_log").insert([{ channel: "instagram", type: "ig:sync", result, detail }]);
+
+  try {
+    // 1) 등록된 인스타 계정(username→account_id) 로드
+    const { data: accs } = await db.from("ig_accounts").select("id, username, brand_id");
+    const byUser = new Map<string, string>();
+    (accs || []).forEach((a: { id: string; username: string | null }) => { if (a.username) byUser.set(norm(a.username), a.id); });
+
+    // 2) 연결된 IG 계정 전수 조회 (페이지네이션)
+    const igList: { username: string; followers: number; media: number; ig_id: string }[] = [];
+    let url = `${GRAPH}/me/accounts?fields=connected_instagram_account{username,followers_count,media_count},instagram_business_account{username,followers_count,media_count}&limit=100&access_token=${encodeURIComponent(token)}`;
+    for (let guard = 0; guard < 10 && url; guard++) {
+      const r = await fetch(url);
+      const j = await r.json();
+      if (j.error) throw new Error(`graph: ${j.error.message}`);
+      for (const p of (j.data || [])) {
+        const ig = p.connected_instagram_account || p.instagram_business_account;
+        if (ig?.username) igList.push({ username: ig.username, followers: Number(ig.followers_count || 0), media: Number(ig.media_count || 0), ig_id: ig.id });
+      }
+      url = j.paging?.next || "";
+    }
+
+    // 3) 매칭되는 계정만 스냅샷 upsert
+    const results: unknown[] = [];
+    for (const ig of igList) {
+      const accId = byUser.get(norm(ig.username));
+      if (!accId) continue;
+      // 직전 스냅샷 media_count (오늘 이전) → posts_delta 계산
+      const { data: prev } = await db.from("ig_snapshots")
+        .select("media_count").eq("account_id", accId).lt("snap_date", today)
+        .order("snap_date", { ascending: false }).limit(1).maybeSingle();
+      const prevMedia = prev?.media_count ?? null;
+      const postsDelta = (prevMedia != null && ig.media >= prevMedia) ? ig.media - prevMedia : 0;
+      const { error } = await db.from("ig_snapshots").upsert({
+        account_id: accId, snap_date: today, followers: ig.followers, media_count: ig.media,
+        posts_delta: postsDelta, source: "meta",
+      }, { onConflict: "account_id,snap_date" });
+      if (error) throw error;
+      // ig_business_id 기록(비어있으면)
+      await db.from("ig_accounts").update({ ig_business_id: ig.ig_id }).eq("id", accId).is("ig_business_id", null);
+      results.push({ username: ig.username, followers: ig.followers, media: ig.media, posts_delta: postsDelta });
+    }
+
+    await log("ok", { collected: results.length, seen: igList.length });
+    return new Response(JSON.stringify({ ok: true, collected: results.length, results }), { headers: cors() });
+  } catch (e) {
+    await log("error", { error: String(e) });
+    return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 200, headers: cors() });
+  }
+});
