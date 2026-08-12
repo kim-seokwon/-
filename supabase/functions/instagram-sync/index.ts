@@ -50,13 +50,27 @@ Deno.serve(async (req) => {
     const byUser = new Map<string, string>();
     (accs || []).forEach((a: { id: string; username: string | null }) => { if (a.username) byUser.set(norm(a.username), a.id); });
 
-    // 2) 브랜드 페이지 ID별로 연결된 IG 조회.
-    //    시스템 사용자 토큰은 me/accounts가 비어 있어 페이지 ID로 직접 읽는다.
-    //    페이지 ID는 sync 대상 브랜드 페이지(회사 비즈니스 소유).
-    const PAGE_IDS = ["554876437711515", "1117433434778653", "501070843094162", "444009348805535"];
+    // 2) 브랜드 페이지별 연결된 IG 조회.
+    //    ⚠️ 사용자 토큰으로 페이지를 직접 읽으면 갓 연결된 IG(connected_instagram_account)가
+    //       안 보이는 경우가 있다(하이헤이호는 보이는데 로하이는 None). 그래서
+    //       me/accounts로 각 페이지의 "페이지 토큰"을 받아, 페이지 토큰으로 연결 IG를 읽는다.
+    //       (페이지 토큰이면 connected_instagram_account가 안정적으로 조회됨)
+    const PAGE_IDS = ["554876437711515", "1117433434778653", "501070843094162", "444009348805535", "938551242683997"];
+    const pageTok = new Map<string, string>();
+    try {
+      let url: string | null = `${GRAPH}/me/accounts?fields=id,access_token&limit=100&access_token=${encodeURIComponent(token)}`;
+      while (url) {
+        const aj = await (await fetch(url)).json();
+        if (aj.error) { await log("warn", { step: "me/accounts", error: aj.error.message }); break; }
+        (aj.data || []).forEach((p: { id: string; access_token?: string }) => { if (p.access_token) pageTok.set(p.id, p.access_token); });
+        url = aj.paging?.next || null;
+      }
+    } catch (e) { await log("warn", { step: "me/accounts", error: String(e) }); }
+
     const igList: { username: string; followers: number; media: number; ig_id: string }[] = [];
     for (const pid of PAGE_IDS) {
-      const r = await fetch(`${GRAPH}/${pid}?fields=connected_instagram_account{id,username,followers_count,media_count},instagram_business_account{id,username,followers_count,media_count}&access_token=${encodeURIComponent(token)}`);
+      const pt = pageTok.get(pid) || token; // 페이지 토큰 우선, 없으면 사용자 토큰 폴백
+      const r = await fetch(`${GRAPH}/${pid}?fields=connected_instagram_account{id,username,followers_count,media_count},instagram_business_account{id,username,followers_count,media_count}&access_token=${encodeURIComponent(pt)}`);
       const p = await r.json();
       if (p.error) { await log("warn", { page: pid, error: p.error.message }); continue; }
       const ig = p.connected_instagram_account || p.instagram_business_account;
