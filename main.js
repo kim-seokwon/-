@@ -3989,21 +3989,30 @@ class BhasApp {
             const snaps = (this.igSnapshots || []).filter(s => s.account_id === a.id).slice().sort((x, y) => (x.snap_date < y.snap_date ? -1 : 1));
             const fpts = snaps.filter(s => s.followers != null).map(s => ({ t: s.snap_date, v: Number(s.followers) }));
             const cur = fpts.length ? fpts[fpts.length - 1].v : null;
-            const prev = fpts.length > 1 ? fpts[fpts.length - 2].v : null;
-            const delta = (cur != null && prev != null) ? cur - prev : null;
-            const weekPosts = snaps.filter(s => this._igWeekKey(s.snap_date) === todayWk).reduce((n, s) => n + Number(s.posts_delta || 0), 0);
+            // 이번주 팔로워 순증감 = 이번주 마지막 팔로워값 - 지난주 마지막값
+            const weekFol = {}; snaps.forEach(s => { if (s.followers != null) weekFol[this._igWeekKey(s.snap_date)] = Number(s.followers); });
+            const folWks = Object.keys(weekFol).sort();
+            const wi = folWks.indexOf(todayWk);
+            const wkFol = wi > 0 ? weekFol[todayWk] - weekFol[folWks[wi - 1]] : null;
+            const thisWkSnaps = snaps.filter(s => this._igWeekKey(s.snap_date) === todayWk);
+            const wkPosts = thisWkSnaps.reduce((n, s) => n + Number(s.posts_delta || 0), 0);
+            const wkStories = thisWkSnaps.reduce((n, s) => n + Number(s.stories_delta || 0), 0);
+            const folTxt = wkFol == null ? '—' : (wkFol > 0 ? '+' : '') + wkFol.toLocaleString();
+            const folCol = wkFol == null ? 'var(--text-muted)' : wkFol > 0 ? '#10b981' : wkFol < 0 ? '#ef4444' : 'var(--text-main)';
             return `<div class="glass" style="padding:0.9rem 1rem;border-radius:14px;cursor:pointer" onclick="app.switchView('sns')">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
                     <span style="font-size:0.85rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(this._brandNameById(a.brand_id))}</span>
-                    <span style="font-size:0.64rem;color:var(--text-muted)">${a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : ''}</span>
+                    <span style="font-size:0.62rem;color:var(--text-muted)">팔로워 ${cur != null ? cur.toLocaleString() : '—'}</span>
                 </div>
-                <div style="display:flex;align-items:baseline;gap:6px;margin:5px 0 3px">
-                    <span style="font-size:1.3rem;font-weight:900;color:${color}">${cur != null ? cur.toLocaleString() : '—'}</span>
-                    <span style="font-size:0.64rem;color:var(--text-muted)">팔로워</span>
-                    ${delta != null && delta !== 0 ? `<span style="font-size:0.68rem;font-weight:700;color:${delta >= 0 ? '#10b981' : '#ef4444'}">${delta >= 0 ? '▲' : '▼'}${Math.abs(delta).toLocaleString()}</span>` : ''}
+                <div style="display:flex;align-items:baseline;gap:6px;margin:5px 0 4px">
+                    <span style="font-size:1.35rem;font-weight:900;color:${folCol}">${folTxt}</span>
+                    <span style="font-size:0.64rem;color:var(--text-muted)">이번주 팔로워</span>
                 </div>
-                ${this._igSpark(fpts, color, 220, 34)}
-                <div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">이번주 게시물 <b style="color:var(--text-main)">${weekPosts}</b></div>
+                <div style="display:flex;gap:10px;font-size:0.66rem;color:var(--text-muted)">
+                    <span>게시물 <b style="color:var(--text-main)">${wkPosts}</b></span>
+                    <span>스토리 <b style="color:var(--text-main)">${wkStories}</b></span>
+                </div>
+                ${this._igSpark(fpts, color, 220, 30)}
             </div>`;
         }).join('');
         return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem">${cards}</div>`;
