@@ -1997,8 +1997,33 @@ class BhasApp {
         return { orders, cancelledOrders, events, months, monthIdx, brands, monthTotals, grand, thisM, prevM, mom, consultingFromQuote: !anyIssued, hasSales: orders.length > 0, fromServer: false };
     }
 
+    // 홈 대시보드 클릭 팝오버 — 카드/박스/행을 누르면 간략 세부를 말풍선으로.
+    //  각 요소는 onclick="app._pop(event,'KEY')"; 내용은 renderHome에서 this._homePops에 미리 채운다.
+    _pop(evt, key) {
+        try { evt.stopPropagation(); } catch (_e) {}
+        const data = (this._homePops || {})[key];
+        if (!data) return;
+        document.getElementById('_hpop')?.remove();
+        const el = document.createElement('div');
+        el.id = '_hpop';
+        el.className = 'glass';
+        el.style.cssText = 'position:fixed;z-index:99999;max-width:300px;min-width:210px;padding:13px 15px;border-radius:13px;box-shadow:0 10px 40px rgba(0,0,0,0.28);border:1px solid var(--card-border)';
+        el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px"><span style="font-weight:800;font-size:0.9rem">${data.title}</span><span id="_hpopx" style="cursor:pointer;color:var(--text-muted);font-size:1.1rem;line-height:1">×</span></div><div style="font-size:0.8rem">${data.rows}</div>${data.link ? `<div style="margin-top:9px;text-align:right"><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="${data.link.action}">${data.link.label} →</span></div>` : ''}`;
+        document.body.appendChild(el);
+        const px = (typeof evt.clientX === 'number' ? evt.clientX : window.innerWidth / 2);
+        const py = (typeof evt.clientY === 'number' ? evt.clientY : window.innerHeight / 2);
+        const w = el.offsetWidth, h = el.offsetHeight;
+        el.style.left = Math.max(12, Math.min(px - w / 2, window.innerWidth - w - 12)) + 'px';
+        el.style.top = Math.max(12, Math.min(py + 14, window.innerHeight - h - 12)) + 'px';
+        const close = (e) => { if (!el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); } };
+        const esc = (e) => { if (e.key === 'Escape') { el.remove(); document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); } };
+        el.querySelector('#_hpopx').onclick = () => { el.remove(); document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+        setTimeout(() => { document.addEventListener('mousedown', close); document.addEventListener('keydown', esc); }, 0);
+    }
+
     renderHome(products) {
         products = products || mockData.products || [];
+        this._homePops = {};   // 클릭 팝오버 내용 레지스트리(요소별 KEY→{title,rows,link})
         const name = this.currentUser?.name || '';
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const dday = d => { if (!d) return null; const dt = new Date(d); dt.setHours(0, 0, 0, 0); return Math.round((dt - today) / 86400000); };
@@ -2169,9 +2194,19 @@ class BhasApp {
         }
 
         // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
-        const recentCompact = (this.orders || []).slice(0, 40).map(o => {
+        const stateLabel = { pre: '배송전', shipping: '배송중', done: '배송완료', cancel: '취소', return: '반품', exchange: '교환' };
+        const recentCompact = (this.orders || []).slice(0, 40).map((o, _oi) => {
             const ch = channelOf(o), br = brandOf(o) || '-', bcol = brandColor[br] || CHCOL[ch] || '#6366f1', ccol = CHCOL[ch] || '#6366f1';
-            return `<div style="padding:7px 0 7px 10px;border-top:1px solid var(--card-border);border-left:3px solid ${bcol};margin-left:1px">
+            const stt = this._orderState(o);
+            this._homePops['ord_' + _oi] = { title: this._vesc(br) + ' · 주문', rows:
+                `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">채널</span><b>${ch}</b></div>` +
+                `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">주문일</span><b>${o.order_date ? localYMD(o.order_date) : '-'}</b></div>` +
+                `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">고객</span><b>${this._vesc(o.receiver_name || o.buyer_name || '-')}</b></div>` +
+                `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">결제</span><b>${won(o.pay_amount || 0)}원</b></div>` +
+                `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">상태</span><b>${stateLabel[stt] || stt || '-'}</b></div>` +
+                `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--card-border);color:var(--text-muted)">${this._vesc(this._orderItemsSummary(o))}</div>`,
+                link: { label: '주문 전체', action: "app.switchView('orders')" } };
+            return `<div onclick="app._pop(event,'ord_${_oi}')" style="padding:7px 0 7px 10px;border-top:1px solid var(--card-border);border-left:3px solid ${bcol};margin-left:1px;cursor:pointer">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px">
                     <span style="font-size:0.77rem;font-weight:700;color:${bcol};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(br)}</span>
                     ${chip(ch, ccol)}
@@ -2241,8 +2276,8 @@ class BhasApp {
         const mdMax = Math.max(1, ...monthDaily);
         const spark = (vals, color) => { const w = 130, h = 36; if (!vals.some(v => v > 0)) return `<svg width="${w}" height="${h}" style="width:100%;max-width:${w}px"></svg>`; const max = Math.max(...vals, 1), n = vals.length; const X = i => (n <= 1 ? w : i / (n - 1) * w); const Y = v => h - 4 - (v / max) * (h - 9); const line = vals.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(''); const gid = 'sg' + color.replace('#', ''); return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;width:100%;max-width:${w}px"><defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${line}L${w},${h}L0,${h}Z" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`; };
         const deltaBadge = (pct, ref) => pct == null ? `<span style="font-size:0.68rem;color:var(--text-muted)">${ref} 기준 없음</span>` : `<span style="font-size:0.68rem;font-weight:700;color:${pct >= 0 ? '#16a34a' : '#dc2626'};background:${pct >= 0 ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.12)'};padding:2px 7px;border-radius:6px;white-space:nowrap">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% ${ref}</span>`;
-        const kpiCard = (label, big, unit, badge, color) => `<div class="glass" style="padding:1rem 1.15rem;border-radius:16px">
-            <div style="font-size:0.76rem;color:var(--text-muted);font-weight:600">${label}</div>
+        const kpiCard = (label, big, unit, badge, color, popKey) => `<div class="glass" style="padding:1rem 1.15rem;border-radius:16px${popKey ? ';cursor:pointer' : ''}"${popKey ? ` onclick="app._pop(event,'${popKey}')"` : ''}>
+            <div style="font-size:0.76rem;color:var(--text-muted);font-weight:600">${label}${popKey ? ' <i class="ph ph-info" style="font-size:0.7rem;opacity:0.5"></i>' : ''}</div>
             <div style="font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.15;margin-top:4px;white-space:nowrap">${big}<span style="font-size:0.72rem;font-weight:600">${unit}</span></div>
             <div style="margin-top:6px">${badge}</div>
         </div>`;
@@ -2255,7 +2290,7 @@ class BhasApp {
         monthRev.forEach(o => { let c = channelOf(o); if (!CHAN_FIXED.includes(c)) c = '기타'; const b = brandOf(o) || '기타'; chanBrand[c][b] = (chanBrand[c][b] || 0) + Number(o.pay_amount || 0); });
         const chanTot = c => Object.values(chanBrand[c]).reduce((s, v) => s + v, 0);
         const chanMaxT = Math.max(1, ...CHAN_FIXED.map(chanTot));
-        const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div style="margin-bottom:0.55rem">
+        const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div onclick="app._pop(event,'ch_${c}')" style="margin-bottom:0.55rem;cursor:pointer">
             <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${c}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(total) + '원' : '—'}</span></div>
             <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${on ? Math.max(3, total / chanMaxT * 100) : 0}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
         </div>`; }).join('');
@@ -2263,13 +2298,13 @@ class BhasApp {
         const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
         // 주문상태 3개 개별 블록
         const statBlocks = [
-            ['배송전', stOrder, '#6366f1', '미출고'],
-            ['배송중', stShip, '#06b6d4', ''],
-            ['교환', stExchange, '#f59e0b', ''],
-            ['환불', stRefund, '#a855f7', refundTotal]
-        ].map(([l, n, c, sub]) => {
+            ['배송전', stOrder, '#6366f1', '미출고', 'st_pre'],
+            ['배송중', stShip, '#06b6d4', '', 'st_ship'],
+            ['교환', stExchange, '#f59e0b', '', 'st_exchange'],
+            ['환불', stRefund, '#a855f7', refundTotal, 'st_refund']
+        ].map(([l, n, c, sub, pk]) => {
             const isRefund = l === '환불';
-            return `<div class="glass" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px">
+            return `<div class="glass" onclick="app._pop(event,'${pk}')" style="padding:0.95rem 1.1rem;border-radius:16px;display:flex;align-items:center;gap:11px;cursor:pointer">
                 <span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span>
                 ${isRefund
                     ? `<div style="min-width:0;display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%"><div><div style="font-size:1.5rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">${n.toLocaleString()}<span style="font-size:0.72rem;font-weight:600">건</span></div><div style="font-size:0.76rem;color:var(--text-muted);margin-top:3px">환불</div></div><div style="text-align:right;min-width:0"><div style="font-size:0.67rem;color:var(--text-muted);white-space:nowrap">환불총액</div><div style="font-size:0.9rem;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap">${sub ? `${won(sub)}원` : '—'}</div></div></div>`
@@ -2278,10 +2313,37 @@ class BhasApp {
         }).join('');
         // 브랜드별 매출 합계 + 비율(%)
         const brandGrand = brandArr.reduce((s, [, v]) => s + v, 0) || 1;
-        const brandTotals = brandArr.length ? brandArr.map(([b, v], i) => `<div style="display:flex;align-items:center;gap:7px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.82rem"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(b)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b><span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);min-width:34px;text-align:right;font-variant-numeric:tabular-nums">${Math.round(v / brandGrand * 100)}%</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">이번달 매출 없음</div>';
+        const brandTotals = brandArr.length ? brandArr.map(([b, v], i) => `<div onclick="app._pop(event,'br_${this._vesc(b)}')" style="display:flex;align-items:center;gap:7px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.82rem;cursor:pointer"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(b)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b><span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);min-width:34px;text-align:right;font-variant-numeric:tabular-nums">${Math.round(v / brandGrand * 100)}%</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">이번달 매출 없음</div>';
         const brandPanel = panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;justify-content:center;margin-bottom:0.4rem">${donut(brandArr, palette)}</div>${brandTotals}`);
         // 최근주문 — 전체폭 그리드(2줄 카드)
         const recentGrid = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 1.4rem">${recentCompact}</div>`;
+
+        // ── 클릭 팝오버 내용 구성(KPI·채널·브랜드·상태) ──
+        const rowsOf = (arr) => arr.map(([l, v]) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">${l}</span><b style="font-variant-numeric:tabular-nums">${v}</b></div>`).join('');
+        const acup = won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0);
+        const salesLink = { label: '매출 상세', action: "app.switchView('sales')" };
+        const ordersLink = { label: '주문에서 보기', action: "app.switchView('orders')" };
+        this._homePops.k_today = { title: '오늘 매출', rows: rowsOf([['오늘', won(todaySales) + '원'], ['어제', won(ydaySales) + '원'], ['이번주(7일)', won(weekSales) + '원'], [`${mm}월 누적`, won(monthSales) + '원']]) + (todayDelta != null ? `<div style="margin-top:7px;font-size:0.76rem;font-weight:700;color:${todayDelta >= 0 ? '#16a34a' : '#dc2626'}">어제 대비 ${todayDelta >= 0 ? '▲' : '▼'} ${Math.abs(todayDelta)}%</div>` : ''), link: salesLink };
+        this._homePops.k_order = { title: '주문금액', rows: rowsOf([[`${mm}월 주문금액`, won(hasFinancial ? monthFinancial.order : monthSales) + '원'], ['오늘 주문금액', won(todayFinancial.order) + '원'], [`${mm}월 주문건수`, monthOrdersCnt.toLocaleString() + '건']]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">결제 전 주문 접수 금액 기준</div>' };
+        this._homePops.k_paid = { title: '실결제금액', rows: rowsOf([[`${mm}월 실결제`, won(hasFinancial ? monthFinancial.paid : monthSales) + '원'], ['오늘 실결제', won(todayFinancial.paid) + '원']]) };
+        this._homePops.k_refund = { title: '환불금액', rows: rowsOf([[`${mm}월 환불`, won(hasFinancial ? monthFinancial.refund : refundTotal) + '원'], ['환불 건수', stRefund.toLocaleString() + '건']]), link: ordersLink };
+        this._homePops.k_net = { title: `${mm}월 순매출`, rows: rowsOf([['순매출', won(monthSales) + '원'], ['전월 대비', sa.mom != null ? `${sa.mom >= 0 ? '▲' : '▼'} ${Math.abs(sa.mom)}%` : '기준 없음'], ['객단가', acup + '원'], ['주문건수', monthOrdersCnt.toLocaleString() + '건']]), link: salesLink };
+        this._homePops.k_cnt = { title: `${mm}월 주문건수`, rows: rowsOf([['주문건수', monthOrdersCnt.toLocaleString() + '건'], ['객단가', acup + '원'], ['순매출', won(monthSales) + '원']]) };
+        CHAN_FIXED.forEach(c => {
+            const total = chanTot(c);
+            const brs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]);
+            this._homePops['ch_' + c] = { title: `${c} · ${mm}월`, rows: (total > 0 ? rowsOf([['채널 매출', won(total) + '원'], ...brs.map(([b, v]) => [this._vesc(b), `${won(v)}원 · ${Math.round(v / total * 100)}%`])]) : '<div style="color:var(--text-muted)">이번달 매출 없음</div>'), link: salesLink };
+        });
+        brandArr.forEach(([b, v]) => {
+            const chOfBrand = {};
+            monthRev.forEach(o => { if ((brandOf(o) || o.channel) === b) { let c = channelOf(o); if (!CHAN_FIXED.includes(c)) c = '기타'; chOfBrand[c] = (chOfBrand[c] || 0) + Number(o.pay_amount || 0); } });
+            const chs = Object.entries(chOfBrand).sort((a, b2) => b2[1] - a[1]);
+            this._homePops['br_' + this._vesc(b)] = { title: `${this._vesc(b)} · ${mm}월`, rows: rowsOf([['브랜드 매출', won(v) + '원'], ['전체 비중', Math.round(v / brandGrand * 100) + '%'], ...chs.map(([c, cv]) => [c, won(cv) + '원'])]), link: salesLink };
+        });
+        this._homePops.st_pre = { title: '배송전 (미출고)', rows: rowsOf([['건수', stOrder.toLocaleString() + '건']]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.74rem">아직 출고 전인 주문 · 송장 발번 대상</div>', link: ordersLink };
+        this._homePops.st_ship = { title: '배송중', rows: rowsOf([['건수', stShip.toLocaleString() + '건']]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.74rem">송장 등록 후 배송 진행 중</div>', link: ordersLink };
+        this._homePops.st_exchange = { title: `교환 · ${mm}월`, rows: rowsOf([['건수', stExchange.toLocaleString() + '건']]), link: ordersLink };
+        this._homePops.st_refund = { title: `환불 · ${mm}월`, rows: rowsOf([['건수', stRefund.toLocaleString() + '건'], ['환불총액', won(refundTotal) + '원']]), link: ordersLink };
 
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
@@ -2293,11 +2355,12 @@ class BhasApp {
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
             ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:0.9rem;margin-bottom:0.9rem">
-                ${kpiCard('주문금액', won(hasFinancial ? monthFinancial.order : monthSales), '원', `${mm}월 주문 기준`, '#64748b')}
-                ${kpiCard('실결제금액', won(hasFinancial ? monthFinancial.paid : monthSales), '원', `${mm}월 결제 기준`, '#3b82f6')}
-                ${kpiCard('환불금액', won(hasFinancial ? monthFinancial.refund : 0), '원', `${mm}월 환불 기준`, '#a855f7')}
-                ${kpiCard(`${mm}월 순매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6')}
-                ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981')}
+                ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'k_today')}
+                ${kpiCard('주문금액', won(hasFinancial ? monthFinancial.order : monthSales), '원', `${mm}월 주문 기준`, '#64748b', 'k_order')}
+                ${kpiCard('실결제금액', won(hasFinancial ? monthFinancial.paid : monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'k_paid')}
+                ${kpiCard('환불금액', won(hasFinancial ? monthFinancial.refund : 0), '원', `${mm}월 환불 기준`, '#a855f7', 'k_refund')}
+                ${kpiCard(`${mm}월 순매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'k_net')}
+                ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'k_cnt')}
             </div>
             <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:start">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
@@ -3999,7 +4062,17 @@ class BhasApp {
             const wkStories = thisWkSnaps.reduce((n, s) => n + Number(s.stories_delta || 0), 0);
             const folTxt = wkFol == null ? '—' : (wkFol > 0 ? '+' : '') + wkFol.toLocaleString();
             const folCol = wkFol == null ? 'var(--text-muted)' : wkFol > 0 ? '#10b981' : wkFol < 0 ? '#ef4444' : 'var(--text-main)';
-            return `<div class="glass" style="padding:0.9rem 1rem;border-radius:14px;cursor:pointer" onclick="app.switchView('sns')">
+            const snsKey = 'sns_' + idx;
+            const bname = esc(this._brandNameById(a.brand_id));
+            const rowP = (l, v) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">${l}</span><b style="font-variant-numeric:tabular-nums">${v}</b></div>`;
+            (this._homePops = this._homePops || {})[snsKey] = { title: bname + ' · 인스타', rows:
+                rowP('핸들', a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '미설정') +
+                rowP('팔로워', cur != null ? cur.toLocaleString() : '—') +
+                rowP('이번주 순증감', folTxt) +
+                rowP('이번주 게시물', wkPosts) +
+                rowP('이번주 스토리', wkStories),
+                link: { label: 'SNS 탭', action: "app.switchView('sns')" } };
+            return `<div class="glass" style="padding:0.9rem 1rem;border-radius:14px;cursor:pointer" onclick="app._pop(event,'${snsKey}')">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
                     <span style="font-size:0.85rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(this._brandNameById(a.brand_id))}</span>
                     <span style="font-size:0.62rem;color:var(--text-muted)">팔로워 ${cur != null ? cur.toLocaleString() : '—'}</span>
