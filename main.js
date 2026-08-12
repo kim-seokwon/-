@@ -3903,28 +3903,34 @@ class BhasApp {
             const followerPts = snaps.filter(s => s.followers != null).map(s => ({ t: s.snap_date, v: Number(s.followers) }));
             const cur = followerPts.length ? followerPts[followerPts.length - 1].v : null;
             const first = followerPts.length ? followerPts[0].v : null;
-            const growth = (cur != null && first != null) ? cur - first : null;
             const byWeek = {};
             snaps.forEach(s => { const k = this._igWeekKey(s.snap_date); (byWeek[k] || (byWeek[k] = { posts: 0, stories: 0 })); byWeek[k].posts += Number(s.posts_delta || 0); byWeek[k].stories += Number(s.stories_delta || 0); });
-            const weekKeys = Object.keys(byWeek).sort().slice(-8);
             const wlabel = k => { const [, m, d] = k.split('-'); return `${+m}/${+d}`; };
+            const weekKeys = Object.keys(byWeek).sort().slice(-8);
             const postWeeks = weekKeys.map(k => ({ label: wlabel(k), v: byWeek[k].posts }));
             const storyWeeks = weekKeys.map(k => ({ label: wlabel(k), v: byWeek[k].stories }));
+            // 주별 팔로워 순증감 = 그 주 마지막 팔로워값 - 직전 주 마지막값
+            const weekFol = {}; snaps.forEach(s => { if (s.followers != null) weekFol[this._igWeekKey(s.snap_date)] = Number(s.followers); });
+            const folAll = Object.keys(weekFol).sort();
+            const folDeltaOf = k => { const i = folAll.indexOf(k); return i > 0 ? weekFol[k] - weekFol[folAll[i - 1]] : null; };
+            const thisWk = this._igWeekKey(new Date().toISOString().slice(0, 10));
+            const wkFol = folDeltaOf(thisWk), wkPosts = byWeek[thisWk] ? byWeek[thisWk].posts : 0, wkStories = byWeek[thisWk] ? byWeek[thisWk].stories : 0;
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
+            const wkTile = (label, v, signed) => { const has = v != null; const col = !has ? 'var(--text-muted)' : signed ? (v > 0 ? '#10b981' : v < 0 ? '#ef4444' : 'var(--text-main)') : 'var(--text-main)'; const txt = !has ? '—' : (signed && v > 0 ? '+' : '') + v.toLocaleString(); return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;color:${col};line-height:1.05">${txt}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
             return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:1rem">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:0.9rem">
                     <div>
                         <div style="font-size:1.05rem;font-weight:800">${esc(this._brandNameById(a.brand_id))}</div>
-                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle} · 팔로워 <b style="color:${color}">${cur != null ? cur.toLocaleString() : '—'}</b></div>
                     </div>
                     <div style="display:flex;gap:6px">
                         <button onclick="app.igAddSnapshot('${a.id}')" class="btn-primary" style="font-size:0.74rem;padding:6px 11px;border-radius:8px"><i class="ph ph-plus"></i> 기록</button>
                         <button onclick="app.igSetHandle('${a.id}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">계정</button>
                     </div>
                 </div>
-                <div style="display:flex;gap:18px;margin-bottom:0.5rem;align-items:baseline">
-                    <div><span style="font-size:1.6rem;font-weight:900;color:${color}">${cur != null ? cur.toLocaleString() : '—'}</span><span style="font-size:0.76rem;color:var(--text-muted);margin-left:4px">팔로워</span></div>
-                    ${growth != null && growth !== 0 ? `<span style="font-size:0.82rem;font-weight:700;color:${growth >= 0 ? '#10b981' : '#ef4444'}">${growth >= 0 ? '▲' : '▼'} ${Math.abs(growth).toLocaleString()}</span>` : ''}
+                <div style="font-size:0.68rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">이번주 증감</div>
+                <div style="display:flex;gap:8px;margin-bottom:0.9rem">
+                    ${wkTile('팔로워 순증감', wkFol, true)}${wkTile('게시물', wkPosts, false)}${wkTile('스토리', wkStories, false)}
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:2px">팔로워 추이</div>
                 ${this._igSpark(followerPts, color)}
