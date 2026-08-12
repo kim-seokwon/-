@@ -2321,6 +2321,10 @@ class BhasApp {
                 ${panel(`${mm}월 생산 캘린더`, calendar,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('calendar')">캘린더 →</span>`)}
             </div>
+
+            <!-- ═══ 블록 3: SNS ═══ -->
+            ${sectionHead('ph-instagram-logo', 'SNS 현황', `브랜드별 팔로워·게시물 · <span style="color:var(--primary);cursor:pointer" onclick="app.switchView('sns')">SNS 탭 →</span>`)}
+            ${this._igHomeSummary()}
         </div>`;
     }
 
@@ -3966,6 +3970,39 @@ class BhasApp {
             .then(({ error }) => { if (error) this.showToast('저장 실패: ' + error.message); else { this._igLoaded = false; this.loadIG(); this.showToast('기록됨'); } });
     }
 
+    // 홈 대시보드용 컴팩트 인스타 요약 (브랜드별 팔로워 + 미니 추이 + 이번주 게시물)
+    _igHomeSummary() {
+        if (!this._igLoaded) return `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.6rem 0.2rem">SNS 불러오는 중...</div>`;
+        const accounts = this.igAccounts || [];
+        if (!accounts.length) return `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.6rem 0.2rem">등록된 인스타 계정이 없습니다.</div>`;
+        const palette = ['#ec4899', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b'];
+        const esc = s => this._vesc ? this._vesc(s) : String(s ?? '');
+        const todayWk = this._igWeekKey(new Date().toISOString().slice(0, 10));
+        const cards = accounts.map((a, idx) => {
+            const color = palette[idx % palette.length];
+            const snaps = (this.igSnapshots || []).filter(s => s.account_id === a.id).slice().sort((x, y) => (x.snap_date < y.snap_date ? -1 : 1));
+            const fpts = snaps.filter(s => s.followers != null).map(s => ({ t: s.snap_date, v: Number(s.followers) }));
+            const cur = fpts.length ? fpts[fpts.length - 1].v : null;
+            const prev = fpts.length > 1 ? fpts[fpts.length - 2].v : null;
+            const delta = (cur != null && prev != null) ? cur - prev : null;
+            const weekPosts = snaps.filter(s => this._igWeekKey(s.snap_date) === todayWk).reduce((n, s) => n + Number(s.posts_delta || 0), 0);
+            return `<div class="glass" style="padding:0.9rem 1rem;border-radius:14px;cursor:pointer" onclick="app.switchView('sns')">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
+                    <span style="font-size:0.85rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(this._brandNameById(a.brand_id))}</span>
+                    <span style="font-size:0.64rem;color:var(--text-muted)">${a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : ''}</span>
+                </div>
+                <div style="display:flex;align-items:baseline;gap:6px;margin:5px 0 3px">
+                    <span style="font-size:1.3rem;font-weight:900;color:${color}">${cur != null ? cur.toLocaleString() : '—'}</span>
+                    <span style="font-size:0.64rem;color:var(--text-muted)">팔로워</span>
+                    ${delta != null && delta !== 0 ? `<span style="font-size:0.68rem;font-weight:700;color:${delta >= 0 ? '#10b981' : '#ef4444'}">${delta >= 0 ? '▲' : '▼'}${Math.abs(delta).toLocaleString()}</span>` : ''}
+                </div>
+                ${this._igSpark(fpts, color, 220, 34)}
+                <div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">이번주 게시물 <b style="color:var(--text-main)">${weekPosts}</b></div>
+            </div>`;
+        }).join('');
+        return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem">${cards}</div>`;
+    }
+
     // ============================================================
     //  공용: 뷰 진입 시 데이터 lazy-load 디스패처
     // ============================================================
@@ -3993,6 +4030,7 @@ class BhasApp {
             if (!this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
             if (!this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
             if (!this._mallsLoaded && !this._mallsLoading) this.loadMalls();
+            if (!this._igLoaded && !this._igLoading) this.loadIG();
         }
     }
 
