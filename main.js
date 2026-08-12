@@ -2021,6 +2021,23 @@ class BhasApp {
         setTimeout(() => { document.addEventListener('mousedown', close); document.addEventListener('keydown', esc); }, 0);
     }
 
+    // 채널 "수집 실태" 팩트 판정 — malls.connected(인증 플래그)가 아니라
+    //  실제 최근 주문일 / last_order_synced_at(수집기 heartbeat) 중 더 최근 신호로 판정.
+    //  반환: { color, label, sub } · 없으면 null.
+    _channelStatus(mall) {
+        if (!mall) return null;
+        const synced = mall.last_order_synced_at ? new Date(mall.last_order_synced_at).getTime() : 0;
+        let lastOrder = 0;
+        (this.orders || []).forEach(o => { if (o.mall_key === mall.mall_key && o.order_date) { const d = new Date(o.order_date).getTime(); if (d > lastOrder) lastOrder = d; } });
+        const ref = Math.max(synced, lastOrder);
+        if (!ref) return { color: '#ef4444', label: '수집 없음', sub: '수집 이력 없음' };
+        const ms = Date.now() - ref, hours = Math.floor(ms / 3600000), days = Math.floor(ms / 86400000);
+        const ago = hours < 1 ? '방금' : hours < 24 ? `${hours}시간 전` : `${days}일 전`;
+        if (hours <= 26) return { color: '#22c55e', label: '수집중', sub: ago };
+        if (days <= 7) return { color: '#f59e0b', label: '지연', sub: `${days}일째 없음` };
+        return { color: '#ef4444', label: '중단', sub: `${days}일 전 마지막` };
+    }
+
     renderHome(products) {
         products = products || mockData.products || [];
         this._homePops = {};   // 클릭 팝오버 내용 레지스트리(요소별 KEY→{title,rows,link})
@@ -3714,26 +3731,29 @@ class BhasApp {
             // 브랜드 상세(또는 브랜드 접근제한)는 그 브랜드 슬라이스에서 계산해야 정확
             orders.forEach(o => { if (!inCur(o.order_date)) return; const c = platformKey(o); chanSum[c] = (chanSum[c] || 0) + (Number(o.pay_amount) || 0); chanCnt[c] = (chanCnt[c] || 0) + 1; });
         }
-        // 연동된 채널 집합 (이번 달 매출 0이어도 '연동됨' 표시)
-        const connectedSet = new Set();
+        // 채널 → 몰 매핑 + 실제 수집 실태(팩트) 판정. connected 정적 플래그 대신 최근 주문/동기화로.
+        const chanMalls = { cafe24: [], kidikidi: [], '29cm': [], musinsa: [], smartstore: [] };
         (this.malls || []).forEach(m => {
-            if (!m.connected) return;
             const ch = (m.channel || 'cafe24'), mk = (m.mall_key || '').toLowerCase();
-            if (ch === 'cafe24') connectedSet.add('cafe24');
-            else if (['kidikidi', 'musinsa', '29cm', 'smartstore'].includes(mk)) connectedSet.add(mk);
-            else if (ch === 'eland') connectedSet.add('kidikidi');
-            else if (ch === 'naver') connectedSet.add('smartstore');
+            if (ch === 'cafe24') chanMalls.cafe24.push(m);
+            else if (mk === 'kidikidi' || ch === 'eland') chanMalls.kidikidi.push(m);
+            else if (mk === '29cm') chanMalls['29cm'].push(m);
+            else if (mk === 'musinsa') chanMalls.musinsa.push(m);
+            else if (mk === 'smartstore' || ch === 'naver') chanMalls.smartstore.push(m);
         });
+        const _rank = { '수집중': 3, '지연': 2, '중단': 1, '수집 없음': 0 };
+        const chanStatusOf = (key) => { const ms = chanMalls[key] || []; if (!ms.length) return null; let best = null; ms.forEach(m => { const s = this._channelStatus(m); if (s && (!best || (_rank[s.label] || 0) > (_rank[best.label] || 0))) best = s; }); return best; };
+        const connectedSet = new Set(Object.keys(chanMalls).filter(k => chanMalls[k].length));
         const chanCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
             <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-broadcast" style="color:var(--primary)"></i> ${shortLabel} 채널별 매출</div>
             <div style="display:flex;flex-direction:column;gap:0.75rem">
-            ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const cnt = chanCnt[ch.key] || 0; const on = amt > 0 || cnt > 0; const conn = connectedSet.has(ch.key); const active = on || conn; return `<div style="display:flex;align-items:center;gap:10px">
+            ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const cnt = chanCnt[ch.key] || 0; const on = amt > 0 || cnt > 0; const st = chanStatusOf(ch.key); const conn = connectedSet.has(ch.key); const active = on || (st && st.color === '#22c55e'); const stBadge = st ? `<span style="font-size:0.64rem;font-weight:700;color:${st.color}">● ${st.label}</span> <span style="font-size:0.6rem;color:var(--text-muted)">${st.sub}</span>` : '<span style="font-size:0.66rem;background:rgba(148,163,184,0.15);padding:1px 6px;border-radius:6px">연동 예정</span>'; return `<div style="display:flex;align-items:center;gap:10px">
                 <span style="width:9px;height:9px;border-radius:3px;background:${active ? ch.color : 'rgba(148,163,184,0.4)'};flex-shrink:0"></span>
-                <span style="font-size:0.84rem;font-weight:${active ? '600' : '400'};color:${active ? 'var(--text-main)' : 'var(--text-muted)'};flex:1">${ch.label}${on ? ` <span style="font-size:0.68rem;color:var(--text-muted);font-weight:500">${cnt}건</span>` : (conn ? ' <span style="font-size:0.66rem;background:rgba(34,197,94,0.15);color:#22c55e;padding:1px 6px;border-radius:6px">연동됨</span>' : ' <span style="font-size:0.66rem;background:rgba(148,163,184,0.15);padding:1px 6px;border-radius:6px">연동 예정</span>')}</span>
+                <span style="font-size:0.84rem;font-weight:${active ? '600' : '400'};color:${active ? 'var(--text-main)' : 'var(--text-muted)'};flex:1">${ch.label} ${on ? `<span style="font-size:0.68rem;color:var(--text-muted);font-weight:500">${cnt}건</span> ` : ''}${stBadge}</span>
                 <span style="font-size:0.84rem;font-weight:${on ? '800' : '400'};font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(amt) + '원' : '—'}</span>
             </div>`; }).join('')}
             </div>
-            <p style="margin:0.9rem 0 0;font-size:0.72rem;color:var(--text-muted)">이번 달 기준 · 연동된 채널은 매출 0이어도 '연동됨' 표시</p>
+            <p style="margin:0.9rem 0 0;font-size:0.72rem;color:var(--text-muted)">이번 달 기준 · 배지는 실제 수집 실태(최근 주문·동기화)로 판정 — 수집중/지연/중단</p>
         </div>`;
 
         // 주문 처리 현황 (이번 달)
@@ -4115,6 +4135,7 @@ class BhasApp {
             if (r) this._loadSalesScope(this.salesViewBrand, r.from, r.to);
         }
         if (v === 'integrations' && !this._bsLoaded && !this._bsLoading) this.loadBrandSettings();
+        if (v === 'integrations' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();  // 채널 수집 실태 팩트 판정용
         if (v === 'orders' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'inventory' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'inventory' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
@@ -6316,19 +6337,31 @@ class BhasApp {
             chKey === 'cafe24' ? (m.channel || 'cafe24') === 'cafe24'
                 : (m.mall_key === chKey || (chKey === 'kidikidi' && m.channel === 'eland'))
         ));
+        // 채널별 실제 연동에 필요한 준비물 — 미연동 셀에 '필요: ...'로 표기.
+        const chReq = {
+            cafe24: ['몰 아이디', '앱 Client ID', 'Client Secret', 'OAuth 인증'],
+            musinsa: ['파트너 계정', '비밀번호', 'OTP 수신 Gmail'],
+            '29cm': ['29Connect 계정', '비밀번호', 'OTP 수신 Gmail'],
+            kidikidi: ['파트너 계정', '비밀번호', 'OTP 설정키'],
+            smartstore: ['커머스API Client ID', 'Client Secret'],
+        };
+        const reqHint = (chKey) => { const r = chReq[chKey]; return r ? `<div style="font-size:0.6rem;color:var(--text-muted);margin-top:5px;line-height:1.35;max-width:128px">필요: ${r.join(' · ')}</div>` : ''; };
+        // 팩트 배지: malls.connected(인증 플래그) 대신 실제 수집 실태(수집중/지연/중단)
+        const factBadge = (mall) => { const s = this._channelStatus(mall); return s ? `<span style="font-size:0.72rem;font-weight:700;color:${s.color}">● ${s.label}</span><div style="font-size:0.58rem;color:var(--text-muted);margin-top:1px">${s.sub}</div>` : `<span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span>`;
+        };
         const cell = (brand, ch) => {
             const mall = mallFor(brand, ch.key);
             if (ch.key === 'cafe24') {
-                if (mall && mall.connected) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span><button class="integ-auth" data-key="${mall.mall_key}" style="font-size:0.7rem;padding:3px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">재인증</button></div>`;
-                if (mall) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 미인증</span><button class="integ-auth btn-primary" data-key="${mall.mall_key}" style="font-size:0.7rem;padding:3px 10px;border-radius:7px">인증</button></div>`;
-                return `<button class="integ-channel-connect" data-brand="${brand.id}" data-channel="cafe24" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
+                if (mall && mall.connected) return `<div style="display:inline-flex;flex-direction:column;gap:3px;align-items:center">${factBadge(mall)}<button class="integ-auth" data-key="${mall.mall_key}" style="font-size:0.68rem;padding:2px 8px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer;margin-top:3px">재인증</button></div>`;
+                if (mall) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#f59e0b">○ 미인증</span><button class="integ-auth btn-primary" data-key="${mall.mall_key}" style="font-size:0.7rem;padding:3px 10px;border-radius:7px">인증</button>${reqHint('cafe24')}</div>`;
+                return `<div style="display:inline-flex;flex-direction:column;align-items:center"><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="cafe24" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>${reqHint('cafe24')}</div>`;
             }
             const connection = (this.channelConnections || []).find(x => x.brand_id === brand.id && x.channel === ch.key);
-            if (mall?.connected || connection?.status === 'connected') return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.68rem;border:0;background:transparent;color:var(--text-muted);cursor:pointer">설정</button></div>`;
+            if (mall?.connected || connection?.status === 'connected') return `<div style="display:inline-flex;flex-direction:column;gap:3px;align-items:center">${factBadge(mall)}<button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.66rem;border:0;background:transparent;color:var(--text-muted);cursor:pointer;margin-top:2px">설정</button></div>`;
             const pending = connection?.status === 'credentials_saved' || connection?.status === 'auth_required';
             const failed = connection?.status === 'error';
-            if (pending || failed) return `<div style="display:inline-flex;flex-direction:column;gap:5px;align-items:center"><span style="font-size:0.7rem;font-weight:700;color:${failed ? '#ef4444' : '#f59e0b'}">${failed ? '● 오류' : '○ 인증 필요'}</span><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.7rem;padding:4px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--primary);cursor:pointer">다시 연동</button></div>`;
-            return `<button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(59,130,246,0.45);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>`;
+            if (pending || failed) return `<div style="display:inline-flex;flex-direction:column;gap:4px;align-items:center"><span style="font-size:0.7rem;font-weight:700;color:${failed ? '#ef4444' : '#f59e0b'}">${failed ? '● 오류' : '○ 인증 필요'}</span><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.7rem;padding:4px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--primary);cursor:pointer">다시 연동</button>${reqHint(ch.key)}</div>`;
+            return `<div style="display:inline-flex;flex-direction:column;align-items:center"><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(59,130,246,0.45);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>${reqHint(ch.key)}</div>`;
         };
         const rows = brands.length ? brands.map(b => `<tr style="border-bottom:1px solid var(--card-border)">
             <td style="padding:14px 10px;font-weight:600">${this._vesc(b.name)}</td>
