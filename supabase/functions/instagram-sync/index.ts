@@ -25,14 +25,24 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401, headers: cors() });
   }
 
-  const token = Deno.env.get("META_IG_TOKEN") || "";
-  if (!token) {
-    return new Response(JSON.stringify({ ok: false, error: "META_IG_TOKEN 미설정 — 시크릿에 장기 토큰을 넣으세요" }), { status: 200, headers: cors() });
-  }
-
   const db = admin();
   const today = new Date().toISOString().slice(0, 10);
   const log = (result: string, detail: unknown) => db.from("sync_log").insert([{ channel: "instagram", type: "ig:sync", result, detail }]);
+
+  // 토큰: ig_token 테이블(자동갱신본) 우선, 없으면 시크릿 META_IG_TOKEN.
+  const { data: trow } = await db.from("ig_token").select("token").eq("id", 1).maybeSingle();
+  let token = trow?.token || Deno.env.get("META_IG_TOKEN") || "";
+  if (!token) {
+    return new Response(JSON.stringify({ ok: false, error: "META_IG_TOKEN 미설정" }), { status: 200, headers: cors() });
+  }
+  // 매 실행마다 장기 토큰 재교환 → 60일 만료 방지(자동 연장). 실패해도 기존 토큰으로 진행.
+  try {
+    const appId = Deno.env.get("META_APP_ID"), secret = Deno.env.get("META_APP_SECRET");
+    if (appId && secret) {
+      const rj = await (await fetch(`${GRAPH}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${secret}&fb_exchange_token=${encodeURIComponent(token)}`)).json();
+      if (rj.access_token) { token = rj.access_token; await db.from("ig_token").upsert({ id: 1, token, updated_at: new Date().toISOString() }); }
+    }
+  } catch (_e) { /* keep existing token */ }
 
   try {
     // 1) 등록된 인스타 계정(username→account_id) 로드
@@ -40,18 +50,17 @@ Deno.serve(async (req) => {
     const byUser = new Map<string, string>();
     (accs || []).forEach((a: { id: string; username: string | null }) => { if (a.username) byUser.set(norm(a.username), a.id); });
 
-    // 2) 연결된 IG 계정 전수 조회 (페이지네이션)
+    // 2) 브랜드 페이지 ID별로 연결된 IG 조회.
+    //    시스템 사용자 토큰은 me/accounts가 비어 있어 페이지 ID로 직접 읽는다.
+    //    페이지 ID는 sync 대상 브랜드 페이지(회사 비즈니스 소유).
+    const PAGE_IDS = ["554876437711515", "1117433434778653", "501070843094162", "444009348805535"];
     const igList: { username: string; followers: number; media: number; ig_id: string }[] = [];
-    let url = `${GRAPH}/me/accounts?fields=connected_instagram_account{username,followers_count,media_count},instagram_business_account{username,followers_count,media_count}&limit=100&access_token=${encodeURIComponent(token)}`;
-    for (let guard = 0; guard < 10 && url; guard++) {
-      const r = await fetch(url);
-      const j = await r.json();
-      if (j.error) throw new Error(`graph: ${j.error.message}`);
-      for (const p of (j.data || [])) {
-        const ig = p.connected_instagram_account || p.instagram_business_account;
-        if (ig?.username) igList.push({ username: ig.username, followers: Number(ig.followers_count || 0), media: Number(ig.media_count || 0), ig_id: ig.id });
-      }
-      url = j.paging?.next || "";
+    for (const pid of PAGE_IDS) {
+      const r = await fetch(`${GRAPH}/${pid}?fields=connected_instagram_account{id,username,followers_count,media_count},instagram_business_account{id,username,followers_count,media_count}&access_token=${encodeURIComponent(token)}`);
+      const p = await r.json();
+      if (p.error) { await log("warn", { page: pid, error: p.error.message }); continue; }
+      const ig = p.connected_instagram_account || p.instagram_business_account;
+      if (ig?.username) igList.push({ username: ig.username, followers: Number(ig.followers_count || 0), media: Number(ig.media_count || 0), ig_id: ig.id });
     }
 
     // 3) 매칭되는 계정만 스냅샷 upsert
