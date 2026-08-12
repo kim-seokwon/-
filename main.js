@@ -2340,10 +2340,20 @@ class BhasApp {
             const chs = Object.entries(chOfBrand).sort((a, b2) => b2[1] - a[1]);
             this._homePops['br_' + this._vesc(b)] = { title: `${this._vesc(b)} · ${mm}월`, rows: rowsOf([['브랜드 매출', won(v) + '원'], ['전체 비중', Math.round(v / brandGrand * 100) + '%'], ...chs.map(([c, cv]) => [c, won(cv) + '원'])]), link: salesLink };
         });
-        this._homePops.st_pre = { title: '배송전 (미출고)', rows: rowsOf([['건수', stOrder.toLocaleString() + '건']]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.74rem">아직 출고 전인 주문 · 송장 발번 대상</div>', link: ordersLink };
-        this._homePops.st_ship = { title: '배송중', rows: rowsOf([['건수', stShip.toLocaleString() + '건']]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.74rem">송장 등록 후 배송 진행 중</div>', link: ordersLink };
-        this._homePops.st_exchange = { title: `교환 · ${mm}월`, rows: rowsOf([['건수', stExchange.toLocaleString() + '건']]), link: ordersLink };
-        this._homePops.st_refund = { title: `환불 · ${mm}월`, rows: rowsOf([['건수', stRefund.toLocaleString() + '건'], ['환불총액', won(refundTotal) + '원']]), link: ordersLink };
+        // 상태 팝업은 건수뿐 아니라 실제 주문 목록(브랜드·품목·고객·금액)을 보여준다.
+        const statOrders = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
+        const oLine = (o) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-top:1px solid var(--card-border);font-size:0.78rem"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(brandOf(o) || '-')} · ${this._vesc(this._orderItemsSummary(o))}${(o.receiver_name || o.buyer_name) ? ` <span style="color:var(--text-muted)">${this._vesc(o.receiver_name || o.buyer_name)}</span>` : ''}</span><b style="white-space:nowrap">${won(o.pay_amount || 0)}원</b></div>`;
+        const listPop = (title, cnt, pred, note, max = 12) => {
+            const arr = statOrders.filter(pred);
+            const shown = arr.slice(0, max).map(oLine).join('');
+            const more = arr.length > max ? `<div style="padding:4px 0;color:var(--text-muted);font-size:0.74rem">외 ${arr.length - max}건</div>` : '';
+            const miss = (arr.length < cnt) ? `<div style="color:var(--text-muted);padding:4px 0;font-size:0.73rem">표시 ${arr.length}건 / 전체 ${cnt}건 · 나머지는 주문 페이지에서</div>` : '';
+            return { title, rows: rowsOf([['건수', cnt.toLocaleString() + '건']]) + (note ? `<div style="margin:4px 0 2px;color:var(--text-muted);font-size:0.73rem">${note}</div>` : '') + shown + more + miss, link: ordersLink };
+        };
+        this._homePops.st_pre = listPop('배송전 (미출고)', stOrder, o => this._orderState(o) === 'pre', '아직 출고 전 · 송장 발번 대상');
+        this._homePops.st_ship = listPop('배송중', stShip, o => this._orderState(o) === 'shipping', '송장 등록 후 배송 진행 중');
+        this._homePops.st_exchange = listPop(`교환 · ${mm}월`, stExchange, o => this._orderState(o) === 'exchange' && localYMD(o.order_date).startsWith(monthKey), '');
+        this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => { const s = this._orderState(o); return (s === 'cancel' || s === 'return') && localYMD(o.order_date).startsWith(monthKey); }, `환불총액 ${won(refundTotal)}원`);
 
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
