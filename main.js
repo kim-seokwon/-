@@ -4016,6 +4016,9 @@ class BhasApp {
             // 댓글·좋아요는 누적 합계(comments_total/likes_total)를 팔로워처럼 "그 주 마지막값 − 직전 주 마지막값"으로 증감 계산
             const wkEndVal = (field) => { const m = {}; snaps.forEach(s => { if (s[field] != null) m[this._igWeekKey(s.snap_date)] = Number(s[field]); }); const ks = Object.keys(m).sort(); const i = ks.indexOf(thisWk); return i > 0 ? m[thisWk] - m[ks[i - 1]] : null; };
             const wkComments = wkEndVal('comments_total'), wkLikes = wkEndVal('likes_total');
+            // 현재 누적 댓글·좋아요(가장 최근 스냅샷) — 주간 증감이 쌓이기 전에도 값이 보이도록
+            const lastSnap = snaps.length ? snaps[snaps.length - 1] : {};
+            const curComments = lastSnap.comments_total, curLikes = lastSnap.likes_total;
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
             const wkTile = (label, v, signed) => { const has = v != null; const col = !has ? 'var(--text-muted)' : signed ? (v > 0 ? '#10b981' : v < 0 ? '#ef4444' : 'var(--text-main)') : 'var(--text-main)'; const txt = !has ? '—' : (signed && v > 0 ? '+' : '') + v.toLocaleString(); return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;color:${col};line-height:1.05">${txt}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
             return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
@@ -4037,16 +4040,21 @@ class BhasApp {
                 ${this._igSpark(followerPts, color)}
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:0.9rem">
                     <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 게시물</div>${this._igBars(postWeeks, '#8b5cf6')}</div>
-                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 스토리</div>${this._igBars(storyWeeks, '#f59e0b')}</div>
+                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px">누적 반응 <span style="font-size:0.62rem">(최근 게시물 50개)</span></div>
+                        <div style="display:flex;gap:8px">
+                            <div style="flex:1;text-align:center;padding:11px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.15rem;font-weight:800;line-height:1.05">${curComments != null ? curComments.toLocaleString() : '—'}</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:3px">댓글</div></div>
+                            <div style="flex:1;text-align:center;padding:11px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.15rem;font-weight:800;line-height:1.05">${curLikes != null ? curLikes.toLocaleString() : '—'}</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:3px">좋아요</div></div>
+                        </div>
+                    </div>
                 </div>
             </div>`;
         }).join('');
         return `<div style="max-width:1100px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;flex-wrap:wrap;gap:8px">
-                <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-instagram-logo"></i> SNS 운영현황</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별 팔로워 추이 · 주간 게시물/스토리</p></div>
+                <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-instagram-logo"></i> SNS 운영현황</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별 팔로워 추이 · 주간 게시물 · 댓글/좋아요</p></div>
             </div>
             ${accounts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.3rem">${cards}</div>` : `<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted)">등록된 인스타 계정이 없습니다.</div>`}
-            <p style="margin:1.1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* '기록' 버튼으로 이번 주 팔로워·게시물·스토리 수를 입력하세요. 메타 API 연결 시 자동수집으로 전환됩니다. (스토리는 24h 후 사라져 소급 불가 → 매주 기록 권장)</p>
+            <p style="margin:1.1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 팔로워·게시물·댓글·좋아요는 메타 API로 매일 자동수집됩니다. 주간 증감은 2주치가 쌓이면 표시돼요. (스토리는 API로 소급 불가라 보류)</p>
         </div>`;
     }
 
