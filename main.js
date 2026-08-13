@@ -985,7 +985,7 @@ class BhasApp {
         const dashboardHtml = `
             <div class="dashboard fade-in">
                 <div class="mobile-top-bar">
-                    <div class="top-bar-logo">2179</div>
+                    <div class="top-bar-logo" onclick="app.switchView('home')" style="cursor:pointer" title="홈으로">2179</div>
                     <div class="top-bar-actions">
                         <div class="noti-trigger" id="mobile-search-btn" title="검색">
                             <i class="ph ph-magnifying-glass"></i>
@@ -1002,14 +1002,10 @@ class BhasApp {
                 </div>
                 <nav class="glass sidebar${this.navSidebarCollapsed ? ' nav-collapsed' : ''}">
                     <div class="nav-logo" style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-                        <span>2179</span>
+                        <span onclick="app.switchView('home')" title="홈으로" style="cursor:pointer" class="${this.currentView === 'home' ? 'logo-home-active' : ''}">2179</span>
                         <button id="sidebar-collapse-btn" title="사이드바 접기/펼치기" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.25rem;padding:0;line-height:1;flex-shrink:0"><i class="ph ph-sidebar-simple"></i></button>
                     </div>
                     <ul class="nav-links">
-                        <li class="${this.currentView === 'home' ? 'active' : ''}" data-view="home" style="padding:10px 13px;margin-bottom:8px;border-radius:12px;border:1px solid var(--card-border)">
-                            <div style="display:flex;align-items:center;gap:9px;font-size:0.9rem"><i class="ph ph-house-line" style="color:var(--primary)"></i> <span style="font-weight:800">홈 대시보드</span></div>
-                        </li>
-                        <li aria-hidden="true" style="height:1px;background:var(--card-border);margin:0 4px 10px;list-style:none;pointer-events:none"></li>
                         ${navGroups.map(g => {
                             const items = menuItems.filter(i => i.group === g.id && i.visible);
                             if (!items.length) return '';

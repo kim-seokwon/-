@@ -2189,6 +2189,9 @@ body.light .stepper-section h2 { color: var(--text-main); }
 body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-color: rgba(0, 0, 0, 0.1); }
 .sidebar-expand-fab:hover { background: rgba(99, 102, 241, 0.16); }
 @media screen and (max-width: 768px) { .sidebar-expand-fab { display: none !important; } }
+/* 로고 = 홈 버튼 (클릭 시 홈으로) */
+.nav-logo span[title="홈으로"], .top-bar-logo[title="홈으로"] { transition: opacity 0.15s ease; }
+.nav-logo span[title="홈으로"]:hover, .top-bar-logo[title="홈으로"]:hover { opacity: 0.62; }
 
 /* ============================================================
    모바일(≤768px) — 폰에서 실제로 쓸 수 있게
