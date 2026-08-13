@@ -2386,7 +2386,7 @@ class BhasApp {
 
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
             ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:0.9rem;margin-bottom:0.9rem">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.7rem;margin-bottom:0.9rem">
                 ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'k_today')}
                 ${kpiCard('주문금액', won(hasFinancial ? monthFinancial.order : monthSales), '원', `${mm}월 주문 기준`, '#64748b', 'k_order')}
                 ${kpiCard('실결제금액', won(hasFinancial ? monthFinancial.paid : monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'k_paid')}
