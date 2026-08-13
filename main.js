@@ -1006,9 +1006,10 @@ class BhasApp {
                         <button id="sidebar-collapse-btn" title="사이드바 접기/펼치기" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.25rem;padding:0;line-height:1;flex-shrink:0"><i class="ph ph-sidebar-simple"></i></button>
                     </div>
                     <ul class="nav-links">
-                        <li class="${this.currentView === 'home' ? 'active' : ''}" data-view="home" style="padding:8px 14px;margin-bottom:6px;border-radius:12px">
-                            <div style="display:flex;align-items:center;gap:8px;font-size:0.95rem"><i class="ph ph-house-line"></i> <span style="font-size:0.88rem;font-weight:700">홈</span></div>
+                        <li class="${this.currentView === 'home' ? 'active' : ''}" data-view="home" style="padding:10px 13px;margin-bottom:8px;border-radius:12px;border:1px solid var(--card-border)">
+                            <div style="display:flex;align-items:center;gap:9px;font-size:0.9rem"><i class="ph ph-house-line" style="color:var(--primary)"></i> <span style="font-weight:800">홈 대시보드</span></div>
                         </li>
+                        <li aria-hidden="true" style="height:1px;background:var(--card-border);margin:0 4px 10px;list-style:none;pointer-events:none"></li>
                         ${navGroups.map(g => {
                             const items = menuItems.filter(i => i.group === g.id && i.visible);
                             if (!items.length) return '';
@@ -1097,6 +1098,7 @@ class BhasApp {
                     <button id="logout-btn" class="tt-logout" title="로그아웃"><i class="ph ph-power"></i></button>
                 </div>
 
+                ${this.navSidebarCollapsed ? `<button id="sidebar-expand-btn" class="sidebar-expand-fab" title="사이드바 펼치기"><i class="ph ph-sidebar-simple"></i></button>` : ''}
                 <main class="main-content">
                     <header class="content-header mobile-responsive-header">
                         ${this.currentView === 'detail' ? (() => {
@@ -6857,6 +6859,8 @@ class BhasApp {
         this.bindGlobalSearch();
         const collapseBtn = document.getElementById('sidebar-collapse-btn');
         if (collapseBtn) collapseBtn.onclick = () => { this.navSidebarCollapsed = !this.navSidebarCollapsed; this.requestRender(); };
+        const expandBtn = document.getElementById('sidebar-expand-btn');
+        if (expandBtn) expandBtn.onclick = () => { this.navSidebarCollapsed = false; this.requestRender(); };
         // 사이드바 내비게이션 (onclick으로 중복 방지)
         this.appContainer.querySelectorAll('.nav-links li[data-view]').forEach(li => {
             li.onclick = () => {

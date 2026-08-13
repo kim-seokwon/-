@@ -2165,24 +2165,30 @@ body.light .content-header h1,
 body.light .notepad-card h3,
 body.light .stepper-section h2 { color: var(--text-main); }
 
-/* ===== 사이드바 접기 (아이콘만) ===== */
-.sidebar { transition: width 0.2s ease, padding 0.2s ease; }
-.sidebar.nav-collapsed { width: 74px !important; padding: 1.5rem 0.5rem !important; overflow: hidden; }
-.sidebar.nav-collapsed .nav-user .user-info,
-.sidebar.nav-collapsed .nav-search span,
-.sidebar.nav-collapsed .nav-search kbd,
-.sidebar.nav-collapsed .nav-links li span,
-.sidebar.nav-collapsed #logout-btn span,
-.sidebar.nav-collapsed .nav-logo span,
-.sidebar.nav-collapsed #theme-toggle,
-.sidebar.nav-collapsed .nav-group-header { display: none !important; }
-.sidebar.nav-collapsed .nav-logo { justify-content: center !important; }
-.sidebar.nav-collapsed .nav-user { justify-content: center; }
-.sidebar.nav-collapsed .nav-search { justify-content: center; padding: 10px 0; }
-.sidebar.nav-collapsed .nav-links li { padding: 10px 0 !important; justify-content: center; }
-.sidebar.nav-collapsed .nav-links li > div { justify-content: center; }
-.sidebar.nav-collapsed .nav-bottom { flex-direction: column; gap: 12px; padding: 12px 0; }
-.sidebar.nav-collapsed .nav-bottom #logout-btn { justify-content: center; }
+/* ===== 사이드바 접기 (완전히 숨김 — '쏙' 접힘) ===== */
+.sidebar { transition: width 0.22s ease, padding 0.22s ease, margin 0.22s ease, opacity 0.15s ease; }
+.sidebar.nav-collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+/* 접힌 상태에서 다시 펼치는 플로팅 버튼 */
+.sidebar-expand-fab {
+    position: fixed; top: 14px; left: 14px; z-index: 1200;
+    width: 38px; height: 38px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(30, 41, 59, 0.92); color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.12); cursor: pointer;
+    font-size: 1.25rem; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-color: rgba(0, 0, 0, 0.1); }
+.sidebar-expand-fab:hover { background: rgba(99, 102, 241, 0.16); }
+@media screen and (max-width: 768px) { .sidebar-expand-fab { display: none !important; } }
 
 /* ============================================================
    모바일(≤768px) — 폰에서 실제로 쓸 수 있게
