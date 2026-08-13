@@ -2215,6 +2215,8 @@ class BhasApp {
         const recentCompact = (this.orders || []).slice(0, 40).map((o, _oi) => {
             const ch = channelOf(o), br = brandOf(o) || '-', bcol = brandColor[br] || CHCOL[ch] || '#6366f1', ccol = CHCOL[ch] || '#6366f1';
             const stt = this._orderState(o);
+            const _od = o.order_date ? new Date(o.order_date) : null;
+            const dtStr = _od ? `${_od.getMonth() + 1}/${_od.getDate()} ${String(_od.getHours()).padStart(2, '0')}:${String(_od.getMinutes()).padStart(2, '0')}` : '';
             this._homePops['ord_' + _oi] = { title: this._vesc(br) + ' · 주문', rows:
                 `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">채널</span><b>${ch}</b></div>` +
                 `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">주문일</span><b>${o.order_date ? localYMD(o.order_date) : '-'}</b></div>` +
@@ -2225,7 +2227,10 @@ class BhasApp {
                 link: { label: '주문 전체', action: "app.switchView('orders')" } };
             return `<div onclick="app._pop(event,'ord_${_oi}')" style="padding:7px 0 7px 10px;border-top:1px solid var(--card-border);border-left:3px solid ${bcol};margin-left:1px;cursor:pointer">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px">
-                    <span style="font-size:0.77rem;font-weight:700;color:${bcol};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(br)}</span>
+                    <span style="display:flex;align-items:baseline;gap:6px;min-width:0;flex:1">
+                        <span style="font-size:0.77rem;font-weight:700;color:${bcol};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(br)}</span>
+                        <span style="font-size:0.64rem;color:var(--text-muted);font-weight:500;white-space:nowrap">${dtStr}</span>
+                    </span>
                     ${chip(ch, ccol)}
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:0.78rem">
