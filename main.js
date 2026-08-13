@@ -4016,9 +4016,9 @@ class BhasApp {
             // 댓글·좋아요는 누적 합계(comments_total/likes_total)를 팔로워처럼 "그 주 마지막값 − 직전 주 마지막값"으로 증감 계산
             const wkEndVal = (field) => { const m = {}; snaps.forEach(s => { if (s[field] != null) m[this._igWeekKey(s.snap_date)] = Number(s[field]); }); const ks = Object.keys(m).sort(); const i = ks.indexOf(thisWk); return i > 0 ? m[thisWk] - m[ks[i - 1]] : null; };
             const wkComments = wkEndVal('comments_total'), wkLikes = wkEndVal('likes_total');
-            // 현재 누적 댓글·좋아요(가장 최근 스냅샷) — 주간 증감이 쌓이기 전에도 값이 보이도록
-            const lastSnap = snaps.length ? snaps[snaps.length - 1] : {};
-            const curComments = lastSnap.comments_total, curLikes = lastSnap.likes_total;
+            // 주간 댓글·좋아요 증감 시리즈(누적값의 주별 차이) — 게시물 막대와 동일한 주간 관점
+            const weekDeltaSeries = (field) => { const m = {}; snaps.forEach(s => { if (s[field] != null) m[this._igWeekKey(s.snap_date)] = Number(s[field]); }); const ks = Object.keys(m).sort(); return ks.map((k, i) => ({ label: wlabel(k), v: i > 0 ? m[k] - m[ks[i - 1]] : 0 })).slice(-8); };
+            const commentWeeks = weekDeltaSeries('comments_total'), likeWeeks = weekDeltaSeries('likes_total');
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
             const wkTile = (label, v, signed) => { const has = v != null; const col = !has ? 'var(--text-muted)' : signed ? (v > 0 ? '#10b981' : v < 0 ? '#ef4444' : 'var(--text-main)') : 'var(--text-main)'; const txt = !has ? '—' : (signed && v > 0 ? '+' : '') + v.toLocaleString(); return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;color:${col};line-height:1.05">${txt}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
             return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
@@ -4038,14 +4038,10 @@ class BhasApp {
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:2px">팔로워 추이</div>
                 ${this._igSpark(followerPts, color)}
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:0.9rem">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:0.9rem">
                     <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 게시물</div>${this._igBars(postWeeks, '#8b5cf6')}</div>
-                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px">누적 반응 <span style="font-size:0.62rem">(최근 게시물 50개)</span></div>
-                        <div style="display:flex;gap:8px">
-                            <div style="flex:1;text-align:center;padding:11px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.15rem;font-weight:800;line-height:1.05">${curComments != null ? curComments.toLocaleString() : '—'}</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:3px">댓글</div></div>
-                            <div style="flex:1;text-align:center;padding:11px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.15rem;font-weight:800;line-height:1.05">${curLikes != null ? curLikes.toLocaleString() : '—'}</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:3px">좋아요</div></div>
-                        </div>
-                    </div>
+                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 댓글</div>${this._igBars(commentWeeks, '#3b82f6')}</div>
+                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 좋아요</div>${this._igBars(likeWeeks, '#ef4444')}</div>
                 </div>
             </div>`;
         }).join('');
