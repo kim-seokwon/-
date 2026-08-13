@@ -2193,6 +2193,11 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
 .nav-logo span[title="홈으로"], .top-bar-logo[title="홈으로"] { transition: opacity 0.15s ease; }
 .nav-logo span[title="홈으로"]:hover, .top-bar-logo[title="홈으로"]:hover { opacity: 0.62; }
 
+/* 홈 최근 주문 패널: 왼쪽 컬럼 높이에 맞춰 채우고 내부 스크롤 (좌우 높이 정렬) */
+.recent-orders-cell { position: relative; min-height: 0; min-width: 0; }
+.recent-orders-panel { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.ro-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+
 /* ============================================================
    모바일(≤768px) — 폰에서 실제로 쓸 수 있게
    데스크톱 사이드바를 가로로 눕히면 메뉴 17개가 한 줄에 들어가 못 쓴다.
@@ -2310,6 +2315,10 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
 
     /* 홈의 7fr/3fr 2단 분할은 402px에서 양쪽 다 눌려 글자가 깨짐 → 한 줄로 */
     .home-split { grid-template-columns: 1fr !important; }
+    /* 모바일: 최근 주문 패널은 자연 흐름 + 자체 스크롤(데스크탑의 높이 맞춤 절대배치 해제) */
+    .recent-orders-cell { position: static !important; }
+    .recent-orders-panel { position: static !important; }
+    .ro-scroll { max-height: 360px !important; flex: none !important; }
 
     /* ⚠️ 라이트 테마 대비: 모바일이 배경을 다크로 강제하면 라이트 테마의 어두운 글씨(제목·헤더)가
        배경에 묻힌다. 라이트 테마에서는 배경을 밝게, 상단바도 밝게 맞춰 대비를 확보한다. */
