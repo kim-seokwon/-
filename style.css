@@ -2301,4 +2301,15 @@ body.light .stepper-section h2 { color: var(--text-main); }
 
     /* 홈의 7fr/3fr 2단 분할은 402px에서 양쪽 다 눌려 글자가 깨짐 → 한 줄로 */
     .home-split { grid-template-columns: 1fr !important; }
+
+    /* ⚠️ 라이트 테마 대비: 모바일이 배경을 다크로 강제하면 라이트 테마의 어두운 글씨(제목·헤더)가
+       배경에 묻힌다. 라이트 테마에서는 배경을 밝게, 상단바도 밝게 맞춰 대비를 확보한다. */
+    body.light .dashboard { background: #f2f4f6 !important; }
+    body.light .mobile-top-bar {
+        background: rgba(255, 255, 255, 0.92) !important;
+        border-bottom-color: rgba(0, 0, 0, 0.08) !important;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06) !important;
+    }
+    body.light .noti-trigger { color: #0f172a !important; }
+    body.light .noti-badge { border-color: #ffffff !important; }
 }
