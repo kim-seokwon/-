@@ -67,14 +67,24 @@ Deno.serve(async (req) => {
       }
     } catch (e) { await log("warn", { step: "me/accounts", error: String(e) }); }
 
-    const igList: { username: string; followers: number; media: number; ig_id: string }[] = [];
+    const igList: { username: string; followers: number; media: number; ig_id: string; comments: number; likes: number }[] = [];
     for (const pid of PAGE_IDS) {
       const pt = pageTok.get(pid) || token; // 페이지 토큰 우선, 없으면 사용자 토큰 폴백
       const r = await fetch(`${GRAPH}/${pid}?fields=connected_instagram_account{id,username,followers_count,media_count},instagram_business_account{id,username,followers_count,media_count}&access_token=${encodeURIComponent(pt)}`);
       const p = await r.json();
       if (p.error) { await log("warn", { page: pid, error: p.error.message }); continue; }
       const ig = p.connected_instagram_account || p.instagram_business_account;
-      if (ig?.username) igList.push({ username: ig.username, followers: Number(ig.followers_count || 0), media: Number(ig.media_count || 0), ig_id: ig.id });
+      if (!ig?.username) continue;
+      // 최근 게시물 50개의 댓글·좋아요 합계. 새 반응은 최근 글에 집중되므로 주간 증감 지표로 충분하고 저렴.
+      //  (comments_count / like_count 는 instagram_basic 로 조회 가능 — 스토리와 달리 추가 권한 불필요)
+      let comments = 0, likes = 0;
+      try {
+        const mr = await fetch(`${GRAPH}/${ig.id}/media?fields=comments_count,like_count&limit=50&access_token=${encodeURIComponent(pt)}`);
+        const mj = await mr.json();
+        if (mj.error) { await log("warn", { page: pid, step: "media", error: mj.error.message }); }
+        (mj.data || []).forEach((m: { comments_count?: number; like_count?: number }) => { comments += Number(m.comments_count || 0); likes += Number(m.like_count || 0); });
+      } catch (e) { await log("warn", { page: pid, step: "media", error: String(e) }); }
+      igList.push({ username: ig.username, followers: Number(ig.followers_count || 0), media: Number(ig.media_count || 0), ig_id: ig.id, comments, likes });
     }
 
     // 3) 매칭되는 계정만 스냅샷 upsert
@@ -90,12 +100,12 @@ Deno.serve(async (req) => {
       const postsDelta = (prevMedia != null && ig.media >= prevMedia) ? ig.media - prevMedia : 0;
       const { error } = await db.from("ig_snapshots").upsert({
         account_id: accId, snap_date: today, followers: ig.followers, media_count: ig.media,
-        posts_delta: postsDelta, source: "meta",
+        posts_delta: postsDelta, comments_total: ig.comments, likes_total: ig.likes, source: "meta",
       }, { onConflict: "account_id,snap_date" });
       if (error) throw error;
       // ig_business_id 기록(비어있으면)
       await db.from("ig_accounts").update({ ig_business_id: ig.ig_id }).eq("id", accId).is("ig_business_id", null);
-      results.push({ username: ig.username, followers: ig.followers, media: ig.media, posts_delta: postsDelta });
+      results.push({ username: ig.username, followers: ig.followers, media: ig.media, posts_delta: postsDelta, comments: ig.comments, likes: ig.likes });
     }
 
     await log("ok", { collected: results.length, seen: igList.length });

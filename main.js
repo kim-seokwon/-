@@ -4012,7 +4012,10 @@ class BhasApp {
             const folAll = Object.keys(weekFol).sort();
             const folDeltaOf = k => { const i = folAll.indexOf(k); return i > 0 ? weekFol[k] - weekFol[folAll[i - 1]] : null; };
             const thisWk = this._igWeekKey(new Date().toISOString().slice(0, 10));
-            const wkFol = folDeltaOf(thisWk), wkPosts = byWeek[thisWk] ? byWeek[thisWk].posts : 0, wkStories = byWeek[thisWk] ? byWeek[thisWk].stories : 0;
+            const wkFol = folDeltaOf(thisWk), wkPosts = byWeek[thisWk] ? byWeek[thisWk].posts : 0;
+            // 댓글·좋아요는 누적 합계(comments_total/likes_total)를 팔로워처럼 "그 주 마지막값 − 직전 주 마지막값"으로 증감 계산
+            const wkEndVal = (field) => { const m = {}; snaps.forEach(s => { if (s[field] != null) m[this._igWeekKey(s.snap_date)] = Number(s[field]); }); const ks = Object.keys(m).sort(); const i = ks.indexOf(thisWk); return i > 0 ? m[thisWk] - m[ks[i - 1]] : null; };
+            const wkComments = wkEndVal('comments_total'), wkLikes = wkEndVal('likes_total');
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
             const wkTile = (label, v, signed) => { const has = v != null; const col = !has ? 'var(--text-muted)' : signed ? (v > 0 ? '#10b981' : v < 0 ? '#ef4444' : 'var(--text-main)') : 'var(--text-main)'; const txt = !has ? '—' : (signed && v > 0 ? '+' : '') + v.toLocaleString(); return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;color:${col};line-height:1.05">${txt}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
             return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
@@ -4028,7 +4031,7 @@ class BhasApp {
                 </div>
                 <div style="font-size:0.68rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">이번주 증감</div>
                 <div style="display:flex;gap:8px;margin-bottom:0.9rem">
-                    ${wkTile('팔로워 순증감', wkFol, true)}${wkTile('게시물', wkPosts, false)}${wkTile('스토리', wkStories, false)}
+                    ${wkTile('팔로워 순증감', wkFol, true)}${wkTile('게시물', wkPosts, false)}${wkTile('댓글', wkComments, true)}${wkTile('좋아요', wkLikes, true)}
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:2px">팔로워 추이</div>
                 ${this._igSpark(followerPts, color)}
@@ -4094,7 +4097,9 @@ class BhasApp {
             const wkFol = wi > 0 ? weekFol[todayWk] - weekFol[folWks[wi - 1]] : null;
             const thisWkSnaps = snaps.filter(s => this._igWeekKey(s.snap_date) === todayWk);
             const wkPosts = thisWkSnaps.reduce((n, s) => n + Number(s.posts_delta || 0), 0);
-            const wkStories = thisWkSnaps.reduce((n, s) => n + Number(s.stories_delta || 0), 0);
+            const wkEndVal = (field) => { const m = {}; snaps.forEach(s => { if (s[field] != null) m[this._igWeekKey(s.snap_date)] = Number(s[field]); }); const ks = Object.keys(m).sort(); const i = ks.indexOf(todayWk); return i > 0 ? m[todayWk] - m[ks[i - 1]] : null; };
+            const wkComments = wkEndVal('comments_total'), wkLikes = wkEndVal('likes_total');
+            const sgn = (v) => v == null ? '—' : (v > 0 ? '+' : '') + v.toLocaleString();
             const folTxt = wkFol == null ? '—' : (wkFol > 0 ? '+' : '') + wkFol.toLocaleString();
             const folCol = wkFol == null ? 'var(--text-muted)' : wkFol > 0 ? '#10b981' : wkFol < 0 ? '#ef4444' : 'var(--text-main)';
             const snsKey = 'sns_' + idx;
@@ -4105,7 +4110,8 @@ class BhasApp {
                 rowP('팔로워', cur != null ? cur.toLocaleString() : '—') +
                 rowP('이번주 순증감', folTxt) +
                 rowP('이번주 게시물', wkPosts) +
-                rowP('이번주 스토리', wkStories),
+                rowP('이번주 댓글', sgn(wkComments)) +
+                rowP('이번주 좋아요', sgn(wkLikes)),
                 link: { label: 'SNS 탭', action: "app.switchView('sns')" } };
             return `<div class="glass" style="padding:0.9rem 1rem;border-radius:14px;cursor:pointer" onclick="app._pop(event,'${snsKey}')">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
@@ -4116,9 +4122,10 @@ class BhasApp {
                     <span style="font-size:1.35rem;font-weight:900;color:${folCol}">${folTxt}</span>
                     <span style="font-size:0.64rem;color:var(--text-muted)">이번주 팔로워</span>
                 </div>
-                <div style="display:flex;gap:10px;font-size:0.66rem;color:var(--text-muted)">
+                <div style="display:flex;gap:10px;font-size:0.66rem;color:var(--text-muted);flex-wrap:wrap">
                     <span>게시물 <b style="color:var(--text-main)">${wkPosts}</b></span>
-                    <span>스토리 <b style="color:var(--text-main)">${wkStories}</b></span>
+                    <span>댓글 <b style="color:var(--text-main)">${sgn(wkComments)}</b></span>
+                    <span>좋아요 <b style="color:var(--text-main)">${sgn(wkLikes)}</b></span>
                 </div>
                 ${this._igSpark(fpts, color, 220, 30)}
             </div>`;
