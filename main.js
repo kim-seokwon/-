@@ -3965,6 +3965,18 @@ class BhasApp {
         } catch (e) { this.analysisScoped = { orders: [] }; this._analysisScopeKey = key; }
         this._analysisScopeLoading = false; this.requestRender();
     }
+    // 재구매율·누적금액 — 서버 RPC(전체기간, 전화번호 기준)
+    async _loadAnalysisRepeat(brand) {
+        if (!brand || this._analysisRepeatKey === brand || this._analysisRepeatLoading) return;
+        this._analysisRepeatLoading = true; this.requestRender();
+        try {
+            const { data, error } = await this.supabase.rpc('brand_repurchase', { p_brand: brand });
+            if (error) throw error;
+            this.analysisRepeat = { [brand]: data };
+            this._analysisRepeatKey = brand;
+        } catch (e) { this.analysisRepeat = { [brand]: null }; this._analysisRepeatKey = brand; }
+        this._analysisRepeatLoading = false; this.requestRender();
+    }
     // 사이즈·색상 고객군 HTML (items 배열 → 분포)
     _customerAnalysisHTML(items, loading) {
         const pick = (re, s) => { const m = String(s || '').toLowerCase().match(re); return m ? m[1].trim() : null; };
@@ -3996,6 +4008,24 @@ class BhasApp {
         for (let y = new Date().getFullYear(); y >= 2024; y--) yearsAvail.push(y);
         const items = ((this.analysisScoped && this.analysisScoped.orders) || []).flatMap(o => o.items || []);
         const orderCnt = ((this.analysisScoped && this.analysisScoped.orders) || []).length;
+        const won = n => this._won(n);
+        // 재구매율·누적금액(전체기간, RPC)
+        const rep = (this.analysisRepeat && this.analysisRepeat[bf]) || null;
+        const repLoading = this._analysisRepeatLoading && this._analysisRepeatKey !== bf;
+        const distBar = (label, v, tot, color) => { const pct = tot ? Math.round(v / tot * 100) : 0; return `<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:2px"><span>${label}</span><b>${v.toLocaleString()}명 <span style="color:var(--text-muted);font-weight:500;font-size:0.68rem">${pct}%</span></b></div><div style="height:7px;border-radius:4px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(2, pct)}%;background:${color};border-radius:4px"></div></div></div>`; };
+        const repeatCard = bf ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem">
+            <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.6rem"><i class="ph ph-repeat" style="color:#10b981"></i> 재구매율 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">전체기간 · 전화번호 기준</span></div>
+                ${!rep ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : `
+                <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:0.7rem"><span style="font-size:2rem;font-weight:900;color:#10b981;line-height:1">${rep.rate ?? 0}%</span><span style="font-size:0.78rem;color:var(--text-muted)">고객 ${(rep.customers || 0).toLocaleString()}명 중 ${(rep.repeat_customers || 0).toLocaleString()}명 재구매</span></div>
+                <div style="display:flex;gap:14px;font-size:0.76rem;color:var(--text-muted);margin-bottom:0.8rem"><span>평균 <b style="color:var(--text-main)">${rep.avg_orders ?? 0}회</b></span><span>평균 누적구매 <b style="color:var(--text-main)">${won(rep.avg_spend || 0)}원</b></span><span>최다 <b style="color:var(--text-main)">${rep.max_orders ?? 0}회</b></span></div>
+                ${distBar('1회 구매', rep.once || 0, rep.customers || 1, '#94a3b8')}${distBar('2회', rep.twice || 0, rep.customers || 1, '#f59e0b')}${distBar('3회 이상 (충성)', rep.three_plus || 0, rep.customers || 1, '#10b981')}`}
+            </div>
+            <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem"><i class="ph ph-crown" style="color:#f59e0b"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">누적 구매액 TOP</span></div>
+                ${!rep || !(rep.top && rep.top.length) ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : rep.top.map((t, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b style="color:${i < 3 ? '#f59e0b' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vesc(t.nm || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.n}회</span></span><b style="font-variant-numeric:tabular-nums;white-space:nowrap">${won(t.spend || 0)}원</b></div>`).join('')}
+            </div>
+        </div>` : '';
         return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
                 <div>
@@ -4011,7 +4041,7 @@ class BhasApp {
                     </select>
                 </div>
             </div>
-            ${bf ? this._customerAnalysisHTML(items, this._analysisScopeLoading) : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
+            ${bf ? `${repeatCard}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
         </div>`;
     }
 
@@ -4228,7 +4258,7 @@ class BhasApp {
             const names = this._analysisBrandNames();
             const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
             const year = this.analysisYear || new Date().getFullYear();
-            if (bf) this._loadAnalysisScope(bf, `${year}-01-01`, `${year + 1}-01-01`);
+            if (bf) { this._loadAnalysisScope(bf, `${year}-01-01`, `${year + 1}-01-01`); this._loadAnalysisRepeat(bf); }
         }
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
