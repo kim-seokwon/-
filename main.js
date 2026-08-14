@@ -939,6 +939,7 @@ class BhasApp {
             { id: 'quotes', label: '견적', icon: '<i class="ph ph-receipt"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'sales', label: '매출', icon: '<i class="ph ph-chart-line-up"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'analysis', label: '분석', icon: '<i class="ph ph-chart-donut"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'integrations', label: '연동', icon: '<i class="ph ph-plugs-connected"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'pages', label: '페이지', icon: '<i class="ph ph-note-pencil"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
@@ -3388,6 +3389,8 @@ class BhasApp {
             return this.renderQuotes();
         } else if (this.currentView === 'sales') {
             return this.renderSales();
+        } else if (this.currentView === 'analysis') {
+            return this.renderAnalysis();
         } else if (this.currentView === 'sns') {
             return this.renderSNS();
         }
@@ -3893,36 +3896,6 @@ class BhasApp {
             </table>` : `<div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:0.85rem">${mtxYear}년 매출 데이터가 없습니다.</div>`}
         </div>`;
 
-        // ── 고객 분석(브랜드 상세 전용): 주문 옵션의 사이즈·색상 = 고객군. 브랜드별로만 집계(통합 안 함) ──
-        let customerCard = '';
-        if (bf !== 'ALL') {
-            const scItems = ((this.salesScoped && this.salesScoped.orders) || []).flatMap(o => o.items || []);
-            const pick = (re, s) => { const m = String(s || '').toLowerCase().match(re); return m ? m[1].trim() : null; };
-            const szMap = {}, colMap = {}, comboMap = {};
-            scItems.forEach(it => {
-                const q = Number(it.quantity || 1);
-                const sz = pick(/size=([^,]+)/, it.option_name), col = pick(/color=([^,]+)/, it.option_name);
-                if (sz) szMap[sz] = (szMap[sz] || 0) + q;
-                if (col) colMap[col] = (colMap[col] || 0) + q;
-                if (sz && col) { const k = `${col} · ${sz}`; comboMap[k] = (comboMap[k] || 0) + q; }
-            });
-            const rank = (m, n) => { const t = Object.values(m).reduce((s, v) => s + v, 0) || 1; const arr = Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n); let cum = 0; return arr.map(([l, v]) => { cum += v; const g = cum / t <= 0.6 ? '주요' : (cum / t <= 0.85 ? '서브' : '약한'); return { l, v, share: Math.round(v / t * 100), g }; }); };
-            const gCol = g => g === '주요' ? '#16a34a' : g === '서브' ? '#f59e0b' : '#94a3b8';
-            const rows = (arr, color) => arr.length ? arr.map(x => `<div style="margin-bottom:7px"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:0.8rem;margin-bottom:2px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.l)} <span style="font-size:0.62rem;font-weight:700;color:${gCol(x.g)}">${x.g}</span></span><b style="font-variant-numeric:tabular-nums">${x.v.toLocaleString()} <span style="font-size:0.66rem;color:var(--text-muted);font-weight:500">${x.share}%</span></b></div><div style="height:7px;border-radius:4px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(3, x.share)}%;background:${color};border-radius:4px"></div></div></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.8rem">데이터 없음</span>';
-            const sizes = rank(szMap, 8), colors = rank(colMap, 8), combos = Object.entries(comboMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
-            const hasData = sizes.length || colors.length;
-            customerCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem">
-                <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.2rem"><i class="ph ph-users-three" style="color:#8b5cf6"></i> 고객 분석 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600">· ${this._vesc(bf)} · ${periodLabel} · 판매수량 기준</span></div>
-                ${!hasData ? `<div style="color:var(--text-muted);font-size:0.83rem;padding:1rem 0">${this._salesScopeLoading ? '불러오는 중…' : '이 브랜드·기간에 옵션(사이즈/색상) 데이터가 없어요.'}</div>` : `
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem;margin-top:0.7rem">
-                    <div><div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);margin-bottom:9px">사이즈 고객군</div>${rows(sizes, '#6366f1')}</div>
-                    <div><div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);margin-bottom:9px">색상 고객군</div>${rows(colors, '#ec4899')}</div>
-                </div>
-                ${combos.length ? `<div style="margin-top:1rem;padding-top:0.9rem;border-top:1px solid var(--card-border)"><div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);margin-bottom:7px">대표 고객 프로필 (색상×사이즈)</div><div style="display:flex;flex-wrap:wrap;gap:8px">${combos.map(([l, v], i) => `<span style="font-size:0.8rem;padding:5px 11px;border-radius:20px;background:${i === 0 ? 'rgba(139,92,246,0.15)' : 'rgba(148,163,184,0.1)'};font-weight:${i === 0 ? '700' : '500'}">${this._vesc(l)} <b style="color:#8b5cf6">${v}</b></span>`).join('')}</div></div>` : ''}
-                <p style="margin:0.9rem 0 0;font-size:0.7rem;color:var(--text-muted)">* 주문 옵션(color/size)에서 추출 · 취소·환불 제외 · 주요(누적60%)/서브(~85%)/약한 · 브랜드별로만 집계</p>`}
-            </div>`;
-        }
-
         return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
                 <div>
@@ -3957,11 +3930,88 @@ class BhasApp {
                    ${matrix}`
                 // 브랜드 상세: 작전 짜는 지표 전부
                 : `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem">${topCard}${optCard}</div>
-                   ${customerCard}
                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${repeatCard}${netCard}${chanCard}${statCard}</div>
                    ${returnCard}
                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${qualityCard}</div>`}
             <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 판매 브랜드 = 몰 주문 결제금액 · 컨설팅 = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·반품·교환은 집계에서 제외</p>
+        </div>`;
+    }
+
+    // ============================================================
+    //  분석 탭 — 브랜드별 고객군(사이즈·색상). 브랜드마다 고객이 달라 통합 안 함.
+    // ============================================================
+    _analysisBrandNames() {
+        return [...new Set((this.malls || []).map(m => { const b = (mockData.brands || []).find(x => x.id === m.brand_id); return b ? b.name : (m.label || null); }).filter(Boolean))];
+    }
+    setAnalysisBrand(b) { this.analysisBrand = b; this._analysisScopeKey = null; this.requestRender(); this.ensureViewData(); }
+    setAnalysisYear(y) { this.analysisYear = parseInt(y, 10); this._analysisScopeKey = null; this.requestRender(); this.ensureViewData(); }
+    async _loadAnalysisScope(brandName, fromISO, toISO) {
+        const key = `${brandName}|${fromISO}|${toISO}`;
+        if (this._analysisScopeKey === key || this._analysisScopeLoading) return;
+        this._analysisScopeLoading = true; this.requestRender();
+        try {
+            const mallKeys = (this.malls || []).filter(m => { const b = (mockData.brands || []).find(x => x.id === m.brand_id); return (b ? b.name : (m.label || m.mall_key)) === brandName; }).map(m => m.mall_key);
+            let q = this.supabase.from('channel_orders_slim').select('*').gte('order_date', fromISO).lt('order_date', toISO);
+            if (mallKeys.length) q = q.in('mall_key', mallKeys);
+            const { data, error } = await q.order('order_date', { ascending: false });
+            if (error) throw error;
+            const rows = data || [];
+            const items = await this._itemsFor(rows.map(o => o.id));
+            const byOrder = {};
+            items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
+            const withItems = rows.map(o => ({ ...o, items: byOrder[o.id] || [] }));
+            this.analysisScoped = { orders: withItems.filter(o => o.pay_amount != null && !this._isCancelled(o)) };
+            this._analysisScopeKey = key;
+        } catch (e) { this.analysisScoped = { orders: [] }; this._analysisScopeKey = key; }
+        this._analysisScopeLoading = false; this.requestRender();
+    }
+    // 사이즈·색상 고객군 HTML (items 배열 → 분포)
+    _customerAnalysisHTML(items, loading) {
+        const pick = (re, s) => { const m = String(s || '').toLowerCase().match(re); return m ? m[1].trim() : null; };
+        const szMap = {}, colMap = {}, comboMap = {};
+        (items || []).forEach(it => {
+            const q = Number(it.quantity || 1);
+            const sz = pick(/size=([^,]+)/, it.option_name), col = pick(/color=([^,]+)/, it.option_name);
+            if (sz) szMap[sz] = (szMap[sz] || 0) + q;
+            if (col) colMap[col] = (colMap[col] || 0) + q;
+            if (sz && col) { const k = `${col} · ${sz}`; comboMap[k] = (comboMap[k] || 0) + q; }
+        });
+        const rank = (m, n) => { const t = Object.values(m).reduce((s, v) => s + v, 0) || 1; const arr = Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n); let cum = 0; return arr.map(([l, v]) => { cum += v; const g = cum / t <= 0.6 ? '주요' : (cum / t <= 0.85 ? '서브' : '약한'); return { l, v, share: Math.round(v / t * 100), g }; }); };
+        const gCol = g => g === '주요' ? '#16a34a' : g === '서브' ? '#f59e0b' : '#94a3b8';
+        const rowsH = (arr, color) => arr.length ? arr.map(x => `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:0.83rem;margin-bottom:3px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.l)} <span style="font-size:0.64rem;font-weight:700;color:${gCol(x.g)}">${x.g}</span></span><b style="font-variant-numeric:tabular-nums">${x.v.toLocaleString()} <span style="font-size:0.68rem;color:var(--text-muted);font-weight:500">${x.share}%</span></b></div><div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(3, x.share)}%;background:${color};border-radius:5px"></div></div></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.82rem">데이터 없음</span>';
+        const sizes = rank(szMap, 10), colors = rank(colMap, 10), combos = Object.entries(comboMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
+        if (!(sizes.length || colors.length)) return `<div class="glass" style="padding:1.6rem;border-radius:18px;color:var(--text-muted);font-size:0.86rem">${loading ? '불러오는 중…' : '이 브랜드·기간에 옵션(사이즈/색상) 데이터가 없어요.'}</div>`;
+        return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem">
+            <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-ruler" style="color:#6366f1"></i> 사이즈 고객군</div>${rowsH(sizes, '#6366f1')}</div>
+            <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-palette" style="color:#ec4899"></i> 색상 고객군</div>${rowsH(colors, '#ec4899')}</div>
+        </div>
+        ${combos.length ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.8rem"><i class="ph ph-user-focus" style="color:#8b5cf6"></i> 대표 고객 프로필 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600">색상×사이즈 조합 TOP</span></div><div style="display:flex;flex-wrap:wrap;gap:8px">${combos.map(([l, v], i) => `<span style="font-size:0.83rem;padding:6px 13px;border-radius:20px;background:${i === 0 ? 'rgba(139,92,246,0.15)' : 'rgba(148,163,184,0.1)'};font-weight:${i === 0 ? '700' : '500'}">${this._vesc(l)} <b style="color:#8b5cf6">${v.toLocaleString()}</b></span>`).join('')}</div></div>` : ''}
+        <p style="margin:1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 판매수량 기준 · 주문 옵션(color/size)에서 추출 · 취소·환불 제외 · 주요(누적 60%)/서브(~85%)/약한</p>`;
+    }
+    renderAnalysis() {
+        const names = this._analysisBrandNames();
+        const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
+        const year = this.analysisYear || new Date().getFullYear();
+        const yearsAvail = [];
+        for (let y = new Date().getFullYear(); y >= 2024; y--) yearsAvail.push(y);
+        const items = ((this.analysisScoped && this.analysisScoped.orders) || []).flatMap(o => o.items || []);
+        const orderCnt = ((this.analysisScoped && this.analysisScoped.orders) || []).length;
+        return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
+                <div>
+                    <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-donut" style="color:#8b5cf6"></i> 고객 분석</h1>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${bf ? `<b style="color:var(--primary)">${this._vesc(bf)}</b> · ${year}년 · 주문 ${orderCnt.toLocaleString()}건` : '브랜드를 선택하세요'} <span style="color:var(--text-muted)">· 브랜드마다 고객이 달라 통합하지 않습니다</span></p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <select onchange="app.setAnalysisBrand(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--primary);background:rgba(99,102,241,0.12);color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
+                        ${names.map(n => `<option value="${this._vesc(n)}" ${bf === n ? 'selected' : ''}>${this._vesc(n)}</option>`).join('') || '<option>브랜드 없음</option>'}
+                    </select>
+                    <select onchange="app.setAnalysisYear(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
+                        ${yearsAvail.map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}년</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            ${bf ? this._customerAnalysisHTML(items, this._analysisScopeLoading) : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
         </div>`;
     }
 
@@ -4172,7 +4222,14 @@ class BhasApp {
     // ============================================================
     ensureViewData() {
         const v = this.currentView;
-        if ((v === 'orders' || v === 'inventory' || v === 'integrations' || v === 'sales') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
+        if ((v === 'orders' || v === 'inventory' || v === 'integrations' || v === 'sales' || v === 'analysis') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
+        // 분석 탭: 선택 브랜드+연도의 주문 아이템(옵션) 로드 → 고객군 집계
+        if (v === 'analysis' && this._mallsLoaded) {
+            const names = this._analysisBrandNames();
+            const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
+            const year = this.analysisYear || new Date().getFullYear();
+            if (bf) this._loadAnalysisScope(bf, `${year}-01-01`, `${year + 1}-01-01`);
+        }
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         // 브랜드 상세는 상품·옵션·재구매·반품 카드용으로 그 브랜드+기간 주문만 따로 받아온다
