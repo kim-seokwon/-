@@ -3893,6 +3893,36 @@ class BhasApp {
             </table>` : `<div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:0.85rem">${mtxYear}년 매출 데이터가 없습니다.</div>`}
         </div>`;
 
+        // ── 고객 분석(브랜드 상세 전용): 주문 옵션의 사이즈·색상 = 고객군. 브랜드별로만 집계(통합 안 함) ──
+        let customerCard = '';
+        if (bf !== 'ALL') {
+            const scItems = ((this.salesScoped && this.salesScoped.orders) || []).flatMap(o => o.items || []);
+            const pick = (re, s) => { const m = String(s || '').toLowerCase().match(re); return m ? m[1].trim() : null; };
+            const szMap = {}, colMap = {}, comboMap = {};
+            scItems.forEach(it => {
+                const q = Number(it.quantity || 1);
+                const sz = pick(/size=([^,]+)/, it.option_name), col = pick(/color=([^,]+)/, it.option_name);
+                if (sz) szMap[sz] = (szMap[sz] || 0) + q;
+                if (col) colMap[col] = (colMap[col] || 0) + q;
+                if (sz && col) { const k = `${col} · ${sz}`; comboMap[k] = (comboMap[k] || 0) + q; }
+            });
+            const rank = (m, n) => { const t = Object.values(m).reduce((s, v) => s + v, 0) || 1; const arr = Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n); let cum = 0; return arr.map(([l, v]) => { cum += v; const g = cum / t <= 0.6 ? '주요' : (cum / t <= 0.85 ? '서브' : '약한'); return { l, v, share: Math.round(v / t * 100), g }; }); };
+            const gCol = g => g === '주요' ? '#16a34a' : g === '서브' ? '#f59e0b' : '#94a3b8';
+            const rows = (arr, color) => arr.length ? arr.map(x => `<div style="margin-bottom:7px"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:0.8rem;margin-bottom:2px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.l)} <span style="font-size:0.62rem;font-weight:700;color:${gCol(x.g)}">${x.g}</span></span><b style="font-variant-numeric:tabular-nums">${x.v.toLocaleString()} <span style="font-size:0.66rem;color:var(--text-muted);font-weight:500">${x.share}%</span></b></div><div style="height:7px;border-radius:4px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(3, x.share)}%;background:${color};border-radius:4px"></div></div></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.8rem">데이터 없음</span>';
+            const sizes = rank(szMap, 8), colors = rank(colMap, 8), combos = Object.entries(comboMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+            const hasData = sizes.length || colors.length;
+            customerCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem">
+                <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.2rem"><i class="ph ph-users-three" style="color:#8b5cf6"></i> 고객 분석 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600">· ${this._vesc(bf)} · ${periodLabel} · 판매수량 기준</span></div>
+                ${!hasData ? `<div style="color:var(--text-muted);font-size:0.83rem;padding:1rem 0">${this._salesScopeLoading ? '불러오는 중…' : '이 브랜드·기간에 옵션(사이즈/색상) 데이터가 없어요.'}</div>` : `
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem;margin-top:0.7rem">
+                    <div><div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);margin-bottom:9px">사이즈 고객군</div>${rows(sizes, '#6366f1')}</div>
+                    <div><div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);margin-bottom:9px">색상 고객군</div>${rows(colors, '#ec4899')}</div>
+                </div>
+                ${combos.length ? `<div style="margin-top:1rem;padding-top:0.9rem;border-top:1px solid var(--card-border)"><div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);margin-bottom:7px">대표 고객 프로필 (색상×사이즈)</div><div style="display:flex;flex-wrap:wrap;gap:8px">${combos.map(([l, v], i) => `<span style="font-size:0.8rem;padding:5px 11px;border-radius:20px;background:${i === 0 ? 'rgba(139,92,246,0.15)' : 'rgba(148,163,184,0.1)'};font-weight:${i === 0 ? '700' : '500'}">${this._vesc(l)} <b style="color:#8b5cf6">${v}</b></span>`).join('')}</div></div>` : ''}
+                <p style="margin:0.9rem 0 0;font-size:0.7rem;color:var(--text-muted)">* 주문 옵션(color/size)에서 추출 · 취소·환불 제외 · 주요(누적60%)/서브(~85%)/약한 · 브랜드별로만 집계</p>`}
+            </div>`;
+        }
+
         return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
                 <div>
@@ -3927,6 +3957,7 @@ class BhasApp {
                    ${matrix}`
                 // 브랜드 상세: 작전 짜는 지표 전부
                 : `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.3rem">${topCard}${optCard}</div>
+                   ${customerCard}
                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${repeatCard}${netCard}${chanCard}${statCard}</div>
                    ${returnCard}
                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${qualityCard}</div>`}
