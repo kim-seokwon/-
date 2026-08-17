@@ -4137,7 +4137,8 @@ class BhasApp {
                         <div style="font-size:1.05rem;font-weight:800">${esc(this._brandNameById(a.brand_id))}</div>
                         <div style="font-size:0.78rem;color:var(--text-muted)">${handle} · 팔로워 <b style="color:${color}">${cur != null ? cur.toLocaleString() : '—'}</b></div>
                     </div>
-                    <div style="display:flex;gap:6px">
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                        ${a.ig_business_id ? `<button onclick="app.igFeedPreview('${a.ig_business_id}','${esc(this._brandNameById(a.brand_id))}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-images-square"></i> 피드 미리보기</button>` : ''}
                         <button onclick="app.igAddSnapshot('${a.id}')" class="btn-primary" style="font-size:0.74rem;padding:6px 11px;border-radius:8px"><i class="ph ph-plus"></i> 기록</button>
                         <button onclick="app.igSetHandle('${a.id}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">계정</button>
                     </div>
@@ -4162,6 +4163,41 @@ class BhasApp {
             ${accounts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.3rem">${cards}</div>` : `<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted)">등록된 인스타 계정이 없습니다.</div>`}
             <p style="margin:1.1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 팔로워·게시물·댓글·좋아요는 메타 API로 매일 자동수집됩니다. 주간 증감은 2주치가 쌓이면 표시돼요. (스토리는 API로 소급 불가라 보류)</p>
         </div>`;
+    }
+
+    // 인스타 피드 톤앤매너 미리보기 — 기존 피드 그리드 위에 새 커버를 얹어 확인.
+    async igFeedPreview(igId, brand) {
+        if (!igId) { this.showToast('먼저 계정 연동이 필요해요'); return; }
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        c.innerHTML = `<div class="glass modal-content fade-in vmodal" style="width:94%;max-width:520px;padding:1.6rem;border-radius:20px;max-height:88vh;overflow-y:auto">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:0.3rem"><div><h2 style="margin:0;font-size:1.2rem"><i class="ph ph-instagram-logo"></i> 피드 미리보기</h2><p style="margin:5px 0 0;color:var(--text-muted);font-size:0.82rem">${this._vesc(brand)} · 새 커버가 기존 피드와 톤이 맞는지 확인하세요</p></div><button onclick="app.closeGlobalModal()" style="border:0;background:transparent;color:var(--text-muted);font-size:1.4rem;cursor:pointer;line-height:1">×</button></div>
+            <label style="display:inline-flex;align-items:center;gap:6px;margin:0.7rem 0 1rem;padding:8px 14px;border-radius:10px;background:var(--primary);color:#fff;font-size:0.82rem;font-weight:700;cursor:pointer"><i class="ph ph-upload-simple"></i> 커버 이미지 선택<input type="file" accept="image/*" onchange="app._feedSetCover(event)" style="display:none"></label>
+            <div id="ig-feed-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px"><div style="grid-column:1/-1;padding:2rem;text-align:center;color:var(--text-muted);font-size:0.85rem">피드 불러오는 중…</div></div>
+            <p style="margin:0.9rem 2px 0;font-size:0.7rem;color:var(--text-muted)">* 실제 인스타 피드(최근 게시물) 위에 커버를 얹어 미리봅니다. 미리보기 전용이라 인스타엔 게시되지 않아요.</p>
+        </div>`;
+        c.style.display = 'flex';
+        this._feedCoverUrl = null; this._feedItems = [];
+        try {
+            const { data, error } = await this.supabase.functions.invoke('ig-feed', { body: { ig_business_id: igId, limit: 14 } });
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || '불러오기 실패');
+            this._feedItems = data.items || [];
+            this._renderFeedGrid();
+        } catch (e) {
+            const g = document.getElementById('ig-feed-grid');
+            if (g) g.innerHTML = `<div style="grid-column:1/-1;padding:1.5rem;text-align:center;color:#ef4444;font-size:0.82rem">피드 로드 실패: ${this._vesc(String(e?.message || e))}</div>`;
+        }
+    }
+    _renderFeedGrid() {
+        const g = document.getElementById('ig-feed-grid'); if (!g) return;
+        const cell = (src, isCover) => `<div style="position:relative;aspect-ratio:1;background:rgba(148,163,184,0.15);overflow:hidden;border-radius:2px">${src ? `<img src="${src}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover;display:block">` : (isCover ? '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.72rem;text-align:center;line-height:1.3">커버<br>선택</div>' : '')}${isCover ? '<div style="position:absolute;top:4px;left:4px;background:var(--primary);color:#fff;font-size:0.58rem;font-weight:700;padding:2px 6px;border-radius:6px;z-index:1">새 커버</div>' : ''}</div>`;
+        g.innerHTML = cell(this._feedCoverUrl, true) + (this._feedItems || []).map(it => cell(it.thumb, false)).join('');
+    }
+    _feedSetCover(ev) {
+        const f = ev.target.files && ev.target.files[0]; if (!f) return;
+        if (this._feedCoverUrl) { try { URL.revokeObjectURL(this._feedCoverUrl); } catch (_e) {} }
+        this._feedCoverUrl = URL.createObjectURL(f);
+        this._renderFeedGrid();
     }
 
     igSetHandle(accountId) {
