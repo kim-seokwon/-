@@ -1,8 +1,7 @@
 name: 스마트스토어 주문 수집
 
 on:
-  schedule:
-    - cron: '15 * * * *'   # 매시간 15분 (키디키디와 시간대 분산)
+  # ⚠️ 스케줄 중지(2026-08-18): 스마트스토어 미연결 상태라 매시간 실패 알림만 옴. 연동 후 schedule 복구.
   workflow_dispatch:
 
 concurrency:

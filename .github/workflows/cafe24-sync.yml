@@ -1,8 +1,9 @@
 name: 카페24 주문 수집
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'   # 15분마다 (메인 채널이라 자주). GitHub 스케줄은 수분 지연될 수 있음.
+  # ⚠️ 스케줄 중지(2026-08-18): 카페24 수집은 Supabase pg_cron(job 3, */5분)이 x-cron-secret으로 담당.
+  #   이 워크플로는 x-cron-secret 없이 호출해 매번 401 실패 → 실패알림 메일 폭탄. 중복이라 스케줄 끔.
+  #   필요 시 수동 실행(workflow_dispatch)만 사용. 되살리려면 header에 x-cron-secret 추가 후 schedule 복구.
   workflow_dispatch:          # 수동 실행 버튼
 
 concurrency:

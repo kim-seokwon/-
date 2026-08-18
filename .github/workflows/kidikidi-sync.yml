@@ -1,8 +1,9 @@
 name: 키디키디 주문 수집
 
 on:
-  schedule:
-    - cron: '0 * * * *'   # 매시간 (UTC). 필요시 조정.
+  # ⚠️ 스케줄 중지(2026-08-18): 키디키디(이랜드) 봇이 2026-03 이후 수집 중단 상태라 매시간 실패 알림만 옴.
+  #   봇 복구(로그인/API) 후 schedule 복구할 것. 그때까지 수동 실행만.
+  workflow_dispatch:
   workflow_dispatch:        # 수동 실행 버튼
 
 concurrency:
