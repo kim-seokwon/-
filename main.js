@@ -4129,6 +4129,13 @@ class BhasApp {
             // 주간 댓글·좋아요 증감 시리즈(누적값의 주별 차이) — 게시물 막대와 동일한 주간 관점
             const weekDeltaSeries = (field) => { const m = {}; snaps.forEach(s => { if (s[field] != null) m[this._igWeekKey(s.snap_date)] = Number(s[field]); }); const ks = Object.keys(m).sort(); return ks.map((k, i) => ({ label: wlabel(k), v: i > 0 ? m[k] - m[ks[i - 1]] : 0 })).slice(-8); };
             const commentWeeks = weekDeltaSeries('comments_total'), likeWeeks = weekDeltaSeries('likes_total');
+            // 일별 증감(최근 7일): 연속 스냅샷 차이(팔로워·댓글·좋아요)
+            const dailyRows = [];
+            for (let i = snaps.length - 1; i >= 1 && dailyRows.length < 7; i--) {
+                const cu = snaps[i], pv = snaps[i - 1];
+                const d = (a, b) => (a != null && b != null) ? Number(a) - Number(b) : null;
+                dailyRows.push({ date: cu.snap_date, f: d(cu.followers, pv.followers), c: d(cu.comments_total, pv.comments_total), l: d(cu.likes_total, pv.likes_total) });
+            }
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
             const wkTile = (label, v, signed) => { const has = v != null; const col = !has ? 'var(--text-muted)' : signed ? (v > 0 ? '#10b981' : v < 0 ? '#ef4444' : 'var(--text-main)') : 'var(--text-main)'; const txt = !has ? '—' : (signed && v > 0 ? '+' : '') + v.toLocaleString(); return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;color:${col};line-height:1.05">${txt}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
             return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
@@ -4149,10 +4156,16 @@ class BhasApp {
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:2px">팔로워 추이</div>
                 ${this._igSpark(followerPts, color)}
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:0.9rem">
-                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 게시물</div>${this._igBars(postWeeks, '#8b5cf6')}</div>
-                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 댓글</div>${this._igBars(commentWeeks, '#3b82f6')}</div>
-                    <div><div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">주간 좋아요</div>${this._igBars(likeWeeks, '#ef4444')}</div>
+                <div style="margin-top:0.9rem">
+                    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">일별 증감 <span style="font-weight:400">(최근 7일)</span></div>
+                    <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
+                        <thead><tr style="color:var(--text-muted)"><th style="text-align:left;padding:3px 4px;font-weight:600">날짜</th><th style="text-align:right;padding:3px 4px;font-weight:600">팔로워</th><th style="text-align:right;padding:3px 4px;font-weight:600">댓글</th><th style="text-align:right;padding:3px 4px;font-weight:600">좋아요</th></tr></thead>
+                        <tbody>${dailyRows.length ? dailyRows.map(r => {
+                            const cell = v => v == null ? '<span style="color:var(--text-muted)">—</span>' : `<span style="color:${v > 0 ? '#10b981' : v < 0 ? '#ef4444' : 'var(--text-muted)'};font-weight:700">${v > 0 ? '+' : ''}${v.toLocaleString()}</span>`;
+                            const p = r.date.split('-');
+                            return `<tr style="border-top:1px solid var(--card-border)"><td style="padding:4px;color:var(--text-muted)">${+p[1]}/${+p[2]}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.f)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.c)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.l)}</td></tr>`;
+                        }).join('') : '<tr><td colspan="4" style="padding:10px;color:var(--text-muted);text-align:center">데이터 쌓이는 중 (내일부터 일별 증감 표시)</td></tr>'}</tbody>
+                    </table>
                 </div>
             </div>`;
         }).join('');
