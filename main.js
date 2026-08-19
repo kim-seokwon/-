@@ -4074,6 +4074,14 @@ class BhasApp {
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
+    // 증감 표기 — 한국식: 상승=빨강 ▲, 하락=파랑 ▼, 숫자는 검정(절대값).
+    _igDelta(v) {
+        if (v == null) return '<span style="color:var(--text-muted)">—</span>';
+        if (v === 0) return '<span style="color:var(--text-muted)">0</span>';
+        const up = v > 0;
+        return `<span style="color:${up ? '#dc2626' : '#2563eb'};font-weight:900">${up ? '▲' : '▼'}</span><span style="color:var(--text-main)">${Math.abs(v).toLocaleString()}</span>`;
+    }
+
     // 작은 선그래프(팔로워 추이)
     _igSpark(points, color, w = 300, h = 66) {
         if (!points.length) return `<div style="color:var(--text-muted);font-size:0.78rem;padding:14px 0">아직 기록이 없어요</div>`;
@@ -4137,12 +4145,12 @@ class BhasApp {
                 dailyRows.push({ date: cu.snap_date, f: d(cu.followers, pv.followers), c: d(cu.comments_total, pv.comments_total), l: d(cu.likes_total, pv.likes_total) });
             }
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
-            const wkTile = (label, v, signed) => { const has = v != null; const col = !has ? 'var(--text-muted)' : signed ? (v > 0 ? '#10b981' : v < 0 ? '#ef4444' : 'var(--text-main)') : 'var(--text-main)'; const txt = !has ? '—' : (signed && v > 0 ? '+' : '') + v.toLocaleString(); return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;color:${col};line-height:1.05">${txt}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
+            const wkTile = (label, v, signed) => { const inner = (v == null) ? '<span style="color:var(--text-muted)">—</span>' : signed ? this._igDelta(v) : `<span style="color:var(--text-main)">${v.toLocaleString()}</span>`; return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;line-height:1.05">${inner}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
             return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:0.9rem">
                     <div>
                         <div style="font-size:1.05rem;font-weight:800">${esc(this._brandNameById(a.brand_id))}</div>
-                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle} · 팔로워 <b style="color:#3b82f6">${cur != null ? cur.toLocaleString() : '—'}</b>${(dailyRows[0] && dailyRows[0].f != null) ? ` <span style="font-weight:700;color:${dailyRows[0].f > 0 ? '#10b981' : dailyRows[0].f < 0 ? '#ef4444' : 'var(--text-muted)'}">${dailyRows[0].f > 0 ? '+' : ''}${dailyRows[0].f.toLocaleString()}</span>` : ''}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle} · 팔로워 <b style="color:#3b82f6">${cur != null ? cur.toLocaleString() : '—'}</b>${(dailyRows[0] && dailyRows[0].f != null) ? ` <b>${this._igDelta(dailyRows[0].f)}</b>` : ''}</div>
                     </div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
                         ${a.ig_business_id ? `<button onclick="app.igFeedPreview('${a.ig_business_id}','${esc(this._brandNameById(a.brand_id))}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-images-square"></i> 피드 미리보기</button>` : ''}
@@ -4161,7 +4169,7 @@ class BhasApp {
                     <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
                         <thead><tr style="color:var(--text-muted)"><th style="text-align:left;padding:3px 4px;font-weight:600">날짜</th><th style="text-align:right;padding:3px 4px;font-weight:600">팔로워</th><th style="text-align:right;padding:3px 4px;font-weight:600">댓글</th><th style="text-align:right;padding:3px 4px;font-weight:600">좋아요</th></tr></thead>
                         <tbody>${dailyRows.length ? dailyRows.map(r => {
-                            const cell = v => v == null ? '<span style="color:var(--text-muted)">—</span>' : `<span style="color:${v > 0 ? '#10b981' : v < 0 ? '#ef4444' : 'var(--text-muted)'};font-weight:700">${v > 0 ? '+' : ''}${v.toLocaleString()}</span>`;
+                            const cell = v => this._igDelta(v);
                             const p = r.date.split('-');
                             return `<tr style="border-top:1px solid var(--card-border)"><td style="padding:4px;color:var(--text-muted)">${+p[1]}/${+p[2]}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.f)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.c)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.l)}</td></tr>`;
                         }).join('') : '<tr><td colspan="4" style="padding:10px;color:var(--text-muted);text-align:center">데이터 쌓이는 중 (내일부터 일별 증감 표시)</td></tr>'}</tbody>
@@ -4282,13 +4290,13 @@ class BhasApp {
                     <span style="font-size:0.62rem;color:var(--text-muted)">팔로워 ${cur != null ? cur.toLocaleString() : '—'}</span>
                 </div>
                 <div style="display:flex;align-items:baseline;gap:6px;margin:5px 0 4px">
-                    <span style="font-size:1.35rem;font-weight:900;color:${folCol}">${folTxt}</span>
+                    <span style="font-size:1.35rem;font-weight:900">${this._igDelta(wkFol)}</span>
                     <span style="font-size:0.64rem;color:var(--text-muted)">이번주 팔로워</span>
                 </div>
                 <div style="display:flex;gap:10px;font-size:0.66rem;color:var(--text-muted);flex-wrap:wrap">
                     <span>게시물 <b style="color:var(--text-main)">${wkPosts}</b></span>
-                    <span>댓글 <b style="color:var(--text-main)">${sgn(wkComments)}</b></span>
-                    <span>좋아요 <b style="color:var(--text-main)">${sgn(wkLikes)}</b></span>
+                    <span>댓글 <b>${this._igDelta(wkComments)}</b></span>
+                    <span>좋아요 <b>${this._igDelta(wkLikes)}</b></span>
                 </div>
                 ${this._igSpark(fpts, '#3b82f6', 220, 30)}
             </div>`;
