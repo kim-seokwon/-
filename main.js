@@ -2297,8 +2297,8 @@ class BhasApp {
         const mdMax = Math.max(1, ...monthDaily);
         const spark = (vals, color) => { const w = 130, h = 36; if (!vals.some(v => v > 0)) return `<svg width="${w}" height="${h}" style="width:100%;max-width:${w}px"></svg>`; const max = Math.max(...vals, 1), n = vals.length; const X = i => (n <= 1 ? w : i / (n - 1) * w); const Y = v => h - 4 - (v / max) * (h - 9); const line = vals.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(''); const gid = 'sg' + color.replace('#', ''); return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;width:100%;max-width:${w}px"><defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${line}L${w},${h}L0,${h}Z" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`; };
         const deltaBadge = (pct, ref) => pct == null ? `<span style="font-size:0.68rem;color:var(--text-muted)">${ref} 기준 없음</span>` : `<span style="font-size:0.68rem;font-weight:700;color:${pct >= 0 ? '#16a34a' : '#dc2626'};background:${pct >= 0 ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.12)'};padding:2px 7px;border-radius:6px;white-space:nowrap">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% ${ref}</span>`;
-        const kpiCard = (label, big, unit, badge, color, popKey) => `<div class="glass" style="padding:1rem 1.15rem;border-radius:16px${popKey ? ';cursor:pointer' : ''}"${popKey ? ` onclick="app._pop(event,'${popKey}')"` : ''}>
-            <div style="font-size:0.76rem;color:var(--text-muted);font-weight:600">${label}${popKey ? ' <i class="ph ph-info" style="font-size:0.7rem;opacity:0.5"></i>' : ''}</div>
+        const kpiCard = (label, big, unit, badge, color, nav) => `<div class="glass" style="padding:1rem 1.15rem;border-radius:16px${nav ? ';cursor:pointer' : ''}"${nav ? ` onclick="app.switchView('${nav}')"` : ''}>
+            <div style="font-size:0.76rem;color:var(--text-muted);font-weight:600">${label}</div>
             <div style="font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.15;margin-top:4px;white-space:nowrap">${big}<span style="font-size:0.72rem;font-weight:600">${unit}</span></div>
             <div style="margin-top:6px">${badge}</div>
         </div>`;
@@ -2311,7 +2311,7 @@ class BhasApp {
         monthRev.forEach(o => { let c = channelOf(o); if (!CHAN_FIXED.includes(c)) c = '기타'; const b = brandOf(o) || '기타'; chanBrand[c][b] = (chanBrand[c][b] || 0) + Number(o.pay_amount || 0); });
         const chanTot = c => Object.values(chanBrand[c]).reduce((s, v) => s + v, 0);
         const chanMaxT = Math.max(1, ...CHAN_FIXED.map(chanTot));
-        const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div onclick="app._pop(event,'ch_${c}')" style="margin-bottom:0.55rem;cursor:pointer">
+        const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div onclick="app.switchView('sales')" style="margin-bottom:0.55rem;cursor:pointer">
             <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${c}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(total) + '원' : '—'}</span></div>
             <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${on ? Math.max(3, total / chanMaxT * 100) : 0}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
         </div>`; }).join('');
@@ -2334,7 +2334,7 @@ class BhasApp {
         }).join('');
         // 브랜드별 매출 합계 + 비율(%)
         const brandGrand = brandArr.reduce((s, [, v]) => s + v, 0) || 1;
-        const brandTotals = brandArr.length ? brandArr.map(([b, v], i) => `<div onclick="app._pop(event,'br_${this._vesc(b)}')" style="display:flex;align-items:center;gap:7px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.82rem;cursor:pointer"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(b)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b><span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);min-width:34px;text-align:right;font-variant-numeric:tabular-nums">${Math.round(v / brandGrand * 100)}%</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">이번달 매출 없음</div>';
+        const brandTotals = brandArr.length ? brandArr.map(([b, v], i) => `<div onclick="app.switchView('sales')" style="display:flex;align-items:center;gap:7px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.82rem;cursor:pointer"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(b)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b><span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);min-width:34px;text-align:right;font-variant-numeric:tabular-nums">${Math.round(v / brandGrand * 100)}%</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">이번달 매출 없음</div>';
         const brandPanel = panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;justify-content:center;margin-bottom:0.4rem">${donut(brandArr, palette)}</div>${brandTotals}`);
         // 최근주문 — 전체폭 그리드(2줄 카드)
         const recentGrid = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 1.4rem">${recentCompact}</div>`;
@@ -2386,11 +2386,11 @@ class BhasApp {
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
             ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.7rem;margin-bottom:0.9rem">
-                ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'k_today')}
-                ${kpiCard('실결제금액', won(hasFinancial ? monthFinancial.paid : monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'k_paid')}
-                ${kpiCard('환불금액', won(hasFinancial ? monthFinancial.refund : 0), '원', `${mm}월 환불 기준`, '#a855f7', 'k_refund')}
-                ${kpiCard(`${mm}월 순매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'k_net')}
-                ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'k_cnt')}
+                ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
+                ${kpiCard('실결제금액', won(hasFinancial ? monthFinancial.paid : monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
+                ${kpiCard('환불금액', won(hasFinancial ? monthFinancial.refund : 0), '원', `${mm}월 환불 기준`, '#a855f7', 'orders')}
+                ${kpiCard(`${mm}월 순매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
+                ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'orders')}
             </div>
             <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:stretch">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
@@ -4331,7 +4331,7 @@ class BhasApp {
                 rowP('이번주 댓글', sgn(wkComments)) +
                 rowP('이번주 좋아요', sgn(wkLikes)),
                 link: { label: 'SNS 탭', action: "app.switchView('sns')" } };
-            return `<div class="glass" style="padding:0.9rem 1rem;border-radius:14px;cursor:pointer" onclick="app._pop(event,'${snsKey}')">
+            return `<div class="glass" style="padding:0.9rem 1rem;border-radius:14px;cursor:pointer" onclick="app.switchView('sns')">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
                     <span style="font-size:0.85rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(this._brandNameById(a.brand_id))}</span>
                     <span style="font-size:0.62rem;color:var(--text-muted)">팔로워 ${cur != null ? cur.toLocaleString() : '—'}</span>
