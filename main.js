@@ -3970,11 +3970,15 @@ class BhasApp {
         if (!brand || this._analysisRepeatKey === brand || this._analysisRepeatLoading) return;
         this._analysisRepeatLoading = true; this.requestRender();
         try {
-            const { data, error } = await this.supabase.rpc('brand_repurchase', { p_brand: brand });
-            if (error) throw error;
-            this.analysisRepeat = { [brand]: data };
+            const [rep, ot] = await Promise.all([
+                this.supabase.rpc('brand_repurchase', { p_brand: brand }),
+                this.supabase.rpc('brand_order_types', { p_brand: brand }),
+            ]);
+            if (rep.error) throw rep.error;
+            this.analysisRepeat = { [brand]: rep.data };
+            this.analysisOrderTypes = { [brand]: ot.error ? null : ot.data };
             this._analysisRepeatKey = brand;
-        } catch (e) { this.analysisRepeat = { [brand]: null }; this._analysisRepeatKey = brand; }
+        } catch (e) { this.analysisRepeat = { [brand]: null }; this.analysisOrderTypes = { [brand]: null }; this._analysisRepeatKey = brand; }
         this._analysisRepeatLoading = false; this.requestRender();
     }
     // 사이즈·색상 고객군 HTML (items 배열 → 분포)
@@ -4031,6 +4035,30 @@ class BhasApp {
             </div>`;
     }
 
+    // 주문타입 분석 — 정식/프리오더/이벤트 주문 구성 + 고객 세그먼트(타입별 구매 성향)
+    _orderTypesHTML(ot) {
+        if (!ot) return '';
+        const T = ot.orders_total || 1, C = ot.customers || 1;
+        const pct = (v, t) => Math.round((v || 0) / (t || 1) * 100);
+        const parts = [['정식', ot.orders_regular || 0, '#6366f1'], ['프리오더', ot.orders_preorder || 0, '#06b6d4'], ['이벤트', ot.orders_event || 0, '#f59e0b']];
+        const bar = `<div style="display:flex;height:15px;border-radius:8px;overflow:hidden;background:rgba(148,163,184,0.15)">${parts.map(([l, v, c]) => v ? `<div style="width:${(v / T * 100).toFixed(1)}%;background:${c}" title="${l} ${v.toLocaleString()}건"></div>` : '').join('')}</div>`;
+        const legend = parts.map(([l, v, c]) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.78rem;margin-right:14px;white-space:nowrap"><span style="width:9px;height:9px;border-radius:2px;background:${c}"></span>${l} <b style="font-variant-numeric:tabular-nums">${v.toLocaleString()}</b><span style="color:var(--text-muted);font-size:0.7rem">${pct(v, T)}%</span></span>`).join('');
+        const segTile = (label, v, color, desc) => `<div style="flex:1;min-width:120px;text-align:center;padding:12px 8px;background:${color}14;border:1px solid ${color}33;border-radius:12px"><div style="font-size:1.5rem;font-weight:900;color:${color};line-height:1;font-variant-numeric:tabular-nums">${(v || 0).toLocaleString()}<span style="font-size:0.68rem;font-weight:600">명</span></div><div style="font-size:0.78rem;font-weight:700;margin-top:5px">${label}</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px">${desc} · ${pct(v, C)}%</div></div>`;
+        return `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem">
+            <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-tag" style="color:#6366f1"></i> 주문타입 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">전체기간 · 이벤트=상품명 특가/기획/세일</span></div>
+            <div style="margin-bottom:0.55rem">${bar}</div>
+            <div style="margin-bottom:1.15rem">${legend}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:7px;font-weight:600">고객 세그먼트 <span style="font-weight:400">(이 브랜드에서 산 타입 기준 · 전체기간)</span></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                ${segTile('정식만', ot.seg_regular_only, '#6366f1', '정식만 구매')}
+                ${segTile('프리오더만', ot.seg_preorder_only, '#06b6d4', '프리오더만')}
+                ${segTile('이벤트만', ot.seg_event_only, '#f59e0b', '이벤트만')}
+                ${segTile('복합', ot.seg_mixed, '#8b5cf6', '여러 타입')}
+            </div>
+            <p style="margin:0.85rem 2px 0;font-size:0.68rem;color:var(--text-muted)">* 주문타입 우선순위 이벤트&gt;프리오더&gt;정식 · 취소·환불 제외 · 전화번호 기준 고객</p>
+        </div>`;
+    }
+
     renderAnalysis() {
         const names = this._analysisBrandNames();
         const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
@@ -4072,7 +4100,7 @@ class BhasApp {
                     </select>
                 </div>
             </div>
-            ${bf ? `${repeatCard}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
+            ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
         </div>`;
     }
 
