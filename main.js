@@ -4187,12 +4187,22 @@ class BhasApp {
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:0.9rem">
                     <div>
                         <div style="font-size:1.05rem;font-weight:800">${esc(this._brandNameById(a.brand_id))}</div>
-                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle} · 팔로워 <b style="color:#3b82f6">${cur != null ? cur.toLocaleString() : '—'}</b>${(dailyRows[0] && dailyRows[0].f != null) ? ` <b>${this._igDelta(dailyRows[0].f)}</b>` : ''}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle}</div>
                     </div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
                         ${a.ig_business_id ? `<button onclick="app.igFeedPreview('${a.ig_business_id}','${esc(this._brandNameById(a.brand_id))}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-images-square"></i> 피드 미리보기</button>` : ''}
                         <button onclick="app.igAddSnapshot('${a.id}')" class="btn-primary" style="font-size:0.74rem;padding:6px 11px;border-radius:8px"><i class="ph ph-plus"></i> 기록</button>
                         <button onclick="app.igSetHandle('${a.id}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">계정</button>
+                    </div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;background:rgba(59,130,246,0.06);border-radius:12px;margin-bottom:0.9rem">
+                    <div style="display:flex;align-items:baseline;gap:8px">
+                        <span style="font-size:0.74rem;color:var(--text-muted);font-weight:600">팔로워</span>
+                        <span style="font-size:1.55rem;font-weight:900;color:#3b82f6;line-height:1;font-variant-numeric:tabular-nums">${cur != null ? cur.toLocaleString() : '—'}</span>
+                    </div>
+                    <div style="text-align:right">
+                        <div style="font-size:1.1rem;font-weight:900;line-height:1">${(dailyRows[0] && dailyRows[0].f != null) ? this._igDelta(dailyRows[0].f) : '<span style="color:var(--text-muted);font-size:0.9rem">—</span>'}</div>
+                        <div style="font-size:0.6rem;color:var(--text-muted);margin-top:3px">전일 대비</div>
                     </div>
                 </div>
                 <div style="font-size:0.68rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">이번주 증감</div>
