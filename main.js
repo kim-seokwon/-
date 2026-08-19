@@ -4081,7 +4081,11 @@ class BhasApp {
         if (v == null) return '<span style="color:var(--text-muted)">—</span>';
         if (v === 0) return '<span style="color:var(--text-muted)">0</span>';
         const up = v > 0;
-        return `<span style="color:${up ? '#dc2626' : '#2563eb'};font-weight:900">${up ? '▲' : '▼'}</span><span style="color:var(--text-main)">${Math.abs(v).toLocaleString()}</span>`;
+        const col = up ? '#dc2626' : '#2563eb';
+        // 이쁜 라운드 삼각형(SVG), 글자 크기의 약 50%로. 상승=빨강▲ 하락=파랑▼.
+        const path = up ? 'M6 1.2 L11 9.8 L1 9.8 Z' : 'M1 1.2 L11 1.2 L6 9.8 Z';
+        const tri = `<svg viewBox="0 0 12 11" aria-hidden="true" style="width:0.5em;height:0.5em;vertical-align:baseline;margin-right:2px"><path d="${path}" fill="${col}" stroke="${col}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+        return `${tri}<span style="color:var(--text-main)">${Math.abs(v).toLocaleString()}</span>`;
     }
 
     // 작은 선그래프(팔로워 추이)
