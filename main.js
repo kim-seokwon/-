@@ -4142,7 +4142,7 @@ class BhasApp {
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:0.9rem">
                     <div>
                         <div style="font-size:1.05rem;font-weight:800">${esc(this._brandNameById(a.brand_id))}</div>
-                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle} · 팔로워 <b style="color:${color}">${cur != null ? cur.toLocaleString() : '—'}</b></div>
+                        <div style="font-size:0.78rem;color:var(--text-muted)">${handle} · 팔로워 <b style="color:#3b82f6">${cur != null ? cur.toLocaleString() : '—'}</b>${(dailyRows[0] && dailyRows[0].f != null) ? ` <span style="font-weight:700;color:${dailyRows[0].f > 0 ? '#10b981' : dailyRows[0].f < 0 ? '#ef4444' : 'var(--text-muted)'}">${dailyRows[0].f > 0 ? '+' : ''}${dailyRows[0].f.toLocaleString()}</span>` : ''}</div>
                     </div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
                         ${a.ig_business_id ? `<button onclick="app.igFeedPreview('${a.ig_business_id}','${esc(this._brandNameById(a.brand_id))}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-images-square"></i> 피드 미리보기</button>` : ''}
@@ -4155,7 +4155,7 @@ class BhasApp {
                     ${wkTile('팔로워 순증감', wkFol, true)}${wkTile('게시물', wkPosts, false)}${wkTile('댓글', wkComments, true)}${wkTile('좋아요', wkLikes, true)}
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:2px">팔로워 추이</div>
-                ${this._igSpark(followerPts, color)}
+                ${this._igSpark(followerPts, '#3b82f6')}
                 <div style="margin-top:0.9rem">
                     <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">일별 증감 <span style="font-weight:400">(최근 7일)</span></div>
                     <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
@@ -4290,7 +4290,7 @@ class BhasApp {
                     <span>댓글 <b style="color:var(--text-main)">${sgn(wkComments)}</b></span>
                     <span>좋아요 <b style="color:var(--text-main)">${sgn(wkLikes)}</b></span>
                 </div>
-                ${this._igSpark(fpts, color, 220, 30)}
+                ${this._igSpark(fpts, '#3b82f6', 220, 30)}
             </div>`;
         }).join('');
         return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem">${cards}</div>`;
