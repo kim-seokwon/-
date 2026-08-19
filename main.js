@@ -4185,14 +4185,13 @@ class BhasApp {
             const wkTile = (label, v, signed) => { const inner = (v == null) ? '<span style="color:var(--text-muted)">—</span>' : signed ? this._igDelta(v) : `<span style="color:var(--text-main)">${v.toLocaleString()}</span>`; return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;line-height:1.05">${inner}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
             return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:0.9rem">
-                    <div>
-                        <div style="font-size:1.05rem;font-weight:800">${esc(this._brandNameById(a.brand_id))}</div>
+                    <div style="min-width:0;flex:1">
+                        <div style="font-size:1.05rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(this._brandNameById(a.brand_id))}</div>
                         <div style="font-size:0.78rem;color:var(--text-muted)">${handle}</div>
                     </div>
-                    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-                        ${a.ig_business_id ? `<button onclick="app.igFeedPreview('${a.ig_business_id}','${esc(this._brandNameById(a.brand_id))}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-images-square"></i> 피드 미리보기</button>` : ''}
-                        <button onclick="app.igAddSnapshot('${a.id}')" class="btn-primary" style="font-size:0.74rem;padding:6px 11px;border-radius:8px"><i class="ph ph-plus"></i> 기록</button>
-                        <button onclick="app.igSetHandle('${a.id}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">계정</button>
+                    <div style="display:flex;gap:6px;flex-shrink:0">
+                        ${a.ig_business_id ? `<button onclick="app.igFeedPreview('${a.ig_business_id}','${esc(this._brandNameById(a.brand_id))}')" style="font-size:0.72rem;padding:6px 10px;border-radius:8px;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);cursor:pointer;font-weight:600;white-space:nowrap"><i class="ph ph-images-square"></i> 피드 미리보기</button>` : ''}
+                        <button onclick="app.igSetHandle('${a.id}')" aria-label="계정 설정" title="계정(핸들) 설정" style="font-size:0.85rem;width:32px;height:32px;padding:0;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer;flex-shrink:0"><i class="ph ph-gear"></i></button>
                     </div>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;background:rgba(59,130,246,0.06);border-radius:12px;margin-bottom:0.9rem">
