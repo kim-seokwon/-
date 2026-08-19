@@ -1998,9 +1998,9 @@ class BhasApp {
 
     // 홈 대시보드 클릭 팝오버 — 카드/박스/행을 누르면 간략 세부를 말풍선으로.
     //  각 요소는 onclick="app._pop(event,'KEY')"; 내용은 renderHome에서 this._homePops에 미리 채운다.
-    _pop(evt, key) {
+    _pop(evt, key, reg) {
         try { evt.stopPropagation(); } catch (_e) {}
-        const data = (this._homePops || {})[key];
+        const data = (reg || this._homePops || {})[key];
         if (!data) return;
         document.getElementById('_hpop')?.remove();
         const el = document.createElement('div');
@@ -4054,14 +4054,16 @@ class BhasApp {
     async loadIG() {
         this._igLoading = true;
         try {
-            const [accRes, snapRes] = await Promise.all([
+            const [accRes, snapRes, adRes] = await Promise.all([
                 this.supabase.from('ig_accounts').select('*'),
                 this.supabase.from('ig_snapshots').select('*').order('snap_date', { ascending: true }),
+                this.supabase.from('ad_status').select('*'),
             ]);
             this.igAccounts = accRes.data || [];
             this.igSnapshots = snapRes.data || [];
+            this.adStatus = adRes.data || [];
             this._igLoaded = true;
-        } catch (e) { this.igAccounts = []; this.igSnapshots = []; this._igLoaded = true; }
+        } catch (e) { this.igAccounts = []; this.igSnapshots = []; this.adStatus = []; this._igLoaded = true; }
         this._igLoading = false;
         this.requestRender();
     }
@@ -4106,6 +4108,37 @@ class BhasApp {
                 <div style="width:100%;background:${color};border-radius:4px 4px 0 0;height:${Math.max(4, w.v / max * 46).toFixed(0)}px"></div>
                 <span style="font-size:0.6rem;color:var(--text-muted);white-space:nowrap">${w.label}</span>
             </div>`).join('')}</div>`;
+    }
+
+    // 메타 광고 운영현황 — 채널(브랜드)별 현재 돌아가는 광고 수. ad_status 테이블 기반(수동 갱신 시드).
+    _adsBlock() {
+        const rows = (this.adStatus || []).slice().sort((a, b) => (b.active_ads || 0) - (a.active_ads || 0));
+        const esc = s => this._vesc ? this._vesc(s) : String(s ?? '');
+        const totalActive = rows.reduce((s, r) => s + (r.active_ads || 0), 0);
+        const updated = rows.length ? rows.map(r => r.updated_at).sort().slice(-1)[0] : null;
+        const upTxt = updated ? new Date(updated).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+        this._adPops = this._adPops || {};
+        const tiles = rows.map((r, i) => {
+            const on = (r.active_ads || 0) > 0;
+            const key = 'ad' + i;
+            const names = Array.isArray(r.detail) ? r.detail : [];
+            this._adPops[key] = { title: esc(r.brand) + ' 광고', rows: on
+                ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">계정 ${esc(r.ad_account || '—')}</div>` + names.map(n => `<div style="padding:4px 0;border-top:1px solid var(--card-border);font-size:0.82rem"><span style="color:#dc2626">●</span> ${esc(n)}</div>`).join('')
+                : `<div style="font-size:0.82rem;color:var(--text-muted)">현재 활성 광고 없음 (전부 일시중지 또는 미집행)</div>` };
+            return `<div onclick="app._pop(event,'${key}',app._adPops)" style="flex:1;min-width:130px;cursor:pointer;text-align:center;padding:13px 8px;background:${on ? 'rgba(220,38,38,0.07)' : 'rgba(148,163,184,0.07)'};border:1px solid ${on ? 'rgba(220,38,38,0.25)' : 'var(--card-border)'};border-radius:12px">
+                <div style="font-size:1.7rem;font-weight:900;line-height:1;color:${on ? '#dc2626' : 'var(--text-muted)'}">${r.active_ads || 0}</div>
+                <div style="font-size:0.8rem;font-weight:700;margin-top:5px">${esc(r.brand)}</div>
+                <div style="font-size:0.66rem;color:var(--text-muted);margin-top:2px">${on ? '광고 집행중' : '중지'}</div>
+            </div>`;
+        }).join('');
+        return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px;margin-bottom:1.3rem">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:0.9rem">
+                <div style="font-size:1.02rem;font-weight:800"><i class="ph ph-megaphone-simple"></i> 메타 광고 운영현황 <span style="font-size:0.82rem;color:var(--text-muted);font-weight:600">· 총 ${totalActive}개 집행중</span></div>
+                <div style="font-size:0.7rem;color:var(--text-muted)">기준 ${upTxt}</div>
+            </div>
+            ${rows.length ? `<div style="display:flex;gap:10px;flex-wrap:wrap">${tiles}</div>` : `<div style="color:var(--text-muted);font-size:0.82rem">광고 데이터 없음</div>`}
+            <p style="margin:0.85rem 2px 0;font-size:0.68rem;color:var(--text-muted)">* 채널(브랜드)별 현재 활성 광고 수. 카드를 누르면 광고 목록이 보여요. 수치는 요청 시 갱신됩니다.</p>
+        </div>`;
     }
 
     renderSNS() {
@@ -4181,6 +4214,7 @@ class BhasApp {
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;flex-wrap:wrap;gap:8px">
                 <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-instagram-logo"></i> SNS 운영현황</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별 팔로워 추이 · 주간 게시물 · 댓글/좋아요</p></div>
             </div>
+            ${this._adsBlock()}
             ${accounts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.3rem">${cards}</div>` : `<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted)">등록된 인스타 계정이 없습니다.</div>`}
             <p style="margin:1.1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 팔로워·게시물·댓글·좋아요는 메타 API로 매일 자동수집됩니다. 주간 증감은 2주치가 쌓이면 표시돼요. (스토리는 API로 소급 불가라 보류)</p>
         </div>`;

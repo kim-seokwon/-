@@ -172,13 +172,56 @@ async function ensureMall() {
   else console.log(`[kidikidi] malls 등록: kidikidi → brand ${brand?.id ?? '(미매핑)'}`);
 }
 
-// 진단: 로그인 후 배송/송장 관련 메뉴·API 엔드포인트 캡처(송장등록 API 역추적용)
+// 수취인성 필드 탐지용 — 목록엔 없고 상세에만 있는 이름/연락처/주소 키를 찾는다.
+const PII_KEY = /recv|receiv|addr|zip|post|tel|phone|hp$|hpNo|cell|mobile|수취|수령|주소|연락|우편/i;
+
+// GitHub Actions 로그에 실제 고객정보가 남지 않도록 값은 마스킹해서만 출력한다.
+function maskValue(v) {
+  const s = String(v ?? '');
+  if (!s) return '';
+  return s.length <= 2 ? '*'.repeat(s.length) : s.slice(0, 1) + '*'.repeat(Math.min(s.length - 1, 8));
+}
+
+// 응답 JSON을 깊이 순회하며 수취인성 키의 (경로, 마스킹값) 목록을 뽑는다.
+function findPiiKeys(node, path = '', out = [], depth = 0) {
+  if (out.length >= 40 || depth > 6 || node == null) return out;
+  if (Array.isArray(node)) {
+    if (node.length) findPiiKeys(node[0], `${path}[0]`, out, depth + 1);
+    return out;
+  }
+  if (typeof node !== 'object') return out;
+  for (const [k, v] of Object.entries(node)) {
+    const p = path ? `${path}.${k}` : k;
+    if (v !== null && typeof v === 'object') findPiiKeys(v, p, out, depth + 1);
+    else if (PII_KEY.test(k) && v != null && String(v) !== '') out.push(`${p}=${maskValue(v)}`);
+  }
+  return out;
+}
+
+// 진단: 로그인 후 배송/송장 + 수취인 상세 API 캡처
+//   목적1) 송장등록 API 역추적
+//   목적2) 목록 API엔 없는 수취인(이름·연락처·주소)을 주는 상세 API 확정 → mapOrder() 채우기
+//   한 번의 수동 실행으로 끝나도록, 지나가는 JSON 응답을 전부 훑어 수취인 필드를 가진 엔드포인트를 찾는다.
 async function diag() {
   const browser = await chromium.launch({ headless: true });
   try {
     const { ctx, page } = await login(browser);
     const seen = new Set();
+    const apiHits = new Map();   // "METHOD path" → { status, pii[], top[] }
     ctx.on('request', r => { const u = r.url(); if (/\/o\/|\/api\/|ajax|json|deliv|invoice|송장|ship/i.test(u)) seen.add(`${r.method()} ${u.split('?')[0]}`); });
+    // 실제 응답 본문까지 열어봐야 수취인 보유 여부를 알 수 있다.
+    ctx.on('response', async (res) => {
+      try {
+        const url = res.url();
+        if (!/\/o\/|\/api\//i.test(url)) return;
+        if (!/json/i.test(res.headers()['content-type'] || '')) return;
+        const key = `${res.request().method()} ${url.split('?')[0]}`;
+        if (apiHits.has(key)) return;
+        const body = await res.json().catch(() => null);
+        if (!body) return;
+        apiHits.set(key, { status: res.status(), pii: findPiiKeys(body), top: Object.keys(body).slice(0, 12) });
+      } catch { /* 응답 본문 못 읽는 건 무시 */ }
+    });
     console.log('[diag] 로그인 완료, url=', page.url());
     // 메인 진입 후 메뉴 링크 덤프
     await page.goto(`${BASE}/main`, { waitUntil: 'networkidle' }).catch(() => {});
@@ -206,13 +249,58 @@ async function diag() {
     }).catch(() => []);
     console.log('[diag] 페이지 내 송장/발송 API 경로 후보:', JSON.stringify(jsHits));
     console.log('[diag] 캡처된 API 엔드포인트:\n' + [...seen].join('\n'));
-    // 최근 주문 1건의 전체 필드(배송/송장 필드 확인)
-    const to = new Date(), from = new Date(Date.now() - 30 * 864e5);
-    const res = await page.request.get(orderUrl(ymd(from), ymd(to), 1), { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+    // 최근 주문 1건의 전체 필드(배송/송장 필드 확인). 30일이면 0건일 수 있어 400일로 본다.
+    const to = new Date(), from = new Date(Date.now() - 400 * 864e5);
+    const JSON_HDR = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
+    const res = await page.request.get(orderUrl(ymd(from), ymd(to), 1), { headers: JSON_HDR });
     const body = await res.json().catch(() => ({}));
     const first = (extractList(body) || [])[0];
     console.log('[diag] 주문객체 필드:', first ? JSON.stringify(Object.keys(first)) : '(주문없음)');
-    if (first) console.log('[diag] 주문객체 샘플:', JSON.stringify(first).slice(0, 1200));
+    if (first) console.log('[diag] 주문객체 샘플(마스킹):', JSON.stringify(findPiiKeys(first)));
+
+    // 수취인 상세 API 후보 직접 프로브 — page.request는 context 'response' 이벤트를 안 태우므로 여기서 직접 판정
+    if (first?.ordNo) {
+      const ordNo = String(first.ordNo);
+      const candidates = [
+        `/o/order/lookup/order/${ordNo}`,
+        `/o/order/lookup/orders/${ordNo}`,
+        `/o/order/lookup/orders/detail?d=on&ordNo=${ordNo}`,
+        `/o/order/lookup/orderDetail?d=on&ordNo=${ordNo}`,
+        `/o/order/lookup/order/detail?d=on&ordNo=${ordNo}`,
+        `/o/order/lookup/orderReceiver?d=on&ordNo=${ordNo}`,
+        `/o/order/deliv/orders?d=on&ordNo=${ordNo}`,
+        `/o/order/deliv/order/${ordNo}`,
+      ];
+      for (const path of candidates) {
+        try {
+          const r = await page.request.get(`${BASE}${path}`, { headers: JSON_HDR });
+          const ct = r.headers()['content-type'] || '';
+          if (!/json/i.test(ct)) { console.log(`[diag] probe ${r.status()} (non-json) ${path}`); continue; }
+          const b = await r.json().catch(() => null);
+          const pii = b ? findPiiKeys(b) : [];
+          console.log(`[diag] probe ${r.status()} ${path} → top=${JSON.stringify(Object.keys(b || {}).slice(0, 10))} 수취인후보=${JSON.stringify(pii)}`);
+        } catch (e) { console.log(`[diag] probe ERR ${path}: ${e.message}`); }
+        await page.waitForTimeout(300);
+      }
+
+      // UI에서 실제 상세를 열어 진짜 상세 XHR을 잡는다(프로브가 다 빗나갈 때의 정공법)
+      const opened = await page.evaluate((no) => {
+        const hit = [...document.querySelectorAll('a,button,td,tr')]
+          .find(el => (el.getAttribute?.('onclick') || '') .includes(no) || (el.innerText || '').trim() === no);
+        if (!hit) return false;
+        hit.click();
+        return true;
+      }, ordNo).catch(() => false);
+      console.log(`[diag] 주문 ${ordNo} 상세 열기 ${opened ? '시도함' : '대상 못찾음'}`);
+      if (opened) await page.waitForTimeout(3000);
+    }
+
+    // 캡처된 JSON 응답 중 수취인 필드를 가진 엔드포인트 = 우리가 찾던 상세 API
+    const withPii = [...apiHits.entries()].filter(([, v]) => v.pii.length);
+    console.log('[diag] ★ 수취인 필드 보유 엔드포인트:', withPii.length
+      ? '\n' + withPii.map(([k, v]) => `  ${k} [${v.status}] ${JSON.stringify(v.pii)}`).join('\n')
+      : '(없음 — UI 상세 진입 실패했을 가능성. 위 probe 결과 확인)');
+    console.log('[diag] 캡처된 JSON 엔드포인트 전체:', '\n' + [...apiHits.entries()].map(([k, v]) => `  ${k} [${v.status}] top=${JSON.stringify(v.top)}`).join('\n'));
   } finally { await browser.close(); }
 }
 
