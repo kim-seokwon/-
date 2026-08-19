@@ -3980,10 +3980,13 @@ class BhasApp {
     // 사이즈·색상 고객군 HTML (items 배열 → 분포)
     _customerAnalysisHTML(items, loading) {
         const pick = (re, s) => { const m = String(s || '').toLowerCase().match(re); return m ? m[1].trim() : null; };
+        // 값 정제: [pre-order] 태그·안내문구 괄호 제거 → 순수 색상/사이즈만 집계
+        const cleanCol = v => { if (!v) return v; v = v.replace(/\[[^\]]*\]/g, '').replace(/\([^)]*(?:공지|필독|필수|주의|참고|안내|잡사)[^)]*\)/g, '').replace(/\s+/g, ' ').trim(); return v || null; };
+        const cleanSz = v => { if (!v) return v; v = v.replace(/\[[^\]]*\]/g, '').replace(/\([^)]*(?:발송|배송|공지|필독|안내)[^)]*\)/g, '').replace(/\s+/g, ' ').trim(); return v || null; };
         const szMap = {}, colMap = {}, comboMap = {};
         (items || []).forEach(it => {
             const q = Number(it.quantity || 1);
-            const sz = pick(/size=([^,]+)/, it.option_name), col = pick(/color=([^,]+)/, it.option_name);
+            const sz = cleanSz(pick(/size=([^,]+)/, it.option_name)), col = cleanCol(pick(/color=([^,]+)/, it.option_name));
             if (sz) szMap[sz] = (szMap[sz] || 0) + q;
             if (col) colMap[col] = (colMap[col] || 0) + q;
             if (sz && col) { const k = `${col} · ${sz}`; comboMap[k] = (comboMap[k] || 0) + q; }
@@ -4000,6 +4003,34 @@ class BhasApp {
         ${combos.length ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.8rem"><i class="ph ph-user-focus" style="color:#8b5cf6"></i> 대표 고객 프로필 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600">색상×사이즈 조합 TOP</span></div><div style="display:flex;flex-wrap:wrap;gap:8px">${combos.map(([l, v], i) => `<span style="font-size:0.83rem;padding:6px 13px;border-radius:20px;background:${i === 0 ? 'rgba(139,92,246,0.15)' : 'rgba(148,163,184,0.1)'};font-weight:${i === 0 ? '700' : '500'}">${this._vesc(l)} <b style="color:#8b5cf6">${v.toLocaleString()}</b></span>`).join('')}</div></div>` : ''}
         <p style="margin:1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 판매수량 기준 · 주문 옵션(color/size)에서 추출 · 취소·환불 제외 · 주요(누적 60%)/서브(~85%)/약한</p>`;
     }
+
+    // 재구매 횟수 분포(1~10회+) · 충성 = 10회 이상
+    _repeatDistHTML(rep) {
+        const bmap = {}; (rep.dist || []).forEach(d => { bmap[d.bucket] = d.c; });
+        const buckets = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10+'];
+        const vals = buckets.map(b => bmap[b] || 0);
+        const maxV = Math.max(1, ...vals);
+        const loyal = rep.loyal || bmap['10+'] || 0;
+        const cust = rep.customers || 1;
+        const barH = v => Math.max(2, Math.round(Math.sqrt(v / maxV) * 66));
+        const bars = buckets.map((b, i) => {
+            const v = vals[i], isLoyal = b === '10+';
+            const col = isLoyal ? '#f59e0b' : (i === 0 ? '#cbd5e1' : '#6366f1');
+            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${b}회 구매 · ${v.toLocaleString()}명">
+                <span style="font-size:0.58rem;color:var(--text-muted);line-height:1;margin-bottom:2px">${v ? v.toLocaleString() : ''}</span>
+                <div style="width:100%;max-width:20px;background:${col};height:${barH(v)}px;border-radius:3px 3px 0 0"></div>
+            </div>`;
+        }).join('');
+        const labels = buckets.map(b => `<span style="flex:1;text-align:center;font-size:0.56rem;color:${b === '10+' ? '#f59e0b' : 'var(--text-muted)'};font-weight:${b === '10+' ? '700' : '400'}">${b}</span>`).join('');
+        return `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">구매 횟수 분포 <span style="font-weight:400">(회당 고객수)</span></div>
+            <div style="display:flex;align-items:flex-end;gap:3px;height:80px">${bars}</div>
+            <div style="display:flex;gap:3px;margin-top:3px">${labels}</div>
+            <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--card-border);display:flex;justify-content:space-between;align-items:baseline;font-size:0.8rem">
+                <span style="color:#f59e0b;font-weight:800"><i class="ph ph-crown-simple"></i> 충성고객 ${loyal.toLocaleString()}명</span>
+                <span style="color:var(--text-muted);font-size:0.72rem">10회 이상 · 전체의 ${Math.round(loyal / cust * 100)}%</span>
+            </div>`;
+    }
+
     renderAnalysis() {
         const names = this._analysisBrandNames();
         const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
@@ -4019,7 +4050,7 @@ class BhasApp {
                 ${!rep ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : `
                 <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:0.7rem"><span style="font-size:2rem;font-weight:900;color:#10b981;line-height:1">${rep.rate ?? 0}%</span><span style="font-size:0.78rem;color:var(--text-muted)">고객 ${(rep.customers || 0).toLocaleString()}명 중 ${(rep.repeat_customers || 0).toLocaleString()}명 재구매</span></div>
                 <div style="display:flex;gap:14px;font-size:0.76rem;color:var(--text-muted);margin-bottom:0.8rem"><span>평균 <b style="color:var(--text-main)">${rep.avg_orders ?? 0}회</b></span><span>평균 누적구매 <b style="color:var(--text-main)">${won(rep.avg_spend || 0)}원</b></span><span>최다 <b style="color:var(--text-main)">${rep.max_orders ?? 0}회</b></span></div>
-                ${distBar('1회 구매', rep.once || 0, rep.customers || 1, '#94a3b8')}${distBar('2회', rep.twice || 0, rep.customers || 1, '#f59e0b')}${distBar('3회 이상 (충성)', rep.three_plus || 0, rep.customers || 1, '#10b981')}`}
+                ${this._repeatDistHTML(rep)}`}
             </div>
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
                 <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem"><i class="ph ph-crown" style="color:#f59e0b"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">누적 구매액 TOP</span></div>
