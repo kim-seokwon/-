@@ -3943,8 +3943,17 @@ class BhasApp {
     _analysisBrandNames() {
         return [...new Set((this.malls || []).map(m => { const b = (mockData.brands || []).find(x => x.id === m.brand_id); return b ? b.name : (m.label || null); }).filter(Boolean))];
     }
-    setAnalysisBrand(b) { this.analysisBrand = b; this._analysisScopeKey = null; this.requestRender(); this.ensureViewData(); }
-    setAnalysisYear(y) { this.analysisYear = parseInt(y, 10); this._analysisScopeKey = null; this.requestRender(); this.ensureViewData(); }
+    setAnalysisBrand(b) { this.analysisBrand = b; this._analysisScopeKey = null; this._analysisRepeatKey = null; this.requestRender(); this.ensureViewData(); }
+    setAnalysisPeriod(p) { this.analysisPeriod = p; this._analysisScopeKey = null; this._analysisRepeatKey = null; this.requestRender(); this.ensureViewData(); }
+    // 분석 기간 프리셋 → {from,to,label}. all=전체, 3m/6m/12m=최근 N개월, yYYYY=연도.
+    _analysisRange() {
+        const p = this.analysisPeriod || 'all';
+        const iso = d => d.toISOString().slice(0, 10);
+        if (/^y\d{4}$/.test(p)) { const y = +p.slice(1); return { from: `${y}-01-01`, to: `${y + 1}-01-01`, label: `${y}년` }; }
+        const mm = { '3m': 3, '6m': 6, '12m': 12 }[p];
+        if (mm) { const f = new Date(); f.setMonth(f.getMonth() - mm); return { from: iso(f), to: null, label: `최근 ${mm}개월` }; }
+        return { from: null, to: null, label: '전체기간' };
+    }
     async _loadAnalysisScope(brandName, fromISO, toISO) {
         const key = `${brandName}|${fromISO}|${toISO}`;
         if (this._analysisScopeKey === key || this._analysisScopeLoading) return;
@@ -3966,19 +3975,20 @@ class BhasApp {
         this._analysisScopeLoading = false; this.requestRender();
     }
     // 재구매율·누적금액 — 서버 RPC(전체기간, 전화번호 기준)
-    async _loadAnalysisRepeat(brand) {
-        if (!brand || this._analysisRepeatKey === brand || this._analysisRepeatLoading) return;
+    async _loadAnalysisRepeat(brand, fromISO, toISO) {
+        const key = `${brand}|${fromISO}|${toISO}`;
+        if (!brand || this._analysisRepeatKey === key || this._analysisRepeatLoading) return;
         this._analysisRepeatLoading = true; this.requestRender();
         try {
             const [rep, ot] = await Promise.all([
-                this.supabase.rpc('brand_repurchase', { p_brand: brand }),
-                this.supabase.rpc('brand_order_types', { p_brand: brand }),
+                this.supabase.rpc('brand_repurchase', { p_brand: brand, p_from: fromISO, p_to: toISO }),
+                this.supabase.rpc('brand_order_types', { p_brand: brand, p_from: fromISO, p_to: toISO }),
             ]);
             if (rep.error) throw rep.error;
             this.analysisRepeat = { [brand]: rep.data };
             this.analysisOrderTypes = { [brand]: ot.error ? null : ot.data };
-            this._analysisRepeatKey = brand;
-        } catch (e) { this.analysisRepeat = { [brand]: null }; this.analysisOrderTypes = { [brand]: null }; this._analysisRepeatKey = brand; }
+            this._analysisRepeatKey = key;
+        } catch (e) { this.analysisRepeat = { [brand]: null }; this.analysisOrderTypes = { [brand]: null }; this._analysisRepeatKey = key; }
         this._analysisRepeatLoading = false; this.requestRender();
     }
     // 사이즈·색상 고객군 HTML (items 배열 → 분포)
@@ -4002,9 +4012,9 @@ class BhasApp {
         if (!(sizes.length || colors.length)) return `<div class="glass" style="padding:1.6rem;border-radius:18px;color:var(--text-muted);font-size:0.86rem">${loading ? '불러오는 중…' : '이 브랜드·기간에 옵션(사이즈/색상) 데이터가 없어요.'}</div>`;
         return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem">
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-ruler" style="color:#6366f1"></i> 사이즈 고객군</div>${rowsH(sizes, '#6366f1')}</div>
-            <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-palette" style="color:#ec4899"></i> 색상 고객군</div>${rowsH(colors, '#ec4899')}</div>
+            <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-palette" style="color:#818cf8"></i> 색상 고객군</div>${rowsH(colors, '#818cf8')}</div>
         </div>
-        ${combos.length ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.8rem"><i class="ph ph-user-focus" style="color:#8b5cf6"></i> 대표 고객 프로필 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600">색상×사이즈 조합 TOP</span></div><div style="display:flex;flex-wrap:wrap;gap:8px">${combos.map(([l, v], i) => `<span style="font-size:0.83rem;padding:6px 13px;border-radius:20px;background:${i === 0 ? 'rgba(139,92,246,0.15)' : 'rgba(148,163,184,0.1)'};font-weight:${i === 0 ? '700' : '500'}">${this._vesc(l)} <b style="color:#8b5cf6">${v.toLocaleString()}</b></span>`).join('')}</div></div>` : ''}
+        ${combos.length ? `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.8rem"><i class="ph ph-user-focus" style="color:#4338ca"></i> 대표 고객 프로필 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600">색상×사이즈 조합 TOP</span></div><div style="display:flex;flex-wrap:wrap;gap:8px">${combos.map(([l, v], i) => `<span style="font-size:0.83rem;padding:6px 13px;border-radius:20px;background:${i === 0 ? 'rgba(99,102,241,0.12)' : 'rgba(148,163,184,0.1)'};font-weight:${i === 0 ? '700' : '500'}">${this._vesc(l)} <b style="color:#4338ca">${v.toLocaleString()}</b></span>`).join('')}</div></div>` : ''}
         <p style="margin:1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 판매수량 기준 · 주문 옵션(color/size)에서 추출 · 취소·환불 제외 · 주요(누적 60%)/서브(~85%)/약한</p>`;
     }
 
@@ -4019,41 +4029,43 @@ class BhasApp {
         const barH = v => Math.max(2, Math.round(Math.sqrt(v / maxV) * 66));
         const bars = buckets.map((b, i) => {
             const v = vals[i], isLoyal = b === '10+';
-            const col = isLoyal ? '#f59e0b' : (i === 0 ? '#cbd5e1' : '#6366f1');
+            const col = isLoyal ? '#4338ca' : (i === 0 ? '#cbd5e1' : '#6366f1');
             return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${b}회 구매 · ${v.toLocaleString()}명">
                 <span style="font-size:0.58rem;color:var(--text-muted);line-height:1;margin-bottom:2px">${v ? v.toLocaleString() : ''}</span>
                 <div style="width:100%;max-width:20px;background:${col};height:${barH(v)}px;border-radius:3px 3px 0 0"></div>
             </div>`;
         }).join('');
-        const labels = buckets.map(b => `<span style="flex:1;text-align:center;font-size:0.56rem;color:${b === '10+' ? '#f59e0b' : 'var(--text-muted)'};font-weight:${b === '10+' ? '700' : '400'}">${b}</span>`).join('');
+        const labels = buckets.map(b => `<span style="flex:1;text-align:center;font-size:0.56rem;color:${b === '10+' ? '#4338ca' : 'var(--text-muted)'};font-weight:${b === '10+' ? '700' : '400'}">${b}</span>`).join('');
         return `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">구매 횟수 분포 <span style="font-weight:400">(회당 고객수)</span></div>
             <div style="display:flex;align-items:flex-end;gap:3px;height:80px">${bars}</div>
             <div style="display:flex;gap:3px;margin-top:3px">${labels}</div>
             <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--card-border);display:flex;justify-content:space-between;align-items:baseline;font-size:0.8rem">
-                <span style="color:#f59e0b;font-weight:800"><i class="ph ph-heart" style="font-weight:900"></i> 단골고객 ${loyal.toLocaleString()}명</span>
+                <span style="color:#4338ca;font-weight:800"><i class="ph ph-heart"></i> 단골고객 ${loyal.toLocaleString()}명</span>
                 <span style="color:var(--text-muted);font-size:0.72rem">10회 이상 · 전체의 ${Math.round(loyal / cust * 100)}%</span>
             </div>`;
     }
 
     // 주문타입 분석 — 정식/프리오더/이벤트 주문 구성 + 고객 세그먼트(타입별 구매 성향)
-    _orderTypesHTML(ot) {
+    _orderTypesHTML(ot, periodLabel) {
         if (!ot) return '';
+        const pl = periodLabel || '전체기간';
         const T = ot.orders_total || 1, C = ot.customers || 1;
         const pct = (v, t) => Math.round((v || 0) / (t || 1) * 100);
-        const parts = [['정식', ot.orders_regular || 0, '#6366f1'], ['프리오더', ot.orders_preorder || 0, '#06b6d4'], ['이벤트', ot.orders_event || 0, '#f59e0b']];
+        // 인디고 단일계열 램프(정식 진함 → 이벤트 옅음) — 알록달록 방지
+        const parts = [['정식', ot.orders_regular || 0, '#4338ca'], ['프리오더', ot.orders_preorder || 0, '#818cf8'], ['이벤트', ot.orders_event || 0, '#c7d2fe']];
         const bar = `<div style="display:flex;height:15px;border-radius:8px;overflow:hidden;background:rgba(148,163,184,0.15)">${parts.map(([l, v, c]) => v ? `<div style="width:${(v / T * 100).toFixed(1)}%;background:${c}" title="${l} ${v.toLocaleString()}건"></div>` : '').join('')}</div>`;
         const legend = parts.map(([l, v, c]) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.78rem;margin-right:14px;white-space:nowrap"><span style="width:9px;height:9px;border-radius:2px;background:${c}"></span>${l} <b style="font-variant-numeric:tabular-nums">${v.toLocaleString()}</b><span style="color:var(--text-muted);font-size:0.7rem">${pct(v, T)}%</span></span>`).join('');
-        const segTile = (label, v, color, desc) => `<div style="flex:1;min-width:120px;text-align:center;padding:12px 8px;background:${color}14;border:1px solid ${color}33;border-radius:12px"><div style="font-size:1.5rem;font-weight:900;color:${color};line-height:1;font-variant-numeric:tabular-nums">${(v || 0).toLocaleString()}<span style="font-size:0.68rem;font-weight:600">명</span></div><div style="font-size:0.78rem;font-weight:700;margin-top:5px">${label}</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px">${desc} · ${pct(v, C)}%</div></div>`;
+        const segTile = (label, v, dot, desc) => `<div style="flex:1;min-width:120px;text-align:center;padding:12px 8px;background:rgba(148,163,184,0.07);border:1px solid var(--card-border);border-radius:12px"><div style="font-size:1.5rem;font-weight:900;color:var(--text-main);line-height:1;font-variant-numeric:tabular-nums">${(v || 0).toLocaleString()}<span style="font-size:0.68rem;font-weight:600;color:var(--text-muted)">명</span></div><div style="font-size:0.78rem;font-weight:700;margin-top:5px;display:flex;align-items:center;justify-content:center;gap:5px"><span style="width:7px;height:7px;border-radius:2px;background:${dot};flex-shrink:0"></span>${label}</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px">${desc} · ${pct(v, C)}%</div></div>`;
         return `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem">
-            <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-tag" style="color:#6366f1"></i> 주문타입 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">전체기간 · 이벤트=상품명 특가/기획/세일</span></div>
+            <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-tag" style="color:#6366f1"></i> 주문타입 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">${pl} · 이벤트=상품명 특가/기획/세일</span></div>
             <div style="margin-bottom:0.55rem">${bar}</div>
             <div style="margin-bottom:1.15rem">${legend}</div>
-            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:7px;font-weight:600">고객 세그먼트 <span style="font-weight:400">(이 브랜드에서 산 타입 기준 · 전체기간)</span></div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:7px;font-weight:600">고객 세그먼트 <span style="font-weight:400">(이 브랜드에서 산 타입 기준 · ${pl})</span></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-                ${segTile('정식만', ot.seg_regular_only, '#6366f1', '정식만 구매')}
-                ${segTile('프리오더만', ot.seg_preorder_only, '#06b6d4', '프리오더만')}
-                ${segTile('이벤트만', ot.seg_event_only, '#f59e0b', '이벤트만')}
-                ${segTile('복합', ot.seg_mixed, '#8b5cf6', '여러 타입')}
+                ${segTile('정식만', ot.seg_regular_only, '#4338ca', '정식만 구매')}
+                ${segTile('프리오더만', ot.seg_preorder_only, '#818cf8', '프리오더만')}
+                ${segTile('이벤트만', ot.seg_event_only, '#c7d2fe', '이벤트만')}
+                ${segTile('복합', ot.seg_mixed, '#6366f1', '여러 타입')}
             </div>
             <p style="margin:0.85rem 2px 0;font-size:0.68rem;color:var(--text-muted)">* 주문타입 우선순위 이벤트&gt;프리오더&gt;정식 · 취소·환불 제외 · 전화번호 기준 고객</p>
         </div>`;
@@ -4062,9 +4074,9 @@ class BhasApp {
     renderAnalysis() {
         const names = this._analysisBrandNames();
         const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
-        const year = this.analysisYear || new Date().getFullYear();
-        const yearsAvail = [];
-        for (let y = new Date().getFullYear(); y >= 2024; y--) yearsAvail.push(y);
+        const range = this._analysisRange();
+        const curP = this.analysisPeriod || 'all';
+        const periods = [['all', '전체기간'], ['3m', '최근 3개월'], ['6m', '최근 6개월'], ['12m', '최근 12개월'], ['y2026', '2026년'], ['y2025', '2025년'], ['y2024', '2024년']];
         const items = ((this.analysisScoped && this.analysisScoped.orders) || []).flatMap(o => o.items || []);
         const orderCnt = ((this.analysisScoped && this.analysisScoped.orders) || []).length;
         const won = n => this._won(n);
@@ -4074,33 +4086,33 @@ class BhasApp {
         const distBar = (label, v, tot, color) => { const pct = tot ? Math.round(v / tot * 100) : 0; return `<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:2px"><span>${label}</span><b>${v.toLocaleString()}명 <span style="color:var(--text-muted);font-weight:500;font-size:0.68rem">${pct}%</span></b></div><div style="height:7px;border-radius:4px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(2, pct)}%;background:${color};border-radius:4px"></div></div></div>`; };
         const repeatCard = bf ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem">
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.6rem"><i class="ph ph-repeat" style="color:#10b981"></i> 재구매율 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">전체기간 · 전화번호 기준</span></div>
+                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.6rem"><i class="ph ph-repeat" style="color:#6366f1"></i> 재구매율 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">${range.label} · 전화번호 기준</span></div>
                 ${!rep ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : `
-                <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:0.7rem"><span style="font-size:2rem;font-weight:900;color:#10b981;line-height:1">${rep.rate ?? 0}%</span><span style="font-size:0.78rem;color:var(--text-muted)">고객 ${(rep.customers || 0).toLocaleString()}명 중 ${(rep.repeat_customers || 0).toLocaleString()}명 재구매</span></div>
+                <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:0.7rem"><span style="font-size:2rem;font-weight:900;color:#6366f1;line-height:1">${rep.rate ?? 0}%</span><span style="font-size:0.78rem;color:var(--text-muted)">고객 ${(rep.customers || 0).toLocaleString()}명 중 ${(rep.repeat_customers || 0).toLocaleString()}명 재구매</span></div>
                 <div style="display:flex;gap:14px;font-size:0.76rem;color:var(--text-muted);margin-bottom:0.8rem"><span>평균 <b style="color:var(--text-main)">${rep.avg_orders ?? 0}회</b></span><span>평균 누적구매 <b style="color:var(--text-main)">${won(rep.avg_spend || 0)}원</b></span><span>최다 <b style="color:var(--text-main)">${rep.max_orders ?? 0}회</b></span></div>
                 ${this._repeatDistHTML(rep)}`}
             </div>
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem"><i class="ph ph-crown" style="color:#f59e0b"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">누적 구매액 TOP</span></div>
-                ${!rep || !(rep.top && rep.top.length) ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : rep.top.map((t, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b style="color:${i < 3 ? '#f59e0b' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vesc(t.nm || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.n}회</span></span><b style="font-variant-numeric:tabular-nums;white-space:nowrap">${won(t.spend || 0)}원</b></div>`).join('')}
+                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem"><i class="ph ph-crown-simple" style="color:#6366f1"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">누적 구매액 TOP</span></div>
+                ${!rep || !(rep.top && rep.top.length) ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : rep.top.map((t, i) => { const last = t.last ? new Date(t.last).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '—'; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"><b style="color:${i < 3 ? '#4338ca' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vesc(t.nm || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.n}회</span></span><span style="text-align:right;white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${won(t.spend || 0)}원</b><div style="font-size:0.66rem;color:var(--text-muted)">마지막 ${last}</div></span></div>`; }).join('')}
             </div>
         </div>` : '';
         return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
                 <div>
-                    <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-donut" style="color:#8b5cf6"></i> 고객 분석</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${bf ? `<b style="color:var(--primary)">${this._vesc(bf)}</b> · ${year}년 · 주문 ${orderCnt.toLocaleString()}건` : '브랜드를 선택하세요'} <span style="color:var(--text-muted)">· 브랜드마다 고객이 달라 통합하지 않습니다</span></p>
+                    <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-donut" style="color:#6366f1"></i> 고객 분석</h1>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${bf ? `<b style="color:var(--primary)">${this._vesc(bf)}</b> · ${range.label} · 주문 ${orderCnt.toLocaleString()}건` : '브랜드를 선택하세요'} <span style="color:var(--text-muted)">· 브랜드마다 고객이 달라 통합하지 않습니다</span></p>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                     <select onchange="app.setAnalysisBrand(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--primary);background:rgba(99,102,241,0.12);color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         ${names.map(n => `<option value="${this._vesc(n)}" ${bf === n ? 'selected' : ''}>${this._vesc(n)}</option>`).join('') || '<option>브랜드 없음</option>'}
                     </select>
-                    <select onchange="app.setAnalysisYear(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
-                        ${yearsAvail.map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}년</option>`).join('')}
+                    <select onchange="app.setAnalysisPeriod(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
+                        ${periods.map(([v, l]) => `<option value="${v}" ${curP === v ? 'selected' : ''}>${l}</option>`).join('')}
                     </select>
                 </div>
             </div>
-            ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
+            ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
         </div>`;
     }
 
@@ -4420,8 +4432,10 @@ class BhasApp {
         if (v === 'analysis' && this._mallsLoaded) {
             const names = this._analysisBrandNames();
             const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
-            const year = this.analysisYear || new Date().getFullYear();
-            if (bf) { this._loadAnalysisScope(bf, `${year}-01-01`, `${year + 1}-01-01`); this._loadAnalysisRepeat(bf); }
+            const r = this._analysisRange();
+            const from = r.from || '2000-01-01';
+            const to = r.to || new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+            if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); }
         }
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
