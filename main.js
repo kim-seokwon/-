@@ -950,14 +950,15 @@ class BhasApp {
             { id: 'all_todos', label: '할일', icon: '<i class="ph ph-list-checks"></i>', group: 'work', visible: true },
             { id: 'documents', label: '문서', icon: '<i class="ph ph-folder-open"></i>', group: 'archive', visible: perms.includes('documents') },
             { id: 'user_management', label: '계정', icon: '<i class="ph ph-user-plus"></i>', group: 'admin', visible: perms.includes('user_management') },
-            { id: 'brand_management', label: '브랜드', icon: '<i class="ph ph-shield-check"></i>', group: 'admin', visible: perms.includes('user_management') }
+            { id: 'brand_management', label: '브랜드', icon: '<i class="ph ph-shield-check"></i>', group: 'admin', visible: perms.includes('user_management') },
+            { id: 'feedback', label: '불편사항', icon: '<i class="ph ph-chat-dots"></i>', group: 'admin', visible: role === 'MASTER' }
         ];
         // 계정별 세분화 권한(menu_access) 반영: 설정돼 있으면 그 목록으로 가시성 결정.
         // 단 계정/브랜드 관리는 항상 MASTER 전용(보안), 할일은 항상 노출. 없으면(null) 역할 기본값 유지.
         const ma = Array.isArray(this.currentUser.menu_access) ? this.currentUser.menu_access : null;
         if (ma) {
             menuItems.forEach(it => {
-                if (it.id === 'user_management' || it.id === 'brand_management') it.visible = role === 'MASTER';
+                if (it.id === 'user_management' || it.id === 'brand_management' || it.id === 'feedback') it.visible = role === 'MASTER';
                 else if (it.id === 'all_todos') it.visible = true;
                 else it.visible = ma.includes(it.id);
             });
@@ -1284,6 +1285,7 @@ class BhasApp {
                     
                     ${this.renderSubView(products)}
                 </main>
+                ${(role === 'MASTER' || role === 'STAFF') ? `<button onclick="app.openFeedbackModal()" class="feedback-fab" title="불편사항 접수"><i class="ph ph-chat-dots"></i><span>불편사항</span></button>` : ''}
             </div>
 
             <div id="global-search-overlay" class="search-overlay" style="display: none;">
@@ -3398,6 +3400,8 @@ class BhasApp {
             return this.renderSales();
         } else if (this.currentView === 'analysis') {
             return this.renderAnalysis();
+        } else if (this.currentView === 'feedback') {
+            return this.renderFeedback();
         } else if (this.currentView === 'sns') {
             return this.renderSNS();
         }
@@ -4456,6 +4460,7 @@ class BhasApp {
             const to = r.to || new Date(Date.now() + 864e5).toISOString().slice(0, 10);
             if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); }
         }
+        if (v === 'feedback' && !this._fbLoaded && !this._fbLoading) this.loadFeedback();
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         // 브랜드 상세는 상품·옵션·재구매·반품 카드용으로 그 브랜드+기간 주문만 따로 받아온다
@@ -4489,6 +4494,105 @@ class BhasApp {
             (mockData.brands || []).map(b => `<option value="${b.id}" style="background:#0f172a" ${b.id === selected ? 'selected' : ''}>${b.name}</option>`).join('');
     }
     closeGlobalModal() { const c = document.getElementById('global-modal-container'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }
+
+    // ── 불편사항 접수(직원용) ──────────────────────────────────
+    openFeedbackModal() {
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const cats = ['버그', '개선요청', '불편', '기타'];
+        this._fbCat = '버그';
+        c.innerHTML = `<div class="glass modal-content fade-in vmodal" style="width:94%;max-width:460px;padding:1.6rem;border-radius:20px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:0.3rem">
+                <div><h2 style="margin:0;font-size:1.2rem"><i class="ph ph-chat-dots"></i> 불편사항 접수</h2><p style="margin:5px 0 0;color:var(--text-muted);font-size:0.82rem">불편한 점·버그·개선 아이디어를 남겨주세요. 대표가 확인합니다.</p></div>
+                <button onclick="app.closeGlobalModal()" style="border:0;background:transparent;color:var(--text-muted);font-size:1.4rem;cursor:pointer;line-height:1">×</button>
+            </div>
+            <div style="margin:1.1rem 0 0.4rem;font-size:0.78rem;color:var(--text-muted);font-weight:600">종류</div>
+            <div id="fb-cats" style="display:flex;gap:6px;flex-wrap:wrap">
+                ${cats.map((c2, i) => `<button type="button" class="fb-cat" data-cat="${c2}" style="padding:7px 14px;border-radius:9px;border:1px solid ${i === 0 ? 'var(--primary)' : 'var(--card-border)'};background:${i === 0 ? 'rgba(99,102,241,0.12)' : 'transparent'};color:${i === 0 ? 'var(--primary)' : 'var(--text-main)'};font-size:0.82rem;font-weight:700;cursor:pointer">${c2}</button>`).join('')}
+            </div>
+            <div style="margin:1.1rem 0 0.4rem;font-size:0.78rem;color:var(--text-muted);font-weight:600">내용</div>
+            <textarea id="fb-message" rows="5" placeholder="어디서 무엇이 불편했는지 구체적으로 적어주세요" style="width:100%;box-sizing:border-box;padding:11px 13px;border-radius:11px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.9rem;resize:vertical"></textarea>
+            <div id="fb-error" style="color:#ef4444;font-size:0.78rem;margin-top:6px;display:none"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1.1rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 16px;border-radius:10px">취소</button>
+                <button onclick="app.submitFeedback()" class="btn-primary" style="padding:9px 18px;border-radius:10px"><i class="ph ph-paper-plane-tilt"></i> 접수</button>
+            </div>
+            <p style="margin:0.8rem 2px 0;font-size:0.68rem;color:var(--text-muted)">* 현재 화면(${this._vesc(this.currentView || '')})과 작성자(${this._vesc(this.currentUser?.name || '')})가 함께 기록됩니다.</p>
+        </div>`;
+        c.style.display = 'flex';
+        c.querySelectorAll('.fb-cat').forEach(btn => btn.onclick = () => {
+            this._fbCat = btn.dataset.cat;
+            c.querySelectorAll('.fb-cat').forEach(b => { const on = b === btn; b.style.borderColor = on ? 'var(--primary)' : 'var(--card-border)'; b.style.background = on ? 'rgba(99,102,241,0.12)' : 'transparent'; b.style.color = on ? 'var(--primary)' : 'var(--text-main)'; });
+        });
+    }
+    async submitFeedback() {
+        const ta = document.getElementById('fb-message'), err = document.getElementById('fb-error');
+        const msg = (ta?.value || '').trim();
+        if (!msg) { if (err) { err.textContent = '내용을 입력해주세요'; err.style.display = 'block'; } return; }
+        try {
+            const { error } = await this.supabase.from('feedback').insert([{
+                author_email: this.currentUser?.email || null,
+                author_name: this.currentUser?.name || null,
+                category: this._fbCat || '기타',
+                page: this.currentView || null,
+                message: msg,
+            }]);
+            if (error) throw error;
+            this.closeGlobalModal();
+            this.showToast('불편사항이 접수되었습니다. 감사합니다!');
+        } catch (e) { if (err) { err.textContent = '접수 실패: ' + (e.message || e); err.style.display = 'block'; } }
+    }
+    async loadFeedback() {
+        this._fbLoading = true;
+        try {
+            const { data, error } = await this.supabase.from('feedback').select('*').order('created_at', { ascending: false });
+            if (error) throw error;
+            this.feedbackList = data || []; this._fbLoaded = true;
+        } catch (e) { this.feedbackList = []; this._fbLoaded = true; }
+        this._fbLoading = false; this.requestRender();
+    }
+    async resolveFeedback(id, resolve) {
+        try {
+            const { error } = await this.supabase.from('feedback').update({
+                status: resolve ? 'resolved' : 'open',
+                resolved_at: resolve ? new Date().toISOString() : null,
+                resolved_by: resolve ? (this.currentUser?.name || null) : null,
+            }).eq('id', id);
+            if (error) throw error;
+            this._fbLoaded = false; this.loadFeedback();
+        } catch (e) { this.showToast('처리 실패: ' + (e.message || e)); }
+    }
+    renderFeedback() {
+        if (!this._fbLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">불편사항을 불러오는 중...</div>`;
+        const list = this.feedbackList || [];
+        const open = list.filter(f => f.status !== 'resolved'), done = list.filter(f => f.status === 'resolved');
+        const catColor = c => c === '버그' ? '#ef4444' : c === '개선요청' ? '#6366f1' : c === '불편' ? '#f59e0b' : '#94a3b8';
+        const esc = s => this._vesc(s);
+        const when = t => t ? new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const card = f => `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px;margin-bottom:0.8rem;${f.status === 'resolved' ? 'opacity:0.6' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <span style="font-size:0.7rem;font-weight:800;color:#fff;background:${catColor(f.category)};padding:2px 9px;border-radius:20px">${esc(f.category || '기타')}</span>
+                    <span style="font-size:0.82rem;font-weight:700">${esc(f.author_name || '익명')}</span>
+                    ${f.page ? `<span style="font-size:0.68rem;color:var(--text-muted)">· ${esc(f.page)} 화면</span>` : ''}
+                </div>
+                <span style="font-size:0.7rem;color:var(--text-muted);white-space:nowrap">${when(f.created_at)}</span>
+            </div>
+            <div style="font-size:0.9rem;line-height:1.5;white-space:pre-wrap;margin-bottom:9px">${esc(f.message || '')}</div>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+                ${f.status === 'resolved'
+                ? `<span style="font-size:0.72rem;color:#16a34a;font-weight:700">✓ 해결됨${f.resolved_by ? ' · ' + esc(f.resolved_by) : ''}</span><button onclick="app.resolveFeedback('${f.id}',false)" style="font-size:0.72rem;padding:5px 11px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">되돌리기</button>`
+                : `<button onclick="app.resolveFeedback('${f.id}',true)" class="btn-primary" style="font-size:0.74rem;padding:6px 13px;border-radius:9px"><i class="ph ph-check"></i> 해결 처리</button>`}
+            </div>
+        </div>`;
+        return `<div class="fade-in" style="padding:1.5rem;max-width:820px;margin:0 auto">
+            <div style="margin-bottom:1.3rem">
+                <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chat-dots" style="color:#6366f1"></i> 불편사항</h1>
+                <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">직원 접수 ${list.length}건 · 미처리 <b style="color:#ef4444">${open.length}</b>건</p>
+            </div>
+            ${open.length ? open.map(card).join('') : '<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);text-align:center">미처리 불편사항이 없습니다 👍</div>'}
+            ${done.length ? `<div style="font-size:0.8rem;color:var(--text-muted);font-weight:700;margin:1.6rem 2px 0.7rem">해결됨 (${done.length})</div>${done.map(card).join('')}` : ''}
+        </div>`;
+    }
 
     // ============================================================
     //  멀티몰 (브랜드별 카페24몰)
