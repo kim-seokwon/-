@@ -3949,6 +3949,8 @@ class BhasApp {
     _analysisRange() {
         const p = this.analysisPeriod || 'all';
         const iso = d => d.toISOString().slice(0, 10);
+        const pad = n => String(n).padStart(2, '0');
+        if (p === 'month') { const now = new Date(); const y = now.getFullYear(), m = now.getMonth(); const ny = m === 11 ? y + 1 : y, nm = m === 11 ? 0 : m + 1; return { from: `${y}-${pad(m + 1)}-01`, to: `${ny}-${pad(nm + 1)}-01`, label: `${m + 1}월(당월)` }; }
         if (/^y\d{4}$/.test(p)) { const y = +p.slice(1); return { from: `${y}-01-01`, to: `${y + 1}-01-01`, label: `${y}년` }; }
         const mm = { '3m': 3, '6m': 6, '12m': 12 }[p];
         if (mm) { const f = new Date(); f.setMonth(f.getMonth() - mm); return { from: iso(f), to: null, label: `최근 ${mm}개월` }; }
@@ -4076,7 +4078,7 @@ class BhasApp {
         const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
         const range = this._analysisRange();
         const curP = this.analysisPeriod || 'all';
-        const periods = [['all', '전체기간'], ['3m', '최근 3개월'], ['6m', '최근 6개월'], ['12m', '최근 12개월'], ['y2026', '2026년'], ['y2025', '2025년'], ['y2024', '2024년']];
+        const periods = [['all', '전체기간'], ['month', '당월'], ['3m', '최근 3개월'], ['6m', '최근 6개월'], ['12m', '최근 12개월'], ['y2026', '2026년'], ['y2025', '2025년'], ['y2024', '2024년']];
         const items = ((this.analysisScoped && this.analysisScoped.orders) || []).flatMap(o => o.items || []);
         const orderCnt = ((this.analysisScoped && this.analysisScoped.orders) || []).length;
         const won = n => this._won(n);
@@ -4104,15 +4106,20 @@ class BhasApp {
                     <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${bf ? `<b style="color:var(--primary)">${this._vesc(bf)}</b> · ${range.label} · 주문 ${orderCnt.toLocaleString()}건` : '브랜드를 선택하세요'} <span style="color:var(--text-muted)">· 브랜드마다 고객이 달라 통합하지 않습니다</span></p>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                    <select onchange="app.setAnalysisBrand(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--primary);background:rgba(99,102,241,0.12);color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
-                        ${names.map(n => `<option value="${this._vesc(n)}" ${bf === n ? 'selected' : ''}>${this._vesc(n)}</option>`).join('') || '<option>브랜드 없음</option>'}
-                    </select>
                     <select onchange="app.setAnalysisPeriod(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         ${periods.map(([v, l]) => `<option value="${v}" ${curP === v ? 'selected' : ''}>${l}</option>`).join('')}
                     </select>
                 </div>
             </div>
-            ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
+            <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
+                <div class="analysis-brandbar" style="width:154px;flex-shrink:0;display:flex;flex-direction:column;gap:6px">
+                    <div style="font-size:0.7rem;color:var(--text-muted);font-weight:700;padding:0 4px 2px">브랜드</div>
+                    ${names.length ? names.map(n => `<button onclick="app.setAnalysisBrand('${this._vesc(n).replace(/'/g, "\\'")}')" style="text-align:left;padding:11px 13px;border-radius:11px;border:1px solid ${bf === n ? 'var(--primary)' : 'var(--card-border)'};background:${bf === n ? 'rgba(99,102,241,0.12)' : 'transparent'};color:${bf === n ? 'var(--primary)' : 'var(--text-main)'};font-size:0.88rem;font-weight:${bf === n ? '800' : '600'};cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${bf === n ? '<i class="ph ph-caret-right" style="flex-shrink:0"></i>' : ''}${this._vesc(n)}</button>`).join('') : '<div style="font-size:0.8rem;color:var(--text-muted);padding:6px 4px">브랜드 없음</div>'}
+                </div>
+                <div class="analysis-content" style="flex:1;min-width:0">
+                    ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
+                </div>
+            </div>
         </div>`;
     }
 

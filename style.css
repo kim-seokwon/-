@@ -2320,6 +2320,12 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
     .recent-orders-panel { position: static !important; }
     .ro-scroll { max-height: 360px !important; flex: none !important; }
 
+    /* 분석탭: 브랜드 사이드바 → 모바일에선 가로 스크롤 탭 줄로 */
+    .analysis-layout { flex-direction: column !important; }
+    .analysis-brandbar { width: 100% !important; flex-direction: row !important; overflow-x: auto; padding-bottom: 4px; }
+    .analysis-brandbar > div:first-child { display: none; }
+    .analysis-brandbar button { flex: 0 0 auto; }
+
     /* ⚠️ 라이트 테마 대비: 모바일이 배경을 다크로 강제하면 라이트 테마의 어두운 글씨(제목·헤더)가
        배경에 묻힌다. 라이트 테마에서는 배경을 밝게, 상단바도 밝게 맞춰 대비를 확보한다. */
     body.light .dashboard { background: #f2f4f6 !important; }
