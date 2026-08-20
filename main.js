@@ -6641,7 +6641,9 @@ class BhasApp {
                 <button id="qc-save" class="btn-secondary" style="padding:9px 16px;border-radius:10px"><i class="ph ph-floppy-disk"></i> 검수 저장</button>
                 <div style="display:flex;gap:8px">
                     <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 16px;border-radius:10px">닫기</button>
-                    <button id="qc-quick" ${passed ? '' : 'disabled'} style="padding:9px 18px;border-radius:10px;border:none;font-weight:700;${passed ? 'background:#FEE500;color:#191600;cursor:pointer' : 'background:rgba(148,163,184,0.2);color:var(--text-muted);cursor:not-allowed'}"><i class="ph ph-scooter"></i> 카카오퀵 호출</button>
+                    ${this.currentUser?.role === 'MASTER'
+                    ? `<button id="qc-quick" ${passed ? '' : 'disabled'} style="padding:9px 18px;border-radius:10px;border:none;font-weight:700;${passed ? 'background:#FEE500;color:#191600;cursor:pointer' : 'background:rgba(148,163,184,0.2);color:var(--text-muted);cursor:not-allowed'}"><i class="ph ph-scooter"></i> 카카오퀵 호출</button>`
+                    : `<button disabled title="퀵 예약은 실배송비가 발생해 대표 전용입니다" style="padding:9px 18px;border-radius:10px;border:none;font-weight:700;background:rgba(148,163,184,0.2);color:var(--text-muted);cursor:not-allowed"><i class="ph ph-lock-simple"></i> 카카오퀵 (대표 전용)</button>`}
                 </div>
             </div>
             ${d.quick?.ok === true ? `<p style="margin:0.8rem 0 0;font-size:0.8rem;color:#10b981"><i class="ph ph-check"></i> 퀵 예약됨${d.quick.trackingNo ? ` · ${this._vesc(d.quick.trackingNo)}` : ''}</p>` : ''}

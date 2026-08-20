@@ -32,8 +32,8 @@ Deno.serve(async (req) => {
   if (!ENDPOINT || !KEY) {
     return j({ ok: false, error: "KAKAO_QUICK_ENDPOINT/KEY 시크릿 미설정 (비즈니스 계약 후 발급)" }, 500);
   }
-  // 퀵 예약 = 실제 요금 발생 → 로그인 사용자만
-  const auth = await requireUser(req, { roles: ["MASTER", "STAFF"] });
+  // 퀵 예약 = 실제 요금 발생 → MASTER 전용(직원 실수 발주로 실배송비 나가는 것 방지)
+  const auth = await requireUser(req, { roles: ["MASTER"] });
   if (auth instanceof Response) return auth;
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   try {
