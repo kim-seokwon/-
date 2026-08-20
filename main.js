@@ -3899,7 +3899,6 @@ class BhasApp {
         return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
                 <div>
-                    ${bf === 'ALL' ? '' : `<button onclick="app.setSalesBrand('ALL')" style="margin-bottom:7px;padding:5px 12px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);font-size:0.78rem;font-weight:700;cursor:pointer"><i class="ph ph-arrow-left"></i> 전체 매출로</button>`}
                     <h1 style="margin:0;font-size:1.45rem">${bf === 'ALL'
                         ? '<i class="ph ph-chart-line-up"></i> 매출 현황'
                         : `<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${colorOf(bf)};margin-right:9px"></span>${this._vesc(bf)}`}</h1>
@@ -3908,10 +3907,6 @@ class BhasApp {
                         : `브랜드 상세 · ${periodLabel} 기준`}</p>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                    <select onchange="app.setSalesBrand(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid ${bf !== 'ALL' ? 'var(--primary)' : 'var(--card-border)'};background:${bf !== 'ALL' ? 'rgba(99,102,241,0.12)' : 'transparent'};color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
-                        <option value="ALL" ${bf === 'ALL' ? 'selected' : ''}>전체 브랜드(통합)</option>
-                        ${brands.map(b => `<option value="${this._vesc(b.name)}" ${bf === b.name ? 'selected' : ''}>${this._vesc(b.name)}</option>`).join('')}
-                    </select>
                     <select onchange="app.setSalesYear(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         ${yearsAvail.map(y => `<option value="${y}" ${y === selY ? 'selected' : ''}>${y}년</option>`).join('')}
                     </select>
@@ -3921,9 +3916,12 @@ class BhasApp {
                     </select>
                 </div>
             </div>
-            ${cards}
-            ${chart}
-            ${bf === 'ALL'
+            <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
+                ${this._brandRail([{ value: 'ALL', label: '전체 통합', active: bf === 'ALL', onclick: "app.setSalesBrand('ALL')" }].concat(brands.map(b => ({ value: b.name, label: this._vesc(b.name), active: bf === b.name, color: colorOf(b.name), onclick: `app.setSalesBrand('${this._vesc(b.name).replace(/'/g, "\\'")}')` }))))}
+                <div class="analysis-content" style="flex:1;min-width:0">
+                    ${cards}
+                    ${chart}
+                    ${bf === 'ALL'
                 // 개요: 전체가 얼마고 어느 채널에서 나오는지 + 브랜드 카드(여기서 브랜드로 들어감)
                 ? `${chanCard}
                    ${brandGrid}
@@ -3933,7 +3931,9 @@ class BhasApp {
                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${repeatCard}${netCard}${chanCard}${statCard}</div>
                    ${returnCard}
                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;margin-top:1.3rem">${qualityCard}</div>`}
-            <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 판매 브랜드 = 몰 주문 결제금액 · 컨설팅 = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·반품·교환은 집계에서 제외</p>
+                    <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 판매 브랜드 = 몰 주문 결제금액 · 컨설팅 = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·반품·교환은 집계에서 제외</p>
+                </div>
+            </div>
         </div>`;
     }
 
@@ -3955,6 +3955,14 @@ class BhasApp {
         const mm = { '3m': 3, '6m': 6, '12m': 12 }[p];
         if (mm) { const f = new Date(); f.setMonth(f.getMonth() - mm); return { from: iso(f), to: null, label: `최근 ${mm}개월` }; }
         return { from: null, to: null, label: '전체기간' };
+    }
+
+    // 공통 브랜드 사이드바(분석·매출·재고 통일). entries:[{value,label,active,color,onclick}]
+    _brandRail(entries) {
+        return `<div class="analysis-brandbar" style="width:154px;flex-shrink:0;display:flex;flex-direction:column;gap:6px">
+            <div style="font-size:0.7rem;color:var(--text-muted);font-weight:700;padding:0 4px 2px">브랜드</div>
+            ${entries.map(e => `<button onclick="${e.onclick}" style="text-align:left;padding:10px 12px;border-radius:11px;border:1px solid ${e.active ? 'var(--primary)' : 'var(--card-border)'};background:${e.active ? 'rgba(99,102,241,0.12)' : 'transparent'};color:${e.active ? 'var(--primary)' : 'var(--text-main)'};font-size:0.86rem;font-weight:${e.active ? '800' : '600'};cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.active ? '<i class="ph ph-caret-right" style="flex-shrink:0"></i>' : (e.color ? `<span style="width:8px;height:8px;border-radius:2px;background:${e.color};flex-shrink:0"></span>` : '')}${e.label}</button>`).join('')}
+        </div>`;
     }
     async _loadAnalysisScope(brandName, fromISO, toISO) {
         const key = `${brandName}|${fromISO}|${toISO}`;
@@ -4112,10 +4120,7 @@ class BhasApp {
                 </div>
             </div>
             <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
-                <div class="analysis-brandbar" style="width:154px;flex-shrink:0;display:flex;flex-direction:column;gap:6px">
-                    <div style="font-size:0.7rem;color:var(--text-muted);font-weight:700;padding:0 4px 2px">브랜드</div>
-                    ${names.length ? names.map(n => `<button onclick="app.setAnalysisBrand('${this._vesc(n).replace(/'/g, "\\'")}')" style="text-align:left;padding:11px 13px;border-radius:11px;border:1px solid ${bf === n ? 'var(--primary)' : 'var(--card-border)'};background:${bf === n ? 'rgba(99,102,241,0.12)' : 'transparent'};color:${bf === n ? 'var(--primary)' : 'var(--text-main)'};font-size:0.88rem;font-weight:${bf === n ? '800' : '600'};cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${bf === n ? '<i class="ph ph-caret-right" style="flex-shrink:0"></i>' : ''}${this._vesc(n)}</button>`).join('') : '<div style="font-size:0.8rem;color:var(--text-muted);padding:6px 4px">브랜드 없음</div>'}
-                </div>
+                ${names.length ? this._brandRail(names.map(n => ({ value: n, label: this._vesc(n), active: bf === n, onclick: `app.setAnalysisBrand('${this._vesc(n).replace(/'/g, "\\'")}')` }))) : `<div class="analysis-brandbar" style="width:154px;flex-shrink:0"><div style="font-size:0.8rem;color:var(--text-muted);padding:6px 4px">브랜드 없음</div></div>`}
                 <div class="analysis-content" style="flex:1;min-width:0">
                     ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
                 </div>
@@ -4953,6 +4958,7 @@ class BhasApp {
         this.requestRender();
     }
 
+    setInvBrand(v) { this.setState({ invSelectedBrand: v }); }
     renderInventory() {
         const inv = this.inventory || { items: [], listings: [], ledger: [], lastSync: null };
         if (!this._invLoaded) {
@@ -5041,40 +5047,41 @@ class BhasApp {
                 <h2 style="display:flex; align-items:center; gap:8px; font-size:1.5rem; margin:0"><i class="ph ph-package"></i> 재고 관리</h2>
                 <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
                     ${syncBadge}
-                    <select id="inv-brand-filter" class="glass brand-select" style="color:white;border:1px solid rgba(var(--tint),0.1);border-radius:8px;padding:6px 12px;cursor:pointer">
-                        <option value="all" style="background:#0f172a" ${(this.invSelectedBrand || 'all') === 'all' ? 'selected' : ''}>전체 브랜드</option>
-                        ${(mockData.brands || []).map(b => `<option value="${b.id}" style="background:#0f172a" ${this.invSelectedBrand === b.id ? 'selected' : ''}>${b.name}</option>`).join('')}
-                    </select>
                     <button class="btn-secondary" id="inv-cafe24-pull-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-download-simple"></i> 카페24 재고 불러오기</button>
                     <button class="btn-secondary" id="inv-cafe24-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-plug-charging"></i> 카페24 설정</button>
                     <button class="btn-primary" id="inv-add-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem">+ 품목 추가</button>
                 </div>
             </div>
 
-            <div class="table-container" style="overflow-x:auto">
-                <table style="width:100%; border-collapse:collapse; min-width:780px">
-                    <thead><tr style="border-bottom:2px solid var(--card-border); color:var(--text-muted); font-size:0.82rem; text-align:left">
-                        <th style="padding:12px">SKU</th><th style="padding:12px">품목명</th><th style="padding:12px">옵션</th>
-                        <th style="padding:12px">브랜드</th><th style="padding:12px; text-align:center">현재고</th>
-                        <th style="padding:12px; text-align:center">안전재고</th><th style="padding:12px; text-align:center">카페24</th>
-                        <th style="padding:12px; text-align:right">작업</th>
-                    </tr></thead>
-                    <tbody>${rows || `<tr><td colspan="8" style="padding:2rem;text-align:center;color:var(--text-muted)">등록된 품목이 없습니다. "+ 품목 추가"로 시작하세요.</td></tr>`}</tbody>
-                </table>
-            </div>
+            <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
+                ${this._brandRail([{ value: 'all', label: '전체', active: (this.invSelectedBrand || 'all') === 'all', onclick: "app.setInvBrand('all')" }].concat((mockData.brands || []).map(b => ({ value: b.id, label: this._vesc(b.name), active: this.invSelectedBrand === b.id, color: b.brand_color || '#6366f1', onclick: `app.setInvBrand('${b.id}')` }))))}
+                <div class="analysis-content" style="flex:1;min-width:0">
+                    <div class="table-container" style="overflow-x:auto">
+                        <table style="width:100%; border-collapse:collapse; min-width:780px">
+                            <thead><tr style="border-bottom:2px solid var(--card-border); color:var(--text-muted); font-size:0.82rem; text-align:left">
+                                <th style="padding:12px">SKU</th><th style="padding:12px">품목명</th><th style="padding:12px">옵션</th>
+                                <th style="padding:12px">브랜드</th><th style="padding:12px; text-align:center">현재고</th>
+                                <th style="padding:12px; text-align:center">안전재고</th><th style="padding:12px; text-align:center">카페24</th>
+                                <th style="padding:12px; text-align:right">작업</th>
+                            </tr></thead>
+                            <tbody>${rows || `<tr><td colspan="8" style="padding:2rem;text-align:center;color:var(--text-muted)">등록된 품목이 없습니다. "+ 품목 추가"로 시작하세요.</td></tr>`}</tbody>
+                        </table>
+                    </div>
 
-            <div style="margin-top:2rem">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
-                    <h3 style="margin:0;font-size:1.05rem;display:flex;align-items:center;gap:6px"><i class="ph ph-clock-counter-clockwise"></i> 재고 변동 내역 ${this.invLedgerItemId ? '(필터됨)' : ''}</h3>
-                    ${this.invLedgerItemId ? `<button class="btn-secondary" id="inv-log-clear" style="padding:5px 12px;border-radius:8px;font-size:0.8rem">전체 보기</button>` : ''}
-                </div>
-                <div class="table-container" style="overflow-x:auto; max-height:320px; overflow-y:auto">
-                    <table style="width:100%; border-collapse:collapse; min-width:560px">
-                        <thead><tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:0.78rem;text-align:left">
-                            <th style="padding:8px">시각</th><th style="padding:8px">품목</th><th style="padding:8px;text-align:center">사유</th><th style="padding:8px;text-align:right">증감</th><th style="padding:8px">비고</th>
-                        </tr></thead>
-                        <tbody>${ledgerRows}</tbody>
-                    </table>
+                    <div style="margin-top:2rem">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+                            <h3 style="margin:0;font-size:1.05rem;display:flex;align-items:center;gap:6px"><i class="ph ph-clock-counter-clockwise"></i> 재고 변동 내역 ${this.invLedgerItemId ? '(필터됨)' : ''}</h3>
+                            ${this.invLedgerItemId ? `<button class="btn-secondary" id="inv-log-clear" style="padding:5px 12px;border-radius:8px;font-size:0.8rem">전체 보기</button>` : ''}
+                        </div>
+                        <div class="table-container" style="overflow-x:auto; max-height:320px; overflow-y:auto">
+                            <table style="width:100%; border-collapse:collapse; min-width:560px">
+                                <thead><tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:0.78rem;text-align:left">
+                                    <th style="padding:8px">시각</th><th style="padding:8px">품목</th><th style="padding:8px;text-align:center">사유</th><th style="padding:8px;text-align:right">증감</th><th style="padding:8px">비고</th>
+                                </tr></thead>
+                                <tbody>${ledgerRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>`;
