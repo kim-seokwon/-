@@ -4008,7 +4008,7 @@ class BhasApp {
         <p style="margin:1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 판매수량 기준 · 주문 옵션(color/size)에서 추출 · 취소·환불 제외 · 주요(누적 60%)/서브(~85%)/약한</p>`;
     }
 
-    // 재구매 횟수 분포(1~10회+) · 충성 = 10회 이상
+    // 재구매 횟수 분포(1~10회+) · 단골 = 10회 이상
     _repeatDistHTML(rep) {
         const bmap = {}; (rep.dist || []).forEach(d => { bmap[d.bucket] = d.c; });
         const buckets = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10+'];
@@ -4030,7 +4030,7 @@ class BhasApp {
             <div style="display:flex;align-items:flex-end;gap:3px;height:80px">${bars}</div>
             <div style="display:flex;gap:3px;margin-top:3px">${labels}</div>
             <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--card-border);display:flex;justify-content:space-between;align-items:baseline;font-size:0.8rem">
-                <span style="color:#f59e0b;font-weight:800"><i class="ph ph-crown-simple"></i> 충성고객 ${loyal.toLocaleString()}명</span>
+                <span style="color:#f59e0b;font-weight:800"><i class="ph ph-heart" style="font-weight:900"></i> 단골고객 ${loyal.toLocaleString()}명</span>
                 <span style="color:var(--text-muted);font-size:0.72rem">10회 이상 · 전체의 ${Math.round(loyal / cust * 100)}%</span>
             </div>`;
     }
