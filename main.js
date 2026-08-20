@@ -2025,16 +2025,23 @@ class BhasApp {
     //  반환: { color, label, sub } · 없으면 null.
     _channelStatus(mall) {
         if (!mall) return null;
-        const synced = mall.last_order_synced_at ? new Date(mall.last_order_synced_at).getTime() : 0;
+        // 두 축을 분리한다: (1) 수집기 건강 = last_order_synced_at(sync_log heartbeat)  (2) 주문 유무 = 마지막 주문일.
+        //  주문이 없는 것과 수집이 끊긴 것은 별개 — 배지는 (1) 수집기 건강을 우선 판정하고, 주문 정보는 부가표기.
+        const hb = mall.last_order_synced_at ? new Date(mall.last_order_synced_at).getTime() : 0;
         let lastOrder = 0;
         (this.orders || []).forEach(o => { if (o.mall_key === mall.mall_key && o.order_date) { const d = new Date(o.order_date).getTime(); if (d > lastOrder) lastOrder = d; } });
-        const ref = Math.max(synced, lastOrder);
-        if (!ref) return { color: '#ef4444', label: '수집 없음', sub: '수집 이력 없음' };
-        const ms = Date.now() - ref, hours = Math.floor(ms / 3600000), days = Math.floor(ms / 86400000);
-        const ago = hours < 1 ? '방금' : hours < 24 ? `${hours}시간 전` : `${days}일 전`;
-        if (hours <= 26) return { color: '#22c55e', label: '수집중', sub: ago };
-        if (days <= 7) return { color: '#f59e0b', label: '지연', sub: `${days}일째 없음` };
-        return { color: '#ef4444', label: '중단', sub: `${days}일 전 마지막` };
+        const orderSub = lastOrder
+            ? (() => { const ms = Date.now() - lastOrder, h = Math.floor(ms / 3600000), d = Math.floor(ms / 86400000); return h < 1 ? '주문 방금' : h < 24 ? `최근주문 ${h}시간 전` : `최근주문 ${d}일 전`; })()
+            : '주문 없음';
+        if (hb) {
+            const ms = Date.now() - hb, hours = ms / 3600000, days = Math.floor(ms / 86400000);
+            if (hours <= 2) return { color: '#22c55e', label: '수집중', sub: orderSub };          // 수집기 정상(방금 돌음) — 주문 유무만 부가표기
+            if (days <= 2) return { color: '#f59e0b', label: '수집 지연', sub: `수집기 ${days || 1}일째 멈춤` };
+            return { color: '#ef4444', label: '수집 중단', sub: `수집기 ${days}일 전 마지막` };      // 진짜 수집 끊김
+        }
+        // heartbeat 정보 없음(수집 이력 자체가 없음) → 주문 기준 폴백
+        if (!lastOrder) return { color: '#94a3b8', label: '수집 없음', sub: '수집 이력 없음' };
+        return { color: '#94a3b8', label: '수집 이력 없음', sub: orderSub };
     }
 
     renderHome(products) {
@@ -4017,7 +4024,7 @@ class BhasApp {
         });
         const rank = (m, n) => { const t = Object.values(m).reduce((s, v) => s + v, 0) || 1; const arr = Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n); let cum = 0; return arr.map(([l, v]) => { cum += v; const g = cum / t <= 0.6 ? '주요' : (cum / t <= 0.85 ? '서브' : '약한'); return { l, v, share: Math.round(v / t * 100), g }; }); };
         const gCol = g => g === '주요' ? '#16a34a' : g === '서브' ? '#f59e0b' : '#94a3b8';
-        const rowsH = (arr, color) => arr.length ? arr.map(x => `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:0.83rem;margin-bottom:3px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.l)} <span style="font-size:0.64rem;font-weight:700;color:${gCol(x.g)}">${x.g}</span></span><b style="font-variant-numeric:tabular-nums">${x.v.toLocaleString()} <span style="font-size:0.68rem;color:var(--text-muted);font-weight:500">${x.share}%</span></b></div><div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(3, x.share)}%;background:${color};border-radius:5px"></div></div></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.82rem">데이터 없음</span>';
+        const rowsH = (arr, color) => arr.length ? arr.map(x => `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:0.83rem;margin-bottom:3px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.l)} <span style="font-size:0.64rem;font-weight:700;color:${gCol(x.g)}">${x.g}</span></span><span style="white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${x.v.toLocaleString()}</b><span style="display:inline-block;min-width:40px;text-align:right;margin-left:12px;font-size:0.72rem;color:var(--text-muted);font-weight:500;font-variant-numeric:tabular-nums">${x.share}%</span></span></div><div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(3, x.share)}%;background:${color};border-radius:5px"></div></div></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.82rem">데이터 없음</span>';
         const sizes = rank(szMap, 10), colors = rank(colMap, 10), combos = Object.entries(comboMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
         if (!(sizes.length || colors.length)) return `<div class="glass" style="padding:1.6rem;border-radius:18px;color:var(--text-muted);font-size:0.86rem">${loading ? '불러오는 중…' : '이 브랜드·기간에 옵션(사이즈/색상) 데이터가 없어요.'}</div>`;
         return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem">
@@ -4064,7 +4071,7 @@ class BhasApp {
         // 인디고 단일계열 램프(정식 진함 → 이벤트 옅음) — 알록달록 방지
         const parts = [['정식', ot.orders_regular || 0, '#4338ca'], ['프리오더', ot.orders_preorder || 0, '#818cf8'], ['이벤트', ot.orders_event || 0, '#c7d2fe']];
         const bar = `<div style="display:flex;height:15px;border-radius:8px;overflow:hidden;background:rgba(148,163,184,0.15)">${parts.map(([l, v, c]) => v ? `<div style="width:${(v / T * 100).toFixed(1)}%;background:${c}" title="${l} ${v.toLocaleString()}건"></div>` : '').join('')}</div>`;
-        const legend = parts.map(([l, v, c]) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.78rem;margin-right:14px;white-space:nowrap"><span style="width:9px;height:9px;border-radius:2px;background:${c}"></span>${l} <b style="font-variant-numeric:tabular-nums">${v.toLocaleString()}</b><span style="color:var(--text-muted);font-size:0.7rem">${pct(v, T)}%</span></span>`).join('');
+        const legend = parts.map(([l, v, c]) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.78rem;margin-right:18px;white-space:nowrap"><span style="width:9px;height:9px;border-radius:2px;background:${c}"></span>${l} <b style="font-variant-numeric:tabular-nums">${v.toLocaleString()}</b><span style="color:var(--text-muted);font-size:0.7rem;margin-left:5px">${pct(v, T)}%</span></span>`).join('');
         const segTile = (label, v, dot, desc) => `<div style="flex:1;min-width:120px;text-align:center;padding:12px 8px;background:rgba(148,163,184,0.07);border:1px solid var(--card-border);border-radius:12px"><div style="font-size:1.5rem;font-weight:900;color:var(--text-main);line-height:1;font-variant-numeric:tabular-nums">${(v || 0).toLocaleString()}<span style="font-size:0.68rem;font-weight:600;color:var(--text-muted)">명</span></div><div style="font-size:0.78rem;font-weight:700;margin-top:5px;display:flex;align-items:center;justify-content:center;gap:5px"><span style="width:7px;height:7px;border-radius:2px;background:${dot};flex-shrink:0"></span>${label}</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px">${desc} · ${pct(v, C)}%</div></div>`;
         return `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px;margin-top:1.3rem">
             <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-tag" style="color:#6366f1"></i> 주문타입 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">${pl} · 이벤트=상품명 특가/기획/세일</span></div>
