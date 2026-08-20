@@ -2389,7 +2389,10 @@ class BhasApp {
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:0.6rem">
                 <h1 style="margin:0;font-size:1.35rem">👋 ${this._vesc(name)}님</h1>
-                <span style="font-size:0.82rem;color:var(--text-muted)">2179 운영 현황 · ${todayStr}</span>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <span style="font-size:0.82rem;color:var(--text-muted)">2179 운영 현황 · ${todayStr}${this._dataLoadedAt ? ` · 업데이트 ${new Date(this._dataLoadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+                    <button onclick="app.refreshData()" ${this._refreshing ? 'disabled' : ''} title="최신 주문·매출로 동기화" style="display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:9px;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);font-size:0.8rem;font-weight:700;cursor:${this._refreshing ? 'wait' : 'pointer'}"><i class="ph ph-arrows-clockwise" style="${this._refreshing ? 'animation:spin 0.8s linear infinite' : ''}"></i> ${this._refreshing ? '동기화 중…' : '동기화'}</button>
+                </div>
             </div>
 
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
@@ -4641,6 +4644,18 @@ class BhasApp {
     // ============================================================
     //  주문/배송 통합관리 (OMS) — 카페24
     // ============================================================
+    // 수동 동기화 — 최신 주문·매출·채널상태를 다시 불러온다(대시보드가 로드시점 값이라 안 갱신되던 문제 해소)
+    async refreshData() {
+        if (this._refreshing) return;
+        this._refreshing = true; this.requestRender();
+        try {
+            this._ordersLoaded = false; this._ordersLoading = false;
+            this._mallsLoaded = false; this._mallsLoading = false;
+            await Promise.all([this.loadOrders(), this.loadMalls()]);
+            this.showToast('최신 데이터로 동기화됐어요');
+        } catch (e) { this.showToast('동기화 실패: ' + (e?.message || e)); }
+        this._refreshing = false; this.requestRender();
+    }
     async loadOrders() {
         this._ordersLoading = true;
         try {
@@ -4656,6 +4671,7 @@ class BhasApp {
             items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
             this.orders = list.map(o => ({ ...o, items: byOrder[o.id] || [] }));
             this._ordersLoaded = true;
+            this._dataLoadedAt = Date.now();
         } catch (e) {
             this.showToast('주문을 불러오지 못했습니다. (스키마 설치 필요할 수 있음)');
             this.orders = []; this._ordersLoaded = true;

@@ -2199,6 +2199,8 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
 }
 .feedback-fab i { font-size: 1.15rem; }
 .feedback-fab:hover { filter: brightness(1.08); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
 /* 로고 = 홈 버튼 (클릭 시 홈으로) */
 .nav-logo span[title="홈으로"], .top-bar-logo[title="홈으로"] { transition: opacity 0.15s ease; }
 .nav-logo span[title="홈으로"]:hover, .top-bar-logo[title="홈으로"]:hover { opacity: 0.62; }
