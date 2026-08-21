@@ -2176,12 +2176,26 @@ class BhasApp {
         // ── 브랜드별 / 채널별 (이번달) ──
         const monthRev = revOrders.filter(o => localYMD(o.order_date).startsWith(monthKey));
         const groupSum = keyFn => { const m = {}; monthRev.forEach(o => { const k = keyFn(o) || '기타'; m[k] = (m[k] || 0) + Number(o.pay_amount || 0); }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
-        const brandArr = groupSum(o => brandOf(o) || o.channel);
+        // ⚠️ 브랜드별 매출은 this.orders(최신 500건)가 아니라 서버 집계(sa.brands, 전량)에서 뽑는다.
+        //   하이헤이호가 하루 수백 건씩 들어와 최신 500건을 독점하면 로하이·토비가 500위 밖으로 밀려 사라졌었다.
+        const _miB = (sa && sa.monthIdx) ? sa.monthIdx[monthKey] : undefined;
+        const brandArr = (sa && sa.fromServer && Array.isArray(sa.brands) && _miB != null)
+            ? sa.brands.filter(b => b.kind === 'order').map(b => [b.name, (b.cells[_miB] && b.cells[_miB].amt) || 0]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1])
+            : groupSum(o => brandOf(o) || o.channel);
         const brandColor = {}; brandArr.forEach(([b], i) => brandColor[b] = palette[i % palette.length]);
         // 채널별은 항상 5개 고정 표시(0원도) — 카페24·키디키디·29CM·스마트스토어·기타
         const CHAN_FIXED = ['카페24', '키디키디', '29CM', '스마트스토어', '기타'];
-        const chanFixed = Object.fromEntries(CHAN_FIXED.map(c => [c, 0]));
-        monthRev.forEach(o => { let c = channelOf(o); if (!CHAN_FIXED.includes(c)) c = '기타'; chanFixed[c] += Number(o.pay_amount || 0); });
+        const _platDisp = p => ({ cafe24: '카페24', kidikidi: '키디키디', '29cm': '29CM', smartstore: '스마트스토어' })[String(p || '').toLowerCase()] || '기타';
+        // 채널×브랜드 이번달 매출도 서버 집계(brandChannel, 전량)에서. this.orders(500건)면 로하이·토비가 사라진다.
+        const chanBrand = {}; CHAN_FIXED.forEach(c => chanBrand[c] = {});
+        const _useAggCh = this.salesAggData && Array.isArray(this.salesAggData.brandChannel);
+        if (_useAggCh) {
+            this.salesAggData.brandChannel.filter(r => r.ym === monthKey && r.state !== 'cancel' && r.state !== 'return')
+                .forEach(r => { const c = _platDisp(r.platform), b = r.brand_name || '기타'; chanBrand[c][b] = (chanBrand[c][b] || 0) + Number(r.amt || 0); });
+        } else {
+            monthRev.forEach(o => { let c = channelOf(o); if (!CHAN_FIXED.includes(c)) c = '기타'; const b = brandOf(o) || '기타'; chanBrand[c][b] = (chanBrand[c][b] || 0) + Number(o.pay_amount || 0); });
+        }
+        const chanFixed = Object.fromEntries(CHAN_FIXED.map(c => [c, Object.values(chanBrand[c]).reduce((s, v) => s + v, 0)]));
         const chanArr = CHAN_FIXED.map(c => [c, chanFixed[c]]);
         const brandMax = Math.max(1, ...brandArr.map(x => x[1]));
         const chanMax = Math.max(1, ...chanArr.map(x => x[1]));
@@ -2315,9 +2329,7 @@ class BhasApp {
         const brandLegend = brandArr.length ? brandArr.map(([l, v], i) => `<div style="display:flex;align-items:center;gap:7px;font-size:0.8rem;padding:3px 0"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(l)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.8rem">이번달 매출 없음</span>';
         const barChart = `<div style="display:flex;align-items:flex-end;gap:2px;height:110px">${monthDaily.map((v, i) => { const h = v / mdMax * 100; const isT = (i + 1) === today.getDate(); return `<div style="flex:1;min-width:2px;background:${isT ? '#6366f1' : 'rgba(99,102,241,0.32)'};height:${Math.max(2, h)}%;border-radius:2px 2px 0 0"></div>`; }).join('')}</div><div style="display:flex;justify-content:space-between;font-size:0.66rem;color:var(--text-muted);margin-top:5px"><span>1일</span><span>오늘 ${mm}/${today.getDate()}</span><span>${daysIn}일</span></div>`;
 
-        // 채널별 스택바(브랜드 색상 비율)
-        const chanBrand = {}; CHAN_FIXED.forEach(c => chanBrand[c] = {});
-        monthRev.forEach(o => { let c = channelOf(o); if (!CHAN_FIXED.includes(c)) c = '기타'; const b = brandOf(o) || '기타'; chanBrand[c][b] = (chanBrand[c][b] || 0) + Number(o.pay_amount || 0); });
+        // 채널별 스택바(브랜드 색상 비율) — chanBrand는 위에서 서버집계로 계산됨
         const chanTot = c => Object.values(chanBrand[c]).reduce((s, v) => s + v, 0);
         const chanMaxT = Math.max(1, ...CHAN_FIXED.map(chanTot));
         const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div onclick="app.switchView('sales')" style="margin-bottom:0.55rem;cursor:pointer">
@@ -4706,12 +4718,12 @@ class BhasApp {
             return acc;
         };
         try {
-            const [monthly, daily, channel, stateTotals, financialDaily] = await Promise.all([
+            const [monthly, daily, channel, stateTotals, financialDaily, brandChannel] = await Promise.all([
                 pageAll('sales_monthly'), pageAll('sales_daily'),
                 pageAll('sales_channel_monthly'), pageAll('order_state_totals'),
-                pageAll('dashboard_financial_daily'),
+                pageAll('dashboard_financial_daily'), pageAll('sales_brand_channel_monthly'),
             ]);
-            this.salesAggData = { monthly, daily, channel, stateTotals, financialDaily };
+            this.salesAggData = { monthly, daily, channel, stateTotals, financialDaily, brandChannel };
         } catch (e) {
             this.salesAggData = null;   // 실패 시 _salesAgg가 클라이언트 집계로 폴백
         }
