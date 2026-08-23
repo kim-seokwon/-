@@ -2188,7 +2188,7 @@ class BhasApp {
         const _platDisp = p => ({ cafe24: '카페24', kidikidi: '키디키디', '29cm': '29CM', smartstore: '스마트스토어' })[String(p || '').toLowerCase()] || '기타';
         // 채널×브랜드 이번달 매출도 서버 집계(brandChannel, 전량)에서. this.orders(500건)면 로하이·토비가 사라진다.
         const chanBrand = {}; CHAN_FIXED.forEach(c => chanBrand[c] = {});
-        const _useAggCh = this.salesAggData && Array.isArray(this.salesAggData.brandChannel);
+        const _useAggCh = this.salesAggData && Array.isArray(this.salesAggData.brandChannel) && this.salesAggData.brandChannel.length > 0;
         if (_useAggCh) {
             this.salesAggData.brandChannel.filter(r => r.ym === monthKey && r.state !== 'cancel' && r.state !== 'return')
                 .forEach(r => { const c = _platDisp(r.platform), b = r.brand_name || '기타'; chanBrand[c][b] = (chanBrand[c][b] || 0) + Number(r.amt || 0); });
@@ -4717,16 +4717,25 @@ class BhasApp {
             }
             return acc;
         };
-        try {
-            const [monthly, daily, channel, stateTotals, financialDaily, brandChannel] = await Promise.all([
-                pageAll('sales_monthly'), pageAll('sales_daily'),
-                pageAll('sales_channel_monthly'), pageAll('order_state_totals'),
-                pageAll('dashboard_financial_daily'), pageAll('sales_brand_channel_monthly'),
-            ]);
-            this.salesAggData = { monthly, daily, channel, stateTotals, financialDaily, brandChannel };
-        } catch (e) {
-            this.salesAggData = null;   // 실패 시 _salesAgg가 클라이언트 집계로 폴백
-        }
+        // 각 뷰를 독립적으로 로드 — 한 뷰가 (일시적 오류·권한 등으로) 실패해도 매출 전체가 날아가지 않게.
+        //  한 번 실패 시 1회 재시도. 핵심(sales_monthly)이 끝내 실패할 때만 전체 폴백(_salesAggFromOrders).
+        const safe = async (table) => {
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try { return await pageAll(table); }
+                catch (e) { if (attempt === 1) { console.warn('[salesAgg] load fail:', table, e?.message || e); return null; } }
+            }
+            return null;
+        };
+        const [monthly, daily, channel, stateTotals, financialDaily, brandChannel] = await Promise.all([
+            safe('sales_monthly'), safe('sales_daily'),
+            safe('sales_channel_monthly'), safe('order_state_totals'),
+            safe('dashboard_financial_daily'), safe('sales_brand_channel_monthly'),
+        ]);
+        if (!monthly) { this.salesAggData = null; return; }   // 브랜드 월매출의 근간이 없으면 클라 집계 폴백
+        this.salesAggData = {
+            monthly, daily: daily || [], channel: channel || [],
+            stateTotals: stateTotals || [], financialDaily: financialDaily || [], brandChannel: brandChannel || [],
+        };
     }
 
     // 브랜드 상세용 주문 슬라이스 — 인기상품·옵션·재구매·반품 카드는 원본 주문이 필요하다.
