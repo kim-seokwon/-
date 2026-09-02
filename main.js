@@ -935,6 +935,7 @@ class BhasApp {
             { id: 'dashboard', label: '프로젝트', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
+            { id: 'tech_packs', label: '작업지시서', icon: '<i class="ph ph-clipboard-text"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'vendors', label: '생산현황', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'quotes', label: '견적', icon: '<i class="ph ph-receipt"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
@@ -3391,6 +3392,8 @@ class BhasApp {
                     ${rows || '<p style="color: var(--text-muted); padding: 2rem 0;">표시할 프로젝트가 없습니다.</p>'}
                 </div>
             `;
+        } else if (this.currentView === 'tech_packs') {
+            return this.renderTechPacks();
         } else if (this.currentView === 'sample_maker') {
             return renderSampleMaker(this.sampleConfig);
         } else if (this.currentView === 'orders') {
@@ -4476,6 +4479,7 @@ class BhasApp {
             if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); }
         }
         if (v === 'feedback' && !this._fbLoaded && !this._fbLoading) this.loadFeedback();
+        if (v === 'tech_packs') this.ensureTechPacks();
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         // 브랜드 상세는 상품·옵션·재구매·반품 카드용으로 그 브랜드+기간 주문만 따로 받아온다
@@ -6752,20 +6756,103 @@ class BhasApp {
             this._techPacks = data || [];
         } catch (e) { this._techPacks = this._techPacks || []; }
         this._techPacksLoaded = true;
+        this.requestRender();
     }
 
     async saveTechPack() {
         const cfg = this.sampleConfig;
         const name = (cfg.styleName || '').trim() || '무제 작업지시서';
+        const editId = this._editingTechPackId || null;
         try {
-            const { error } = await this.supabase.from('tech_packs').insert([{ style_name: name, style_no: cfg.styleNo || null, config: cfg }]);
-            if (error) throw error;
+            if (editId) {
+                const { error } = await this.supabase.from('tech_packs').update({ style_name: name, style_no: cfg.styleNo || null, config: cfg }).eq('id', editId);
+                if (error) throw error;
+            } else {
+                const { error } = await this.supabase.from('tech_packs').insert([{ style_name: name, style_no: cfg.styleNo || null, config: cfg }]);
+                if (error) throw error;
+            }
         } catch (e) {
             this.showToast('작업지시서 저장 실패 (013_tech_packs.sql 설치 필요): ' + (e.message || e));
             return;
         }
         await this.ensureTechPacks(true);
-        this.showToast('작업지시서 저장됨: ' + name + ' — 생산현황 물품에 연결 가능');
+        this.showToast(editId ? ('작업지시서 수정됨: ' + name) : ('작업지시서 저장됨: ' + name + ' — 생산현황 물품에 연결 가능'));
+    }
+
+    // ----- 작업지시서 목록 화면 -----
+    newTechPack() { this.sampleConfig = defaultSampleConfig(); this._editingTechPackId = null; this.switchView('sample_maker'); }
+    openTechPack(id) {
+        const t = (this._techPacks || []).find(x => x.id === id);
+        if (!t || !t.config) { this.showToast('설정을 불러올 수 없습니다'); return; }
+        this.sampleConfig = JSON.parse(JSON.stringify(t.config));
+        this._editingTechPackId = id;
+        this.switchView('sample_maker');
+    }
+    printTechPack(id) {
+        const t = (this._techPacks || []).find(x => x.id === id);
+        if (!t) return;
+        const w = window.open('', '_blank');
+        if (!w) { this.showToast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+        w.document.write(buildTechPackPrintHTML(t.config)); w.document.close();
+    }
+    downloadTechPack(id) {
+        const t = (this._techPacks || []).find(x => x.id === id);
+        if (!t) return;
+        try {
+            const html = buildTechPackPrintHTML(t.config);
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const safe = (t.style_name || '작업지시서').replace(/[\\/:*?"<>|]+/g, '_').trim();
+            const a = document.createElement('a');
+            a.href = url; a.download = `작업지시서_${safe}${t.style_no ? '_' + t.style_no : ''}.html`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            this.showToast('다운로드됨 — 파일 열고 인쇄(⌘P)하면 PDF로도 저장돼요');
+        } catch (e) { this.showToast('다운로드 실패: ' + (e.message || e)); }
+    }
+    async deleteTechPack(id, name) {
+        if (!confirm(`작업지시서 "${name || ''}" 를 삭제할까요? 되돌릴 수 없어요.`)) return;
+        try {
+            const { error } = await this.supabase.from('tech_packs').delete().eq('id', id);
+            if (error) throw error;
+            if (this._editingTechPackId === id) this._editingTechPackId = null;
+            this.showToast('삭제됨');
+            await this.ensureTechPacks(true);
+        } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
+    }
+    renderTechPacks() {
+        const list = this._techPacks || [];
+        const esc = s => this._vesc(s);
+        const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '';
+        const card = t => {
+            let thumb = '';
+            try { thumb = garmentPreviewSVG(t.config, false); } catch (_e) { thumb = ''; }
+            return `<div class="glass" style="padding:1rem 1.1rem;border-radius:16px;display:flex;flex-direction:column;gap:0.7rem">
+                <div style="height:120px;display:flex;align-items:center;justify-content:center;background:rgba(148,163,184,0.06);border-radius:12px;overflow:hidden">${thumb ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:6px">${thumb}</div>` : '<i class="ph ph-image" style="font-size:2rem;color:var(--text-muted)"></i>'}</div>
+                <div>
+                    <div style="font-size:0.95rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.style_name || '무제')}</div>
+                    <div style="font-size:0.72rem;color:var(--text-muted)">${t.style_no ? esc(t.style_no) + ' · ' : ''}${when(t.created_at)}</div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                    <button onclick="app.openTechPack('${t.id}')" class="btn-primary" style="padding:7px 0;border-radius:9px;font-size:0.8rem"><i class="ph ph-pencil-simple"></i> 열기</button>
+                    <button onclick="app.downloadTechPack('${t.id}')" style="padding:7px 0;border-radius:9px;font-size:0.8rem;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);cursor:pointer;font-weight:700"><i class="ph ph-download-simple"></i> 다운로드</button>
+                    <button onclick="app.printTechPack('${t.id}')" style="padding:7px 0;border-radius:9px;font-size:0.8rem;border:1px solid var(--card-border);background:transparent;color:var(--text-main);cursor:pointer"><i class="ph ph-printer"></i> 인쇄</button>
+                    <button onclick="app.deleteTechPack('${t.id}','${esc(t.style_name || '').replace(/'/g, "\\'")}')" style="padding:7px 0;border-radius:9px;font-size:0.8rem;border:1px solid var(--card-border);background:transparent;color:#ef4444;cursor:pointer"><i class="ph ph-trash"></i> 삭제</button>
+                </div>
+            </div>`;
+        };
+        return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
+                <div>
+                    <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-clipboard-text" style="color:#6366f1"></i> 작업지시서</h1>
+                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">저장한 작업지시서 ${list.length}건 · 열어서 수정 · 다운로드(⌘P로 PDF) · 인쇄 · 생산현황 물품에 연결</p>
+                </div>
+                <button onclick="app.newTechPack()" class="btn-primary" style="padding:9px 16px;border-radius:10px;font-weight:700"><i class="ph ph-plus"></i> 새 작업지시서</button>
+            </div>
+            ${!this._techPacksLoaded ? '<div class="glass" style="padding:3rem;border-radius:18px;text-align:center;color:var(--text-muted)">불러오는 중...</div>'
+                : (list.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1.1rem">${list.map(card).join('')}</div>`
+                    : '<div class="glass" style="padding:2.5rem;border-radius:18px;text-align:center;color:var(--text-muted)">저장된 작업지시서가 없어요. <b>샘플</b> 탭에서 만들고 저장하거나 위 <b>새 작업지시서</b>로 시작하세요.</div>')}
+        </div>`;
     }
 
     _qcFromConfig(cfg, job) {
