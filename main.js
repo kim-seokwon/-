@@ -4222,6 +4222,50 @@ class BhasApp {
         </svg>`;
     }
 
+    // 최근 30일 팔로워 그래프 — 작은 스파크라인으로는 며칠에 몇 명 늘었는지가 안 보여서 따로 그린다.
+    //  수집이 빠진 날(2026-09-03~14 공백)은 선을 잇되 점을 찍지 않아 "측정 안 함"이 드러나게 한다.
+    _igFollowerChart(points, color = '#3b82f6', days = 30) {
+        const today = new Date();
+        const from = new Date(today.getTime() - days * 86400000).toISOString().slice(0, 10);
+        const pts = points.filter(p => p.t >= from);
+        if (pts.length < 2) return `<div style="color:var(--text-muted);font-size:0.78rem;padding:14px 0">30일치 기록이 아직 부족해요</div>`;
+        const w = 320, h = 108, padL = 4, padR = 4, padT = 10, padB = 18;
+        const ys = pts.map(p => p.v);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        const spanY = Math.max(1, maxY - minY);
+        const t0 = new Date(pts[0].t).getTime(), t1 = new Date(pts[pts.length - 1].t).getTime();
+        const spanT = Math.max(1, t1 - t0);
+        const px = t => padL + ((new Date(t).getTime() - t0) / spanT) * (w - padL - padR);
+        const py = v => padT + (1 - (v - minY) / spanY) * (h - padT - padB);
+        const line = pts.map((p, i) => `${i ? 'L' : 'M'}${px(p.t).toFixed(1)},${py(p.v).toFixed(1)}`).join(' ');
+        const area = `${line} L${px(pts[pts.length - 1].t).toFixed(1)},${h - padB} L${px(pts[0].t).toFixed(1)},${h - padB} Z`;
+        const gid = 'igg' + Math.random().toString(36).slice(2, 8);
+        const md = s => { const p = s.split('-'); return `${+p[1]}/${+p[2]}`; };
+        const net = pts[pts.length - 1].v - pts[0].v;
+        const last = pts[pts.length - 1];
+        return `<div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+                <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600">최근 30일 팔로워</span>
+                <span style="font-size:0.78rem;font-weight:800">${this._igDelta(net)} <span style="font-weight:500;color:var(--text-muted);font-size:0.68rem">/ ${md(pts[0].t)}~${md(last.t)}</span></span>
+            </div>
+            <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="overflow:visible;display:block">
+                <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="${color}" stop-opacity="0.26"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+                </linearGradient></defs>
+                <line x1="${padL}" y1="${(h - padB).toFixed(1)}" x2="${w - padR}" y2="${(h - padB).toFixed(1)}" stroke="var(--card-border)" stroke-width="1"/>
+                <path d="${area}" fill="url(#${gid})"/>
+                <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+                ${pts.map(p => `<circle cx="${px(p.t).toFixed(1)}" cy="${py(p.v).toFixed(1)}" r="1.9" fill="${color}"><title>${p.t} · ${p.v.toLocaleString()}명</title></circle>`).join('')}
+                <circle cx="${px(last.t).toFixed(1)}" cy="${py(last.v).toFixed(1)}" r="4" fill="${color}" stroke="var(--bg-card, #fff)" stroke-width="1.6"/>
+            </svg>
+            <div style="display:flex;justify-content:space-between;font-size:0.63rem;color:var(--text-muted);margin-top:-12px">
+                <span>${md(pts[0].t)} · ${pts[0].v.toLocaleString()}</span>
+                <span>최고 ${maxY.toLocaleString()} / 최저 ${minY.toLocaleString()}</span>
+                <span>${md(last.t)} · <b style="color:var(--text-main)">${last.v.toLocaleString()}</b></span>
+            </div>
+        </div>`;
+    }
+
     // 주간 막대(게시물/스토리)
     _igBars(weeks, color) {
         if (!weeks.length) return `<div style="color:var(--text-muted);font-size:0.76rem;padding:10px 0">기록 없음</div>`;
@@ -4328,8 +4372,7 @@ class BhasApp {
                 <div style="display:flex;gap:8px;margin-bottom:0.9rem">
                     ${wkTile('팔로워 순증감', wkFol, true)}${wkTile('게시물', wkPosts, false)}${wkTile('댓글', wkComments, true)}${wkTile('좋아요', wkLikes, true)}
                 </div>
-                <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:2px">팔로워 추이</div>
-                ${this._igSpark(followerPts, '#3b82f6')}
+                ${this._igFollowerChart(followerPts, '#3b82f6', 30)}
                 <div style="margin-top:0.9rem">
                     <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">일별 증감 <span style="font-weight:400">(최근 7일)</span></div>
                     <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
