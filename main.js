@@ -4340,7 +4340,7 @@ class BhasApp {
             const commentWeeks = weekDeltaSeries('comments_total'), likeWeeks = weekDeltaSeries('likes_total');
             // 일별 증감(최근 7일): 연속 스냅샷 차이(팔로워·댓글·좋아요)
             const dailyRows = [];
-            for (let i = snaps.length - 1; i >= 1 && dailyRows.length < 7; i--) {
+            for (let i = snaps.length - 1; i >= 1 && dailyRows.length < 30; i--) {
                 const cu = snaps[i], pv = snaps[i - 1];
                 const d = (a, b) => (a != null && b != null) ? Number(a) - Number(b) : null;
                 dailyRows.push({ date: cu.snap_date, f: d(cu.followers, pv.followers), c: d(cu.comments_total, pv.comments_total), l: d(cu.likes_total, pv.likes_total) });
@@ -4374,7 +4374,8 @@ class BhasApp {
                 </div>
                 ${this._igFollowerChart(followerPts, '#3b82f6', 30)}
                 <div style="margin-top:0.9rem">
-                    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">일별 증감 <span style="font-weight:400">(최근 7일)</span></div>
+                    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">일별 증감 <span style="font-weight:400">(최근 ${dailyRows.length}일)</span></div>
+                    <div style="max-height:236px;overflow-y:auto;scrollbar-width:thin">
                     <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
                         <thead><tr style="color:var(--text-muted)"><th style="text-align:left;padding:3px 4px;font-weight:600">날짜</th><th style="text-align:right;padding:3px 4px;font-weight:600">팔로워</th><th style="text-align:right;padding:3px 4px;font-weight:600">댓글</th><th style="text-align:right;padding:3px 4px;font-weight:600">좋아요</th></tr></thead>
                         <tbody>${dailyRows.length ? dailyRows.map(r => {
@@ -4383,6 +4384,7 @@ class BhasApp {
                             return `<tr style="border-top:1px solid var(--card-border)"><td style="padding:4px;color:var(--text-muted)">${+p[1]}/${+p[2]}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.f)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.c)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.l)}</td></tr>`;
                         }).join('') : '<tr><td colspan="4" style="padding:10px;color:var(--text-muted);text-align:center">데이터 쌓이는 중 (내일부터 일별 증감 표시)</td></tr>'}</tbody>
                     </table>
+                    </div>
                 </div>
             </div>`;
         }).join('');
