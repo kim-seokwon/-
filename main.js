@@ -4343,7 +4343,10 @@ class BhasApp {
             for (let i = snaps.length - 1; i >= 1 && dailyRows.length < 30; i--) {
                 const cu = snaps[i], pv = snaps[i - 1];
                 const d = (a, b) => (a != null && b != null) ? Number(a) - Number(b) : null;
-                dailyRows.push({ date: cu.snap_date, f: d(cu.followers, pv.followers), c: d(cu.comments_total, pv.comments_total), l: d(cu.likes_total, pv.likes_total) });
+                // 수집이 빠진 구간(예: 2026-09-03~14 프로젝트 차단)은 며칠치가 한 줄에 합쳐진다.
+                // 그걸 하루치처럼 보여주면 수치를 오해하므로 며칠분인지 같이 표시한다.
+                const gap = Math.round((new Date(cu.snap_date) - new Date(pv.snap_date)) / 86400000);
+                dailyRows.push({ date: cu.snap_date, gap, from: pv.snap_date, f: d(cu.followers, pv.followers), c: d(cu.comments_total, pv.comments_total), l: d(cu.likes_total, pv.likes_total) });
             }
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
             const wkTile = (label, v, signed) => { const inner = (v == null) ? '<span style="color:var(--text-muted)">—</span>' : signed ? this._igDelta(v) : `<span style="color:var(--text-main)">${v.toLocaleString()}</span>`; return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;line-height:1.05">${inner}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
@@ -4381,7 +4384,11 @@ class BhasApp {
                         <tbody>${dailyRows.length ? dailyRows.map(r => {
                             const cell = v => this._igDelta(v);
                             const p = r.date.split('-');
-                            return `<tr style="border-top:1px solid var(--card-border)"><td style="padding:4px;color:var(--text-muted)">${+p[1]}/${+p[2]}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.f)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.c)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.l)}</td></tr>`;
+                            const fp = (r.from || '').split('-');
+                            const label = r.gap > 1
+                                ? `${+fp[1]}/${+fp[2]}~${+p[1]}/${+p[2]} <span style="font-size:0.62rem;color:#f59e0b">${r.gap}일치</span>`
+                                : `${+p[1]}/${+p[2]}`;
+                            return `<tr style="border-top:1px solid var(--card-border)"><td style="padding:4px;color:var(--text-muted);white-space:nowrap">${label}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.f)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.c)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.l)}</td></tr>`;
                         }).join('') : '<tr><td colspan="4" style="padding:10px;color:var(--text-muted);text-align:center">데이터 쌓이는 중 (내일부터 일별 증감 표시)</td></tr>'}</tbody>
                     </table>
                     </div>
