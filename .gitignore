@@ -4,3 +4,4 @@ dist
 .env
 .system_generated
 /brain
+.work/

@@ -8,7 +8,8 @@
 1. `migrations/001_inventory.sql` — 재고 테이블 + 원장 트리거 + RLS
 2. `migrations/002_workspace.sql` — 노션식 페이지/보드 테이블
 3. `migrations/004_orders.sql` — 주문통합(OMS) 테이블
-4. (Edge Function 배포 후) `migrations/003_cafe24_cron.sql` — 10분 주기 동기화
+4. `migrations/034_material_inventory.sql` — 원단·부자재 품목/입출고 원장
+5. (Edge Function 배포 후) `migrations/003_cafe24_cron.sql` — 10분 주기 동기화
 
 > `supabase_rls_setup.sql`의 헬퍼함수(`get_user_role` 등)가 먼저 설치돼 있어야 합니다.
 

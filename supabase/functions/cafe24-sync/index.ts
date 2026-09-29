@@ -115,14 +115,20 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
   const listingByVariant = new Map((listings || []).map((l: any) => [String(l.channel_variant_code), l]));
 
   // 기존 행 로드 (order_id 청크로 나눠 in())
+  //  raw(건당 ~3.6KB)는 읽지 않는다 — 매 회 수백 건을 전량 받으면 egress가 하루 ~1GB가 되어
+  //  2026-09 무료한도 초과로 프로젝트가 차단됐다. 비교는 DB 계산 필드 state_sig(=stateSig와 동일,
+  //  migration 033)와 금액·수취인 컬럼으로 하고, raw는 실제로 바뀐 주문에 한해 재고 보정 때만 받는다.
   const ids = orders.map((o: any) => String(o.order_id));
-  const existing = new Map<string, { id: string; raw: any; channel_status: string | null; actual_paid_amount: number; refund_amount: number }>();
+  const existing = new Map<string, { id: string; sig: string; channel_status: string | null; actual_paid_amount: number; refund_amount: number; hasReceiver: boolean }>();
   for (let i = 0; i < ids.length; i += 200) {
-    const { data } = await db.from("channel_orders").select("id, order_id, raw, channel_status, actual_paid_amount, refund_amount")
+    const { data, error } = await db.from("channel_orders")
+      .select("id, order_id, state_sig, channel_status, actual_paid_amount, refund_amount, receiver_name, receiver_address")
       .eq("mall_key", mall.mall_key).in("order_id", ids.slice(i, i + 200));
+    if (error) throw new Error(`[${mall.mall_key}] 기존 주문 조회: ${error.message}`);
     for (const r of (data || [])) existing.set(String(r.order_id), {
-      id: r.id, raw: r.raw, channel_status: r.channel_status,
+      id: r.id, sig: r.state_sig ?? "", channel_status: r.channel_status,
       actual_paid_amount: Number(r.actual_paid_amount || 0), refund_amount: Number(r.refund_amount || 0),
+      hasReceiver: r.receiver_name != null || r.receiver_address != null,
     });
   }
 
@@ -133,14 +139,21 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
     const cur = existing.get(String(o.order_id));
     // 미수집 주문 — 삽입은 pull 담당(재고 오차감 방지). 로그로만 남겨 누락을 감지한다.
     if (!cur) { missing++; if (missingIds.length < 50) missingIds.push(`${o.order_id}:${stateSig(o)}`); continue; }
-    const before = stateSig(cur.raw || {});
+    const before = cur.sig;
     const after = stateSig(o);
-    const f = financials(o, cur.raw);
+    // actual_paid_amount 컬럼 = 이전 raw 기준 financials().actualPaid (12,324건 대조 일치 확인)
+    const f = financials(o, { actual_payment_amount: cur.actual_paid_amount });
     const financialChanged = f.actualPaid !== cur.actual_paid_amount || f.refundAmount > cur.refund_amount;
     if (before === after && !financialChanged) continue;
 
-    // 늦은 취소/반품/재활성화도 원장에 보상분을 남긴다.
-    const oldUse = consumedByVariant(cur.raw || {});
+    // 늦은 취소/반품/재활성화도 원장에 보상분을 남긴다. (매핑된 옵션이 있는 몰만 이전 raw가 필요)
+    let prevRaw: any = {};
+    if (listingByVariant.size > 0) {
+      const { data: pr, error: prErr } = await db.from("channel_orders").select("raw").eq("id", cur.id).single();
+      if (prErr) throw new Error(`[${mall.mall_key}] 이전 원본 조회(${o.order_id}): ${prErr.message}`);
+      prevRaw = pr?.raw || {};
+    }
+    const oldUse = consumedByVariant(prevRaw);
     const newUse = consumedByVariant(o);
     for (const vc of new Set([...oldUse.keys(), ...newUse.keys()])) {
       const delta = (oldUse.get(vc) || 0) - (newUse.get(vc) || 0);
@@ -166,7 +179,7 @@ async function restatusMall(db: ReturnType<typeof admin>, mall: MallState, opts:
       refunded_at: f.refundAmount > 0 ? (f.refundDate || new Date().toISOString()) : null,
       pay_amount: f.actualPaid || null,
       // 수취인 정보가 비어 있던 건만 보강(기존 값은 덮지 않음)
-      ...(cur.raw?.receivers?.[0] ? {} : {
+      ...(cur.hasReceiver ? {} : {
         receiver_name: r.name || null,
         receiver_phone: r.cellphone || r.phone || null,
         receiver_zipcode: r.zipcode || null,
