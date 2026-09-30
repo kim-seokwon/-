@@ -997,7 +997,11 @@ class BhasApp {
 
         // ── 맥 모드: 데스크톱 + 창 + 독 ────────────────────────────────
         //  기존 화면(renderSubView)을 창 안에 그대로 띄운다. 화면 코드를 고치지 않고 껍데기만 바꾼다.
-        if (this.macMode) return this.renderMacDesktop(products);
+        //  renderDashboard 는 문자열을 돌려주는 게 아니라 직접 DOM 에 넣는 구조라 여기서도 같은 방식으로 넣는다.
+        if (this.macMode) {
+            this.appContainer.innerHTML = this.renderMacDesktop(products);
+            return;
+        }
 
         const dashboardHtml = `
             <div class="dashboard fade-in">
