@@ -4411,7 +4411,7 @@ class BhasApp {
     async igFeedPreview(igId, brand, accountId) {
         if (!igId) { this.showToast('먼저 계정 연동이 필요해요'); return; }
         const c = document.getElementById('global-modal-container'); if (!c) return;
-        this._feedCoverUrl = null; this._feedItems = []; this._feedProfile = null;
+        this._feedCoverUrl = null; this._feedItems = []; this._feedProfile = null; this._feedError = null;
         const acc = (this.igAccounts || []).find(x => x.id === accountId) || {};
         this._feedFallback = { username: (acc.username || '').replace(/^@/, ''), brand };
         this._renderFeedModal();
