@@ -979,7 +979,7 @@ class BhasApp {
             { id: 'quotes', label: '견적', icon: '<i class="ph ph-receipt"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'cs', label: 'CS', icon: '<i class="ph ph-arrows-counter-clockwise"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
-            { id: 'expenses', label: '지출', icon: '<i class="ph ph-credit-card"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'expenses', label: '지출', icon: '<i class="ph ph-credit-card"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'sales', label: '매출', icon: '<i class="ph ph-chart-line-up"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'analysis', label: '분석', icon: '<i class="ph ph-chart-donut"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
@@ -1011,9 +1011,9 @@ class BhasApp {
             });
         }
         const navGroups = [
-            { id: 'work', label: '업무관리' },
-            { id: 'prod', label: '생산관리' },
-            { id: 'stock', label: '재고·판매' },
+            { id: 'work', label: '업무' },
+            { id: 'stock', label: '판매' },
+            { id: 'prod', label: '생산' },
             { id: 'archive', label: '자료실' },
             { id: 'admin', label: '관리' }
         ];

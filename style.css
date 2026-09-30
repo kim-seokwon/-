@@ -3264,3 +3264,21 @@ body:not(.light) .mac-deskboard .glass{
 .updbar button{border:0;border-radius:8px;background:var(--primary);color:#fff;font-family:inherit;
   font-size:12.5px;font-weight:700;padding:5px 12px;cursor:pointer}
 .updbar button.x{background:rgba(255,255,255,.16)}
+
+/* ═══════ 기본 화면(사이드바)도 맥 결로 ═══════ */
+/* KPI 타일 · 프로젝트 카드 — 두꺼운 그림자와 큰 모서리를 걷어낸다 */
+.kpi-card,.stat-card{border-radius:12px !important;border:.5px solid var(--card-border) !important;
+  background:var(--card-bg) !important;box-shadow:0 1px 2px rgba(0,0,0,.05) !important;
+  backdrop-filter:none !important}
+.kpi-card:hover,.stat-card:hover{border-color:var(--primary) !important;transform:none !important}
+.project-card{border-radius:12px !important;border:.5px solid var(--card-border) !important;
+  background:var(--card-bg) !important;box-shadow:0 1px 3px rgba(0,0,0,.06) !important;
+  backdrop-filter:none !important;transition:.14s}
+.project-card:hover{border-color:var(--primary) !important;transform:translateY(-1px)}
+/* 사이드바 — 맥 사이드바 치수로 */
+.sidebar{border-radius:12px !important;border:.5px solid var(--card-border) !important;
+  box-shadow:0 1px 3px rgba(0,0,0,.06) !important;backdrop-filter:none !important}
+.nav-links a,.nav-links li>div,.nav-links button{border-radius:7px !important}
+.nav-group-label{font-size:11.5px !important;font-weight:700 !important;opacity:.7}
+/* 상단 도구줄 단추 */
+.tt-util button{width:30px;height:30px;border-radius:8px;border:.5px solid var(--card-border)}
