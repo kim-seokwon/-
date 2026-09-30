@@ -2464,12 +2464,20 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
 .sticky{position:fixed;width:230px;height:200px;min-width:150px;min-height:110px;z-index:1390;border-radius:4px;
   display:flex;flex-direction:column;overflow:hidden;
   box-shadow:0 14px 34px rgba(0,0,0,.34);border:1px solid rgba(0,0,0,.14)}
-.sticky .st-bar{height:24px;display:flex;align-items:center;gap:6px;padding:0 7px;cursor:grab;
+.sticky .st-bar{height:27px;display:flex;align-items:center;gap:6px;padding:0 7px;cursor:grab;
   background:rgba(0,0,0,.07);border-bottom:1px solid rgba(0,0,0,.08)}
 .sticky .st-bar.drag{cursor:grabbing}
 .st-x,.st-plus{width:13px;height:13px;border-radius:50%;border:0;padding:0;cursor:pointer;font-size:.6rem;
   line-height:1;color:rgba(0,0,0,.45)}
 .st-x{background:#ff5f57}.st-plus{background:#28c840}
+/* 누가 보나 — 제목막대에 늘 떠 있는 배지. 누르면 개인↔공용 */
+.st-who{border:0;border-radius:99px;padding:2px 9px;font-size:.63rem;font-weight:800;cursor:pointer;
+  font-family:inherit;line-height:1.5;letter-spacing:.02em;
+  background:rgba(0,0,0,.13);color:rgba(0,0,0,.58)}
+.st-who:hover{filter:brightness(.94)}
+.st-who.shared{background:#1d6fe0;color:#fff}
+/* 공용은 막대 색까지 달라서 멀리서도 구분된다 */
+.sticky[data-scope="shared"] .st-bar{background:rgba(29,111,224,.13);border-bottom-color:rgba(29,111,224,.34)}
 .st-col{margin-left:auto;display:flex;gap:4px;align-items:center}
 .st-col i{width:11px;height:11px;border-radius:50%;cursor:pointer;display:block;border:1px solid rgba(0,0,0,.18)}
 .st-col i.on{box-shadow:0 0 0 2px rgba(0,0,0,.42);border-color:rgba(0,0,0,.42)}

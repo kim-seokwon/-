@@ -4907,6 +4907,7 @@ class BhasApp {
         el.style.height = (rec.h || 200) + 'px';
         const swatch = (c, sc) => `<i data-c="${c}" data-s="${sc}" style="background:${c}" title="${sc === 'shared' ? '공용 — 모두가 봅니다' : '개인 — 나만 봅니다'}"></i>`;
         el.innerHTML = `<div class="st-bar"><button class="st-x" title="닫기"></button><button class="st-plus" title="새 스티커"></button>
+                <button class="st-who" title="누가 보나 — 눌러서 바꿉니다">개인</button>
                 <span class="st-col">
                     ${this.ST_COLORS.private.map(c => swatch(c, 'private')).join('')}
                     <b class="st-sep"></b>
@@ -4919,10 +4920,14 @@ class BhasApp {
         this._dragWin(el, el.querySelector('.st-bar'));
         const ft = el.querySelector('.st-ft');
         const ta = el.querySelector('textarea');
+        const who = el.querySelector('.st-who');
         const label = (tail) => {
-            const who = el.dataset.scope === 'shared' ? '공용' : '개인';
-            ft.textContent = who + ' · ' + (tail || ft.dataset.tail || '자동 저장됨');
+            const shared = el.dataset.scope === 'shared';
+            who.textContent = shared ? '공용' : '개인';
+            who.classList.toggle('shared', shared);
+            who.title = shared ? '공용 — 모두가 봅니다. 눌러서 개인으로' : '개인 — 나만 봅니다. 눌러서 공용으로';
             if (tail) ft.dataset.tail = tail;
+            ft.textContent = ft.dataset.tail || '자동 저장됨';
         };
         el.querySelector('.st-x').onclick = () => {
             if (el.dataset.local === '1') this._dropLocalSticky(el.dataset.id);
@@ -4944,6 +4949,15 @@ class BhasApp {
         el.dataset.color = this.ST_COLORS.private.concat(this.ST_COLORS.shared)
             .find(c => c === startColor || this._rgb(c) === String(startColor).trim()) || '';
         mark();
+        who.onclick = (ev) => {
+            ev.stopPropagation();
+            const from = el.dataset.scope === 'shared' ? 'shared' : 'private';
+            const to = from === 'shared' ? 'private' : 'shared';
+            const i = Math.max(0, this.ST_COLORS[from].indexOf(el.dataset.color));
+            const c = this.ST_COLORS[to][i] || this.ST_COLORS[to][0];
+            el.dataset.scope = to; el.dataset.color = c; el.style.background = c;
+            mark(); label(); save();
+        };
         ta.oninput = save;
         // 옮긴 자리도 기억한다(기기 저장분)
         el.addEventListener('mouseup', () => { if (el.dataset.local === '1') save(); });
@@ -4986,7 +5000,6 @@ class BhasApp {
     async _persistSticky(el) {
         if (!document.body.contains(el)) return;
         const ft = el.querySelector('.st-ft');
-        const who = el.dataset.scope === 'shared' ? '공용' : '개인';
         const body = el.querySelector('textarea').value;
         const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
         const local = () => {
@@ -4994,7 +5007,7 @@ class BhasApp {
                 scope: el.dataset.scope, owner: el.dataset.owner || this._me(),
                 x: parseInt(el.style.left, 10) || 0, y: parseInt(el.style.top, 10) || 0,
                 w: parseInt(el.style.width, 10) || 230, h: parseInt(el.style.height, 10) || 200, local: true });
-            ft.textContent = who + ' · 이 기기에만 저장됨 · ' + now;
+            ft.textContent = '이 기기에만 저장됨 · ' + now;
         };
         if (el.dataset.local === '1' || !el.dataset.id) { local(); return; }
         const patch = { title: body.split('\n')[0].slice(0, 60) || '스티커', body, scope: el.dataset.scope };
@@ -5004,7 +5017,7 @@ class BhasApp {
             const { error } = await this.supabase.from('notes').update(patch).eq('id', el.dataset.id);
             if (error) throw error;
             if (!el.dataset.owner) el.dataset.owner = this._me();
-            ft.textContent = who + ' · 자동 저장됨 · ' + now;
+            ft.textContent = '자동 저장됨 · ' + now;
         } catch (_e) { el.dataset.local = '1'; local(); }
     }
     // 로그인 후 한 번: 지난 스티커를 도로 띄운다 (DB 것 먼저, 이 기기 것도 같이)
