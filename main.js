@@ -946,6 +946,14 @@ class BhasApp {
         const { role, name } = this.currentUser;
         // 지난 스티커 되살리기 — 로그인 후 딱 한 번
         if (!this._stickiesRestored) this.restoreStickies();
+        // 메모·미리알림은 열고 나서 받으면 매번 기다린다 → 로그인 직후 뒤에서 미리 받아둔다
+        if (!this._prefetched) {
+            this._prefetched = true;
+            setTimeout(() => {
+                if (!this._noteLoaded && !this._noteLoading) this.loadNotes();
+                if (!this._remLoaded && !this._remLoading) this.loadReminders();
+            }, 400);
+        }
         const perms = mockData.permissions[role] || [];
         
         const menuItems = [
@@ -5558,11 +5566,21 @@ class BhasApp {
 
     // ── 메모 (맥 '메모' 앱 형태) ─────────────────────────────
     //  프로젝트 댓글(memos)·노션 노트를 한 곳에서. 폴더 = 맥 메모의 폴더, 프로젝트에 붙이면 그 프로젝트의 기록이 된다.
+    // 받아오는 동안 보여줄 뼈대 — 빈 화면보다 덜 답답하다
+    _loadingSkeleton(what) {
+        const bar = (w) => `<div class="skel" style="width:${w}"></div>`;
+        return `<div class="skel-wrap">
+            <div class="skel-head">${this._vesc(what)} 불러오는 중…</div>
+            ${[92, 74, 86, 62, 80, 70].map(w => `<div class="skel-row">${bar('14px')}${bar(w + '%')}</div>`).join('')}
+        </div>`;
+    }
     async loadNotes() {
         this._noteLoading = true;
         try {
+            // 스티커·색이름 줄은 메모 앱에 낄 게 아니다. 빼면 줄 수도 준다.
             const { data, error } = await this.supabase.from('notes').select('*')
-                .order('pinned', { ascending: false }).order('updated_at', { ascending: false }).limit(500);
+                .not('folder', 'in', '("스티커","스티커라벨")')
+                .order('pinned', { ascending: false }).order('updated_at', { ascending: false }).limit(200);
             if (error) throw error;
             this.noteList = data || []; this._noteLoaded = true;
             if (!this.noteSel && this.noteList.length) this.noteSel = this.noteList[0].id;
@@ -5614,7 +5632,7 @@ class BhasApp {
         } catch (e) { this.showToast('삭제 실패(개인 메모 또는 마스터만 가능): ' + (e.message || e)); }
     }
     renderNotes() {
-        if (!this._noteLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">메모를 불러오는 중...</div>`;
+        if (!this._noteLoaded) return this._loadingSkeleton('메모');
         const esc = s => this._vesc(s);
         const all = this.noteList || [];
         const me = this._me();
@@ -5690,7 +5708,7 @@ class BhasApp {
         this._remLoading = true;
         try {
             const { data, error } = await this.supabase.from('reminders').select('*')
-                .order('done', { ascending: true }).order('due_date', { ascending: true, nullsFirst: false }).limit(800);
+                .order('done', { ascending: true }).order('due_date', { ascending: true, nullsFirst: false }).limit(300);
             if (error) throw error;
             this.remList = data || []; this._remLoaded = true;
         } catch (e) { this.remList = []; this._remLoaded = true; this.showToast('미리알림을 불러오지 못했습니다: ' + (e.message || e)); }
@@ -5721,7 +5739,7 @@ class BhasApp {
     }
     setRemList(l) { this.remList2 = l; this.requestRender(); }
     renderReminders() {
-        if (!this._remLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">미리알림을 불러오는 중...</div>`;
+        if (!this._remLoaded) return this._loadingSkeleton('미리알림');
         const esc = s => this._vesc(s);
         const all = this.remList || [];
         const today = new Date().toISOString().slice(0, 10);
