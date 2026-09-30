@@ -605,9 +605,20 @@ class BhasApp {
     }
 
     switchView(viewId) {
+        // 맥 모드: 바탕화면(홈)의 블록을 누르면 그 화면이 창으로 열린다.
+        if (this.macMode && this.currentUser) {
+            if (viewId === 'home') { this.macShowDesktop(); return; }
+            this.macOpen(viewId);
+            return;
+        }
         this.currentView = viewId;
         this._pushHistory();
         this.render();
+    }
+    // 바탕화면 보기 — 열린 창을 전부 내린다(독에 남는다)
+    macShowDesktop() {
+        (this.wins || []).forEach(w => { w.min = true; });
+        this.requestRender();
     }
 
     // ── 브라우저 뒤로가기 연동 ──
@@ -933,6 +944,8 @@ class BhasApp {
 
     renderDashboard() {
         const { role, name } = this.currentUser;
+        // 지난 스티커 되살리기 — 로그인 후 딱 한 번
+        if (!this._stickiesRestored) this.restoreStickies();
         const perms = mockData.permissions[role] || [];
         
         const menuItems = [
@@ -960,7 +973,8 @@ class BhasApp {
             { id: 'documents', label: '문서', icon: '<i class="ph ph-folder-open"></i>', group: 'archive', visible: perms.includes('documents') },
             { id: 'user_management', label: '계정', icon: '<i class="ph ph-user-plus"></i>', group: 'admin', visible: perms.includes('user_management') },
             { id: 'brand_management', label: '브랜드', icon: '<i class="ph ph-shield-check"></i>', group: 'admin', visible: perms.includes('user_management') },
-            { id: 'feedback', label: '불편사항', icon: '<i class="ph ph-chat-dots"></i>', group: 'admin', visible: role === 'MASTER' }
+            { id: 'feedback', label: '불편사항', icon: '<i class="ph ph-chat-dots"></i>', group: 'admin', visible: role === 'MASTER' },
+            { id: 'settings', label: '설정', icon: '<i class="ph ph-gear"></i>', group: 'admin', visible: true }
         ];
         // 계정별 세분화 권한(menu_access) 반영: 설정돼 있으면 그 목록으로 가시성 결정.
         // 단 계정/브랜드 관리는 항상 MASTER 전용(보안), 할일은 항상 노출. 없으면(null) 역할 기본값 유지.
@@ -970,7 +984,7 @@ class BhasApp {
                 if (it.id === 'user_management' || it.id === 'brand_management' || it.id === 'feedback') it.visible = role === 'MASTER';
                 // 새로 생긴 메뉴는 기존 menu_access 목록에 없으므로 역할 기본값을 유지한다
                 // (안 그러면 권한을 다시 저장하기 전까지 아무에게도 안 보인다).
-                else if (['all_todos', 'cs', 'expenses', 'notes', 'reminders'].includes(it.id)) it.visible = true;
+                else if (['all_todos', 'cs', 'expenses', 'notes', 'reminders', 'settings'].includes(it.id)) it.visible = true;
                 else it.visible = ma.includes(it.id);
             });
         }
@@ -1008,6 +1022,15 @@ class BhasApp {
                 <div class="mobile-top-bar">
                     <div class="top-bar-logo" onclick="app.switchView('home')" style="cursor:pointer" title="홈으로">2179</div>
                     <div class="top-bar-actions">
+                        <div class="noti-trigger" onclick="app.openCalc()" title="계산기">
+                            <i class="ph ph-calculator"></i>
+                        </div>
+                        <div class="noti-trigger" onclick="app.addSticky()" title="스티커 메모">
+                            <i class="ph ph-note-blank"></i>
+                        </div>
+                        <div class="noti-trigger" onclick="app.toggleMacMode()" title="맥 모드(창·독)">
+                            <i class="ph ph-squares-four"></i>
+                        </div>
                         <div class="noti-trigger" id="mobile-search-btn" title="검색">
                             <i class="ph ph-magnifying-glass"></i>
                         </div>
@@ -1353,12 +1376,7 @@ class BhasApp {
         if (this.currentView === 'detail') this.bindDetailEvents();
         if (this.currentView === 'all_todos') this.bindAllTodosEvents();
 
-        const doLogout = async () => {
-            try { await this.supabase.auth.signOut(); } catch(err) {}
-            localStorage.removeItem('bhas_session_user');
-            localStorage.removeItem('bhas_auto_login');
-            this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
-        };
+        const doLogout = () => this.logout();
         const logoutBtn = document.getElementById('logout-btn');
         if (logoutBtn) logoutBtn.onclick = doLogout;
         const mobileLogoutBtn = document.getElementById('mobile-logout-btn');
@@ -2471,9 +2489,71 @@ class BhasApp {
         </div>`;
     }
 
+    async logout() {
+        try { await this.supabase.auth.signOut(); } catch (_e) {}
+        localStorage.removeItem('bhas_session_user');
+        localStorage.removeItem('bhas_auto_login');
+        document.querySelectorAll('.sticky').forEach(el => el.remove());
+        document.getElementById('calc-pop')?.remove();
+        this.wins = []; this._stickiesRestored = false;
+        this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
+    }
+    // ── 설정 ─────────────────────────────────────────────────
+    //  바탕화면 · 화면 모드 · 화면 방식, 그리고 관리 화면 바로가기.
+    renderSettings() {
+        const esc = s => this._vesc(s);
+        const role = this.currentUser?.role;
+        const isLight = document.body.classList.contains('light');
+        const wall = this.wallpaper;
+        const row = (title, desc, right) => `
+            <div class="set-row">
+                <div><b>${esc(title)}</b>${desc ? `<span>${esc(desc)}</span>` : ''}</div>
+                <div class="set-right">${right}</div>
+            </div>`;
+        const links = [
+            { id: 'user_management', label: '계정 관리', need: 'MASTER' },
+            { id: 'brand_management', label: '브랜드 관리', need: 'MASTER' },
+            { id: 'integrations', label: '채널 연동', need: 'STAFF' },
+            { id: 'feedback', label: '불편사항', need: 'MASTER' },
+        ].filter(l => l.need === 'STAFF' ? (role === 'MASTER' || role === 'STAFF') : role === 'MASTER');
+
+        return `
+        <div class="settings-pane">
+            <div class="set-card">
+                <div class="set-head">바탕화면</div>
+                <div class="wall-pick">
+                    ${this.MAC_WALLS.map(w => `
+                        <button class="wall-opt${wall === w.id ? ' on' : ''}" onclick="app.setWallpaper('${w.id}')" title="${esc(w.label)}">
+                            <span class="wall-thumb" data-wall="${w.id}"></span>
+                            <em>${esc(w.label)}</em>
+                        </button>`).join('')}
+                </div>
+            </div>
+            <div class="set-card">
+                <div class="set-head">화면</div>
+                ${row('밝은 화면 · 어두운 화면', isLight ? '지금은 밝은 화면입니다' : '지금은 어두운 화면입니다',
+                    `<button class="set-btn" onclick="app.toggleTheme()">${isLight ? '어둡게' : '밝게'}</button>`)}
+                ${row('맥 모드', this.macMode ? '창과 독으로 씁니다' : '기본 화면(사이드바)으로 씁니다',
+                    `<button class="set-btn" onclick="app.toggleMacMode()">${this.macMode ? '기본 화면으로' : '맥 모드로'}</button>`)}
+                ${row('계산기 · 스티커', '독 오른쪽 끝에 있습니다',
+                    `<button class="set-btn" onclick="app.openCalc()">계산기</button>
+                     <button class="set-btn" onclick="app.addSticky()">스티커</button>`)}
+            </div>
+            ${links.length ? `<div class="set-card">
+                <div class="set-head">관리</div>
+                ${links.map(l => row(l.label, '', `<button class="set-btn" onclick="${this.macMode ? `app.macOpen('${l.id}')` : `app.switchView('${l.id}')`}">열기</button>`)).join('')}
+            </div>` : ''}
+            <div class="set-card">
+                <div class="set-head">계정</div>
+                ${row(this.currentUser?.name || '-', role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사'),
+                    `<button class="set-btn danger" onclick="app.logout()">로그아웃</button>`)}
+            </div>
+        </div>`;
+    }
     renderSubView(products) {
         const { role, id: currentUserId, name: currentUserName } = this.currentUser;
         if (this.currentView === 'home') return this.renderHome(products);
+        if (this.currentView === 'settings') return this.renderSettings();
 
         // 데이터 정규화 및 상태 판별 헬퍼
         const isStageCompleted = (p, s) => {
@@ -4718,8 +4798,8 @@ class BhasApp {
         if (document.getElementById('calc-pop')) { document.getElementById('calc-pop').remove(); return; }
         const el = document.createElement('div');
         el.className = 'calcpop'; el.id = 'calc-pop';
-        el.style.left = Math.max(12, window.innerWidth - 300) + 'px';
-        el.style.top = '96px';
+        el.style.left = Math.max(8, Math.min(window.innerWidth - 256, window.innerWidth - 300)) + 'px';
+        el.style.top = Math.max(8, Math.min(96, window.innerHeight - 360)) + 'px';
         const keys = [['AC','fn','ac'],['+/−','fn','neg'],['%','fn','pct'],['÷','op','/'],
                       ['7','','7'],['8','','8'],['9','','9'],['×','op','*'],
                       ['4','','4'],['5','','5'],['6','','6'],['−','op','-'],
@@ -4729,7 +4809,7 @@ class BhasApp {
             <div class="cp-disp" id="cp-disp">0</div>
             <div class="cp-keys">${keys.map(([t,c,k]) => `<button class="${c}" data-k="${k}">${t}</button>`).join('')}</div>`;
         document.body.appendChild(el);
-        el.querySelector('.cp-l').onclick = () => el.remove();
+        el.querySelector('.cp-l').onclick = () => { document.removeEventListener('keydown', onKey); el.remove(); };
         this._dragWin(el, el.querySelector('.cp-bar'));
         const st = { cur: '0', prev: null, op: null, fresh: true };
         const disp = el.querySelector('#cp-disp');
@@ -4751,58 +4831,119 @@ class BhasApp {
             else { if (st.op != null && st.prev != null && !st.fresh) calc(); st.prev = st.cur; st.op = k; st.fresh = true; b.classList.add('sel'); }
             show();
         });
+        // 키보드로도 두드린다 — 숫자·연산자·Enter(=)·Esc(닫기)·Backspace(한 글자 지우기)
+        const onKey = (e) => {
+            if (!document.body.contains(el)) { document.removeEventListener('keydown', onKey); return; }
+            const tag = (document.activeElement && document.activeElement.tagName) || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+            const map = { Enter: '=', '=': '=', Escape: 'ac', Delete: 'ac', '*': '*', 'x': '*', '/': '/', '+': '+', '-': '-', '.': '.', '%': 'pct' };
+            let k = /^[0-9]$/.test(e.key) ? e.key : map[e.key];
+            if (e.key === 'Backspace') {
+                e.preventDefault();
+                st.cur = st.cur.length > 1 ? st.cur.slice(0, -1) : '0';
+                if (st.cur === '-' || st.cur === '') st.cur = '0';
+                show(); return;
+            }
+            if (!k) return;
+            e.preventDefault();
+            const btn = el.querySelector(`.cp-keys button[data-k="${k === '=' ? '=' : k}"]`);
+            if (btn) btn.click();
+        };
+        document.addEventListener('keydown', onKey);
         show();
     }
     // ── 스티커 메모 (맥 Stickies) — notes 테이블 '스티커' 폴더에 저장 ──
-    async addSticky(row) {
+    //  DB가 막혀도(권한·네트워크) 스티커는 바로 뜬다. 저장만 이 기기(localStorage)로 내려간다.
+    _localStickies(next) {
+        if (next !== undefined) { try { localStorage.setItem('bhas_stickies', JSON.stringify(next)); } catch (_e) {} return next; }
+        try { return JSON.parse(localStorage.getItem('bhas_stickies') || '[]'); } catch (_e) { return []; }
+    }
+    _saveLocalSticky(rec) {
+        const list = this._localStickies().filter(x => String(x.id) !== String(rec.id));
+        list.push(rec); this._localStickies(list.slice(-20));
+    }
+    _dropLocalSticky(id) {
+        this._localStickies(this._localStickies().filter(x => String(x.id) !== String(id)));
+    }
+    addSticky(row) {
         const colors = ['#fff5a5', '#ffd8e4', '#d3f2ff', '#d9f7d0', '#e7dcff'];
-        let rec = row;
-        if (!rec) {
-            try {
-                const { data, error } = await this.supabase.from('notes')
-                    .insert([{ title: '', body: '', folder: '스티커', created_by: this.currentUser?.name || null }]).select('*').single();
-                if (error) throw error;
-                rec = data;
-            } catch (e) { this.showToast('스티커 생성 실패: ' + (e.message || e)); return; }
-        }
+        const rec = row || {};
         const idx = document.querySelectorAll('.sticky').length;
-        const bg = colors[idx % colors.length];
+        if (rec.id && document.querySelector(`.sticky[data-id="${rec.id}"]`)) return null; // 두 번 띄우지 않는다
         const el = document.createElement('div');
-        el.className = 'sticky'; el.dataset.id = rec.id;
-        el.style.background = bg;
-        el.style.left = (140 + idx * 26) + 'px';
-        el.style.top = (130 + idx * 24) + 'px';
+        el.className = 'sticky';
+        el.dataset.id = rec.id || '';
+        el.dataset.local = rec.local ? '1' : '';
+        el.style.background = rec.color || colors[idx % colors.length];
+        el.style.left = (rec.x != null ? rec.x : Math.min(140 + idx * 26, Math.max(8, window.innerWidth - 250))) + 'px';
+        el.style.top = (rec.y != null ? rec.y : 130 + idx * 24) + 'px';
         el.innerHTML = `<div class="st-bar"><button class="st-x" title="닫기"></button><button class="st-plus" title="새 스티커"></button>
                 <span class="st-col">${colors.map(c => `<i data-c="${c}" style="background:${c}"></i>`).join('')}</span></div>
             <textarea placeholder="메모를 적어주세요">${this._vesc(rec.body || '')}</textarea>
             <div class="st-ft">자동 저장됨</div>`;
         document.body.appendChild(el);
         this._dragWin(el, el.querySelector('.st-bar'));
-        el.querySelector('.st-x').onclick = () => el.remove();
-        el.querySelector('.st-plus').onclick = () => this.addSticky();
-        el.querySelectorAll('.st-col i').forEach(i => i.onclick = () => { el.style.background = i.dataset.c; });
+        const ft = el.querySelector('.st-ft');
         const ta = el.querySelector('textarea');
-        let t = null;
-        const save = () => {
-            clearTimeout(t);
-            t = setTimeout(async () => {
-                const body = ta.value;
-                try {
-                    await this.supabase.from('notes')
-                        .update({ title: body.split('\n')[0].slice(0, 60) || '스티커', body }).eq('id', el.dataset.id);
-                    el.querySelector('.st-ft').textContent = '자동 저장됨 · ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-                } catch (_e) { el.querySelector('.st-ft').textContent = '저장 실패'; }
-            }, 700);
+        el.querySelector('.st-x').onclick = () => {
+            if (el.dataset.local === '1') this._dropLocalSticky(el.dataset.id);
+            el.remove();
         };
+        el.querySelector('.st-plus').onclick = () => this.addSticky();
+        let t = null;
+        const save = () => { clearTimeout(t); t = setTimeout(() => this._persistSticky(el), 600); };
+        el.querySelectorAll('.st-col i').forEach(i => i.onclick = () => { el.style.background = i.dataset.c; save(); });
         ta.oninput = save;
+        // 옮긴 자리도 기억한다(기기 저장분)
+        el.addEventListener('mouseup', () => { if (el.dataset.local === '1') save(); });
+        if (!rec.id) {
+            // 새 스티커: 화면엔 이미 떠 있고, 저장 자리만 뒤에서 만든다. 실패해도 스티커는 사라지지 않는다.
+            ft.textContent = '저장 준비 중…';
+            this._createStickyRow().then(id => {
+                if (id) { el.dataset.id = id; ft.textContent = '자동 저장됨'; }
+                else { el.dataset.local = '1'; el.dataset.id = 'L' + Date.now() + idx; ft.textContent = '이 기기에만 저장됨'; this._persistSticky(el); }
+            });
+        }
         setTimeout(() => ta.focus(), 50);
+        return el;
     }
+    async _createStickyRow() {
+        try {
+            const { data, error } = await this.supabase.from('notes')
+                .insert([{ title: '스티커', body: '', folder: '스티커', created_by: this.currentUser?.name || null }])
+                .select('id').single();
+            if (error) throw error;
+            return data && data.id;
+        } catch (_e) { return null; }
+    }
+    async _persistSticky(el) {
+        if (!document.body.contains(el)) return;
+        const ft = el.querySelector('.st-ft');
+        const body = el.querySelector('textarea').value;
+        const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+        const local = () => {
+            this._saveLocalSticky({ id: el.dataset.id, body, color: el.style.background,
+                x: parseInt(el.style.left, 10) || 0, y: parseInt(el.style.top, 10) || 0, local: true });
+            ft.textContent = '이 기기에만 저장됨 · ' + now;
+        };
+        if (el.dataset.local === '1' || !el.dataset.id) { local(); return; }
+        try {
+            const { error } = await this.supabase.from('notes')
+                .update({ title: body.split('\n')[0].slice(0, 60) || '스티커', body }).eq('id', el.dataset.id);
+            if (error) throw error;
+            ft.textContent = '자동 저장됨 · ' + now;
+        } catch (_e) { el.dataset.local = '1'; local(); }
+    }
+    // 로그인 후 한 번: 지난 스티커를 도로 띄운다 (DB 것 먼저, 이 기기 것도 같이)
     async restoreStickies() {
+        if (this._stickiesRestored) return;
+        this._stickiesRestored = true;
         try {
             const { data } = await this.supabase.from('notes').select('*').eq('folder', '스티커')
                 .order('updated_at', { ascending: false }).limit(6);
             (data || []).forEach(r => this.addSticky(r));
         } catch (_e) { /* 없으면 그만 */ }
+        this._localStickies().forEach(r => this.addSticky(r));
     }
     // 공통: 막대를 잡고 끄는 이동
     _dragWin(el, handle) {
@@ -4827,7 +4968,7 @@ class BhasApp {
     //   · 창 내용은 기존 renderSubView 를 그대로 재사용 → 기능이 전부 그대로 살아 있다
     // ══════════════════════════════════════════════════════════════
     MAC_DOCK = [
-        { id: 'home', label: '홈', icon: 'home' },
+        { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
         { id: 'orders', label: '주문', icon: 'sales' },
         { id: 'cs', label: 'CS', icon: 'prod' },
         { id: 'sales', label: '매출', icon: 'settle' },
@@ -4839,32 +4980,85 @@ class BhasApp {
         { id: 'notes', label: '메모', icon: 'notes' },
         { id: 'calendar', label: '캘린더', icon: 'cal' },
         { id: 'vendors', label: '거래처', icon: 'contacts' },
+        { id: 'settings', label: '설정', icon: 'set' },
+        // 창이 아니라 그 자리에서 뜨는 도구 — 독 오른쪽 끝에 따로 둔다
+        { id: 'calc', label: '계산기', icon: 'calc', tool: true },
+        { id: 'sticky', label: '스티커', svg: 'sticky', tool: true },
     ];
+    // 스티커 아이콘 (그림 파일 대신 그린다)
+    _stickySvg() {
+        return `<svg viewBox="0 0 58 58" width="58" height="58" aria-hidden="true">
+            <defs><linearGradient id="stkg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#fff6a8"/><stop offset="1" stop-color="#ffd84d"/></linearGradient></defs>
+            <path d="M8 12a4 4 0 0 1 4-4h34a4 4 0 0 1 4 4v22L36 50H12a4 4 0 0 1-4-4z" fill="url(#stkg)"/>
+            <path d="M50 34H40a4 4 0 0 0-4 4v12z" fill="#e8bf2e"/>
+            <g stroke="#b08f14" stroke-width="2.4" stroke-linecap="round" opacity=".55">
+                <path d="M16 20h26"/><path d="M16 28h26"/><path d="M16 36h16"/></g>
+        </svg>`;
+    }
+    // ── 바탕화면 ────────────────────────────────────────────
+    MAC_WALLS = [
+        { id: 'dawn',   label: '새벽' },
+        { id: 'ocean',  label: '바다' },
+        { id: 'desert', label: '사막' },
+        { id: 'mono',   label: '단색' },
+    ];
+    get wallpaper() {
+        try { return localStorage.getItem('macWall') || 'dawn'; } catch (_e) { return 'dawn'; }
+    }
+    setWallpaper(id) {
+        try { localStorage.setItem('macWall', id); } catch (_e) {}
+        const d = document.querySelector('.mac-desktop');
+        if (d) d.dataset.wall = id;
+        this.requestRender();
+    }
     _macTitle(view) {
         const m = (this.MAC_DOCK.find(d => d.id === view));
         if (m) return m.label;
-        return ({ dashboard: '프로젝트', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
+        return ({ settings: '설정', dashboard: '프로젝트', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
                   integrations: '연동', user_management: '계정', brand_management: '브랜드',
                   feedback: '불편사항', pages: '페이지', kanban: '보드', table: '표',
                   all_todos: '할일', timeline: '타임라인', sample_maker: '샘플' })[view] || view;
     }
     macOpen(view) {
+        if (view === 'home') { this.macShowDesktop(); return; }   // 홈은 바탕화면 자체다
         this.wins = this.wins || [];
         const found = this.wins.find(w => w.view === view);
-        if (found) { found.min = false; this.macFocus(found.id); return; }
+        if (found) {
+            const wasMin = found.min;
+            found.min = false;
+            this.macFocus(found.id);
+            if (wasMin) this.requestRender();   // 내려둔 창은 다시 그려야 올라온다
+            return;
+        }
         const n = this.wins.length;
         const vw = window.innerWidth, vh = window.innerHeight;
         const w = Math.min(1180, Math.round(vw * 0.74)), h = Math.min(760, Math.round(vh * 0.74));
+        // 맨 앞 창이 '고정'(키우기·반쪽)이면 새 창도 같은 크기로 그 위에 띄운다.
+        //  작은 창이 큰 창에 파묻혀 "다른 걸로 넘어간 것처럼" 보이는 걸 막는다. 좁은 화면(폰)도 항상 꽉 채운다.
+        const front = this.wins.filter(x => !x.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0];
+        const fixed = vw < 900 || !!(front && (front.max || front.snap));
         this.wins.push({
             id: 'w' + Date.now() + n, view,
             x: Math.round((vw - w) / 2) + (n % 5) * 26, y: Math.round((vh - h) / 2) - 30 + (n % 5) * 22,
-            w, h, min: false, max: false, snap: null, z: ++this._macZ,
+            w, h, min: false, max: fixed, snap: null, z: ++this._macZ,
         });
         this.requestRender();
     }
+    // 독의 도구 — 계산기는 켜고 끄기, 스티커는 한 장 더 붙이기
+    macTool(id) {
+        if (id === 'calc') this.openCalc();
+        else this.addSticky();
+        setTimeout(() => this.requestRender(), 60);   // 독의 켜짐 표시 갱신
+    }
     macFocus(id) {
         const w = (this.wins || []).find(x => x.id === id); if (!w) return;
-        w.z = ++this._macZ; this.requestRender();
+        const el = document.getElementById(id);
+        const top = Math.max(...(this.wins || []).filter(x => !x.min).map(x => x.z || 0));
+        if (el && w.z === top) return;        // 이미 맨 앞이면 그대로 — 쓸데없는 재렌더가 클릭을 삼킨다
+        w.z = ++this._macZ;
+        if (el) { el.style.zIndex = w.z; return; }   // 순서만 바꾸면 되니 다시 그리지 않는다
+        this.requestRender();
     }
     macClose(id, ev) { if (ev) ev.stopPropagation(); this.wins = (this.wins || []).filter(w => w.id !== id); this.requestRender(); }
     macMin(id, ev) { if (ev) ev.stopPropagation(); const w = this.wins.find(x => x.id === id); if (w) { w.min = true; this.requestRender(); } }
@@ -4885,11 +5079,10 @@ class BhasApp {
         const w = (this.wins || []).find(x => x.id === id); if (!w || w.max || w.snap) return;
         ev.preventDefault();
         const k = ev.deltaY > 0 ? 0.94 : 1.06;
-        const nw = Math.max(420, Math.min(window.innerWidth - 40, Math.round(w.w * k)));
-        const nh = Math.max(300, Math.min(window.innerHeight - 120, Math.round(w.h * k)));
-        w.x = Math.round(w.x - (nw - w.w) / 2); w.y = Math.round(w.y - (nh - w.h) / 2);
-        w.x = Math.max(0, Math.min(window.innerWidth - 200, w.x));
-        w.y = Math.max(0, Math.min(window.innerHeight - 120, w.y));
+        const min = this._macMin();
+        const nw = Math.max(min.w, Math.min(window.innerWidth - 40, Math.round(w.w * k)));
+        const nh = Math.max(min.h, Math.min(window.innerHeight - 120, Math.round(w.h * k)));
+        // 왼쪽 위를 고정하고 오른쪽·아래로만 늘고 준다(가운데 기준이면 창이 제자리에서 흔들린다)
         w.w = nw; w.h = nh;
         const el = document.getElementById(id);
         if (el) { el.style.width = nw + 'px'; el.style.height = nh + 'px'; el.style.left = w.x + 'px'; el.style.top = w.y + 'px'; }
@@ -4897,6 +5090,9 @@ class BhasApp {
     // 제목막대 드래그(이동) + 화면 좌우 끝으로 끌면 분할
     macDragStart(ev, id) {
         if (ev.button !== 0) return;
+        // 신호등·반쪽 버튼 위에서 시작한 건 드래그가 아니다. 여기서 재렌더하면
+        // click 이 오기 전에 버튼이 지워져 "눌러도 안 먹는" 상태가 된다.
+        if (ev.target.closest('button')) return;
         const w = (this.wins || []).find(x => x.id === id); if (!w) return;
         this.macFocus(id);
         const el = document.getElementById(id); if (!el) return;
@@ -4922,14 +5118,35 @@ class BhasApp {
         };
         document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
     }
-    // 오른쪽 아래 모서리 드래그(크기 조절)
-    macResizeStart(ev, id) {
-        ev.stopPropagation();
+    // 창이 작아질 수 있는 한계 (좁은 화면에서는 더 작게 줄 수 있어야 한다)
+    _macMin() {
+        return { w: Math.min(320, window.innerWidth - 16), h: Math.min(220, window.innerHeight - 60) };
+    }
+    // 여덟 방향(네 변 + 네 모서리) 자유 크기 조절 — 잡은 쪽만 움직이고 반대쪽은 그대로 있는다
+    macResizeStart(ev, id, dir = 'se') {
+        ev.stopPropagation(); ev.preventDefault();
         const w = (this.wins || []).find(x => x.id === id); if (!w) return;
         const el = document.getElementById(id); if (!el) return;
-        const sx = ev.clientX, sy = ev.clientY, ow = w.w, oh = w.h;
+        this.macFocus(id);
+        // 키우기·반쪽 상태에서 잡으면 지금 보이는 크기를 그대로 받아 자유 창으로 푼다
+        if (w.max || w.snap) {
+            const r = el.getBoundingClientRect();
+            w.x = Math.round(r.left); w.y = Math.round(r.top); w.w = Math.round(r.width); w.h = Math.round(r.height);
+            w.max = false; w.snap = null;
+            el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
+            el.style.width = w.w + 'px'; el.style.height = w.h + 'px';
+        }
+        const min = this._macMin();
+        const sx = ev.clientX, sy = ev.clientY;
+        const ox = w.x, oy = w.y, ow = w.w, oh = w.h;
+        const right = ox + ow, bottom = oy + oh;
         const move = (e) => {
-            w.w = Math.max(420, ow + e.clientX - sx); w.h = Math.max(300, oh + e.clientY - sy);
+            const dx = e.clientX - sx, dy = e.clientY - sy;
+            if (dir.includes('e')) w.w = Math.max(min.w, ow + dx);
+            if (dir.includes('s')) w.h = Math.max(min.h, oh + dy);
+            if (dir.includes('w')) { w.x = Math.min(right - min.w, ox + dx); w.w = right - w.x; }
+            if (dir.includes('n')) { w.y = Math.max(0, Math.min(bottom - min.h, oy + dy)); w.h = bottom - w.y; }
+            el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
             el.style.width = w.w + 'px'; el.style.height = w.h + 'px';
         };
         const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); this.requestRender(); };
@@ -4965,31 +5182,41 @@ class BhasApp {
                     </span>
                 </header>
                 <div class="macwin-body">${body}</div>
-                <span class="macwin-grip" onmousedown="app.macResizeStart(event,'${w.id}')"></span>
+                ${['n','s','e','w','ne','nw','se','sw'].map(d =>
+                    `<span class="mwr mwr-${d}" onmousedown="app.macResizeStart(event,'${w.id}','${d}')"></span>`).join('')}
             </section>`;
         }).join('');
         this.currentView = prevView;
-        const dock = this.MAC_DOCK.map(d => {
-            const open = this.wins.find(w => w.view === d.id);
+        // 바탕화면 = 홈 대시보드. 여기 블록을 누르면 switchView 를 타고 창이 열린다.
+        let deskboard = '';
+        try { deskboard = this.renderHome(products) || ''; }
+        catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
+        const dock = this.MAC_DOCK.filter(d => !d.tool).map(d => {
+            const open = d.desktop ? !this.wins.some(w => !w.min) : this.wins.find(w => w.view === d.id);
             return `<button class="mdi${open ? ' open' : ''}" onclick="app.macOpen('${d.id}')" title="${esc(d.label)}">
                 <img src="icons/${d.icon}.png" alt="${esc(d.label)}" draggable="false"><em>${esc(d.label)}</em></button>`;
+        }).join('');
+        const tools = this.MAC_DOCK.filter(d => d.tool).map(d => {
+            const on = d.id === 'calc' ? !!document.getElementById('calc-pop') : !!document.querySelector('.sticky');
+            const face = d.svg ? this._stickySvg() : `<img src="icons/${d.icon}.png" alt="${esc(d.label)}" draggable="false">`;
+            return `<button class="mdi${on ? ' open' : ''}" onclick="app.macTool('${d.id}')" title="${esc(d.label)}">
+                ${face}<em>${esc(d.label)}</em></button>`;
         }).join('');
         const mins = this.wins.filter(w => w.min).map(w =>
             `<button class="mdi min" onclick="app.macOpen('${w.view}')" title="${esc(this._macTitle(w.view))}">
                 <img src="icons/${(this.MAC_DOCK.find(d => d.id === w.view) || { icon: 'notes' }).icon}.png" alt=""><em>${esc(this._macTitle(w.view))}</em></button>`).join('');
-        return `<div class="mac-desktop">
+        return `<div class="mac-desktop" data-wall="${esc(this.wallpaper)}">
             <div class="mac-menubar">
                 <b>2179</b>
                 <span>${esc(this.currentUser?.name || '')}</span>
                 <span class="mac-mb-right">
-                    <button onclick="app.openCalc()" title="계산기">􀣔 계산기</button>
-                    <button onclick="app.addSticky()" title="스티커 메모">􀓕 스티커</button>
                     <button onclick="app.toggleMacMode()" title="기본 화면으로">기본 화면</button>
                 </span>
             </div>
             <div id="mac-snap-hint" class="mac-snap-hint"></div>
-            ${winsHtml || `<div class="mac-empty">독에서 앱을 눌러 창을 여세요</div>`}
-            <nav class="mac-dock">${dock}${mins ? '<span class="mdsep"></span>' + mins : ''}</nav>
+            <div class="mac-deskboard">${deskboard}</div>
+            ${winsHtml}
+            <nav class="mac-dock">${dock}<span class="mdsep"></span>${tools}${mins ? '<span class="mdsep"></span>' + mins : ''}</nav>
         </div>`;
     }
     toggleMacMode() {
