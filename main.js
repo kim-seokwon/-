@@ -1065,6 +1065,8 @@ class BhasApp {
             this._macBind();
             return;
         }
+        // ↓ 아래는 옛 기본 화면(사이드바)이다. macMode 를 늘 true 로 두어 더는 닿지 않는다.
+        //   지우면 diff 가 너무 커져 되돌리기 어려우므로 남겨둔다. 새 기능은 여기에 넣지 말 것.
 
         const dashboardHtml = `
             <div class="dashboard fade-in">
@@ -2714,6 +2716,54 @@ class BhasApp {
         return `<div class="projsw">${b('cards', '카드', 'ph-squares-four')}${b('timeline', '타임라인', 'ph-chart-bar-horizontal')}</div>`;
     }
     setProjTab(k) { this.projTab = k; this.requestRender(); }
+    // 프로젝트 카드 우클릭 — 이름·브랜드(분류)·마감을 그 자리에서 고친다
+    projectMenu(ev, id) {
+        const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
+        this.ctxMenu(ev, [
+            { t: '열기', icon: 'ph-arrow-square-out', run: () => { this.activeProjectId = id; this.switchView('detail'); } },
+            { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameProject(id) },
+            { t: '브랜드 바꾸기…', icon: 'ph-shield-check', run: () => this.moveProjectBrand(id) },
+            { t: '마감일 바꾸기', icon: 'ph-calendar-blank', run: () => this.setProjectDue(id) },
+            { sep: true },
+            { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.handleDelete(ev, 'product', id) },
+        ]);
+    }
+    async renameProject(id) {
+        const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
+        const v = window.prompt('프로젝트 이름', p.name || ''); if (v === null || !v.trim()) return;
+        p.name = v.trim(); this.requestRender();
+        try {
+            const { error } = await this.supabase.from('products').update({ name: p.name }).eq('id', id);
+            if (error) throw error;
+        } catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
+    }
+    async moveProjectBrand(id) {
+        const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
+        const brands = (mockData.brands || []).filter(b => b.status !== 'closed');
+        if (!brands.length) { this.showToast('브랜드가 없습니다'); return; }
+        const cur = brands.findIndex(b => b.id === p.brand_id);
+        const msg = brands.map((b, i) => `${i + 1}. ${b.name}`).join('\n');
+        const v = window.prompt(`옮길 브랜드 번호\n${msg}`, String(cur >= 0 ? cur + 1 : 1));
+        const i = Number(v) - 1;
+        if (!brands[i]) return;
+        p.brand_id = brands[i].id; this.requestRender();
+        try {
+            const { error } = await this.supabase.from('products').update({ brand_id: p.brand_id }).eq('id', id);
+            if (error) throw error;
+        } catch (e) { this.showToast('브랜드 바꾸기 실패: ' + (e.message || e)); }
+    }
+    async setProjectDue(id) {
+        const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
+        const v = window.prompt('마감일 (YYYY-MM-DD, 비우면 없앰)', p.due_date || '');
+        if (v === null) return;
+        const due = v.trim() || null;
+        if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) { this.showToast('날짜는 2026-10-05 처럼 적어주세요'); return; }
+        p.due_date = due; this.requestRender();
+        try {
+            const { error } = await this.supabase.from('products').update({ due_date: due }).eq('id', id);
+            if (error) throw error;
+        } catch (e) { this.showToast('마감일 바꾸기 실패: ' + (e.message || e)); }
+    }
     // ── 알림 센터 (오른쪽에서 밀려나온다) ─────────────────────
     //  담당자로 지정된 할일, 나에게 온 요청, 오늘·지난 기한을 한 곳에 모은다.
     //  안 읽은 게 있으면 메뉴바 종에 빨간 점이 깜빡인다.
@@ -2870,8 +2920,71 @@ class BhasApp {
     }
     _appShell(view, inner) {
         const side = this._appTabBar(view);
-        return side ? `<div class="appwrap">${side}<div class="appmain">${inner}</div></div>` : inner;
+        if (!side) return inner;
+        const detail = this._detailPane(view);
+        return `<div class="appwrap${detail ? ' three' : ''}">${side}<div class="appmain">${inner}</div>${detail || ''}</div>`;
     }
+    // 세 번째 칸 — 고른 줄의 상세. 주문·CS·재고에 붙는다.
+    _detailPane(view) {
+        const esc = s => this._vesc(s);
+        const f = (k, v) => v || v === 0 ? `<div class="dt-f"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>` : '';
+        const wrap = (title, sub, body, acts) => `<aside class="appdet">
+            <div class="dt-h"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>
+            <div class="dt-b">${body}</div>${acts ? `<div class="dt-a">${acts}</div>` : ''}</aside>`;
+        const empty = (msg) => `<aside class="appdet"><div class="dt-none">${esc(msg)}</div></aside>`;
+
+        if (view === 'orders') {
+            const o = (this.orders || []).find(x => String(x.order_id) === String(this.orderSel));
+            if (!o) return empty('주문을 고르면 여기에 뜹니다');
+            const items = o.items || [];
+            const cs = (this.csList || []).filter(t => String(t.order_no) === String(o.order_id));
+            return wrap(o.receiver_name || o.buyer_name || '주문', o.order_id, `
+                ${f('주문일', o.order_date)}
+                ${f('채널', o.mall_key || o.channel)}
+                ${f('상태', ({ new: '신규', ready: '배송대기', shipping: '배송중', done: '완료' })[o.status] || o.status)}
+                ${f('받는분', o.receiver_name)}
+                ${f('연락처', o.receiver_phone)}
+                ${f('주소', o.receiver_addr || o.address)}
+                ${f('송장', o.invoice_no ? `${o.courier || ''} ${o.invoice_no}` : '')}
+                ${items.length ? `<div class="dt-sec">상품 ${items.length}</div>
+                    ${items.map(i => `<div class="dt-li"><span>${esc(i.product_name || '-')}</span><b>${esc(String(i.qty || 1))}</b></div>`).join('')}` : ''}
+                ${cs.length ? `<div class="dt-sec">CS ${cs.length}건</div>
+                    ${cs.map(t => `<div class="dt-li"><span>${esc(t.kind)}</span><b>${esc(t.status)}</b></div>`).join('')}` : ''}
+            `, `<button class="mbtn pri" onclick="app.csFromOrder('${esc(String(o.order_id))}')">CS 접수</button>`);
+        }
+        if (view === 'cs') {
+            const t = (this.csList || []).find(x => String(x.id) === String(this.csSel));
+            if (!t) return empty('CS 건을 고르면 여기에 뜹니다');
+            return wrap(t.customer_name || '고객', `${t.kind} · ${t.status}`, `
+                ${f('주문번호', t.order_no)}
+                ${f('상품', t.product_name)}
+                ${f('구매처', t.purchase_from)}
+                ${f('접수 경로', t.contact_channel)}
+                ${f('접수일', (t.occurred_on || t.created_at || '').slice(0, 10))}
+                ${f('담당', t.created_by)}
+                ${t.memo ? `<div class="dt-sec">메모</div><div class="dt-memo">${esc(t.memo)}</div>` : ''}
+            `, `${this.CS_STATUSES.map(st => `<button class="mbtn${t.status === st ? ' pri' : ''}"
+                    onclick="app.setCSStatus('${t.id}','${st}')">${st}</button>`).join('')}
+                <button class="mbtn" onclick="app.editCSMemo('${t.id}')">메모</button>`);
+        }
+        if (view === 'inventory') {
+            const inv = (this.inventory && this.inventory.items) || this.invItems || [];
+            const it = inv.find(x => String(x.id) === String(this.invSel));
+            if (!it) return empty('품목을 고르면 여기에 뜹니다');
+            return wrap(it.name || it.product_name || '품목', it.sku || it.option_name || '', `
+                ${f('현재고', it.qty ?? it.stock)}
+                ${f('안전재고', it.safe_qty)}
+                ${f('옵션', it.option_name)}
+                ${f('SKU', it.sku)}
+                ${f('바코드', it.barcode)}
+                ${f('마지막 갱신', (it.updated_at || '').slice(0, 10))}
+            `, '');
+        }
+        return '';
+    }
+    selectOrder(id) { this.orderSel = id; this.requestRender(); }
+    selectCS(id) { this.csSel = id; this.requestRender(); }
+    selectInv(id) { this.invSel = id; this.requestRender(); }
     // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
     switchAppTab(winId, view) {
         const w = (this.wins || []).find(x => x.id === winId);
@@ -2931,7 +3044,9 @@ class BhasApp {
                 const currentStageObj = lastCompletedStage || STAGES[0];
                 const statusLabel = lastCompletedStage ? lastCompletedStage.label : (progress === 0 && (product.history || []).length > 1 ? '상담 진행' : '시작 전');
                 return `
-                    <div class="project-card glass fade-in" data-id="${product.id}" style="cursor: pointer; border: 1px solid ${brandColor}20;">
+                    <div class="project-card glass fade-in" data-id="${product.id}"
+                        oncontextmenu="app.projectMenu(event,'${product.id}')"
+                        style="cursor: pointer; border: 1px solid ${brandColor}20;">
                         <div class="card-header" style="margin-bottom: 12px;">
                             <span class="company-tag" style="border-color: ${brandColor}; color: ${this._contrastText(brandColor)}; background: ${brandColor}; border-width: 1px;">
                                 <i class="ph ph-buildings"></i> ${brandName}
@@ -6422,6 +6537,7 @@ class BhasApp {
         } catch (e) { r.done = !done; this.showToast('변경 실패: ' + (e.message || e)); this.requestRender(); }
     }
     setRemList(l) { this.remList2 = l; this.requestRender(); }
+    setRemGroup(g) { this.remGroup = g; this.remList2 = 'all'; this.requestRender(); }
     // ── 미리알림 (맥 '미리알림' 앱 그대로) ─────────────────────
     //  왼쪽에 색 타일 6개 + 나의 목록, 오른쪽에 목록별 색 제목 + 동그란 체크.
     //  우리 '할일(todos)'도 한 목록으로 같이 얹어서 담당자까지 보이게 했다.
@@ -6434,16 +6550,24 @@ class BhasApp {
         // 미리알림 + 기존 할일을 한 줄 모양으로 합친다
         const rems = (this.remList || []).map(r => ({
             src: 'rem', id: r.id, title: r.title, memo: r.memo, due: r.due_date,
-            done: !!r.done, list: r.list_name || '미리 알림',
+            done: !!r.done, list: (this.remGroup || 'list') === 'project' ? '프로젝트 없음' : (r.list_name || '미리 알림'),
         }));
+        const byProj = (this.remGroup || 'list') === 'project';
         const todos = (mockData.products || []).flatMap(p => (p.todos || []).map(t => ({
             src: 'todo', id: t.id, title: t.text, due: t.due_date, done: !!t.completed,
-            list: '할일', project: p.name, assignee: t.assignee, createdBy: t.created_by,
+            list: byProj ? (p.name || '프로젝트 없음') : '할일',
+            project: p.name, assignee: t.assignee, createdBy: t.created_by,
         })));
         // 메모 본문의 [ ] 도 할 일이다 — 대시보드 안의 할 일을 한 군데로 모은다
+        const projOfNote = (nid) => {
+            const n = (this.noteList || []).find(x => String(x.id) === String(nid));
+            const pid = n ? this._noteMeta(n).proj : null;
+            return (mockData.products || []).find(p => String(p.id) === String(pid))?.name || null;
+        };
         const noteTodos = this._allNoteTodos().map(t => ({
             src: 'note', id: t.id, noteId: t.noteId, line: t.line, title: t.title,
-            due: t.due, done: t.done, list: '메모', from: t.from,
+            due: t.due, done: t.done,
+            list: byProj ? (projOfNote(t.noteId) || '프로젝트 없음') : '메모', from: t.from,
             assignee: (mockData.companies || []).find(c => c.name === t.at[0])?.id || null,
             atName: t.at[0] || null, tags: t.tags,
         }));
@@ -6509,8 +6633,12 @@ class BhasApp {
                         <em>${t.label}</em>
                     </button>`).join('')}
                 </div>
-                <div class="rm-lhead">나의 목록
-                    <button class="rm-plus" title="목록 추가" onclick="app.addRemList()">＋</button></div>
+                <div class="rm-seg">
+                    <button class="${(this.remGroup || 'list') === 'list' ? 'on' : ''}" onclick="app.setRemGroup('list')">목록별</button>
+                    <button class="${this.remGroup === 'project' ? 'on' : ''}" onclick="app.setRemGroup('project')">프로젝트별</button>
+                </div>
+                <div class="rm-lhead">${(this.remGroup || 'list') === 'project' ? '프로젝트' : '나의 목록'}
+                    ${(this.remGroup || 'list') === 'list' ? `<button class="rm-plus" title="목록 추가" onclick="app.addRemList()">＋</button>` : ''}</div>
                 ${listNames.map((l, i) => `<div class="rm-l${cur === 'l:' + l ? ' on' : ''}" onclick="app.setRemList('l:${esc(l)}')">
                     <span class="rm-lic" style="background:${colorOf(l, i)}"><i class="ph ph-list-bullets"></i></span>
                     <span class="rm-ln">${esc(l)}</span>
@@ -6847,7 +6975,8 @@ class BhasApp {
         const stColor = s => s === '완료' ? '#16a34a' : s === '수거완료' ? '#0ea5e9' : '#f59e0b';
         const tab = (id, label, n) => `<button onclick="app.setCSFilter('${id}')" style="padding:7px 15px;border-radius:999px;border:1px solid ${filter === id ? 'var(--primary)' : 'var(--card-border)'};background:${filter === id ? 'rgba(99,102,241,0.12)' : 'transparent'};color:${filter === id ? 'var(--primary)' : 'var(--text-main)'};font-size:0.82rem;font-weight:700;cursor:pointer">${label}${n != null ? ` <span style="opacity:0.7">${n}</span>` : ''}</button>`;
 
-        const row = t => `<div class="glass" style="padding:0.9rem 1.1rem;border-radius:14px;margin-bottom:0.6rem;${t.status === '완료' ? 'opacity:0.72' : ''}">
+        const row = t => `<div class="glass csrow${String(this.csSel) === String(t.id) ? ' on' : ''}"
+            onclick="app.selectCS('${t.id}')" style="padding:0.9rem 1.1rem;border-radius:14px;margin-bottom:0.6rem;${t.status === '완료' ? 'opacity:0.72' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
                     <span style="font-size:0.7rem;font-weight:800;color:#fff;background:${kindColor(t.kind)};padding:2px 9px;border-radius:20px">${esc(t.kind)}</span>
@@ -7239,8 +7368,9 @@ class BhasApp {
                 : this._orderItemsSummary(o);
             const detail = multi ? `<tr class="oms-detail" data-for="${o.order_id}" style="display:none"><td colspan="9" style="padding:2px 10px 12px 42px;background:rgba(var(--tint),0.04)"><div style="display:flex;flex-direction:column;gap:5px;padding:6px 0">${items.map(it => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:0.83rem"><span style="color:var(--text-muted)">${this._vesc(it.product_name || it.variant_code || '상품')}${it.option_name ? ` · ${this._vesc(it.option_name)}` : ''}</span><span style="color:var(--text-main);font-weight:600;white-space:nowrap">${it.quantity || 1}개</span></div>`).join('')}</div></td></tr>` : '';
             return `
-            <tr style="border-bottom:1px solid var(--card-border)">
-                <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" style="accent-color:var(--primary)"></td>
+            <tr class="ordrow${String(this.orderSel) === String(o.order_id) ? ' on' : ''}"
+                onclick="app.selectOrder('${o.order_id}')" style="border-bottom:1px solid var(--card-border)">
+                <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" style="accent-color:var(--primary)" onclick="event.stopPropagation()"></td>
                 <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}
                     <button class="ord-cs" title="이 주문으로 CS 접수" onclick="event.stopPropagation();app.csFromOrder('${o.order_id}')">CS</button></td>
                 <td style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1'; return `<span style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._mallLabel(o.mall_key)}</span>`; })()}</td>
