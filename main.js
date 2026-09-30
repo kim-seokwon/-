@@ -4797,7 +4797,7 @@ class BhasApp {
     openCalc() {
         if (document.getElementById('calc-pop')) { document.getElementById('calc-pop').remove(); return; }
         const el = document.createElement('div');
-        el.className = 'calcpop'; el.id = 'calc-pop';
+        el.className = 'calcpop lg'; el.id = 'calc-pop';
         el.style.left = Math.max(8, Math.min(window.innerWidth - 256, window.innerWidth - 300)) + 'px';
         el.style.top = Math.max(8, Math.min(96, window.innerHeight - 360)) + 'px';
         const keys = [['AC','fn','ac'],['+/−','fn','neg'],['%','fn','pct'],['÷','op','/'],
@@ -5021,7 +5021,7 @@ class BhasApp {
         if (cur) { this._closeStickyMenu(); return; }
         const esc = s => this._vesc(s);
         const el = document.createElement('div');
-        el.className = 'stmenu'; el.id = 'sticky-list';
+        el.className = 'stmenu lg'; el.id = 'sticky-list';
         el.innerHTML = `
             <button class="stm-item stm-new"><i class="ph ph-plus"></i><span>새 스티커</span></button>
             <div class="stm-sep"></div>
@@ -5084,7 +5084,7 @@ class BhasApp {
         document.getElementById('sticky-colorpop')?.remove();
         await this._loadStickyLabels();
         const pop = document.createElement('div');
-        pop.className = 'stmenu stpop'; pop.id = 'sticky-colorpop';
+        pop.className = 'stmenu stpop lg'; pop.id = 'sticky-colorpop';
         pop.innerHTML = `<div class="stm-pal">${this._paletteHTML(sel, false)}</div>`;
         document.body.appendChild(pop);
         const r = anchor.getBoundingClientRect(), w = 200;
@@ -5496,7 +5496,7 @@ class BhasApp {
             let body = '';
             try { body = this.renderSubView(products) || ''; }
             catch (e) { body = `<div style="padding:2rem;color:#ef4444">화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
-            return `<section class="macwin" id="${w.id}" style="${this._macWinStyle(w)};z-index:${w.z}" onmousedown="app.macFocus('${w.id}')">
+            return `<section class="macwin lg" id="${w.id}" style="${this._macWinStyle(w)};z-index:${w.z}" onmousedown="app.macFocus('${w.id}')">
                 <header class="macwin-bar" onmousedown="app.macDragStart(event,'${w.id}')"
                         ondblclick="app.macZoom('${w.id}',event)" onwheel="app.macWheel(event,'${w.id}')">
                     <span class="mw-lights">
@@ -5546,7 +5546,7 @@ class BhasApp {
             <div id="mac-snap-hint" class="mac-snap-hint"></div>
             <div class="mac-deskboard">${deskboard}</div>
             ${winsHtml}
-            <nav class="mac-dock">${dock}<span class="mdsep"></span>${tools}${mins ? '<span class="mdsep"></span>' + mins : ''}</nav>
+            <nav class="mac-dock lg">${dock}<span class="mdsep"></span>${tools}${mins ? '<span class="mdsep"></span>' + mins : ''}</nav>
         </div>`;
     }
     toggleMacMode() {
