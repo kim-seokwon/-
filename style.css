@@ -2606,16 +2606,16 @@ body.light .macwin-bar{background:rgba(0,0,0,.035);border-color:rgba(0,0,0,.08)}
 body:not(.light) .mdi:hover::before{background:rgba(255,255,255,.16)}
 .mdi:active img,.mdi:active svg{transform:translateY(1px)}
 /* 이름 말풍선 — 맥처럼 독 위에 하얀 알약으로 */
-.mdi em{position:absolute;bottom:calc(100% + 15px);left:50%;transform:translateX(-50%) translateY(3px);
+.mdi>em{position:absolute;bottom:calc(100% + 15px);left:50%;transform:translateX(-50%) translateY(3px);
   padding:5px 13px;border-radius:9px;font-size:12.5px;font-style:normal;font-weight:500;white-space:nowrap;
   background:rgba(255,255,255,.88);color:#17171a;
   backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);
   border:.5px solid rgba(255,255,255,.95);
   box-shadow:0 5px 16px rgba(0,0,0,.18),0 0 0 .5px rgba(0,0,0,.07);
   opacity:0;pointer-events:none;transition:opacity .12s,transform .12s}
-body:not(.light) .mdi em{background:rgba(58,58,64,.90);color:#f3f3f6;border-color:rgba(255,255,255,.20);
+body:not(.light) .mdi>em{background:rgba(58,58,64,.90);color:#f3f3f6;border-color:rgba(255,255,255,.20);
   box-shadow:0 6px 18px rgba(0,0,0,.48),0 0 0 .5px rgba(0,0,0,.5)}
-.mdi:hover em{opacity:1;transform:translateX(-50%) translateY(0)}
+.mdi:hover>em{opacity:1;transform:translateX(-50%) translateY(0)}
 /* 켜져 있는 앱 표시 */
 .mdi.open::after{content:'';position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
   width:4px;height:4px;border-radius:50%;background:rgba(0,0,0,.45)}
@@ -3284,9 +3284,20 @@ body:not(.light) .mac-deskboard .glass{
 .tt-util button{width:30px;height:30px;border-radius:8px;border:.5px solid var(--card-border)}
 
 /* 독 맨 왼쪽 전체 메뉴 단추 */
-.launchic{width:47px;height:47px;border-radius:11.3px;display:grid;place-items:center;font-size:24px;color:#fff;
-  background:linear-gradient(160deg,#9aa0a8,#5b6068);
-  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.45),inset 0 -1.5px 0 rgba(0,0,0,.16),0 3px 8px rgba(0,0,0,.32)}
+/* 우리가 그린 맥 결 아이콘 — 흰 둥근 사각형 + 기호 하나 */
+.apic{width:47px;height:47px;border-radius:11.3px;display:grid;place-items:center;overflow:hidden;
+  background:var(--bg);position:relative;
+  box-shadow:inset 0 0 0 .5px rgba(0,0,0,.10),inset 0 1px 0 rgba(255,255,255,.9),
+             0 3px 8px rgba(0,0,0,.26)}
+.ap-sv{width:27px;height:27px;display:block}
+/* 런치패드 — 색색 네모 아홉 */
+.ap-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3.4px;width:29px;height:29px}
+.ap-grid i{display:block;border-radius:3px;box-shadow:inset 0 .5px 0 rgba(255,255,255,.55)}
+/* 캘린더 — 오늘 날짜 */
+.ap-cal{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:100%;height:100%;line-height:1;gap:1px;padding-top:1px}
+.ap-cal em{font-style:normal;font-size:8px;font-weight:800;color:#111;letter-spacing:-.03em;line-height:1}
+.ap-cal b{font-size:21px;font-weight:400;color:#111;letter-spacing:-.05em;line-height:1}
 /* 전체 메뉴 — 런치패드 */
 .launcher{position:fixed;inset:0;z-index:6000;display:flex;flex-direction:column;align-items:center;
   padding:64px 24px 40px;overflow:auto;

@@ -90,8 +90,9 @@ class BhasApp {
         const el = document.createElement('div');
         el.id = 'auth-bar'; el.className = 'authbar';
         el.innerHTML = `<i class="ph ph-warning-circle"></i>
-            <span>로그인이 풀렸습니다. 데이터가 안 보이고 저장도 되지 않습니다.</span>
-            <button onclick="app.logout()">다시 로그인</button>`;
+            <span>로그인이 풀렸습니다 — 데이터가 안 보이고 저장도 안 됩니다.
+                아래 단추로 <b>이 대시보드에</b> 아이디·비번을 다시 넣어주세요.</span>
+            <button onclick="app.logout()">로그인 화면으로</button>`;
         document.body.appendChild(el);
     }
     showToast(message) {
@@ -5448,13 +5449,13 @@ class BhasApp {
     //  아이콘은 맥 그림 그대로. 앱을 세 묶음으로 합치면서 겹치던 게 풀려
     //  이제 하나씩 제 아이콘을 쓴다(전엔 prod/settle 가 겹쳤다).
     MAC_DOCK = [
-        { id: '__menu', label: '전체 메뉴', launcher: true },
+        { id: '__menu', label: '전체 메뉴', launcher: true, draw: '_iconLaunch' },
         { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
-        { id: 'orders', label: '판매', icon: 'sales' },
-        { id: 'vendors', label: '생산', icon: 'prod' },
-        { id: 'sns', label: 'SNS', icon: 'mkt' },
+        { id: 'orders', label: '판매', draw: '_iconSell' },
+        { id: 'vendors', label: '생산', draw: '_iconMake' },
+        { id: 'sns', label: 'SNS', draw: '_iconSns' },
         { id: 'documents', label: '자료실', icon: 'finder' },
-        { id: 'calendar', label: '캘린더', icon: 'cal' },
+        { id: 'calendar', label: '캘린더', draw: '_iconCal' },
         { id: 'reminders', label: '미리알림', icon: 'rem' },
         { id: 'notes', label: '메모', icon: 'notes' },
         { id: 'contacts', label: '연락처', icon: 'contacts' },
@@ -5475,8 +5476,43 @@ class BhasApp {
         </svg>`;
     }
     // 업무 앱 아이콘 — 맥 아이콘과 같은 둥근 사각형에 색·기호만 달리한다
+    // 맥 아이콘 결 — 흰 둥근 사각형에 기호 하나. 위쪽 하이라이트와 얇은 테두리로 도톰하게.
+    _tile(inner, bg) {
+        return `<span class="apic" style="--bg:${bg || '#fff'}">${inner}</span>`;
+    }
+    _iconLaunch() {
+        // 런치패드 — 옅은 바탕에 색색 네모 아홉
+        const c = ['#ff6b6b', '#ffa93a', '#ffd23f', '#4cd964', '#34c7d4', '#5ac8fa', '#6b8cff', '#bf8cff', '#ff7ab0'];
+        return this._tile(`<span class="ap-grid">${c.map(x => `<i style="background:${x}"></i>`).join('')}</span>`,
+            'linear-gradient(160deg,#fdfdfe,#e9e9ee)');
+    }
+    _iconCal() {
+        // 캘린더 — 오늘 요일과 날짜가 실제로 들어간다
+        const d = new Date();
+        const wd = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][d.getDay()];
+        return this._tile(`<span class="ap-cal"><em>${wd}</em><b>${d.getDate()}</b></span>`, '#fff');
+    }
+    _iconSns() {
+        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke="url(#ig)" stroke-width="2">
+            <defs><linearGradient id="ig" x1="0" y1="1" x2="1" y2="0">
+                <stop offset="0" stop-color="#ffb43a"/><stop offset=".45" stop-color="#e1306c"/>
+                <stop offset="1" stop-color="#8a3ab9"/></linearGradient></defs>
+            <rect x="3" y="3" width="18" height="18" rx="5.4"/><circle cx="12" cy="12" r="4.1"/>
+            <circle cx="17.2" cy="6.8" r="1.25" fill="url(#ig)" stroke="none"/></svg>`, '#fff');
+    }
+    _iconSell() {
+        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke="#f26a00" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.5 8h15l-1.1 11.2a1.8 1.8 0 0 1-1.8 1.6H7.4a1.8 1.8 0 0 1-1.8-1.6z"/>
+            <path d="M8.6 10.4V6.9a3.4 3.4 0 0 1 6.8 0v3.5"/></svg>`, '#fff');
+    }
+    _iconMake() {
+        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke="#7b3fe4" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 20.5V11l5 3.2V11l5 3.2V6.4l8 4.8v9.3z"/><path d="M2.2 20.6h19.6"/></svg>`, '#fff');
+    }
     _dockFace(d) {
-        if (d && d.launcher) return `<span class="launchic"><i class="ph ph-squares-four"></i></span>`;
+        if (d && d.draw && this[d.draw]) return this[d.draw]();
         if (d && d.svg) return this._stickySvg();
         if (d && d.icon) return `<img src="icons/${d.icon}.png" alt="${this._vesc(d.label || '')}" draggable="false">`;
         return `<img src="icons/finder.png" alt="" draggable="false">`;
