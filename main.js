@@ -962,7 +962,8 @@ class BhasApp {
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'tech_packs', label: '작업지시서', icon: '<i class="ph ph-clipboard-text"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
-            { id: 'vendors', label: '생산현황', icon: '<i class="ph ph-storefront"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'vendors', label: '생산현황', icon: '<i class="ph ph-factory"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'contacts', label: '연락처', icon: '<i class="ph ph-address-book"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'quotes', label: '견적', icon: '<i class="ph ph-receipt"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'orders', label: '주문', icon: '<i class="ph ph-shopping-bag-open"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'cs', label: 'CS', icon: '<i class="ph ph-arrows-counter-clockwise"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
@@ -993,7 +994,7 @@ class BhasApp {
                 if (it.id === 'user_management' || it.id === 'brand_management' || it.id === 'feedback') it.visible = role === 'MASTER';
                 // 새로 생긴 메뉴는 기존 menu_access 목록에 없으므로 역할 기본값을 유지한다
                 // (안 그러면 권한을 다시 저장하기 전까지 아무에게도 안 보인다).
-                else if (['all_todos', 'cs', 'expenses', 'notes', 'reminders', 'settings'].includes(it.id)) it.visible = true;
+                else if (['all_todos', 'cs', 'expenses', 'notes', 'reminders', 'settings', 'contacts'].includes(it.id)) it.visible = true;
                 else it.visible = ma.includes(it.id);
             });
         }
@@ -2566,6 +2567,7 @@ class BhasApp {
         const { role, id: currentUserId, name: currentUserName } = this.currentUser;
         if (this.currentView === 'home') return this.renderHome(products);
         if (this.currentView === 'settings') return this.renderSettings();
+        if (this.currentView === 'contacts') return this.renderContacts();
 
         // 데이터 정규화 및 상태 판별 헬퍼
         const isStageCompleted = (p, s) => {
@@ -4736,7 +4738,7 @@ class BhasApp {
         if (v === 'inventory' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
-        if (v === 'vendors' && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+        if ((v === 'vendors' || v === 'contacts') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
         if (v === 'sns' && !this._igLoaded && !this._igLoading) this.loadIG();
         if (v === 'quotes' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         if (v === 'home') {
@@ -5320,7 +5322,8 @@ class BhasApp {
         { id: 'reminders', label: '미리알림', icon: 'rem' },
         { id: 'notes', label: '메모', icon: 'notes' },
         { id: 'calendar', label: '캘린더', icon: 'cal' },
-        { id: 'vendors', label: '거래처', icon: 'contacts' },
+        { id: 'vendors', label: '생산현황', icon: 'prod' },
+        { id: 'contacts', label: '연락처', icon: 'contacts' },
         { id: 'settings', label: '설정', icon: 'set' },
         // 창이 아니라 그 자리에서 뜨는 도구 — 독 오른쪽 끝에 따로 둔다
         { id: 'calc', label: '계산기', icon: 'calc', tool: true },
@@ -5356,7 +5359,7 @@ class BhasApp {
     _macTitle(view) {
         const m = (this.MAC_DOCK.find(d => d.id === view));
         if (m) return m.label;
-        return ({ settings: '설정', dashboard: '프로젝트', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
+        return ({ settings: '설정', contacts: '연락처', dashboard: '프로젝트', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
                   integrations: '연동', user_management: '계정', brand_management: '브랜드',
                   feedback: '불편사항', pages: '페이지', kanban: '보드', table: '표',
                   all_todos: '할일', timeline: '타임라인', sample_maker: '샘플' })[view] || view;
@@ -8155,6 +8158,52 @@ class BhasApp {
         setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 120);
     }
 
+    // ── 연락처 ────────────────────────────────────────────────
+    //  거래처를 '연락처'로만 쓴다 — 전화·주소·사업자번호. 생산 진행은 생산현황에서 본다.
+    renderContacts() {
+        const esc = s => this._vesc(s);
+        if (!this._vendorsLoaded) return this._loadingSkeleton('연락처');
+        const q = (this.contactQ || '').trim().toLowerCase();
+        const cats = ['전체', '봉제', '원단', '부자재', '프린트', '기타'];
+        const cat = this.contactCat || '전체';
+        let list = (this.vendors || []).slice();
+        if (cat !== '전체') list = list.filter(v => (v.category || '기타') === cat);
+        if (q) list = list.filter(v => [v.name, v.phone, v.address, v.ceo_name, v.biz_no, v.memo]
+            .some(x => String(x || '').toLowerCase().includes(q)));
+        list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+        const tel = p => String(p || '').replace(/[^0-9+]/g, '');
+        const initial = n => (String(n || '?').trim()[0] || '?');
+        const card = (v) => `
+            <div class="ct-card" onclick="app.showVendorModal('${v.id}')">
+                <div class="ct-face">${esc(initial(v.name))}</div>
+                <div class="ct-main">
+                    <div class="ct-name">${esc(v.name)}<span class="ct-cat">${esc(v.category || '기타')}</span></div>
+                    ${v.address ? `<div class="ct-line"><i class="ph ph-map-pin"></i>${esc(v.address)}</div>` : ''}
+                    ${v.biz_no ? `<div class="ct-line"><i class="ph ph-identification-card"></i>${esc(v.biz_no)}</div>` : ''}
+                    ${v.memo ? `<div class="ct-line ct-memo">${esc(v.memo)}</div>` : ''}
+                </div>
+                <div class="ct-acts" onclick="event.stopPropagation()">
+                    ${v.phone ? `<a class="ct-btn" href="tel:${esc(tel(v.phone))}" title="전화 ${esc(v.phone)}"><i class="ph ph-phone"></i><span>${esc(v.phone)}</span></a>` : ''}
+                    ${v.email ? `<a class="ct-btn" href="mailto:${esc(v.email)}" title="메일"><i class="ph ph-envelope-simple"></i></a>` : ''}
+                </div>
+            </div>`;
+        return `
+        <div class="contacts-pane">
+            <div class="ct-top">
+                <div class="ct-search">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input id="ct-q" placeholder="상호·전화·주소로 찾기" value="${esc(this.contactQ || '')}"
+                           oninput="app.contactQ=this.value;app.requestRender()">
+                </div>
+                <button class="ct-add" onclick="app.showVendorModal(null)"><i class="ph ph-plus"></i> 새 연락처</button>
+            </div>
+            <div class="ct-cats">
+                ${cats.map(k => `<button class="ct-chip${cat === k ? ' on' : ''}" onclick="app.contactCat='${k}';app.requestRender()">${k}</button>`).join('')}
+            </div>
+            ${list.length ? `<div class="ct-list">${list.map(card).join('')}</div>`
+                : `<div class="ct-empty">${q || cat !== '전체' ? '찾는 연락처가 없습니다.' : '등록된 연락처가 없습니다. 오른쪽 위 [새 연락처]를 누르세요.'}</div>`}
+        </div>`;
+    }
     showVendorModal(id) {
         const v = id ? (this.vendors||[]).find(x=>x.id===id) : null;
         this._vendorPick = (v && v.lat && v.lng) ? { lat:v.lat, lng:v.lng } : null;
