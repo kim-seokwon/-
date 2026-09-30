@@ -3254,3 +3254,13 @@ body:not(.light) .mac-deskboard .glass{
 .appmain{min-width:0;overflow:auto}
 @media (max-width:760px){ .appwrap{grid-template-columns:1fr} .appside{display:none} }
 /* 자료실 미리보기 칸이 너무 일찍 접히던 것 완화 */
+
+/* 새 판 알림 막대 */
+.updbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9000;
+  display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;
+  background:rgba(32,32,36,.94);color:#f4f4f6;font-size:13px;
+  backdrop-filter:blur(28px);border:.5px solid rgba(255,255,255,.18);
+  box-shadow:0 14px 40px rgba(0,0,0,.45);animation:stmIn .16s cubic-bezier(.2,.9,.3,1.05)}
+.updbar button{border:0;border-radius:8px;background:var(--primary);color:#fff;font-family:inherit;
+  font-size:12.5px;font-weight:700;padding:5px 12px;cursor:pointer}
+.updbar button.x{background:rgba(255,255,255,.16)}

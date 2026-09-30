@@ -60,6 +60,13 @@ class BhasApp {
         
         try {
             this.init();
+            // 옛 화면을 붙들고 있는지 — 켤 때 한 번, 그 뒤 30분마다
+            setTimeout(() => this.checkNewBuild(), 4000);
+            setInterval(() => this.checkNewBuild(), 30 * 60 * 1000);
+            window.addEventListener('focus', () => {
+                if (Date.now() - (this._lastBuildCheck || 0) < 5 * 60 * 1000) return;
+                this._lastBuildCheck = Date.now(); this.checkNewBuild();
+            });
             window.onerror = (msg, url, lineNo, columnNo, error) => {
                 this.showToast('시스템 오류가 발생했습니다. 담당자에게 문의하세요.');
                 return false;
@@ -2517,6 +2524,35 @@ class BhasApp {
         this.wins = []; this._stickiesRestored = false;
         this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
     }
+    // ── 새 판 확인 ───────────────────────────────────────────
+    //  브라우저가 옛 index.html 을 붙들고 있으면 아무리 배포해도 옛 화면이 뜬다.
+    //  지금 돌고 있는 번들 이름과 서버의 index.html 이 가리키는 번들을 대본다.
+    _myBundle() {
+        try {
+            const el = [...document.scripts].find(x => /assets\/index-.*\.js/.test(x.src || ''));
+            return el ? (el.src.match(/assets\/index-[^/]+\.js/) || [])[0] : null;
+        } catch (_e) { return null; }
+    }
+    async checkNewBuild(loud) {
+        const mine = this._myBundle();
+        if (!mine) return;                      // 개발 중에는 건너뛴다
+        try {
+            const r = await fetch('/?v=' + Date.now(), { cache: 'no-store' });
+            const html = await r.text();
+            const live = (html.match(/assets\/index-[^"']+\.js/) || [])[0];
+            if (!live || live === mine) { if (loud) this.showToast('이미 최신입니다'); return; }
+            this._showUpdateBar();
+        } catch (_e) { /* 못 물어봐도 그냥 둔다 */ }
+    }
+    _showUpdateBar() {
+        if (document.getElementById('upd-bar')) return;
+        const el = document.createElement('div');
+        el.id = 'upd-bar'; el.className = 'updbar';
+        el.innerHTML = `<span>새 판이 나왔습니다</span>
+            <button onclick="location.reload(true)">새로 받기</button>
+            <button class="x" onclick="this.parentNode.remove()">나중에</button>`;
+        document.body.appendChild(el);
+    }
     // 지금 보고 있는 판이 어느 것인지 — 주소가 여럿일 때 헷갈리지 않게 화면에 박아둔다
     _buildTag() {
         try {
@@ -2571,7 +2607,8 @@ class BhasApp {
             </div>` : ''}
             <div class="set-card">
                 <div class="set-head">이 판</div>
-                ${row('버전', this._buildTag(), `<button class="set-btn" onclick="location.reload(true)">새로 받기</button>`)}
+                ${row('버전', this._buildTag(), `<button class="set-btn" onclick="app.checkNewBuild(true)">새 판 확인</button>
+                    <button class="set-btn" onclick="location.reload(true)">새로 받기</button>`)}
             </div>
             <div class="set-card">
                 <div class="set-head">계정</div>
