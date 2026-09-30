@@ -2871,7 +2871,7 @@ class BhasApp {
         { g: '생산', items: [['dashboard', '프로젝트', 'ph-chart-bar'], ['vendors', '생산현황', 'ph-factory'],
             ['tech_packs', '작업지시서', 'ph-clipboard-text'], ['sample_maker', '샘플·디자인', 'ph-scissors'],
             ['quotes', '견적', 'ph-receipt']] },
-        { g: '업무', items: [['notes', '메모', 'ph-note'], ['reminders', '미리알림', 'ph-list-checks'],
+        { g: '업무', items: [['news', '뉴스', 'ph-newspaper'], ['notes', '메모', 'ph-note'], ['reminders', '미리알림', 'ph-list-checks'],
             ['calendar', '캘린더', 'ph-calendar-dots'], ['table', '표', 'ph-table'],
             ['contacts', '연락처', 'ph-address-book'], ['sns', 'SNS', 'ph-instagram-logo'],
             ['documents', '자료실', 'ph-folder-open']] },
@@ -2996,6 +2996,7 @@ class BhasApp {
         if (this.currentView === 'home') return this.renderHome(products);
         if (this.currentView === 'settings') return this.renderSettings();
         if (this.currentView === 'contacts') return this.renderContacts();
+        if (this.currentView === 'news') return this.renderNews();
 
         // 데이터 정규화 및 상태 판별 헬퍼
         const isStageCompleted = (p, s) => {
@@ -5083,6 +5084,7 @@ class BhasApp {
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
         if ((v === 'vendors' || v === 'contacts' || v === 'inventory') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+        if (v === 'news' && !this._newsLoaded && !this._newsLoading) this.loadNews();
         if (v === 'vendors' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'sns' && !this._igLoaded && !this._igLoading) this.loadIG();
         if ((v === 'quotes' || v === 'vendors') && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
@@ -5666,6 +5668,7 @@ class BhasApp {
         { id: 'orders', label: '판매', draw: '_iconSell' },
         { id: 'vendors', label: '생산', draw: '_iconMake' },
         { id: 'sns', label: 'SNS', draw: '_iconSns' },
+        { id: 'news', label: '뉴스', draw: '_iconNews' },
         { id: 'documents', label: '자료실', draw: '_iconDocs' },
         { id: 'calendar', label: '캘린더', draw: '_iconCal' },
         { id: 'reminders', label: '미리알림', draw: '_iconRem' },
@@ -5703,6 +5706,7 @@ class BhasApp {
             <rect x="3.4" y="3.4" width="17.2" height="17.2" rx="5.2"/><circle cx="12" cy="12" r="4"/>
             <circle cx="17" cy="7" r="1.15" fill="url(#ig)" stroke="none"/></svg>`);
     }
+    _iconNews() { return this._g('<path d="M4 5.4h12.6v13.2H4z"/><path d="M16.6 9.4h3.4v7.4a1.8 1.8 0 0 1-3.4 0z"/><path d="M6.8 8.6h7M6.8 11.8h7M6.8 15h4.4"/>', '#e0294f'); }
     _iconDocs() { return this._g('<path d="M3.2 7.4a1.8 1.8 0 0 1 1.8-1.8h4.1l2 2.3h7.9a1.8 1.8 0 0 1 1.8 1.8v8.9a1.8 1.8 0 0 1-1.8 1.8H5a1.8 1.8 0 0 1-1.8-1.8z"/>', '#0a84ff'); }
     _iconCal() {
         const d = new Date();
@@ -5743,7 +5747,7 @@ class BhasApp {
     _macTitle(view) {
         const m = (this.MAC_DOCK.find(d => d.id === view));
         if (m) return m.label;
-        return ({ settings: '설정', contacts: '연락처', cs: 'CS', expenses: '지출', inventory: '재고',
+        return ({ settings: '설정', contacts: '연락처', cs: 'CS', expenses: '지출', inventory: '재고', news: '뉴스',
                   sales: '정산', sample_maker: '샘플·디자인',
                   dashboard: '프로젝트', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
                   integrations: '연동', user_management: '계정', brand_management: '브랜드',
@@ -9235,6 +9239,155 @@ class BhasApp {
         setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 120);
     }
 
+    // ── 뉴스 (분류 / 목록 / 상세) ─────────────────────────────
+    //  바깥에서 보는 기준을 모은다. 수집은 서버(Actions)가 하고 여기선 읽기만 한다.
+    async loadNews() {
+        this._newsLoading = true;
+        try {
+            const [items, comps, snaps] = await Promise.all([
+                this.supabase.from('news_items').select('*').order('published_at', { ascending: false, nullsFirst: false }).limit(400),
+                this.supabase.from('competitors').select('*').order('name'),
+                this.supabase.from('competitor_snapshots').select('*').order('snap_date', { ascending: false }).limit(600),
+            ]);
+            this.newsItems = items.data || [];
+            this.competitors = comps.data || [];
+            this.compSnaps = snaps.data || [];
+            this._newsLoaded = true;
+        } catch (e) {
+            this.newsItems = []; this.competitors = []; this.compSnaps = []; this._newsLoaded = true;
+            this.showToast('뉴스를 불러오지 못했습니다 (039_news.sql 실행 필요)');
+        }
+        this._newsLoading = false; this.requestRender();
+    }
+    renderNews() {
+        if (!this._newsLoaded) return this._loadingSkeleton('뉴스');
+        const esc = s => this._vesc(s);
+        const items = this.newsItems || [];
+        const comps = this.competitors || [];
+        const cur = this.newsTab || 'competitor';
+        const q = (this.newsQ || '').trim().toLowerCase();
+        const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스',
+                      google: '구글', instagram: '인스타그램', datalab: '데이터랩' };
+        const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '';
+        const brandOf = id => (mockData.brands || []).find(b => b.id === id)?.name || '';
+
+        let list;
+        if (cur === 'competitor') list = items.filter(i => i.kind === 'competitor_post');
+        else if (cur === 'review') list = items.filter(i => i.kind === 'review');
+        else list = items.filter(i => i.kind === 'trend' || i.kind === 'news');
+        if (q) list = list.filter(i => [i.title, i.snippet, i.author].some(x => String(x || '').toLowerCase().includes(q)));
+        const sel = list.find(i => i.id === this.newsSel) || list[0];
+
+        // 경쟁사 요약 (오늘·어제 스냅샷 견주기)
+        const snapOf = (cid) => (this.compSnaps || []).filter(s => s.competitor_id === cid);
+        const compCard = (c) => {
+            const sn = snapOf(c.id);
+            const now = sn[0], prev = sn[1];
+            const d = (now && prev && now.followers != null && prev.followers != null) ? now.followers - prev.followers : null;
+            return `<div class="nw-comp">
+                <div class="nw-cn">${esc(c.name)}<em>@${esc(c.handle)}</em></div>
+                <div class="nw-cs">
+                    <span>팔로워 <b>${now?.followers != null ? now.followers.toLocaleString('ko-KR') : '-'}</b>
+                        ${d != null ? `<i class="${d >= 0 ? 'up' : 'dn'}">${d >= 0 ? '+' : ''}${d}</i>` : ''}</span>
+                    <span>글 <b>${now?.media_count ?? '-'}</b>${now?.posts_delta ? ` <i class="up">+${now.posts_delta}</i>` : ''}</span>
+                    <span>평균 ♥ <b>${now?.avg_likes != null ? Math.round(now.avg_likes) : '-'}</b></span>
+                </div></div>`;
+        };
+
+        const side = (k, label, icon, n) => `<div class="m3-s${cur === k ? ' on' : ''}" onclick="app.setNewsTab('${k}')">
+            <i class="ph ${icon}" style="color:#e0294f"></i><span>${esc(label)}</span><em>${n}</em></div>`;
+
+        return `
+        <div class="m3 wide">
+            <aside class="m3-side">
+                <div class="m3-h">뉴스</div>
+                ${side('competitor', '경쟁사 소식', 'ph-users-three', items.filter(i => i.kind === 'competitor_post').length)}
+                ${side('review', '우리 후기', 'ph-chat-circle-text', items.filter(i => i.kind === 'review').length)}
+                ${side('trend', '트렌드·행사', 'ph-trend-up', items.filter(i => i.kind === 'trend' || i.kind === 'news').length)}
+                <div class="m3-h">지켜보는 곳
+                    <button class="nt-add" title="경쟁사 추가" onclick="app.addCompetitor()">＋</button></div>
+                ${comps.length ? comps.map(c => `<div class="m3-s" oncontextmenu="app.compMenu(event,'${c.id}')">
+                    <i class="ph ph-instagram-logo" style="color:#c13584"></i><span>${esc(c.name)}</span></div>`).join('')
+                  : '<div style="padding:6px 10px;font-size:12px;color:var(--text-muted)">＋로 경쟁사를 넣으세요</div>'}
+            </aside>
+            <section class="m3-list">
+                <div class="m3-lbar"><div><b>${cur === 'competitor' ? '경쟁사 소식' : (cur === 'review' ? '우리 후기' : '트렌드·행사')}</b>
+                    <span>${list.length}건</span></div></div>
+                <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
+                    <input placeholder="찾기" value="${esc(this.newsQ || '')}" oninput="app.newsQ=this.value;app.requestRender()"></div>
+                <div class="m3-rows">
+                    ${cur === 'competitor' && comps.length ? `<div class="nw-comps">${comps.map(compCard).join('')}</div>` : ''}
+                    ${list.map(i => `<div class="m3-r${sel && i.id === sel.id ? ' on' : ''}" onclick="app.selectNews('${i.id}')">
+                        <b>${esc(i.title || '제목 없음')}</b>
+                        <div class="sub"><span>${esc(SRC[i.source] || i.source)}</span>
+                            <span>${esc(when(i.published_at))}</span>
+                            ${i.brand_id ? `<span>${esc(brandOf(i.brand_id))}</span>` : ''}</div>
+                    </div>`).join('') || `<div class="m3-none">${q ? '찾는 글이 없습니다' : '아직 모인 게 없습니다 · 수집이 돌면 채워집니다'}</div>`}
+                </div>
+            </section>
+            <section class="m3-doc">
+                ${sel ? `
+                <div class="m3-tools">
+                    ${sel.url && !String(sel.url).startsWith('datalab:')
+                        ? `<a class="mbtn pri" href="${esc(sel.url)}" target="_blank" rel="noopener" style="text-decoration:none">원문 열기</a>` : ''}
+                    <span class="sp"></span>
+                    <span class="nt-scope">${esc(SRC[sel.source] || sel.source)}</span>
+                </div>
+                <div class="m3-page">
+                    ${sel.thumb ? `<img class="nw-th" src="${esc(sel.thumb)}" alt="">` : ''}
+                    <h2 class="m3-big">${esc(sel.title || '제목 없음')}</h2>
+                    <div class="m3-sub">${esc(sel.author || '')}${sel.published_at ? ' · ' + esc(new Date(sel.published_at).toLocaleDateString('ko-KR')) : ''}</div>
+                    ${sel.score != null ? `<div class="nw-score">지수 <b>${esc(String(sel.score))}</b>${sel.snippet ? ` · ${esc(sel.snippet)}` : ''}</div>` : ''}
+                    ${sel.kind === 'trend' && sel.meta && sel.meta.series ? `<div class="nw-spark">
+                        ${(() => { const d = sel.meta.series, mx = Math.max(1, ...d.map(x => x.ratio));
+                            return d.map(x => `<i style="height:${Math.max(3, x.ratio / mx * 60)}px" title="${esc(x.period)} · ${x.ratio}"></i>`).join(''); })()}
+                    </div>` : ''}
+                    ${sel.snippet && sel.score == null ? `<p class="nw-body">${esc(sel.snippet)}</p>` : ''}
+                    ${sel.meta && sel.meta.likes != null ? `<div class="m3-f"><i class="ph ph-heart"></i><span class="k">반응</span>
+                        <span class="v">♥ ${esc(String(sel.meta.likes))} · 댓글 ${esc(String(sel.meta.comments ?? 0))}</span></div>` : ''}
+                </div>` : `<div class="m3-none mid">왼쪽에서 글을 고르세요</div>`}
+            </section>
+        </div>`;
+    }
+    setNewsTab(k) { this.newsTab = k; this.newsSel = null; this.requestRender(); }
+    selectNews(id) { this.newsSel = id; this.requestRender(); }
+    async addCompetitor() {
+        const handle = window.prompt('인스타 핸들 (@ 없이)'); if (!handle || !handle.trim()) return;
+        const name = window.prompt('보여줄 이름', handle.trim()) || handle.trim();
+        try {
+            const { data, error } = await this.supabase.from('competitors')
+                .insert([{ handle: handle.trim().replace(/^@/, ''), name: name.trim() }]).select('*').single();
+            if (error) throw error;
+            this.competitors = [...(this.competitors || []), data];
+            this.requestRender();
+            this.showToast('넣었습니다 · 다음 수집(매일 07:30)부터 지표가 쌓입니다');
+        } catch (e) { this.showToast('추가 실패: ' + (e.message || e)); }
+    }
+    compMenu(ev, id) {
+        const c = (this.competitors || []).find(x => x.id === id); if (!c) return;
+        this.ctxMenu(ev, [
+            { t: '인스타 열기', icon: 'ph-instagram-logo', run: () => window.open(`https://instagram.com/${c.handle}`, '_blank') },
+            { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameCompetitor(id) },
+            { sep: true },
+            { t: '빼기', icon: 'ph-trash', danger: true, run: () => this.delCompetitor(id) },
+        ]);
+    }
+    async renameCompetitor(id) {
+        const c = (this.competitors || []).find(x => x.id === id); if (!c) return;
+        const v = window.prompt('이름', c.name); if (v === null || !v.trim()) return;
+        c.name = v.trim(); this.requestRender();
+        try { await this.supabase.from('competitors').update({ name: c.name }).eq('id', id); }
+        catch (e) { this.showToast('실패: ' + (e.message || e)); }
+    }
+    async delCompetitor(id) {
+        if (!confirm('이 경쟁사를 뺄까요? 쌓인 지표도 같이 지워집니다.')) return;
+        try {
+            const { error } = await this.supabase.from('competitors').delete().eq('id', id);
+            if (error) throw error;
+            this.competitors = (this.competitors || []).filter(x => x.id !== id);
+            this.requestRender();
+        } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
+    }
     // ── 연락처 (분류 / 리스트 / 페이지) ───────────────────────
     renderContacts() {
         const esc = s => this._vesc(s);

@@ -3464,3 +3464,22 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .rm-seg button{flex:1;border:0;background:transparent;color:var(--text-muted);font-family:inherit;
   font-size:11.5px;font-weight:600;padding:5px 4px;border-radius:6px;cursor:pointer}
 .rm-seg button.on{background:var(--card-bg);color:var(--text-main);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+/* ═══════════ 뉴스 ═══════════ */
+.nw-comps{display:flex;flex-direction:column;gap:6px;padding:4px 2px 12px;
+  border-bottom:.5px solid var(--card-border);margin-bottom:8px}
+.nw-comp{padding:8px 10px;border-radius:9px;background:rgba(127,127,127,.09)}
+.nw-cn{font-size:12.5px;font-weight:700;display:flex;align-items:baseline;gap:6px}
+.nw-cn em{font-style:normal;font-size:11px;color:var(--text-muted);font-weight:400}
+.nw-cs{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;font-size:11.5px;color:var(--text-muted)}
+.nw-cs b{color:var(--text-main);font-weight:700}
+.nw-cs i{font-style:normal;font-weight:700}
+.nw-cs i.up{color:#1a9e3c}
+.nw-cs i.dn{color:#ef4444}
+.nw-th{width:100%;max-height:260px;object-fit:cover;border-radius:12px;margin-bottom:14px}
+.nw-body{font-size:14px;line-height:1.75;margin:14px 0 0;white-space:pre-wrap}
+.nw-score{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:6px 12px;border-radius:9px;
+  background:rgba(224,41,79,.12);color:#e0294f;font-weight:600;margin-bottom:12px}
+.nw-score b{font-size:16px;font-weight:800}
+.nw-spark{display:flex;align-items:flex-end;gap:4px;height:64px;margin:6px 0 16px}
+.nw-spark i{flex:1;background:linear-gradient(180deg,#ff8a9a,#e0294f);border-radius:3px 3px 0 0;min-width:4px}
