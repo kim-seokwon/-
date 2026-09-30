@@ -952,6 +952,7 @@ class BhasApp {
             setTimeout(() => {
                 if (!this._noteLoaded && !this._noteLoading) this.loadNotes();
                 if (!this._remLoaded && !this._remLoading) this.loadReminders();
+                if (!this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
             }, 400);
         }
         const perms = mockData.permissions[role] || [];
@@ -1022,6 +1023,9 @@ class BhasApp {
         //  renderDashboard 는 문자열을 돌려주는 게 아니라 직접 DOM 에 넣는 구조라 여기서도 같은 방식으로 넣는다.
         if (this.macMode) {
             this.appContainer.innerHTML = this.renderMacDesktop(products);
+            // ★ 여기서 return 하는 바람에 아래쪽 ensureViewData 가 아예 안 불렸다.
+            //   창으로 연 화면은 아무도 데이터를 안 받아와서 늦게 뜨거나 빈 채로 있었다.
+            this._macEnsureData();
             return;
         }
 
@@ -5557,6 +5561,14 @@ class BhasApp {
             <nav class="mac-dock lg">${dock}<span class="mdsep"></span>${tools}${mins ? '<span class="mdsep"></span>' + mins : ''}</nav>
         </div>`;
     }
+    // 맥 모드 전용 — 바탕화면(홈)과 열려 있는 창마다 ensureViewData 를 한 번씩 돌린다.
+    //  currentView 는 창을 그리는 동안만 바뀌므로 여기서 직접 갈아끼워 부른다.
+    _macEnsureData() {
+        const prev = this.currentView;
+        const views = [...new Set(['home', ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
+        views.forEach(v => { this.currentView = v; try { this.ensureViewData(); } catch (_e) {} });
+        this.currentView = prev;
+    }
     toggleMacMode() {
         this.macMode = !this.macMode;
         try { localStorage.setItem('macMode', this.macMode ? '1' : '0'); } catch (_e) {}
@@ -8022,9 +8034,13 @@ class BhasApp {
     async loadVendors() {
         this._vendorsLoading = true;
         try {
+            // 작업은 진행 중 + 최근 끝난 것만. 전부 긁으면 몇 천 줄이 온다.
+            const since = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
             const [vRes, jRes] = await Promise.all([
-                this.supabase.from('vendors').select('*').order('name', { ascending: true }),
-                this.supabase.from('vendor_jobs').select('*').order('due_date', { ascending: true })
+                this.supabase.from('vendors').select('*').order('name', { ascending: true }).limit(300),
+                this.supabase.from('vendor_jobs').select('*')
+                    .or(`status.neq.done,due_date.gte.${since},due_date.is.null`)
+                    .order('due_date', { ascending: true }).limit(600)
             ]);
             const byVendor = {};
             (jRes.data || []).forEach(j => { (byVendor[j.vendor_id] = byVendor[j.vendor_id] || []).push(j); });
@@ -8039,7 +8055,7 @@ class BhasApp {
     }
 
     renderVendors() {
-        if (!this._vendorsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">생산처를 불러오는 중...</div>`;
+        if (!this._vendorsLoaded) return this._loadingSkeleton('거래처');
         const vendors = this.vendors || [];
         const allJobs = vendors.flatMap(v => (v.jobs||[]).map(j => ({...j, _vendor: v.name })));
         const active = allJobs.filter(j => j.status !== 'done');
