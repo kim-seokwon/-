@@ -2380,3 +2380,151 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
     body.light .noti-trigger { color: #0f172a !important; }
     body.light .noti-badge { border-color: #ffffff !important; }
 }
+
+/* ===== 맥 스타일 업무 화면 (메모 · 미리알림) =====================================
+   프로젝트 메모(댓글)와 할일을 맥 '메모'·'미리알림' 모양으로 다시 구현한 화면.
+   대시보드 테마(라이트/다크)를 따라가되, 틀·간격·색은 맥 앱과 같게 맞춘다. */
+.mac{--mline:var(--card-border);--mmut:var(--text-muted);
+  display:grid;grid-template-columns:220px minmax(240px,300px) 1fr;gap:0;
+  border:1px solid var(--mline);border-radius:12px;overflow:hidden;
+  background:rgba(127,127,127,.04);min-height:min(74vh,660px)}
+.mac.two{grid-template-columns:230px 1fr}
+.mac-side{border-right:1px solid var(--mline);padding:10px 9px;overflow:auto;background:rgba(127,127,127,.03)}
+.mac-sh{font-size:.68rem;font-weight:800;color:var(--mmut);padding:11px 8px 5px;letter-spacing:.02em}
+.mac-si{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:.84rem;cursor:pointer;color:var(--text-main)}
+.mac-si:hover{background:rgba(127,127,127,.12)}
+.mac-si.on{background:var(--primary);color:#fff}
+.mac-si.on .mac-cnt{color:rgba(255,255,255,.85)}
+.mac-cnt{margin-left:auto;font-size:.76rem;color:var(--mmut);font-weight:600}
+.mac-dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
+.mac-mid{border-right:1px solid var(--mline);overflow:auto;min-width:0}
+.mac-main{overflow:auto;min-width:0;display:flex;flex-direction:column}
+.mac-bar{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--mline)}
+.mac-bar h3{margin:0;font-size:1.02rem;font-weight:700;flex:1}
+.mac-btn{border:1px solid var(--mline);background:transparent;color:var(--text-main);border-radius:7px;
+  padding:5px 11px;font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit}
+.mac-btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+.mac-inp{border:1px solid var(--mline);border-radius:7px;padding:7px 11px;font-size:.84rem;
+  background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit;width:100%}
+/* 메모 */
+.note-i{padding:9px 11px;border-radius:9px;cursor:pointer;margin:1px 5px}
+.note-i:hover{background:rgba(127,127,127,.10)}
+.note-i.on{background:rgba(250,204,21,.22)}
+.note-i b{display:block;font-size:.84rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note-i span{display:block;font-size:.74rem;color:var(--mmut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note-edit{flex:1;padding:20px 24px;display:flex;flex-direction:column;gap:10px}
+.note-date{font-size:.73rem;color:var(--mmut);text-align:center}
+.note-title{border:0;background:transparent;font-size:1.3rem;font-weight:700;color:var(--text-main);
+  font-family:inherit;outline:none;width:100%}
+.note-body{border:0;background:transparent;font-size:.92rem;line-height:1.75;color:var(--text-main);
+  font-family:inherit;outline:none;resize:none;flex:1;min-height:260px}
+/* 미리알림 */
+.rem-g{font-size:.76rem;font-weight:700;color:var(--mmut);padding:13px 15px 5px}
+.rem-i{display:flex;align-items:flex-start;gap:11px;padding:9px 15px;border-top:1px solid var(--mline)}
+.rem-ck{width:19px;height:19px;border-radius:50%;border:1.7px solid rgba(127,127,127,.55);flex:0 0 auto;
+  margin-top:1px;cursor:pointer;background:transparent;padding:0}
+.rem-ck.on{background:var(--primary);border-color:var(--primary);position:relative}
+.rem-ck.on::after{content:'✓';position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:.7rem;font-weight:800}
+.rem-t{flex:1;min-width:0}
+.rem-t b{display:block;font-size:.87rem;font-weight:500}
+.rem-t.done b{text-decoration:line-through;color:var(--mmut)}
+.rem-t span{font-size:.75rem;color:var(--mmut)}
+.rem-due{font-size:.75rem;color:var(--mmut);white-space:nowrap}
+.rem-due.over{color:#ef4444;font-weight:700}
+.rem-due.today{color:var(--primary);font-weight:700}
+@media(max-width:1000px){.mac{grid-template-columns:1fr}.mac-side,.mac-mid{border-right:0;border-bottom:1px solid var(--mline);max-height:230px}}
+
+/* ===== 띄우는 창: 계산기 · 스티커 메모 ===================================== */
+.tt-util{display:flex;gap:6px}
+.tt-util button{width:34px;height:34px;border-radius:10px;border:1px solid var(--card-border);
+  background:var(--card-bg,rgba(127,127,127,.06));color:var(--text-main);cursor:pointer;font-size:1rem;
+  display:grid;place-items:center;font-family:inherit}
+.tt-util button:hover{background:rgba(127,127,127,.16)}
+.tt-util button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+/* 계산기 */
+.calcpop{position:fixed;width:248px;z-index:1400;border-radius:14px;overflow:hidden;
+  background:rgba(28,28,30,.94);backdrop-filter:blur(26px);border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 26px 60px rgba(0,0,0,.55);color:#fff;user-select:none}
+.calcpop .cp-bar{height:30px;display:flex;align-items:center;gap:7px;padding:0 10px;cursor:grab;
+  background:rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.08)}
+.calcpop .cp-bar.drag{cursor:grabbing}
+.cp-l{width:11px;height:11px;border-radius:50%;background:#ff5f57;border:0;padding:0;cursor:pointer}
+.cp-t{font-size:.72rem;color:rgba(255,255,255,.55);flex:1;text-align:center;font-weight:600}
+.cp-disp{text-align:right;font-size:2.1rem;font-weight:300;padding:12px 12px 10px;
+  font-variant-numeric:tabular-nums;overflow:hidden;white-space:nowrap}
+.cp-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:0 10px 12px}
+.cp-keys button{height:46px;border:0;border-radius:50%;background:#4a4a4e;color:#fff;font-size:1.02rem;
+  cursor:pointer;font-family:inherit}
+.cp-keys button:active{filter:brightness(1.35)}
+.cp-keys .fn{background:#7e7e83;color:#111;font-weight:600}
+.cp-keys .op{background:#ff9f0a;font-weight:600}
+.cp-keys .op.sel{background:#fff;color:#ff9f0a}
+.cp-keys .zero{grid-column:span 2;border-radius:23px}
+/* 스티커 메모 */
+.sticky{position:fixed;width:230px;min-height:180px;z-index:1390;border-radius:4px;display:flex;flex-direction:column;
+  box-shadow:0 14px 34px rgba(0,0,0,.34);border:1px solid rgba(0,0,0,.14)}
+.sticky .st-bar{height:24px;display:flex;align-items:center;gap:6px;padding:0 7px;cursor:grab;
+  background:rgba(0,0,0,.07);border-bottom:1px solid rgba(0,0,0,.08)}
+.sticky .st-bar.drag{cursor:grabbing}
+.st-x,.st-plus{width:13px;height:13px;border-radius:50%;border:0;padding:0;cursor:pointer;font-size:.6rem;
+  line-height:1;color:rgba(0,0,0,.45)}
+.st-x{background:#ff5f57}.st-plus{background:#28c840}
+.st-col{margin-left:auto;display:flex;gap:4px}
+.st-col i{width:11px;height:11px;border-radius:50%;cursor:pointer;display:block;border:1px solid rgba(0,0,0,.14)}
+.sticky textarea{flex:1;border:0;background:transparent;resize:none;outline:none;padding:9px 11px;
+  font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;font-size:.86rem;line-height:1.6;color:#2b2200}
+.sticky .st-ft{font-size:.64rem;color:rgba(0,0,0,.38);padding:0 10px 6px;text-align:right}
+
+/* ===== 맥 모드: 데스크톱 · 창 · 독 ======================================== */
+.mac-desktop{position:fixed;inset:0;overflow:hidden;
+  background:radial-gradient(1200px 700px at 78% -10%,#3a2d6b,transparent 60%),
+             radial-gradient(900px 600px at 8% 6%,#17394f,transparent 58%),
+             linear-gradient(160deg,#121317,#191a20 55%,#101116)}
+body.light .mac-desktop{background:radial-gradient(1200px 700px at 78% -10%,#dbe4ff,transparent 60%),
+  radial-gradient(900px 600px at 8% 6%,#d7ecff,transparent 58%),linear-gradient(160deg,#eef1f6,#e7ebf2 55%,#e3e7ee)}
+.mac-menubar{position:absolute;top:0;left:0;right:0;height:28px;display:flex;align-items:center;gap:14px;
+  padding:0 14px;font-size:.76rem;color:rgba(255,255,255,.82);background:rgba(20,20,24,.55);
+  backdrop-filter:blur(22px);z-index:5000;border-bottom:1px solid rgba(255,255,255,.08)}
+body.light .mac-menubar{background:rgba(255,255,255,.62);color:#222;border-color:rgba(0,0,0,.08)}
+.mac-menubar b{font-weight:800}
+.mac-mb-right{margin-left:auto;display:flex;gap:6px}
+.mac-mb-right button{border:0;background:transparent;color:inherit;font-size:.76rem;cursor:pointer;
+  padding:3px 9px;border-radius:6px;font-family:inherit}
+.mac-mb-right button:hover{background:rgba(127,127,127,.22)}
+.mac-empty{position:absolute;inset:0;display:grid;place-items:center;color:rgba(255,255,255,.45);font-size:.9rem}
+/* 창 */
+.macwin{position:absolute;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;
+  background:rgba(28,28,30,.82);backdrop-filter:blur(34px) saturate(170%);
+  border:1px solid rgba(255,255,255,.14);box-shadow:0 34px 80px rgba(0,0,0,.6);min-width:420px;min-height:300px}
+body.light .macwin{background:rgba(252,252,253,.9);border-color:rgba(0,0,0,.12);box-shadow:0 30px 70px rgba(0,0,0,.28)}
+.macwin-bar{height:40px;display:flex;align-items:center;gap:10px;padding:0 12px;cursor:grab;flex:0 0 auto;
+  background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.08)}
+body.light .macwin-bar{background:rgba(0,0,0,.035);border-color:rgba(0,0,0,.08)}
+.macwin-bar b{font-size:.84rem;font-weight:600;flex:1;text-align:center;opacity:.85}
+.mw-lights{display:flex;gap:8px}
+.mw-l{width:12px;height:12px;border-radius:50%;border:0;padding:0;cursor:pointer}
+.mw-l.red{background:#ff5f57}.mw-l.yellow{background:#febc2e}.mw-l.green{background:#28c840}
+.mw-snap{display:flex;gap:2px;opacity:.5}
+.mw-snap button{border:0;background:transparent;color:inherit;cursor:pointer;font-size:.85rem;padding:2px 4px;font-family:inherit}
+.mw-snap button:hover{opacity:1}
+.macwin-body{flex:1;overflow:auto;min-height:0}
+.macwin-grip{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize}
+.mac-snap-hint{display:none;position:absolute;top:8px;width:50vw;height:calc(100vh - 128px);
+  border-radius:12px;background:rgba(10,132,255,.16);border:2px solid rgba(10,132,255,.5);z-index:4000;pointer-events:none}
+/* 독 */
+.mac-dock{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:flex-end;gap:14px;
+  padding:10px 16px 13px;border-radius:26px;background:rgba(48,48,52,.5);border:1px solid rgba(255,255,255,.18);
+  backdrop-filter:blur(34px) saturate(180%);box-shadow:0 24px 58px rgba(0,0,0,.55);z-index:4500;max-width:94vw;overflow-x:auto}
+body.light .mac-dock{background:rgba(255,255,255,.55);border-color:rgba(0,0,0,.10)}
+.mdi{width:58px;height:58px;border:0;background:transparent;padding:0;cursor:pointer;position:relative;
+  transition:transform .14s;flex:0 0 auto}
+.mdi img{width:58px;height:58px;display:block;filter:drop-shadow(0 4px 10px rgba(0,0,0,.4))}
+.mdi:hover{transform:scale(1.28) translateY(-8px)}
+.mdi em{position:absolute;bottom:calc(100% + 12px);left:50%;transform:translateX(-50%);background:rgba(40,40,45,.94);
+  color:#fff;border:1px solid rgba(255,255,255,.16);padding:5px 11px;border-radius:8px;font-size:.75rem;font-style:normal;
+  white-space:nowrap;opacity:0;pointer-events:none;transition:.12s}
+.mdi:hover em{opacity:1}
+.mdi.open::after{content:'';position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);
+  width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.9)}
+.mdi.min img{opacity:.75}
+.mdsep{width:1px;height:46px;align-self:center;background:rgba(255,255,255,.22);margin:0 4px}
