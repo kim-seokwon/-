@@ -5340,40 +5340,29 @@ class BhasApp {
     //  우리 업무 앱(주문·CS·매출·재고·SNS·지출·생산현황)은 각자 다른 색·기호로 그린다.
     //  전에는 prod.png 가 CS·재고·생산현황 셋에, settle.png 가 매출·지출 둘에 겹쳐 있었다.
     MAC_DOCK = [
-        { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
-        { id: 'orders', label: '주문', g: ['#ff9f0a', '#ff6a00'], ph: 'ph-shopping-bag-open' },
-        { id: 'sales', label: '정산', g: ['#4cd964', '#1a9e3c'], ph: 'ph-chart-line-up' },
+        { id: 'home', label: '바탕화면', g: ['#5fd0c5', '#12a594'], ph: 'ph-house-simple', desktop: true },
+        { id: 'orders', label: '주문', g: ['#ffa93a', '#f26a00'], ph: 'ph-shopping-bag-open' },
+        { id: 'sales', label: '정산', g: ['#5ade72', '#17a544'], ph: 'ph-chart-line-up' },
         { id: 'vendors', label: '생산', g: ['#bf8cff', '#7b3fe4'], ph: 'ph-factory' },
-        { id: 'sns', label: 'SNS', g: ['#ff7ab0', '#c13584'], ph: 'ph-instagram-logo' },
-        { id: 'documents', label: '자료실', icon: 'finder' },
-        { id: 'calendar', label: '캘린더', icon: 'cal' },
-        { id: 'reminders', label: '미리알림', icon: 'rem' },
-        { id: 'notes', label: '메모', icon: 'notes' },
-        { id: 'contacts', label: '연락처', icon: 'contacts' },
-        { id: 'settings', label: '설정', icon: 'set' },
+        { id: 'sns', label: 'SNS', g: ['#ff87b8', '#c13584'], ph: 'ph-instagram-logo' },
+        { id: 'documents', label: '자료실', g: ['#62c8ff', '#0a72e8'], ph: 'ph-folder-simple' },
+        { id: 'calendar', label: '캘린더', g: ['#ff8a80', '#ec3226'], ph: 'ph-calendar-blank' },
+        { id: 'reminders', label: '미리알림', g: ['#93a0ff', '#4a5bd4'], ph: 'ph-list-checks' },
+        { id: 'notes', label: '메모', g: ['#ffe27a', '#f0b200'], ph: 'ph-note-pencil', fg: '#4a3600' },
+        { id: 'contacts', label: '연락처', g: ['#e0b184', '#a06a3c'], ph: 'ph-address-book' },
+        { id: 'settings', label: '설정', g: ['#b3b3bd', '#6a6a76'], ph: 'ph-gear-six' },
         // 창이 아니라 그 자리에서 뜨는 도구 — 독 오른쪽 끝에 따로 둔다
-        { id: 'calc', label: '계산기', icon: 'calc', tool: true },
-        { id: 'sticky', label: '스티커', svg: 'sticky', tool: true },
+        { id: 'calc', label: '계산기', g: ['#6a6a76', '#2b2b31'], ph: 'ph-calculator', tool: true },
+        { id: 'sticky', label: '스티커', g: ['#ffc48a', '#ff7043'], ph: 'ph-sticker', tool: true },
     ];
     // 업무 앱 아이콘 — 맥 아이콘과 같은 둥근 사각형에 색·기호만 달리한다
     _appIcon(d) {
-        return `<span class="appic" style="--a:${d.g[0]};--b:${d.g[1]}"><i class="ph ${d.ph}"></i></span>`;
+        return `<span class="appic" style="--a:${d.g[0]};--b:${d.g[1]}${d.fg ? `;--fg:${d.fg}` : ''}"><i class="ph ${d.ph}"></i></span>`;
     }
     _dockFace(d) {
-        if (d.svg) return this._stickySvg();
-        if (d.g) return this._appIcon(d);
-        return `<img src="icons/${d.icon}.png" alt="${this._vesc(d.label)}" draggable="false">`;
-    }
-    // 스티커 아이콘 (그림 파일 대신 그린다)
-    _stickySvg() {
-        return `<svg viewBox="0 0 58 58" width="58" height="58" aria-hidden="true">
-            <defs><linearGradient id="stkg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#fff6a8"/><stop offset="1" stop-color="#ffd84d"/></linearGradient></defs>
-            <path d="M8 12a4 4 0 0 1 4-4h34a4 4 0 0 1 4 4v22L36 50H12a4 4 0 0 1-4-4z" fill="url(#stkg)"/>
-            <path d="M50 34H40a4 4 0 0 0-4 4v12z" fill="#e8bf2e"/>
-            <g stroke="#b08f14" stroke-width="2.4" stroke-linecap="round" opacity=".55">
-                <path d="M16 20h26"/><path d="M16 28h26"/><path d="M16 36h16"/></g>
-        </svg>`;
+        if (d && d.g) return this._appIcon(d);
+        if (d && d.icon) return `<img src="icons/${d.icon}.png" alt="${this._vesc(d.label || '')}" draggable="false">`;
+        return this._appIcon({ g: ['#b3b3bd', '#6a6a76'], ph: 'ph-app-window' });
     }
     // ── 바탕화면 ────────────────────────────────────────────
     MAC_WALLS = [
@@ -5587,7 +5576,7 @@ class BhasApp {
         }).join('');
         const mins = this.wins.filter(w => w.min).map(w =>
             `<button class="mdi min" onclick="app.macOpen('${w.view}')" title="${esc(this._macTitle(w.view))}">
-                ${this._dockFace(this.MAC_DOCK.find(d => d.id === w.view) || { icon: 'notes', label: '' })}<em>${esc(this._macTitle(w.view))}</em></button>`).join('');
+                ${this._dockFace(this.MAC_DOCK.find(d => d.id === w.view))}<em>${esc(this._macTitle(w.view))}</em></button>`).join('');
         return `<div class="mac-desktop" data-wall="${esc(this.wallpaper)}">
             <div class="mac-menubar">
                 <b>2179</b>

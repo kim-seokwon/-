@@ -2971,9 +2971,10 @@ body:not(.light) .mac-deskboard .glass{
 
 /* 업무 앱 아이콘 — 맥 아이콘과 같은 둥근 사각형, 색과 기호만 다르다 */
 .appic{width:52px;height:52px;border-radius:12.5px;display:grid;place-items:center;
-  background:linear-gradient(160deg,var(--a),var(--b));color:#fff;font-size:27px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),inset 0 -1px 0 rgba(0,0,0,.14),
-             0 3px 7px rgba(0,0,0,.30)}
+  background:linear-gradient(160deg,var(--a),var(--b));color:var(--fg,#fff);font-size:27px;
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.52),inset 0 -1.5px 0 rgba(0,0,0,.16),
+             inset 0 0 0 .5px rgba(0,0,0,.10),0 3px 8px rgba(0,0,0,.32)}
+.appic i{filter:drop-shadow(0 1px 1px rgba(0,0,0,.22))}
 .mdi .appic{flex:0 0 auto}
 
 /* 묶음 앱 탭 — 한 앱 안에서 화면을 갈아탄다 */
