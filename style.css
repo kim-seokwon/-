@@ -3320,3 +3320,24 @@ body:not(.light) .launcher{background:rgba(24,24,28,.66)}
 .settings-pane[data-sec="admin"] .set-card:not([data-s="admin"]),
 .settings-pane[data-sec="account"] .set-card:not([data-s="account"]),
 .settings-pane[data-sec="build"] .set-card:not([data-s="build"]){display:none}
+
+/* 미리알림 줄 — 고치기·기한·지우기 */
+.rm-tt{cursor:text;border-radius:5px;padding:0 3px;margin-left:-3px}
+.rm-tt:hover{background:rgba(127,127,127,.14)}
+.rm-edit{width:100%;border:1px solid var(--primary);border-radius:5px;padding:1px 5px;
+  font-family:inherit;font-size:14px;background:var(--card-bg);color:inherit;outline:none}
+.rm-date{border:0;background:transparent;font-family:inherit;font-size:12px;color:var(--text-muted);
+  outline:none;flex:0 0 auto;padding:2px 3px;border-radius:5px;cursor:pointer;
+  opacity:0;transition:opacity .12s}
+.rm-item:hover .rm-date,.rm-date:not(.empty){opacity:1}
+.rm-date:hover{background:rgba(127,127,127,.16)}
+.rm-date.now{color:#0a84ff;font-weight:700}
+.rm-date.over{color:#ff453a;font-weight:700}
+.rm-x{border:0;background:transparent;color:var(--text-muted);font-size:11px;cursor:pointer;
+  padding:2px 5px;border-radius:5px;flex:0 0 auto;opacity:0;transition:opacity .12s}
+.rm-item:hover .rm-x{opacity:.6}
+.rm-x:hover{opacity:1 !important;background:rgba(239,68,68,.16);color:#ef4444}
+.rm-lhead{display:flex;align-items:center;justify-content:space-between}
+.rm-plus{border:0;background:transparent;color:var(--text-muted);font-size:15px;cursor:pointer;
+  padding:0 4px;border-radius:5px;line-height:1}
+.rm-plus:hover{background:rgba(127,127,127,.18);color:var(--primary)}

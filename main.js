@@ -6323,11 +6323,11 @@ class BhasApp {
             const col = colorOf(l, listNames.indexOf(l));
             return `<div class="rm-sec" style="color:${col}">${esc(l)}</div>
             ${groups[l].map(x => `
-                <div class="rm-item${x.done ? ' done' : ''}">
+                <div class="rm-item${x.done ? ' done' : ''}" data-src="${x.src}" data-id="${esc(String(x.id))}">
                     <button class="rm-ck${x.done ? ' on' : ''}" style="--c:${col}"
                         onclick="app.toggleRemItem('${x.src}','${x.id}')" aria-label="완료"></button>
                     <div class="rm-tx">
-                        <div class="rm-tt">${esc(x.title)}</div>
+                        <div class="rm-tt" onclick="app.editRemTitle(event,'${x.src}','${x.id}')" title="눌러서 고치기">${esc(x.title)}</div>
                         ${(x.memo || x.project || x.assignee || x.from || x.atName || (x.tags || []).length) ? `<div class="rm-meta">
                             ${x.project ? `<span class="rm-tag"><i class="ph ph-folder"></i>${esc(x.project)}</span>` : ''}
                             ${x.from ? `<span class="rm-tag"><i class="ph ph-note"></i>${esc(x.from)}</span>` : ''}
@@ -6336,7 +6336,9 @@ class BhasApp {
                             ${x.memo ? `<span>${esc(x.memo)}</span>` : ''}
                         </div>` : ''}
                     </div>
-                    ${x.due ? `<span class="rm-due${x.due < today ? ' over' : (x.due === today ? ' now' : '')}">${esc(x.due)}</span>` : ''}
+                    <input type="date" class="rm-date${x.due ? '' : ' empty'}${x.due && x.due < today ? ' over' : (x.due === today ? ' now' : '')}"
+                        value="${esc(x.due || '')}" onchange="app.setRemDue('${x.src}','${x.id}',this.value)" title="기한">
+                    <button class="rm-x" title="지우기" onclick="app.delRemItem('${x.src}','${x.id}')">✕</button>
                 </div>`).join('')}`;
         }).join('') || `<div class="rm-none">항목 없음</div>`;
 
@@ -6350,7 +6352,8 @@ class BhasApp {
                         <em>${t.label}</em>
                     </button>`).join('')}
                 </div>
-                <div class="rm-lhead">나의 목록</div>
+                <div class="rm-lhead">나의 목록
+                    <button class="rm-plus" title="목록 추가" onclick="app.addRemList()">＋</button></div>
                 ${listNames.map((l, i) => `<div class="rm-l${cur === 'l:' + l ? ' on' : ''}" onclick="app.setRemList('l:${esc(l)}')">
                     <span class="rm-lic" style="background:${colorOf(l, i)}"><i class="ph ph-list-bullets"></i></span>
                     <span class="rm-ln">${esc(l)}</span>
@@ -6374,6 +6377,112 @@ class BhasApp {
         </div>`;
     }
     focusNewReminder() { setTimeout(() => document.getElementById('rem-new')?.focus(), 30); }
+    // 줄을 눌러 글자 고치기 — 그 자리에서 입력칸으로 바뀐다
+    editRemTitle(ev, src, id) {
+        const el = ev.currentTarget;
+        if (el.querySelector('input')) return;
+        const old = el.textContent.trim();
+        el.innerHTML = `<input class="rm-edit" value="${this._vesc(old)}">`;
+        const inp = el.querySelector('input');
+        inp.focus(); inp.select();
+        const done = (ok) => {
+            const v = (inp.value || '').trim();
+            el.textContent = (ok && v) ? v : old;
+            if (ok && v && v !== old) this.setRemTitle(src, id, v);
+        };
+        inp.onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); done(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); done(false); }
+        };
+        inp.onblur = () => done(true);
+    }
+    async setRemTitle(src, id, title) {
+        try {
+            if (src === 'rem') {
+                const r = (this.remList || []).find(x => String(x.id) === String(id)); if (r) r.title = title;
+                const { error } = await this.supabase.from('reminders').update({ title }).eq('id', id);
+                if (error) throw error;
+            } else if (src === 'todo') {
+                (mockData.products || []).forEach(p => (p.todos || []).forEach(t => { if (String(t.id) === String(id)) t.text = title; }));
+                const { error } = await this.supabase.from('todos').update({ text: title }).eq('id', id);
+                if (error) throw error;
+            } else {
+                // 글자만 바꾸고 @담당자·#꼬리표·날짜는 그대로 붙여둔다
+                const [nid, line] = String(id).split('#');
+                await this._replaceNoteLine(nid, Number(line), (m) => {
+                    const keep = ((m[3] || '').match(/[@#][^\s]+|\b\d{4}-\d{2}-\d{2}\b/g) || []).join(' ');
+                    return `${m[1]}[${m[2]}] ${title}${keep ? ' ' + keep : ''}`;
+                });
+            }
+            this.requestRender();
+        } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
+    }
+    async setRemDue(src, id, due) {
+        const v = due || null;
+        try {
+            if (src === 'rem') {
+                const r = (this.remList || []).find(x => String(x.id) === String(id)); if (r) r.due_date = v;
+                const { error } = await this.supabase.from('reminders').update({ due_date: v }).eq('id', id);
+                if (error) throw error;
+            } else if (src === 'todo') {
+                (mockData.products || []).forEach(p => (p.todos || []).forEach(t => { if (String(t.id) === String(id)) t.due_date = v; }));
+                const { error } = await this.supabase.from('todos').update({ due_date: v }).eq('id', id);
+                if (error) throw error;
+            } else {
+                // 메모 줄의 날짜를 바꿔 끼운다
+                const [nid, line] = String(id).split('#');
+                await this._replaceNoteLine(nid, Number(line), (m) => {
+                    let t = (m[3] || '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim();
+                    if (v) t += ' ' + v;
+                    return `${m[1]}[${m[2]}] ${t}`;
+                });
+            }
+            this.requestRender();
+        } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
+    }
+    async delRemItem(src, id) {
+        try {
+            if (src === 'rem') {
+                if (!confirm('이 미리알림을 지울까요?')) return;
+                const { error } = await this.supabase.from('reminders').delete().eq('id', id);
+                if (error) throw error;
+                this.remList = (this.remList || []).filter(x => String(x.id) !== String(id));
+            } else if (src === 'todo') {
+                if (!confirm('이 할일을 지울까요?')) return;
+                const { error } = await this.supabase.from('todos').delete().eq('id', id);
+                if (error) throw error;
+                (mockData.products || []).forEach(p => { if (p.todos) p.todos = p.todos.filter(t => String(t.id) !== String(id)); });
+            } else {
+                if (!confirm('메모에서 이 줄을 지울까요?')) return;
+                const [nid, line] = String(id).split('#');
+                await this._replaceNoteLine(nid, Number(line), null);
+            }
+            this.requestRender();
+        } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
+    }
+    // 메모 본문의 한 줄을 바꾸거나(fn) 지운다(fn=null)
+    async _replaceNoteLine(noteId, line, fn) {
+        const n = (this.noteList || []).find(x => String(x.id) === String(noteId)); if (!n) return;
+        const lines = this._noteText(n).split('\n');
+        const m = (lines[line] || '').match(this.NOTE_TODO_RE); if (!m) return;
+        if (fn) lines[line] = fn(m); else lines.splice(line, 1);
+        n.body = this._joinNote(this._noteMeta(n), lines.join('\n'));
+        const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
+        if (error) throw error;
+    }
+    // 나의 목록에 새 분류 만들기 — 그 목록의 첫 줄을 하나 넣어 자리를 만든다
+    async addRemList() {
+        const name = window.prompt('새 목록 이름'); if (!name || !name.trim()) return;
+        const list_name = name.trim();
+        try {
+            const { data, error } = await this.supabase.from('reminders')
+                .insert([{ title: '첫 할 일', list_name, created_by: this.currentUser?.name || null }]).select('*').single();
+            if (error) throw error;
+            this.remList = [data, ...(this.remList || [])];
+            this.remList2 = 'l:' + list_name;
+            this.requestRender();
+        } catch (e) { this.showToast('목록 추가 실패: ' + (e.message || e)); }
+    }
     toggleRemItem(src, id) {
         if (src === 'rem') return this.toggleReminder(id);
         if (src === 'note') { const [nid, line] = String(id).split('#'); return this.toggleNoteTodo(nid, Number(line)); }
