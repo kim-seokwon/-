@@ -2461,7 +2461,8 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
 .cp-keys .op.sel{background:#fff;color:#ff9f0a}
 .cp-keys .zero{grid-column:span 2;border-radius:23px}
 /* 스티커 메모 */
-.sticky{position:fixed;width:230px;min-height:180px;z-index:1390;border-radius:4px;display:flex;flex-direction:column;
+.sticky{position:fixed;width:230px;height:200px;min-width:150px;min-height:110px;z-index:1390;border-radius:4px;
+  display:flex;flex-direction:column;overflow:hidden;
   box-shadow:0 14px 34px rgba(0,0,0,.34);border:1px solid rgba(0,0,0,.14)}
 .sticky .st-bar{height:24px;display:flex;align-items:center;gap:6px;padding:0 7px;cursor:grab;
   background:rgba(0,0,0,.07);border-bottom:1px solid rgba(0,0,0,.08)}
@@ -2473,7 +2474,11 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
 .st-col i{width:11px;height:11px;border-radius:50%;cursor:pointer;display:block;border:1px solid rgba(0,0,0,.14)}
 .sticky textarea{flex:1;border:0;background:transparent;resize:none;outline:none;padding:9px 11px;
   font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;font-size:.86rem;line-height:1.6;color:#2b2200}
-.sticky .st-ft{font-size:.64rem;color:rgba(0,0,0,.38);padding:0 10px 6px;text-align:right}
+.sticky .st-ft{font-size:.64rem;color:rgba(0,0,0,.38);padding:0 22px 6px 10px;text-align:right;flex:0 0 auto}
+/* 오른쪽 아래를 잡아 크기를 바꾼다 */
+.st-grip{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:2}
+.st-grip::after{content:'';position:absolute;right:3px;bottom:3px;width:9px;height:9px;
+  border-right:2px solid rgba(0,0,0,.30);border-bottom:2px solid rgba(0,0,0,.30)}
 
 /* ===== 맥 모드: 데스크톱 · 창 · 독 ======================================== */
 /* ── 바탕화면 ──────────────────────────────────────────────

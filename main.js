@@ -4877,10 +4877,13 @@ class BhasApp {
         el.style.background = rec.color || colors[idx % colors.length];
         el.style.left = (rec.x != null ? rec.x : Math.min(140 + idx * 26, Math.max(8, window.innerWidth - 250))) + 'px';
         el.style.top = (rec.y != null ? rec.y : 130 + idx * 24) + 'px';
+        el.style.width = (rec.w || 230) + 'px';
+        el.style.height = (rec.h || 200) + 'px';
         el.innerHTML = `<div class="st-bar"><button class="st-x" title="닫기"></button><button class="st-plus" title="새 스티커"></button>
                 <span class="st-col">${colors.map(c => `<i data-c="${c}" style="background:${c}"></i>`).join('')}</span></div>
             <textarea placeholder="메모를 적어주세요">${this._vesc(rec.body || '')}</textarea>
-            <div class="st-ft">자동 저장됨</div>`;
+            <div class="st-ft">자동 저장됨</div>
+            <span class="st-grip" title="크기 조절"></span>`;
         document.body.appendChild(el);
         this._dragWin(el, el.querySelector('.st-bar'));
         const ft = el.querySelector('.st-ft');
@@ -4891,6 +4894,7 @@ class BhasApp {
         };
         el.querySelector('.st-plus').onclick = () => this.addSticky();
         let t = null;
+        el.querySelector('.st-grip').onmousedown = (ev) => this._stickyResize(ev, el, () => save());
         const save = () => { clearTimeout(t); t = setTimeout(() => this._persistSticky(el), 600); };
         el.querySelectorAll('.st-col i').forEach(i => i.onclick = () => { el.style.background = i.dataset.c; save(); });
         ta.oninput = save;
@@ -4906,6 +4910,21 @@ class BhasApp {
         }
         setTimeout(() => ta.focus(), 50);
         return el;
+    }
+    // 스티커 크기 조절 — 오른쪽 아래 모서리를 잡아 끈다. 왼쪽 위는 그대로 있는다.
+    _stickyResize(ev, el, onDone) {
+        ev.preventDefault(); ev.stopPropagation();
+        const r = el.getBoundingClientRect();
+        const sx = ev.clientX, sy = ev.clientY, ow = r.width, oh = r.height;
+        const move = (e) => {
+            el.style.width = Math.max(150, Math.min(window.innerWidth - r.left - 8, ow + e.clientX - sx)) + 'px';
+            el.style.height = Math.max(110, Math.min(window.innerHeight - r.top - 8, oh + e.clientY - sy)) + 'px';
+        };
+        const up = () => {
+            document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+            if (onDone) onDone();
+        };
+        document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
     }
     async _createStickyRow() {
         try {
@@ -4923,7 +4942,8 @@ class BhasApp {
         const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
         const local = () => {
             this._saveLocalSticky({ id: el.dataset.id, body, color: el.style.background,
-                x: parseInt(el.style.left, 10) || 0, y: parseInt(el.style.top, 10) || 0, local: true });
+                x: parseInt(el.style.left, 10) || 0, y: parseInt(el.style.top, 10) || 0,
+                w: parseInt(el.style.width, 10) || 230, h: parseInt(el.style.height, 10) || 200, local: true });
             ft.textContent = '이 기기에만 저장됨 · ' + now;
         };
         if (el.dataset.local === '1' || !el.dataset.id) { local(); return; }
