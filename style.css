@@ -3244,3 +3244,4 @@ body:not(.light) .mac-deskboard .glass{
 .np-ck.on{background:var(--primary);border-color:var(--primary)}
 .np-ck.on::after{content:'';position:absolute;left:5px;top:1.5px;width:4px;height:8px;
   border:solid #fff;border-width:0 2px 2px 0;transform:rotate(43deg)}
+.mac-ver{font-size:.68rem;opacity:.45;margin-right:8px;font-variant-numeric:tabular-nums}

@@ -5,6 +5,9 @@ import {
     newPlacement, newCutline, newPoint, techPackChecklistItems,
 } from './sampleMaker.js';
 
+// 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
+const __BUILD__ = (typeof __BUILD_TIME__ !== 'undefined') ? __BUILD_TIME__ : '개발';
+
 // Supabase 설정 (사용자 정보 입력 필요)
 const SUPABASE_URL = 'https://czaykmmwzlcisozmbxpl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_JfMXgnspGcTtJKncR-l4gQ_XXzopFMk';
@@ -2514,6 +2517,13 @@ class BhasApp {
         this.wins = []; this._stickiesRestored = false;
         this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
     }
+    // 지금 보고 있는 판이 어느 것인지 — 주소가 여럿일 때 헷갈리지 않게 화면에 박아둔다
+    _buildTag() {
+        try {
+            const h = location.hostname.replace('.vercel.app', '');
+            return `${h} · ${__BUILD__}`;
+        } catch (_e) { return __BUILD__; }
+    }
     // ── 설정 ─────────────────────────────────────────────────
     //  바탕화면 · 화면 모드 · 화면 방식, 그리고 관리 화면 바로가기.
     renderSettings() {
@@ -2559,6 +2569,10 @@ class BhasApp {
                 <div class="set-head">관리</div>
                 ${links.map(l => row(l.label, '', `<button class="set-btn" onclick="${this.macMode ? `app.macOpen('${l.id}')` : `app.switchView('${l.id}')`}">열기</button>`)).join('')}
             </div>` : ''}
+            <div class="set-card">
+                <div class="set-head">이 판</div>
+                ${row('버전', this._buildTag(), `<button class="set-btn" onclick="location.reload(true)">새로 받기</button>`)}
+            </div>
             <div class="set-card">
                 <div class="set-head">계정</div>
                 ${row(this.currentUser?.name || '-', role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사'),
@@ -5506,6 +5520,7 @@ class BhasApp {
                 <b>2179</b>
                 <span>${esc(this.currentUser?.name || '')}</span>
                 <span class="mac-mb-right">
+                    <span class="mac-ver" title="지금 보고 있는 판">${esc(this._buildTag())}</span>
                     <button onclick="app.toggleMacMode()" title="기본 화면으로">기본 화면</button>
                 </span>
             </div>
