@@ -2739,13 +2739,13 @@ class BhasApp {
                                     </div>
                                 </div>
                             </div>
-                            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                            <table class="mtbl" style="width: 100%; border-collapse: collapse; text-align: left;">
                                 <thead>
                                     <tr style="background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--card-border);">
-                                        <th style="padding: 12px 16px; color: var(--text-muted); font-weight: 500; font-size: 0.8rem;">프로젝트 명</th>
-                                        <th style="padding: 12px 16px; color: var(--text-muted); font-weight: 500; font-size: 0.8rem;">마감일</th>
-                                        <th style="padding: 12px 16px; color: var(--text-muted); font-weight: 500; font-size: 0.8rem;">진행 상황</th>
-                                        <th style="padding: 12px 16px; text-align: center; color: var(--text-muted); font-weight: 500; font-size: 0.8rem;">액션</th>
+                                        <th style="color: var(--text-muted); font-weight: 500">프로젝트 명</th>
+                                        <th style="color: var(--text-muted); font-weight: 500">마감일</th>
+                                        <th style="color: var(--text-muted); font-weight: 500">진행 상황</th>
+                                        <th style="text-align: center; color: var(--text-muted); font-weight: 500">액션</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2756,14 +2756,14 @@ class BhasApp {
                                         
                                         return `
                                             <tr class="project-row" data-id="${product.id}" style="border-bottom: 1px solid rgba(var(--tint),0.05); transition: 0.2s; cursor: pointer;" onmouseover="this.style.background='rgba(var(--tint),0.02)'" onmouseout="this.style.background='transparent'">
-                                                <td style="padding: 12px 16px; font-weight: 600;">
+                                                <td style="font-weight: 600">
                                                     <div style="display: flex; align-items: center; gap: 8px;">
                                                         <i class="ph ph-briefcase" style="color: ${brandColor}; opacity: 0.7;"></i>
                                                         ${product.name}
                                                     </div>
                                                 </td>
-                                                <td style="padding: 12px 16px; font-size: 0.85rem; color: var(--text-muted);">${this.formatDateToUI(product.deadline)}</td>
-                                                <td style="padding: 12px 16px;">
+                                                <td style="color: var(--text-muted)">${this.formatDateToUI(product.deadline)}</td>
+                                                <td>
                                                     <div style="display: flex; align-items: center; gap: 10px;">
                                                         <div style="flex: 1; height: 6px; background: rgba(var(--tint),0.05); border-radius: 3px; overflow: hidden; max-width: 100px;">
                                                             <div style="width: ${progress}%; height: 100%; background: ${brandColor}; box-shadow: 0 0 10px ${brandColor}44;"></div>
@@ -2771,7 +2771,7 @@ class BhasApp {
                                                         <span style="font-size: 0.75rem; color: ${progress > 0 ? 'white' : 'var(--text-muted)'};">${statusLabel} (${progress}%)</span>
                                                     </div>
                                                 </td>
-                                                <td style="padding: 12px 16px; text-align: center;">
+                                                <td style="text-align: center">
                                                     <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
                                                         ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="프로젝트 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                                     </div>
@@ -3981,10 +3981,10 @@ class BhasApp {
                     ${yearsAvail.map(y => `<option value="${y}" ${y === mtxYear ? 'selected' : ''}>${y}년</option>`).join('')}
                 </select>
             </div>
-            ${mtxBrands.length ? `<table style="width:100%;border-collapse:collapse;font-size:0.82rem;white-space:nowrap">
-                <thead><tr style="border-bottom:2px solid var(--card-border)"><th style="text-align:left;padding:8px 10px">브랜드</th>${mtxMonths.map(m => `<th style="text-align:right;padding:8px 10px">${+m.slice(5)}월</th>`).join('')}<th style="text-align:right;padding:8px 10px;border-left:1px solid var(--card-border)">합계</th></tr></thead>
-                <tbody>${mtxBrands.map(b => `<tr style="border-bottom:1px solid var(--card-border)"><td style="text-align:left;padding:8px 10px;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${b.color};margin-right:6px"></span>${this._vesc(b.name)}</td>${b.cells.map(c => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;color:${c ? 'var(--text-main)' : 'var(--text-muted)'}">${c ? won(c) : '·'}</td>`).join('')}<td style="text-align:right;padding:8px 10px;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td></tr>`).join('')}</tbody>
-                <tfoot><tr style="border-top:2px solid var(--card-border);font-weight:800"><td style="text-align:left;padding:8px 10px">합계</td>${mtxColTotals.map(t => `<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums">${t ? won(t) : '·'}</td>`).join('')}<td style="text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(mtxGrand)}</td></tr></tfoot>
+            ${mtxBrands.length ? `<table class="mtbl" style="width:100%;border-collapse:collapse;font-size:0.82rem;white-space:nowrap">
+                <thead><tr><th style="text-align:left">브랜드</th>${mtxMonths.map(m => `<th style="text-align:right">${+m.slice(5)}월</th>`).join('')}<th style="text-align:right;border-left:1px solid var(--card-border)">합계</th></tr></thead>
+                <tbody>${mtxBrands.map(b => `<tr style="border-bottom:1px solid var(--card-border)"><td style="text-align:left;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${b.color};margin-right:6px"></span>${this._vesc(b.name)}</td>${b.cells.map(c => `<td style="text-align:right;font-variant-numeric:tabular-nums;color:${c ? 'var(--text-main)' : 'var(--text-muted)'}">${c ? won(c) : '·'}</td>`).join('')}<td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td></tr>`).join('')}</tbody>
+                <tfoot><tr style="border-top:2px solid var(--card-border);font-weight:800"><td style="text-align:left">합계</td>${mtxColTotals.map(t => `<td style="text-align:right;font-variant-numeric:tabular-nums">${t ? won(t) : '·'}</td>`).join('')}<td style="text-align:right;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(mtxGrand)}</td></tr></tfoot>
             </table>` : `<div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:0.85rem">${mtxYear}년 매출 데이터가 없습니다.</div>`}
         </div>`;
 
@@ -4434,8 +4434,8 @@ class BhasApp {
                 <div style="margin-top:0.9rem">
                     <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:5px;font-weight:600">일별 증감 <span style="font-weight:400">(최근 ${dailyRows.length}일)</span></div>
                     <div style="max-height:236px;overflow-y:auto;scrollbar-width:thin">
-                    <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
-                        <thead><tr style="color:var(--text-muted)"><th style="text-align:left;padding:3px 4px;font-weight:600">날짜</th><th style="text-align:right;padding:3px 4px;font-weight:600">팔로워</th><th style="text-align:right;padding:3px 4px;font-weight:600">댓글</th><th style="text-align:right;padding:3px 4px;font-weight:600">좋아요</th></tr></thead>
+                    <table class="mtbl" style="width:100%;border-collapse:collapse;font-size:0.75rem">
+                        <thead><tr style="color:var(--text-muted)"><th style="text-align:left;font-weight:600">날짜</th><th style="text-align:right;font-weight:600">팔로워</th><th style="text-align:right;font-weight:600">댓글</th><th style="text-align:right;font-weight:600">좋아요</th></tr></thead>
                         <tbody>${dailyRows.length ? dailyRows.map(r => {
                             const cell = v => this._igDelta(v);
                             const p = r.date.split('-');
@@ -4443,8 +4443,8 @@ class BhasApp {
                             const label = r.gap > 1
                                 ? `${+fp[1]}/${+fp[2]}~${+p[1]}/${+p[2]} <span style="font-size:0.62rem;color:#f59e0b">${r.gap}일치</span>`
                                 : `${+p[1]}/${+p[2]}`;
-                            return `<tr style="border-top:1px solid var(--card-border)"><td style="padding:4px;color:var(--text-muted);white-space:nowrap">${label}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.f)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.c)}</td><td style="text-align:right;padding:4px;font-variant-numeric:tabular-nums">${cell(r.l)}</td></tr>`;
-                        }).join('') : '<tr><td colspan="4" style="padding:10px;color:var(--text-muted);text-align:center">데이터 쌓이는 중 (내일부터 일별 증감 표시)</td></tr>'}</tbody>
+                            return `<tr style="border-top:1px solid var(--card-border)"><td style="color:var(--text-muted);white-space:nowrap">${label}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${cell(r.f)}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${cell(r.c)}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${cell(r.l)}</td></tr>`;
+                        }).join('') : '<tr><td colspan="4" style="color:var(--text-muted);text-align:center">데이터 쌓이는 중 (내일부터 일별 증감 표시)</td></tr>'}</tbody>
                     </table>
                     </div>
                 </div>
@@ -5598,7 +5598,8 @@ class BhasApp {
     async saveNote() {
         const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
         const t = document.getElementById('note-title')?.value ?? n.title;
-        const b = document.getElementById('note-body')?.value ?? n.body;
+        const typed = document.getElementById('note-body')?.value;
+        const b = typed == null ? n.body : this._joinNote(this._noteMeta(n), typed);
         if (t === n.title && b === n.body) return;
         n.title = t; n.body = b; n.updated_at = new Date().toISOString();
         try {
@@ -5716,13 +5717,109 @@ class BhasApp {
             this.requestRender();
         } catch (e) { this.showToast('삭제 실패(개인 메모 또는 마스터만 가능): ' + (e.message || e)); }
     }
+    // ── 메모 속성 (노션식) ────────────────────────────────────
+    //  상태 · 날짜 · 담당자 · 프로젝트 · 연결된 메모 · 고정하기.
+    //  notes 테이블에 컬럼을 더 만들지 않고 본문 첫 줄의 숨은 표시에 담는다
+    //  (스키마를 못 건드리는 상황에서도 오늘 바로 쓰려고). 화면엔 안 보인다.
+    NOTE_META_RE = /^<!--p (.*?)-->\n?/;
+    NOTE_STATUS = [
+        { k: '없음', c: '#8e8e93' }, { k: '요청', c: '#a1887f' }, { k: '진행', c: '#0a84ff' },
+        { k: '검토', c: '#ff9f0a' }, { k: '완료', c: '#30d158' }, { k: '보류', c: '#ff453a' },
+    ];
+    _noteMeta(n) {
+        const m = (n.body || '').match(this.NOTE_META_RE);
+        let meta = {};
+        if (m) { try { meta = JSON.parse(m[1]) || {}; } catch (_e) { meta = {}; } }
+        return { status: '없음', due: '', who: '', proj: '', links: [], ...meta };
+    }
+    _noteText(n) { return (n.body || '').replace(this.NOTE_META_RE, ''); }
+    _joinNote(meta, text) {
+        const bare = { ...meta };
+        Object.keys(bare).forEach(k => { if (bare[k] === '' || bare[k] === '없음' || (Array.isArray(bare[k]) && !bare[k].length)) delete bare[k]; });
+        return (Object.keys(bare).length ? `<!--p ${JSON.stringify(bare)}-->\n` : '') + text;
+    }
+    async setNoteProp(key, value) {
+        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const meta = this._noteMeta(n);
+        meta[key] = value;
+        n.body = this._joinNote(meta, this._noteText(n));
+        n.updated_at = new Date().toISOString();
+        this.requestRender();
+        try {
+            const patch = { body: n.body };
+            if (key === 'proj') { patch.product_id = value || null; n.product_id = value || null; }
+            const { error } = await this.supabase.from('notes').update(patch).eq('id', n.id);
+            if (error) throw error;
+        } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
+    }
+    async toggleNotePin() {
+        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        n.pinned = !n.pinned; this.requestRender();
+        try { await this.supabase.from('notes').update({ pinned: n.pinned }).eq('id', n.id); }
+        catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
+    }
+    toggleNoteProps() { this.noteProps = !this.noteProps; this.requestRender(); }
+    // 속성 판 — 노션의 페이지 속성 그대로
+    _notePropsHTML(n) {
+        const esc = s => this._vesc(s);
+        const meta = this._noteMeta(n);
+        const st = this.NOTE_STATUS.find(x => x.k === (meta.status || '없음')) || this.NOTE_STATUS[0];
+        const accs = (mockData.companies || []).filter(c => c.username);
+        const projs = (mockData.products || []);
+        const who = accs.find(c => c.name === meta.who);
+        const others = (this.noteList || []).filter(x => x.id !== n.id);
+        const links = (meta.links || []).map(id => (this.noteList || []).find(x => String(x.id) === String(id))).filter(Boolean);
+        const row = (icon, label, body) => `<div class="np-r"><span class="np-k"><i class="ph ${icon}"></i>${esc(label)}</span>
+            <span class="np-v">${body}</span></div>`;
+        return `<div class="npanel">
+            ${row('ph-circle-dashed', '상태', `
+                <select class="np-sel pill" style="--c:${st.c}" onchange="app.setNoteProp('status',this.value)">
+                    ${this.NOTE_STATUS.map(x => `<option value="${x.k}"${x.k === st.k ? ' selected' : ''}>${x.k}</option>`).join('')}
+                </select>`)}
+            ${row('ph-calendar-blank', '날짜', `
+                <input type="date" class="np-in" value="${esc(meta.due || '')}" onchange="app.setNoteProp('due',this.value)">
+                ${meta.due ? `<button class="np-x" title="지우기" onclick="app.setNoteProp('due','')">✕</button>` : ''}`)}
+            ${row('ph-users', '담당자', `
+                <span class="np-who">${who ? `<i class="np-face">${esc((who.name || '?')[0])}</i>` : ''}
+                <select class="np-sel" onchange="app.setNoteProp('who',this.value)">
+                    <option value="">비어 있음</option>
+                    ${accs.map(c => `<option value="${esc(c.name)}"${c.name === meta.who ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}
+                </select></span>`)}
+            ${row('ph-folder-simple', '프로젝트', `
+                <select class="np-sel" onchange="app.setNoteProp('proj',this.value)">
+                    <option value="">비어 있음</option>
+                    ${projs.map(pr => `<option value="${pr.id}"${String(meta.proj) === String(pr.id) ? ' selected' : ''}>${esc(pr.name)}</option>`).join('')}
+                </select>`)}
+            ${row('ph-link-simple', '연결된 메모', `
+                ${links.map(l => `<button class="np-chip" onclick="app.selectNote('${l.id}')">${esc(l.title || '메모')}
+                    <i onclick="event.stopPropagation();app.unlinkNote('${l.id}')">✕</i></button>`).join('')}
+                <select class="np-sel add" onchange="app.linkNote(this.value);this.value=''">
+                    <option value="">+ 메모 연결</option>
+                    ${others.slice(0, 40).map(o => `<option value="${o.id}">${esc(o.title || '메모')}</option>`).join('')}
+                </select>`)}
+            ${row('ph-push-pin', '고정하기', `
+                <button class="np-ck${n.pinned ? ' on' : ''}" onclick="app.toggleNotePin()"></button>`)}
+        </div>`;
+    }
+    linkNote(id) {
+        if (!id) return;
+        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const meta = this._noteMeta(n);
+        const links = [...new Set([...(meta.links || []), id])];
+        this.setNoteProp('links', links);
+    }
+    unlinkNote(id) {
+        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const meta = this._noteMeta(n);
+        this.setNoteProp('links', (meta.links || []).filter(x => String(x) !== String(id)));
+    }
     // ── 메모 안의 할 일 · 태그 ────────────────────────────────
     //  본문 줄머리에 [] / [x] 를 쓰면 할 일이 된다(노션의 to-do 블록).
     //  @이름 을 쓰면 담당자, #말머리 는 꼬리표. 체크한 것은 미리알림에도 뜬다.
     NOTE_TODO_RE = /^(\s*)\[( |x|X)\]\s?(.*)$/;
     _noteTodos(n) {
         const out = [];
-        (n.body || '').split('\n').forEach((line, i) => {
+        this._noteText(n).split('\n').forEach((line, i) => {
             const m = line.match(this.NOTE_TODO_RE);
             if (!m) return;
             const text = (m[3] || '').trim();
@@ -5742,11 +5839,11 @@ class BhasApp {
     // 메모 본문의 그 줄만 [ ] ↔ [x] 로 뒤집고 저장한다
     async toggleNoteTodo(noteId, line) {
         const n = (this.noteList || []).find(x => String(x.id) === String(noteId)); if (!n) return;
-        const lines = (n.body || '').split('\n');
+        const lines = this._noteText(n).split('\n');
         const m = (lines[line] || '').match(this.NOTE_TODO_RE); if (!m) return;
         const now = m[2].toLowerCase() === 'x';
         lines[line] = `${m[1]}[${now ? ' ' : 'x'}] ${m[3]}`;
-        n.body = lines.join('\n');
+        n.body = this._joinNote(this._noteMeta(n), lines.join('\n'));
         this.requestRender();
         try {
             const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
@@ -5756,7 +5853,7 @@ class BhasApp {
     // 본문을 읽기 좋게 — 할 일은 체크박스로, @는 담당자, #는 꼬리표로 칠한다
     _noteBodyHTML(n) {
         const esc = s => this._vesc(s);
-        return (n.body || '').split('\n').map((line, i) => {
+        return this._noteText(n).split('\n').map((line, i) => {
             const m = line.match(this.NOTE_TODO_RE);
             if (m) {
                 const done = m[2].toLowerCase() === 'x';
@@ -5888,7 +5985,7 @@ class BhasApp {
         list.forEach(n => {
             const b = bucket(n.updated_at);
             if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
-            const prev = (n.body || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+            const prev = this._noteText(n).replace(/\s+/g, ' ').trim().slice(0, 30);
             const td = this._noteTodos(n);
             items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}" oncontextmenu="app.noteMenu(event,'${n.id}')"
                     onclick="app.selectNote('${n.id}')">
@@ -5936,10 +6033,12 @@ class BhasApp {
                         <i class="ph ${this.notePreview ? 'ph-pencil-simple' : 'ph-eye'}"></i></button>
                     <button onclick="app.deleteNote()" title="삭제"><i class="ph ph-trash"></i></button>
                     <span class="nt-scope">${sel.scope === 'private' ? '개인' : (sel.scope === 'project' ? '프로젝트' : '공용')}</span>
+                    <button class="${this.noteProps !== false ? 'on' : ''}" onclick="app.toggleNoteProps()" title="속성"><i class="ph ph-sliders-horizontal"></i></button>
                 </div>
                 <div class="nt-page">
                     <div class="nt-when">${esc(longWhen(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
                     <input id="note-title" class="nt-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
+                    ${this.noteProps !== false ? this._notePropsHTML(sel) : ''}
                     ${(() => {
                         const td = this._noteTodos(sel);
                         const ats = [...new Set(td.flatMap(x => x.at))];
@@ -5957,7 +6056,7 @@ class BhasApp {
                         ? `<div class="nt-view" ondblclick="app.toggleNotePreview()">${this._noteBodyHTML(sel)}</div>`
                         : `<textarea id="note-body" class="nt-body" placeholder="내용을 적어주세요 · [ ] 로 할 일, @이름 담당자, #말머리 꼬리표"
                               oninput="app.noteTyping(event)" onkeydown="app.noteKey(event)"
-                              onblur="app.noteBlur()">${esc(sel.body || '')}</textarea>`}
+                              onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`}
                 </div>` : `<div class="nt-none big">메모를 선택하세요</div>`}
             </section>
         </div>`;
@@ -6737,11 +6836,11 @@ class BhasApp {
                 ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('all', '전체', counts.all)}
             </div>
             <div class="table-container" style="overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;min-width:720px">
-                    <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.8rem;text-align:left">
-                        <th style="padding:10px;text-align:center"><input type="checkbox" id="oms-chk-all" style="accent-color:var(--primary)"></th>
-                        <th style="padding:10px">주문번호</th><th style="padding:10px">몰</th><th style="padding:10px">주문일</th><th style="padding:10px">받는분</th>
-                        <th style="padding:10px">상품</th><th style="padding:10px;text-align:center">수량</th><th style="padding:10px;text-align:center">상태</th><th style="padding:10px">송장</th>
+                <table class="mtbl" style="width:100%;border-collapse:collapse;min-width:720px">
+                    <thead><tr style="color:var(--text-muted);font-size:0.8rem;text-align:left">
+                        <th style="text-align:center"><input type="checkbox" id="oms-chk-all" style="accent-color:var(--primary)"></th>
+                        <th>주문번호</th><th>몰</th><th>주문일</th><th>받는분</th>
+                        <th>상품</th><th style="text-align:center">수량</th><th style="text-align:center">상태</th><th>송장</th>
                     </tr></thead>
                     <tbody>${body}</tbody>
                 </table>
@@ -7141,14 +7240,14 @@ class BhasApp {
                 ${this._brandRail([{ value: 'all', label: '전체', active: (this.invSelectedBrand || 'all') === 'all', onclick: "app.setInvBrand('all')" }].concat((mockData.brands || []).map(b => ({ value: b.id, label: this._vesc(b.name), active: this.invSelectedBrand === b.id, color: b.brand_color || '#6366f1', onclick: `app.setInvBrand('${b.id}')` }))))}
                 <div class="analysis-content" style="flex:1;min-width:0">
                     <div class="table-container" style="overflow-x:auto">
-                        <table style="width:100%; border-collapse:collapse; min-width:780px">
-                            <thead><tr style="border-bottom:2px solid var(--card-border); color:var(--text-muted); font-size:0.82rem; text-align:left">
-                                <th style="padding:12px">SKU</th><th style="padding:12px">품목명</th><th style="padding:12px">옵션</th>
-                                <th style="padding:12px">브랜드</th><th style="padding:12px; text-align:center">현재고</th>
-                                <th style="padding:12px; text-align:center">안전재고</th><th style="padding:12px; text-align:center">카페24</th>
-                                <th style="padding:12px; text-align:right">작업</th>
+                        <table class="mtbl" style="width:100%; border-collapse:collapse; min-width:780px">
+                            <thead><tr style=" color:var(--text-muted); font-size:0.82rem; text-align:left">
+                                <th>SKU</th><th>품목명</th><th>옵션</th>
+                                <th>브랜드</th><th style="text-align:center">현재고</th>
+                                <th style="text-align:center">안전재고</th><th style="text-align:center">카페24</th>
+                                <th style="text-align:right">작업</th>
                             </tr></thead>
-                            <tbody>${rows || `<tr><td colspan="8" style="padding:2rem;text-align:center;color:var(--text-muted)">등록된 품목이 없습니다. "+ 품목 추가"로 시작하세요.</td></tr>`}</tbody>
+                            <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:var(--text-muted)">등록된 품목이 없습니다. "+ 품목 추가"로 시작하세요.</td></tr>`}</tbody>
                         </table>
                     </div>
 
@@ -7158,9 +7257,9 @@ class BhasApp {
                             ${this.invLedgerItemId ? `<button class="btn-secondary" id="inv-log-clear" style="padding:5px 12px;border-radius:8px;font-size:0.8rem">전체 보기</button>` : ''}
                         </div>
                         <div class="table-container" style="overflow-x:auto; max-height:320px; overflow-y:auto">
-                            <table style="width:100%; border-collapse:collapse; min-width:560px">
+                            <table class="mtbl" style="width:100%; border-collapse:collapse; min-width:560px">
                                 <thead><tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:0.78rem;text-align:left">
-                                    <th style="padding:8px">시각</th><th style="padding:8px">품목</th><th style="padding:8px;text-align:center">사유</th><th style="padding:8px;text-align:right">증감</th><th style="padding:8px">비고</th>
+                                    <th>시각</th><th>품목</th><th style="text-align:center">사유</th><th style="text-align:right">증감</th><th>비고</th>
                                 </tr></thead>
                                 <tbody>${ledgerRows}</tbody>
                             </table>
@@ -7243,13 +7342,13 @@ class BhasApp {
                 <button id="mat-search-btn" class="btn-secondary" style="padding:8px 14px;border-radius:10px">검색</button>
             </div>
             <div class="table-container" style="overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;min-width:920px"><thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:.79rem;text-align:left">
-                    <th style="padding:11px">코드</th><th style="padding:11px">분류</th><th style="padding:11px">품목</th><th style="padding:11px">거래처</th><th style="padding:11px">보관위치</th><th style="padding:11px;text-align:right">현재고</th><th style="padding:11px;text-align:right">안전재고</th><th style="padding:11px;text-align:right">작업</th>
-                </tr></thead><tbody>${rows || `<tr><td colspan="8" style="padding:2rem;text-align:center;color:var(--text-muted)">${query || selectedCat !== 'all' ? '검색 조건에 맞는 품목이 없습니다.' : '등록된 원·부자재가 없습니다.'}</td></tr>`}</tbody></table>
+                <table class="mtbl" style="width:100%;border-collapse:collapse;min-width:920px"><thead><tr style="color:var(--text-muted);font-size:.79rem;text-align:left">
+                    <th>코드</th><th>분류</th><th>품목</th><th>거래처</th><th>보관위치</th><th style="text-align:right">현재고</th><th style="text-align:right">안전재고</th><th style="text-align:right">작업</th>
+                </tr></thead><tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:var(--text-muted)">${query || selectedCat !== 'all' ? '검색 조건에 맞는 품목이 없습니다.' : '등록된 원·부자재가 없습니다.'}</td></tr>`}</tbody></table>
             </div>
             <div style="margin-top:2rem">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem"><h3 style="margin:0;font-size:1.02rem"><i class="ph ph-clock-counter-clockwise"></i> 입·출고 내역 ${this.materialLedgerItemId ? '(필터됨)' : ''}</h3>${this.materialLedgerItemId ? '<button id="mat-log-clear" class="btn-secondary" style="padding:5px 11px;border-radius:8px;font-size:.78rem">전체 보기</button>' : ''}</div>
-                <div class="table-container" style="overflow:auto;max-height:330px"><table style="width:100%;border-collapse:collapse;min-width:600px"><thead><tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:.76rem;text-align:left"><th style="padding:8px">일자</th><th style="padding:8px">품목</th><th style="padding:8px;text-align:center">구분</th><th style="padding:8px;text-align:right">증감</th><th style="padding:8px">참조·비고</th></tr></thead><tbody>${ledgerRows}</tbody></table></div>
+                <div class="table-container" style="overflow:auto;max-height:330px"><table class="mtbl" style="width:100%;border-collapse:collapse;min-width:600px"><thead><tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:.76rem;text-align:left"><th>일자</th><th>품목</th><th style="text-align:center">구분</th><th style="text-align:right">증감</th><th>참조·비고</th></tr></thead><tbody>${ledgerRows}</tbody></table></div>
             </div>
         </div>`;
     }
@@ -7858,28 +7957,28 @@ class BhasApp {
                 </div>
             </div>
             <div class="table-container" style="overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;min-width:680px">
-                    <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.82rem;text-align:left">
-                        <th class="tbl-sort" data-k="title" style="padding:12px;cursor:pointer">제목 ⇅</th>
-                        <th class="tbl-sort" data-k="status" style="padding:12px;cursor:pointer">상태 ⇅</th>
-                        <th class="tbl-sort" data-k="assignee" style="padding:12px;cursor:pointer">담당 ⇅</th>
-                        <th class="tbl-sort" data-k="due_date" style="padding:12px;cursor:pointer">마감 ⇅</th>
-                        <th style="padding:12px">브랜드</th><th style="padding:12px;text-align:right">작업</th>
+                <table class="mtbl" style="width:100%;border-collapse:collapse;min-width:680px">
+                    <thead><tr style="color:var(--text-muted);font-size:0.82rem;text-align:left">
+                        <th class="tbl-sort" data-k="title" style="cursor:pointer">제목 ⇅</th>
+                        <th class="tbl-sort" data-k="status" style="cursor:pointer">상태 ⇅</th>
+                        <th class="tbl-sort" data-k="assignee" style="cursor:pointer">담당 ⇅</th>
+                        <th class="tbl-sort" data-k="due_date" style="cursor:pointer">마감 ⇅</th>
+                        <th>브랜드</th><th style="text-align:right">작업</th>
                     </tr></thead>
                     <tbody>
                         ${rows.map(c => `
                         <tr style="border-bottom:1px solid var(--card-border)">
-                            <td style="padding:10px"><input class="tbl-edit" data-id="${c.id}" data-f="title" value="${(c.title || '').replace(/"/g, '&quot;')}" style="background:none;border:none;color:white;width:100%;outline:none;font-size:0.9rem"></td>
-                            <td style="padding:10px">
+                            <td><input class="tbl-edit" data-id="${c.id}" data-f="title" value="${(c.title || '').replace(/"/g, '&quot;')}" style="background:none;border:none;color:white;width:100%;outline:none;font-size:0.9rem"></td>
+                            <td>
                                 <select class="tbl-edit" data-id="${c.id}" data-f="status" style="background:rgba(var(--tint),0.05);border:1px solid var(--card-border);border-radius:6px;color:white;padding:4px 8px">
                                     ${Object.entries(statusOpt).map(([k, v]) => `<option value="${k}" style="background:#0f172a" ${c.status === k ? 'selected' : ''}>${v}</option>`).join('')}
                                 </select>
                             </td>
-                            <td style="padding:10px"><input class="tbl-edit" data-id="${c.id}" data-f="assignee" value="${(c.assignee || '').replace(/"/g, '&quot;')}" placeholder="-" style="background:none;border:none;color:white;width:90px;outline:none;font-size:0.9rem"></td>
-                            <td style="padding:10px"><input type="date" class="tbl-edit" data-id="${c.id}" data-f="due_date" value="${c.due_date || ''}" style="background:none;border:none;color:white;outline:none;font-size:0.85rem"></td>
-                            <td style="padding:10px;color:var(--text-muted);font-size:0.85rem">${this._brandNameById(c.brand_id)}</td>
-                            <td style="padding:10px;text-align:right"><button class="tbl-del btn-secondary" data-id="${c.id}" style="padding:4px 10px;border-radius:8px;font-size:0.78rem">삭제</button></td>
-                        </tr>`).join('') || `<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">행이 없습니다. "+ 행 추가"로 시작하세요.</td></tr>`}
+                            <td><input class="tbl-edit" data-id="${c.id}" data-f="assignee" value="${(c.assignee || '').replace(/"/g, '&quot;')}" placeholder="-" style="background:none;border:none;color:white;width:90px;outline:none;font-size:0.9rem"></td>
+                            <td><input type="date" class="tbl-edit" data-id="${c.id}" data-f="due_date" value="${c.due_date || ''}" style="background:none;border:none;color:white;outline:none;font-size:0.85rem"></td>
+                            <td style="color:var(--text-muted)">${this._brandNameById(c.brand_id)}</td>
+                            <td style="text-align:right"><button class="tbl-del btn-secondary" data-id="${c.id}" style="padding:4px 10px;border-radius:8px;font-size:0.78rem">삭제</button></td>
+                        </tr>`).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">행이 없습니다. "+ 행 추가"로 시작하세요.</td></tr>`}
                     </tbody>
                 </table>
             </div>
@@ -9167,10 +9266,10 @@ class BhasApp {
                 <div style="display:flex;gap:8px;flex-wrap:wrap"><button id="integ-epost-test" class="btn-secondary" style="padding:8px 14px;border-radius:9px" ${ep?.loading ? 'disabled' : ''}><i class="ph ph-plugs-connected"></i> ${ep?.loading ? '확인 중...' : '연결 테스트'}</button><button id="integ-epost-safe-test" class="btn-primary" style="padding:8px 14px;border-radius:9px" ${ep?.safeLoading ? 'disabled' : ''}><i class="ph ph-shield-check"></i> ${ep?.safeLoading ? '테스트 중...' : '안전 테스트 발번'}</button></div>
             </div>
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px">
+                <table class="mtbl" style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px">
                     <colgroup><col style="width:16%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:14%"></colgroup>
-                    <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.82rem;text-align:left">
-                        <th style="padding:12px 10px">브랜드</th>${channels.map(ch => `<th style="padding:12px 6px;text-align:center">${ch.label}</th>`).join('')}<th style="padding:12px 10px;text-align:center">택배사</th>
+                    <thead><tr style="color:var(--text-muted);font-size:0.82rem;text-align:left">
+                        <th>브랜드</th>${channels.map(ch => `<th style="text-align:center">${ch.label}</th>`).join('')}<th style="text-align:center">택배사</th>
                     </tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
@@ -9344,9 +9443,9 @@ class BhasApp {
                 <button id="q-new-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 새 견적</button>
             </div>
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;min-width:620px">
-                    <thead><tr style="border-bottom:2px solid var(--card-border);color:var(--text-muted);font-size:0.8rem;text-align:left">
-                        <th style="padding:10px">견적일</th><th style="padding:10px">고객사</th><th style="padding:10px">품목</th><th style="padding:10px;text-align:right">합계</th><th style="padding:10px;text-align:center">상태</th><th style="padding:10px;text-align:center">인쇄</th>
+                <table class="mtbl" style="width:100%;border-collapse:collapse;min-width:620px">
+                    <thead><tr style="color:var(--text-muted);font-size:0.8rem;text-align:left">
+                        <th>견적일</th><th>고객사</th><th>품목</th><th style="text-align:right">합계</th><th style="text-align:center">상태</th><th style="text-align:center">인쇄</th>
                     </tr></thead><tbody>${rows}</tbody>
                 </table>
             </div>

@@ -3090,10 +3090,13 @@ body:not(.light) .mac-deskboard .glass{
 .mnone{padding:22px 15px;text-align:center;color:var(--text-muted);font-size:12.5px}
 /* 맥식 표 — 줄무늬 · 머리카락선 · 작은 글씨 */
 .mtbl{width:100%;border-collapse:collapse;font-size:12.5px}
-.mtbl th{text-align:left;font-weight:700;font-size:11.5px;color:var(--text-muted);
-  padding:8px 12px;border-bottom:.5px solid var(--card-border);white-space:nowrap;
+/* 줄 안의 인라인 style 이 자리값을 잡고 있어, 이 표 안에서만 우선으로 덮는다 */
+.mtbl th{text-align:left;font-weight:700;font-size:11.5px !important;color:var(--text-muted);
+  padding:8px 12px !important;border-bottom:.5px solid var(--card-border) !important;white-space:nowrap;
   position:sticky;top:0;background:var(--card-bg);z-index:2}
-.mtbl td{padding:9px 12px;border-bottom:.5px solid var(--card-border);vertical-align:middle}
+.mtbl td{padding:9px 12px !important;border-bottom:.5px solid var(--card-border) !important;
+  vertical-align:middle;font-size:12.5px}
+.mtbl tbody tr{border-bottom:0 !important}
 .mtbl tbody tr:nth-child(even){background:rgba(127,127,127,.05)}
 .mtbl tbody tr:hover{background:rgba(59,130,246,.10)}
 .mtbl tbody tr:last-child td{border-bottom:0}
@@ -3202,3 +3205,42 @@ body:not(.light) .mac-deskboard .glass{
 .fd-pb .mbtn{flex:1;text-align:center}
 .fd-it.on{background:rgba(59,130,246,.18)}
 .fd-r.on{background:rgba(59,130,246,.18)}
+
+/* 표를 감싸는 자리 — 가로로 넘치면 밀어서 본다 */
+.mtbl{min-width:0}
+.mtbl th,.mtbl td{white-space:nowrap}
+.mtbl td .oms-expand,.mtbl td input,.mtbl td select{font-size:12.5px}
+/* 옛 표가 쓰던 감싸개도 맥 결로 */
+.table-container,.table-responsive-container{overflow:auto;border:.5px solid var(--card-border);
+  border-radius:11px;background:var(--card-bg)}
+
+/* 메모 속성 — 노션 페이지 속성 모양 */
+.npanel{margin:10px 0 18px;border-bottom:.5px solid var(--card-border);padding-bottom:12px}
+.np-r{display:flex;align-items:center;gap:10px;min-height:30px;font-size:13.5px}
+.np-k{display:flex;align-items:center;gap:8px;width:120px;flex:0 0 auto;color:var(--text-muted)}
+.np-k i{font-size:15px;opacity:.8}
+.np-v{flex:1;min-width:0;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.np-sel{border:0;background:transparent;color:inherit;font-family:inherit;font-size:13.5px;
+  outline:none;cursor:pointer;padding:3px 4px;border-radius:6px;max-width:100%}
+.np-sel:hover{background:rgba(127,127,127,.14)}
+.np-sel.pill{background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c);
+  font-weight:700;padding:3px 11px;border-radius:99px;font-size:12.5px}
+.np-sel.add{color:var(--text-muted);font-size:12.5px}
+.np-in{border:0;background:transparent;color:inherit;font-family:inherit;font-size:13.5px;
+  outline:none;padding:3px 4px;border-radius:6px}
+.np-in:hover{background:rgba(127,127,127,.14)}
+.np-x{border:0;background:transparent;color:var(--text-muted);cursor:pointer;font-size:11px;padding:2px 4px;border-radius:5px}
+.np-x:hover{background:rgba(127,127,127,.18)}
+.np-who{display:inline-flex;align-items:center;gap:6px}
+.np-face{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-style:normal;
+  font-size:10.5px;font-weight:700;color:#fff;background:linear-gradient(140deg,#b9a99a,#8d7b6c);flex:0 0 auto}
+.np-chip{display:inline-flex;align-items:center;gap:5px;border:0;background:rgba(127,127,127,.16);
+  color:inherit;font-family:inherit;font-size:12.5px;padding:3px 9px;border-radius:7px;cursor:pointer}
+.np-chip:hover{background:rgba(127,127,127,.26)}
+.np-chip i{font-style:normal;font-size:10px;opacity:.55}
+.np-chip i:hover{opacity:1;color:#ef4444}
+.np-ck{width:17px;height:17px;border-radius:5px;border:1.5px solid rgba(127,127,127,.5);
+  background:transparent;cursor:pointer;position:relative}
+.np-ck.on{background:var(--primary);border-color:var(--primary)}
+.np-ck.on::after{content:'';position:absolute;left:5px;top:1.5px;width:4px;height:8px;
+  border:solid #fff;border-width:0 2px 2px 0;transform:rotate(43deg)}
