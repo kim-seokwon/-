@@ -5547,74 +5547,69 @@ class BhasApp {
     //  이제 하나씩 제 아이콘을 쓴다(전엔 prod/settle 가 겹쳤다).
     MAC_DOCK = [
         { id: '__menu', label: '전체 메뉴', launcher: true, draw: '_iconLaunch' },
-        { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
+        { id: 'home', label: '바탕화면', draw: '_iconHome', desktop: true },
         { id: 'orders', label: '판매', draw: '_iconSell' },
         { id: 'vendors', label: '생산', draw: '_iconMake' },
         { id: 'sns', label: 'SNS', draw: '_iconSns' },
-        { id: 'documents', label: '자료실', icon: 'finder' },
+        { id: 'documents', label: '자료실', draw: '_iconDocs' },
         { id: 'calendar', label: '캘린더', draw: '_iconCal' },
-        { id: 'reminders', label: '미리알림', icon: 'rem' },
-        { id: 'notes', label: '메모', icon: 'notes' },
-        { id: 'contacts', label: '연락처', icon: 'contacts' },
-        { id: 'settings', label: '설정', icon: 'set' },
+        { id: 'reminders', label: '미리알림', draw: '_iconRem' },
+        { id: 'notes', label: '메모', draw: '_iconNotes' },
+        { id: 'contacts', label: '연락처', draw: '_iconContacts' },
+        { id: 'settings', label: '설정', draw: '_iconSet' },
         // 창이 아니라 그 자리에서 뜨는 도구 — 독 오른쪽 끝에 따로 둔다
-        { id: 'calc', label: '계산기', icon: 'calc', tool: true },
-        { id: 'sticky', label: '스티커', svg: 'sticky', tool: true },
+        { id: 'calc', label: '계산기', draw: '_iconCalc', tool: true },
+        { id: 'sticky', label: '스티커', draw: '_iconSticky', tool: true },
     ];
-    // 스티커만 맥 그림이 없어 같은 결로 그린다
-    _stickySvg() {
-        return `<svg viewBox="0 0 58 58" width="58" height="58" aria-hidden="true">
-            <defs><linearGradient id="stkg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#fff6a8"/><stop offset="1" stop-color="#ffd84d"/></linearGradient></defs>
-            <path d="M8 12a4 4 0 0 1 4-4h34a4 4 0 0 1 4 4v22L36 50H12a4 4 0 0 1-4-4z" fill="url(#stkg)"/>
-            <path d="M50 34H40a4 4 0 0 0-4 4v12z" fill="#e8bf2e"/>
-            <g stroke="#b08f14" stroke-width="2.4" stroke-linecap="round" opacity=".55">
-                <path d="M16 20h26"/><path d="M16 28h26"/><path d="M16 36h16"/></g>
-        </svg>`;
-    }
-    // 업무 앱 아이콘 — 맥 아이콘과 같은 둥근 사각형에 색·기호만 달리한다
-    // 맥 아이콘 결 — 흰 둥근 사각형에 기호 하나. 위쪽 하이라이트와 얇은 테두리로 도톰하게.
+    // ── 바탕화면 ────────────────────────────────────────────
+    // ── 독 아이콘 ─────────────────────────────────────────────
+    //  규칙 하나로 통일한다: 흰 둥근 사각형 + 색 기호 하나.
+    //  기호는 모두 24 격자에 선 굵기 1.9, 둥근 끝. 크기·여백·그림자도 같다.
     _tile(inner, bg) {
-        return `<span class="apic" style="--bg:${bg || '#fff'}">${inner}</span>`;
+        return `<span class="apic" style="--bg:${bg || 'linear-gradient(170deg,#fff,#f2f2f5)'}">${inner}</span>`;
+    }
+    _g(path, color) {
+        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke="${color}"
+            stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`);
     }
     _iconLaunch() {
-        // 런치패드 — 옅은 바탕에 색색 네모 아홉
         const c = ['#ff6b6b', '#ffa93a', '#ffd23f', '#4cd964', '#34c7d4', '#5ac8fa', '#6b8cff', '#bf8cff', '#ff7ab0'];
-        return this._tile(`<span class="ap-grid">${c.map(x => `<i style="background:${x}"></i>`).join('')}</span>`,
-            'linear-gradient(160deg,#fdfdfe,#e9e9ee)');
+        return this._tile(`<span class="ap-grid">${c.map(x => `<i style="background:${x}"></i>`).join('')}</span>`);
     }
-    _iconCal() {
-        // 캘린더 — 오늘 요일과 날짜가 실제로 들어간다
-        const d = new Date();
-        const wd = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][d.getDay()];
-        return this._tile(`<span class="ap-cal"><em>${wd}</em><b>${d.getDate()}</b></span>`, '#fff');
-    }
+    _iconHome() { return this._g('<path d="M3.4 10.6 12 3.8l8.6 6.8"/><path d="M5.6 12.4v7.2h12.8v-7.2"/><path d="M9.9 19.6v-4.5h4.2v4.5"/>', '#12a594'); }
+    _iconSell() { return this._g('<path d="M4.6 8h14.8l-1.1 11.1a1.8 1.8 0 0 1-1.8 1.6H7.5a1.8 1.8 0 0 1-1.8-1.6z"/><path d="M8.7 10.3V6.9a3.3 3.3 0 0 1 6.6 0v3.4"/>', '#f26a00'); }
+    _iconMake() { return this._g('<path d="M3.2 20.4V11l5 3.1V11l5 3.1V6.5l7.6 4.6v9.3z"/><path d="M2.3 20.5h19.4"/>', '#7b3fe4'); }
     _iconSns() {
-        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke="url(#ig)" stroke-width="2">
+        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke="url(#ig)"
+            stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
             <defs><linearGradient id="ig" x1="0" y1="1" x2="1" y2="0">
                 <stop offset="0" stop-color="#ffb43a"/><stop offset=".45" stop-color="#e1306c"/>
                 <stop offset="1" stop-color="#8a3ab9"/></linearGradient></defs>
-            <rect x="3" y="3" width="18" height="18" rx="5.4"/><circle cx="12" cy="12" r="4.1"/>
-            <circle cx="17.2" cy="6.8" r="1.25" fill="url(#ig)" stroke="none"/></svg>`, '#fff');
+            <rect x="3.4" y="3.4" width="17.2" height="17.2" rx="5.2"/><circle cx="12" cy="12" r="4"/>
+            <circle cx="17" cy="7" r="1.15" fill="url(#ig)" stroke="none"/></svg>`);
     }
-    _iconSell() {
-        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke="#f26a00" stroke-width="1.9"
-                stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4.5 8h15l-1.1 11.2a1.8 1.8 0 0 1-1.8 1.6H7.4a1.8 1.8 0 0 1-1.8-1.6z"/>
-            <path d="M8.6 10.4V6.9a3.4 3.4 0 0 1 6.8 0v3.5"/></svg>`, '#fff');
+    _iconDocs() { return this._g('<path d="M3.2 7.4a1.8 1.8 0 0 1 1.8-1.8h4.1l2 2.3h7.9a1.8 1.8 0 0 1 1.8 1.8v8.9a1.8 1.8 0 0 1-1.8 1.8H5a1.8 1.8 0 0 1-1.8-1.8z"/>', '#0a84ff'); }
+    _iconCal() {
+        const d = new Date();
+        const wd = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][d.getDay()];
+        return this._tile(`<span class="ap-cal"><em>${wd}</em><b>${d.getDate()}</b></span>`);
     }
-    _iconMake() {
-        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke="#7b3fe4" stroke-width="1.9"
-                stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 20.5V11l5 3.2V11l5 3.2V6.4l8 4.8v9.3z"/><path d="M2.2 20.6h19.6"/></svg>`, '#fff');
+    _iconRem() {
+        return this._tile(`<svg viewBox="0 0 24 24" class="ap-sv" fill="none" stroke-width="1.9" stroke-linecap="round">
+            <circle cx="5.8" cy="7" r="2.1" stroke="#ff453a"/><path d="M10.4 7h9.2" stroke="#c7c7cc"/>
+            <circle cx="5.8" cy="12" r="2.1" stroke="#0a84ff"/><path d="M10.4 12h9.2" stroke="#c7c7cc"/>
+            <circle cx="5.8" cy="17" r="2.1" stroke="#ff9f0a"/><path d="M10.4 17h6.4" stroke="#c7c7cc"/></svg>`);
     }
+    _iconNotes() { return this._g('<path d="M5 4.2h14v15.6H5z"/><path d="M5 7.6h14" stroke-width="2.6"/><path d="M8.2 11.4h7.6M8.2 14.6h7.6M8.2 17.4h4.6"/>', '#f0b200'); }
+    _iconContacts() { return this._g('<rect x="4.6" y="3.4" width="14.8" height="17.2" rx="2.4"/><circle cx="12" cy="10.2" r="2.9"/><path d="M7.6 17.6c.9-2 2.5-3 4.4-3s3.5 1 4.4 3"/>', '#8d7b6c'); }
+    _iconSet() { return this._g('<circle cx="12" cy="12" r="3.1"/><path d="M12 2.9v2.4M12 18.7v2.4M21.1 12h-2.4M5.3 12H2.9M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7M18.4 18.4l-1.7-1.7M7.3 7.3 5.6 5.6"/>', '#6e6e78'); }
+    _iconCalc() { return this._g('<rect x="5" y="3.2" width="14" height="17.6" rx="2.6"/><path d="M8.2 7.2h7.6" stroke-width="2.4"/><path d="M8.6 12h0M12 12h0M15.4 12h0M8.6 16h0M12 16h0M15.4 16h0" stroke-width="2.6"/>', '#2b2b31'); }
+    _iconSticky() { return this._g('<path d="M4.6 5.4a1.6 1.6 0 0 1 1.6-1.6h11.6a1.6 1.6 0 0 1 1.6 1.6v8.4l-5 5.4H6.2a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M19.4 13.8h-3.6a1.4 1.4 0 0 0-1.4 1.4v4"/><path d="M8 8.6h8M8 11.8h8"/>', '#e0a800'); }
     _dockFace(d) {
         if (d && d.draw && this[d.draw]) return this[d.draw]();
-        if (d && d.svg) return this._stickySvg();
         if (d && d.icon) return `<img src="icons/${d.icon}.png" alt="${this._vesc(d.label || '')}" draggable="false">`;
-        return `<img src="icons/finder.png" alt="" draggable="false">`;
+        return this._g('<rect x="4" y="4" width="16" height="16" rx="3.4"/>', '#8e8e93');
     }
-    // ── 바탕화면 ────────────────────────────────────────────
     MAC_WALLS = [
         { id: 'dawn',   label: '새벽' },
         { id: 'ocean',  label: '바다' },
