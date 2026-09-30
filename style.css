@@ -3097,3 +3097,37 @@ body:not(.light) .mac-deskboard .glass{
 .mtbl tbody tr:hover{background:rgba(59,130,246,.10)}
 .mtbl tbody tr:last-child td{border-bottom:0}
 @media (max-width:620px){ .mpane{padding:12px 12px 24px} .mrow{padding:10px 12px} }
+
+/* 메모 — 노션식 블록(할 일 · 태그) */
+.nt-tools .nt-div{width:1px;height:16px;background:var(--card-border);margin:0 4px}
+.nt-tools button.on{background:rgba(59,130,246,.16);color:var(--primary)}
+.nt-meta{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 12px}
+.nt-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;
+  padding:2px 9px;border-radius:99px;background:rgba(127,127,127,.16);color:var(--text-muted)}
+.nt-chip.at{background:rgba(10,132,255,.14);color:#0a84ff}
+.nt-chip.tag{background:rgba(48,209,88,.16);color:#1a9e3c}
+.nt-view{font-size:14px;line-height:1.75;min-height:320px;cursor:text}
+.nb-l{padding:1px 0}
+.nb-sp{height:12px}
+.nb-todo{display:flex;align-items:flex-start;gap:9px;padding:2px 0}
+.nb-todo.done>span{color:var(--text-muted);text-decoration:line-through}
+.nb-ck{width:16px;height:16px;border-radius:4px;border:1.5px solid rgba(127,127,127,.55);
+  background:transparent;cursor:pointer;flex:0 0 auto;margin-top:4px;position:relative}
+.nb-ck:hover{border-color:var(--primary)}
+.nb-ck.on{background:var(--primary);border-color:var(--primary)}
+.nb-ck.on::after{content:'';position:absolute;left:4.5px;top:1px;width:4px;height:8px;
+  border:solid #fff;border-width:0 2px 2px 0;transform:rotate(43deg)}
+.nb-at{color:#0a84ff;font-weight:700;background:rgba(10,132,255,.12);padding:0 5px;border-radius:5px}
+.nb-tag{color:#1a9e3c;font-weight:700;background:rgba(48,209,88,.14);padding:0 5px;border-radius:5px}
+/* 목록 줄의 할 일 진행 막대 */
+.nt-bar{display:flex;align-items:center;gap:6px;margin-top:5px}
+.nt-bar{position:relative}
+.nt-bar>i{display:block;height:3px;border-radius:3px;background:var(--primary);min-width:2px;position:relative;z-index:1}
+.nt-bar::after{content:'';position:absolute;left:0;right:34px;height:3px;border-radius:3px;background:rgba(127,127,127,.22)}
+.nt-bar em{font-style:normal;font-size:10.5px;color:var(--text-muted);flex:0 0 auto}
+.nt-row{position:relative}
+/* 우클릭 메뉴 */
+.ctxm{width:210px;transform-origin:top left;animation:stpIn .1s cubic-bezier(.2,.9,.3,1.05)}
+.ctxm .stm-item i{font-size:14px;width:16px;opacity:.75}
+.ctxm .stm-item.danger{color:#ef4444}
+.ctxm .stm-item.danger:hover{background:#e0294f;color:#fff}
