@@ -2992,7 +2992,7 @@ body:not(.light) .mac-deskboard .glass{
 .ord-cs:hover{background:var(--primary);border-color:var(--primary);color:#fff}
 
 /* ═══════════════ 자료실 = 파인더 ═══════════════ */
-.fd{display:grid;grid-template-columns:200px 1fr;height:100%;min-height:520px;
+.fd{display:grid;grid-template-columns:200px 1fr 250px;height:100%;min-height:520px;
   font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Pretendard',sans-serif}
 .fd-side{border-right:.5px solid var(--card-border);padding:10px 8px 20px;overflow:auto}
 .fd-sh{font-size:11px;font-weight:700;color:var(--text-muted);padding:13px 9px 4px;opacity:.75}
@@ -3043,6 +3043,7 @@ body:not(.light) .mac-deskboard .glass{
 .fd-cnt{margin-left:auto}
 .fd-none{padding:3rem 1rem;text-align:center;color:var(--text-muted);font-size:13px}
 .fd-none.sm{padding:6px 9px;text-align:left;font-size:12px}
+@media (max-width:1100px){ .fd{grid-template-columns:200px 1fr} .fd-prev{display:none} }
 @media (max-width:760px){ .fd{grid-template-columns:1fr} .fd-side{display:none}
   .fd-r{grid-template-columns:1fr 92px} .fd-r span:nth-child(3),.fd-r span:nth-child(4){display:none} }
 
@@ -3131,3 +3132,73 @@ body:not(.light) .mac-deskboard .glass{
 .ctxm .stm-item i{font-size:14px;width:16px;opacity:.75}
 .ctxm .stm-item.danger{color:#ef4444}
 .ctxm .stm-item.danger:hover{background:#e0294f;color:#fff}
+
+/* @ 자동완성 */
+.atpop{width:222px;transform-origin:top left;animation:stpIn .1s cubic-bezier(.2,.9,.3,1.05)}
+.atpop .stm-item.sel{background:#0a63ce;color:#fff}
+.atpop .stm-item.sel .stm-side{color:#fff;opacity:.8}
+.at-face{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  font-size:10px;font-weight:800;color:#fff;background:linear-gradient(140deg,#8ab4ff,#3b82f6)}
+
+/* ═══════════════ 3칸 공통 틀 — 분류 / 리스트 / 페이지 ═══════════════
+   메모·자료실·연락처·미리알림이 모두 이 구조를 쓴다. */
+.m3{display:grid;grid-template-columns:200px 280px 1fr;height:100%;min-height:520px;
+  font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Pretendard',sans-serif}
+.m3.wide{grid-template-columns:212px 320px 1fr}
+.m3-side{border-right:.5px solid var(--card-border);padding:10px 8px 20px;overflow:auto}
+.m3-h{font-size:11px;font-weight:700;color:var(--text-muted);padding:13px 9px 4px;opacity:.75}
+.m3-s{display:flex;align-items:center;gap:8px;padding:5px 9px;border-radius:6px;cursor:default;font-size:13px}
+.m3-s i{font-size:15px;flex:0 0 auto}
+.m3-s span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m3-s em{font-style:normal;font-size:11px;color:var(--text-muted)}
+.m3-s:hover{background:rgba(127,127,127,.14)}
+.m3-s.on{background:rgba(127,127,127,.24);font-weight:600}
+.m3-list{border-right:.5px solid var(--card-border);display:flex;flex-direction:column;min-width:0}
+.m3-lbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 13px 8px;flex:0 0 auto}
+.m3-lbar b{display:block;font-size:14px;font-weight:700}
+.m3-lbar span{display:block;font-size:11px;color:var(--text-muted);margin-top:1px}
+.m3-new{border:0;background:transparent;color:var(--text-muted);font-size:17px;cursor:default;padding:4px 6px;border-radius:7px}
+.m3-new:hover{background:rgba(127,127,127,.16);color:var(--primary)}
+.m3-find{display:flex;align-items:center;gap:6px;margin:0 10px 8px;background:rgba(127,127,127,.14);
+  border-radius:7px;padding:4px 9px;flex:0 0 auto}
+.m3-find i{font-size:13px;color:var(--text-muted)}
+.m3-find input{flex:1;min-width:0;border:0;background:transparent;outline:none;font-family:inherit;font-size:12.5px;color:inherit}
+.m3-rows{flex:1;overflow:auto;padding:0 8px 16px;min-height:0}
+.m3-r{padding:8px 10px;border-radius:8px;cursor:default;border-top:.5px solid var(--card-border);position:relative}
+.m3-r:hover{background:rgba(127,127,127,.10)}
+.m3-r.on{background:rgba(127,127,127,.20);border-top-color:transparent}
+.m3-r b{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m3-r .sub{display:flex;gap:7px;margin-top:2px;font-size:12px;color:var(--text-muted);min-width:0}
+.m3-r .sub span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m3-doc{display:flex;flex-direction:column;min-width:0}
+.m3-tools{display:flex;align-items:center;gap:4px;padding:8px 14px;border-bottom:.5px solid var(--card-border);flex:0 0 auto}
+.m3-tools button{border:0;background:transparent;color:var(--text-muted);font-size:16px;cursor:default;
+  padding:4px 7px;border-radius:7px}
+.m3-tools button:hover{background:rgba(127,127,127,.16);color:inherit}
+.m3-tools .sp{margin-left:auto}
+.m3-page{flex:1;overflow:auto;padding:20px 30px 40px;min-height:0;max-width:760px;width:100%;margin:0 auto}
+.m3-big{font-size:22px;font-weight:800;margin:0 0 4px}
+.m3-sub{font-size:12.5px;color:var(--text-muted);margin-bottom:18px}
+.m3-f{display:flex;gap:12px;padding:10px 0;border-bottom:.5px solid var(--card-border);font-size:13px;align-items:flex-start}
+.m3-f>i{font-size:16px;color:var(--text-muted);width:18px;flex:0 0 auto;margin-top:1px}
+.m3-f .k{width:78px;color:var(--text-muted);flex:0 0 auto}
+.m3-f .v{flex:1;min-width:0;word-break:break-word}
+.m3-none{padding:2.4rem 1rem;text-align:center;color:var(--text-muted);font-size:13px}
+.m3-none.mid{margin:auto}
+@media (max-width:900px){ .m3,.m3.wide{grid-template-columns:1fr} .m3-side,.m3-list{display:none} }
+
+/* 파인더 세 번째 칸 — 미리보기 */
+.fd-prev{border-left:.5px solid var(--card-border);padding:20px 16px;overflow:auto;display:flex;flex-direction:column}
+.fd-pv{height:120px;display:grid;place-items:center;font-size:74px;margin-bottom:14px}
+.fd-pv img{max-width:100%;max-height:120px;object-fit:contain;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.24)}
+.fd-pn{font-size:13px;font-weight:700;text-align:center;word-break:break-all;line-height:1.4}
+.fd-pk{font-size:11.5px;color:var(--text-muted);text-align:center;margin-top:3px;margin-bottom:16px}
+.fd-pm{border-top:.5px solid var(--card-border);padding-top:10px;font-size:12px}
+.fd-pm>div{display:flex;justify-content:space-between;gap:10px;padding:4px 0}
+.fd-pm span{color:var(--text-muted)}
+.fd-pm b{font-weight:600;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fd-pb{display:flex;gap:6px;margin-top:16px}
+.fd-pb .mbtn{flex:1;text-align:center}
+.fd-it.on{background:rgba(59,130,246,.18)}
+.fd-r.on{background:rgba(59,130,246,.18)}

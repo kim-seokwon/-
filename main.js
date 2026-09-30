@@ -3022,11 +3022,14 @@ class BhasApp {
             };
             const nameOfP = id => (mockData.products.find(p => p.id === id) || {}).name || '';
             const side = (key, label, icon, n, color) => `<div class="fd-s${cur === key ? ' on' : ''}"
-                onclick="app.setDocCategory('${key}')"><i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
+                onclick="app.setDocCategory('${key}')" oncontextmenu="app.docFolderMenu(event,'${key}')"
+                ><i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
             const grid = docs.map(d => {
                 const k = kindOf(d);
-                return `<button class="fd-it" ondblclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')"
-                        onclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')" title="${esc(d.name)}">
+                return `<button class="fd-it${String(this.docSel) === String(d.id) ? ' on' : ''}"
+                        ondblclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')"
+                        onclick="app.selectDoc('${esc(String(d.id))}')"
+                        oncontextmenu="app.docMenu(event,'${esc(String(d.id))}','${esc(d.url)}','${esc(d.name)}')" title="${esc(d.name)}">
                     <span class="fd-th">${isImg(d.url) ? `<img src="${esc(d.url)}" alt="" loading="lazy">`
                         : `<i class="ph ${k.i}" style="color:${k.c}"></i>`}</span>
                     <span class="fd-nm">${esc(d.name)}</span>
@@ -3034,7 +3037,10 @@ class BhasApp {
             }).join('');
             const rows = docs.map(d => {
                 const k = kindOf(d);
-                return `<div class="fd-r" onclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')">
+                return `<div class="fd-r${String(this.docSel) === String(d.id) ? ' on' : ''}"
+                        onclick="app.selectDoc('${esc(String(d.id))}')"
+                        ondblclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')"
+                        oncontextmenu="app.docMenu(event,'${esc(String(d.id))}','${esc(d.url)}','${esc(d.name)}')">
                     <span class="fd-rn"><i class="ph ${k.i}" style="color:${k.c}"></i>${esc(d.name)}</span>
                     <span>${esc(d.date || '')}</span>
                     <span>${esc(k.t)}</span>
@@ -3076,6 +3082,28 @@ class BhasApp {
                         <span class="fd-cnt">항목 ${docs.length}개${cur !== '전체' || q ? ` · 전체 ${aggregatedDocs.length}개` : ''}</span>
                     </div>
                 </section>
+                <aside class="fd-prev">
+                    ${(() => {
+                        const d = docs.find(x => String(x.id) === String(this.docSel)) || docs[0];
+                        if (!d) return `<div class="m3-none mid">고른 자료가 없습니다</div>`;
+                        const k = kindOf(d);
+                        return `
+                        <div class="fd-pv">${isImg(d.url) ? `<img src="${esc(d.url)}" alt="">`
+                            : `<i class="ph ${k.i}" style="color:${k.c}"></i>`}</div>
+                        <div class="fd-pn">${esc(d.name)}</div>
+                        <div class="fd-pk">${esc(k.t)}</div>
+                        <div class="fd-pm">
+                            <div><span>종류</span><b>${esc(k.t)}</b></div>
+                            <div><span>날짜</span><b>${esc(d.date || '-')}</b></div>
+                            <div><span>분류</span><b>${esc(d.category || '-')}</b></div>
+                            <div><span>프로젝트</span><b>${esc(nameOfP(d.productId) || '-')}</b></div>
+                        </div>
+                        <div class="fd-pb">
+                            <button class="mbtn pri" onclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')">열기</button>
+                            <a class="mbtn" href="${esc(d.url)}" download style="text-decoration:none">내려받기</a>
+                        </div>`;
+                    })()}
+                </aside>
             </div>`;
         } else if (this.currentView === 'detail') {
             const product = mockData.products.find(p => p.id === this.activeProjectId);
@@ -5744,6 +5772,70 @@ class BhasApp {
             return `<div class="nb-l">${body}</div>`;
         }).join('');
     }
+    // ── @ 자동완성 ────────────────────────────────────────────
+    //  본문에서 @ 를 치면 계정 목록이 뜬다. ↑↓ 로 고르고 Enter·Tab 으로 넣는다.
+    _atPool() {
+        return (mockData.companies || []).filter(c => c.username).map(c => ({ n: c.name, u: c.username }));
+    }
+    noteTyping() {
+        const ta = document.getElementById('note-body'); if (!ta) return;
+        const upto = ta.value.slice(0, ta.selectionStart);
+        const m = upto.match(/@([^\s@]*)$/);
+        if (!m) { this.closeAtPop(); return; }
+        const q = (m[1] || '').toLowerCase();
+        const hits = this._atPool().filter(x => !q || x.n.toLowerCase().includes(q) || x.u.toLowerCase().includes(q)).slice(0, 6);
+        if (!hits.length) { this.closeAtPop(); return; }
+        this._atHits = hits; this._atSel = 0; this._atStart = ta.selectionStart - m[0].length;
+        this.showAtPop(ta);
+    }
+    showAtPop(ta) {
+        const esc = s => this._vesc(s);
+        let el = document.getElementById('at-pop');
+        if (!el) { el = document.createElement('div'); el.className = 'stmenu atpop lg nocaret'; el.id = 'at-pop'; document.body.appendChild(el); }
+        el.innerHTML = this._atHits.map((h, i) => `<button class="stm-item${i === this._atSel ? ' sel' : ''}" data-i="${i}">
+            <span class="at-face">${esc((h.n || '?')[0])}</span><span class="stm-txt">${esc(h.n)}</span>
+            <span class="stm-side">${esc(h.u)}</span></button>`).join('');
+        el.querySelectorAll('.stm-item').forEach(b => b.onmousedown = (e) => { e.preventDefault(); this.pickAt(Number(b.dataset.i)); });
+        // 글자 자리 근처에 띄운다(대략치 — 줄 높이로 계산)
+        const r = ta.getBoundingClientRect();
+        const before = ta.value.slice(0, this._atStart);
+        const line = before.split('\n').length;
+        const top = Math.min(r.bottom - 8, r.top + 8 + line * 24 - ta.scrollTop);
+        el.style.left = Math.max(8, Math.min(window.innerWidth - 230, r.left + 18)) + 'px';
+        el.style.top = Math.max(8, Math.min(window.innerHeight - 200, top)) + 'px';
+    }
+    closeAtPop() { document.getElementById('at-pop')?.remove(); this._atHits = null; }
+    pickAt(i) {
+        const ta = document.getElementById('note-body'); if (!ta || !this._atHits) return;
+        const h = this._atHits[i]; if (!h) return;
+        const end = ta.selectionStart;
+        ta.value = ta.value.slice(0, this._atStart) + '@' + h.n + ' ' + ta.value.slice(end);
+        const np = this._atStart + h.n.length + 2;
+        ta.focus(); ta.setSelectionRange(np, np);
+        this.closeAtPop(); this.saveNote();
+    }
+    noteKey(ev) {
+        if (!this._atHits) {
+            // 할 일 줄에서 Enter 를 치면 다음 줄도 할 일로 시작한다(노션처럼)
+            if (ev.key === 'Enter') {
+                const ta = ev.target;
+                const upto = ta.value.slice(0, ta.selectionStart);
+                const curLine = upto.slice(upto.lastIndexOf('\n') + 1);
+                if (this.NOTE_TODO_RE.test(curLine) && curLine.replace(this.NOTE_TODO_RE, '$3').trim()) {
+                    ev.preventDefault();
+                    const p = ta.selectionStart;
+                    ta.value = ta.value.slice(0, p) + '\n[ ] ' + ta.value.slice(p);
+                    ta.setSelectionRange(p + 5, p + 5);
+                }
+            }
+            return;
+        }
+        if (ev.key === 'ArrowDown') { ev.preventDefault(); this._atSel = (this._atSel + 1) % this._atHits.length; this.showAtPop(ev.target); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); this._atSel = (this._atSel - 1 + this._atHits.length) % this._atHits.length; this.showAtPop(ev.target); }
+        else if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); this.pickAt(this._atSel); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); this.closeAtPop(); }
+    }
+    noteBlur() { setTimeout(() => this.closeAtPop(), 120); this.saveNote(); }
     // 커서 자리에 넣기 — 노션의 '/' 블록처럼
     noteInsert(kind) {
         const ta = document.getElementById('note-body'); if (!ta) return;
@@ -5864,7 +5956,8 @@ class BhasApp {
                     ${this.notePreview
                         ? `<div class="nt-view" ondblclick="app.toggleNotePreview()">${this._noteBodyHTML(sel)}</div>`
                         : `<textarea id="note-body" class="nt-body" placeholder="내용을 적어주세요 · [ ] 로 할 일, @이름 담당자, #말머리 꼬리표"
-                              onblur="app.saveNote()">${esc(sel.body || '')}</textarea>`}
+                              oninput="app.noteTyping(event)" onkeydown="app.noteKey(event)"
+                              onblur="app.noteBlur()">${esc(sel.body || '')}</textarea>`}
                 </div>` : `<div class="nt-none big">메모를 선택하세요</div>`}
             </section>
         </div>`;
@@ -6174,7 +6267,33 @@ class BhasApp {
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
     setCSFilter(f) { this.csFilter = f; this.requestRender(); }
-    setDocCategory(c) { this.selectedDocCategory = c; this.requestRender(); }
+    setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.requestRender(); }
+    selectDoc(id) { this.docSel = id; this.requestRender(); }
+    docMenu(ev, id, url, name) {
+        this.ctxMenu(ev, [
+            { t: '열기', icon: 'ph-arrow-square-out', run: () => this.showFileModal(url, name) },
+            { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameDoc(id, name) },
+            { t: '링크 복사', icon: 'ph-link', run: () => { navigator.clipboard?.writeText(url); this.showToast('링크를 복사했습니다'); } },
+            { sep: true },
+            { t: '내려받기', icon: 'ph-download-simple', run: () => { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); } },
+        ]);
+    }
+    docFolderMenu(ev, key) {
+        this.ctxMenu(ev, [
+            { t: '새 자료 올리기', icon: 'ph-upload-simple', run: () => document.getElementById('quick-add-doc-btn')?.click() },
+            { t: '아이콘 보기', icon: 'ph-squares-four', run: () => this.setDocView('grid') },
+            { t: '목록 보기', icon: 'ph-list-dashes', run: () => this.setDocView('list') },
+        ]);
+    }
+    async renameDoc(id, old) {
+        const v = window.prompt('자료 이름', old || ''); if (v === null || !v.trim()) return;
+        try {
+            const { error } = await this.supabase.from('documents').update({ name: v.trim() }).eq('id', id);
+            if (error) throw error;
+            (mockData.products || []).forEach(p => (p.documents || []).forEach(d => { if (String(d.id) === String(id)) d.name = v.trim(); }));
+            this.requestRender(); this.showToast('이름을 바꿨습니다');
+        } catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
+    }
     setDocView(v) { this.docView = v; this.requestRender(); }
     renderCS() {
         if (!this._csLoaded) return this._loadingSkeleton('CS');
@@ -8454,51 +8573,90 @@ class BhasApp {
         setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 120);
     }
 
-    // ── 연락처 ────────────────────────────────────────────────
-    //  거래처를 '연락처'로만 쓴다 — 전화·주소·사업자번호. 생산 진행은 생산현황에서 본다.
+    // ── 연락처 (분류 / 리스트 / 페이지) ───────────────────────
     renderContacts() {
         const esc = s => this._vesc(s);
         if (!this._vendorsLoaded) return this._loadingSkeleton('연락처');
         const q = (this.contactQ || '').trim().toLowerCase();
-        const cats = ['전체', '봉제', '원단', '부자재', '프린트', '기타'];
-        const cat = this.contactCat || '전체';
-        let list = (this.vendors || []).slice();
-        if (cat !== '전체') list = list.filter(v => (v.category || '기타') === cat);
+        const cats = ['봉제', '원단', '부자재', '프린트', '기타'];
+        const cur = this.contactCat || '전체';
+        const all = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+        let list = all;
+        if (cur !== '전체') list = list.filter(v => (v.category || '기타') === cur);
         if (q) list = list.filter(v => [v.name, v.phone, v.address, v.ceo_name, v.biz_no, v.memo]
             .some(x => String(x || '').toLowerCase().includes(q)));
-        list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+        const sel = list.find(v => v.id === this.contactSel) || list[0];
+        const cnt = c => all.filter(v => (v.category || '기타') === c).length;
         const tel = p => String(p || '').replace(/[^0-9+]/g, '');
         const initial = n => (String(n || '?').trim()[0] || '?');
-        const card = (v) => `
-            <div class="ct-card" onclick="app.showVendorModal('${v.id}')">
-                <div class="ct-face">${esc(initial(v.name))}</div>
-                <div class="ct-main">
-                    <div class="ct-name">${esc(v.name)}<span class="ct-cat">${esc(v.category || '기타')}</span></div>
-                    ${v.address ? `<div class="ct-line"><i class="ph ph-map-pin"></i>${esc(v.address)}</div>` : ''}
-                    ${v.biz_no ? `<div class="ct-line"><i class="ph ph-identification-card"></i>${esc(v.biz_no)}</div>` : ''}
-                    ${v.memo ? `<div class="ct-line ct-memo">${esc(v.memo)}</div>` : ''}
-                </div>
-                <div class="ct-acts" onclick="event.stopPropagation()">
-                    ${v.phone ? `<a class="ct-btn" href="tel:${esc(tel(v.phone))}" title="전화 ${esc(v.phone)}"><i class="ph ph-phone"></i><span>${esc(v.phone)}</span></a>` : ''}
-                    ${v.email ? `<a class="ct-btn" href="mailto:${esc(v.email)}" title="메일"><i class="ph ph-envelope-simple"></i></a>` : ''}
-                </div>
-            </div>`;
+        const side = (key, label, icon, n) => `<div class="m3-s${cur === key ? ' on' : ''}"
+            onclick="app.setContactCat('${key}')"><i class="ph ${icon}" style="color:#0a84ff"></i><span>${esc(label)}</span><em>${n}</em></div>`;
+        const f = (icon, k, v, href) => v ? `<div class="m3-f"><i class="ph ${icon}"></i><span class="k">${esc(k)}</span>
+            <span class="v">${href ? `<a href="${esc(href)}" style="color:var(--primary);text-decoration:none">${esc(v)}</a>` : esc(v)}</span></div>` : '';
         return `
-        <div class="contacts-pane">
-            <div class="ct-top">
-                <div class="ct-search">
-                    <i class="ph ph-magnifying-glass"></i>
-                    <input id="ct-q" placeholder="상호·전화·주소로 찾기" value="${esc(this.contactQ || '')}"
-                           oninput="app.contactQ=this.value;app.requestRender()">
+        <div class="m3">
+            <aside class="m3-side">
+                <div class="m3-h">분류</div>
+                ${side('전체', '모든 연락처', 'ph-address-book', all.length)}
+                ${cats.map(c => side(c, c, 'ph-folder-simple', cnt(c))).join('')}
+            </aside>
+            <section class="m3-list">
+                <div class="m3-lbar"><div><b>${esc(cur === '전체' ? '모든 연락처' : cur)}</b><span>${list.length}곳</span></div>
+                    <button class="m3-new" onclick="app.showVendorModal(null)" title="새 연락처"><i class="ph ph-plus"></i></button></div>
+                <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
+                    <input placeholder="상호·전화·주소" value="${esc(this.contactQ || '')}" oninput="app.contactQ=this.value;app.requestRender()"></div>
+                <div class="m3-rows">
+                    ${list.map(v => `<div class="m3-r${sel && v.id === sel.id ? ' on' : ''}" onclick="app.selectContact('${v.id}')"
+                            oncontextmenu="app.contactMenu(event,'${v.id}')">
+                        <b><span class="ct-face" style="width:22px;height:22px;font-size:11px">${esc(initial(v.name))}</span>${esc(v.name)}</b>
+                        <div class="sub"><span>${esc(v.category || '기타')}</span><span>${esc(v.phone || v.address || '')}</span></div>
+                    </div>`).join('') || `<div class="m3-none">${q || cur !== '전체' ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다'}</div>`}
                 </div>
-                <button class="ct-add" onclick="app.showVendorModal(null)"><i class="ph ph-plus"></i> 새 연락처</button>
-            </div>
-            <div class="ct-cats">
-                ${cats.map(k => `<button class="ct-chip${cat === k ? ' on' : ''}" onclick="app.contactCat='${k}';app.requestRender()">${k}</button>`).join('')}
-            </div>
-            ${list.length ? `<div class="ct-list">${list.map(card).join('')}</div>`
-                : `<div class="ct-empty">${q || cat !== '전체' ? '찾는 연락처가 없습니다.' : '등록된 연락처가 없습니다. 오른쪽 위 [새 연락처]를 누르세요.'}</div>`}
+            </section>
+            <section class="m3-doc">
+                ${sel ? `
+                <div class="m3-tools">
+                    ${sel.phone ? `<a class="mbtn" href="tel:${esc(tel(sel.phone))}" style="text-decoration:none"><i class="ph ph-phone"></i> 전화</a>` : ''}
+                    ${sel.email ? `<a class="mbtn" href="mailto:${esc(sel.email)}" style="text-decoration:none"><i class="ph ph-envelope-simple"></i> 메일</a>` : ''}
+                    <span class="sp"></span>
+                    <button onclick="app.showVendorModal('${sel.id}')" title="수정"><i class="ph ph-pencil-simple"></i></button>
+                </div>
+                <div class="m3-page">
+                    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+                        <span class="ct-face" style="width:54px;height:54px;font-size:22px">${esc(initial(sel.name))}</span>
+                        <div><h2 class="m3-big">${esc(sel.name)}</h2>
+                            <div class="m3-sub" style="margin:0">${esc(sel.category || '기타')}</div></div>
+                    </div>
+                    ${f('ph-phone', '전화', sel.phone, sel.phone ? 'tel:' + tel(sel.phone) : null)}
+                    ${f('ph-envelope-simple', '메일', sel.email, sel.email ? 'mailto:' + sel.email : null)}
+                    ${f('ph-map-pin', '주소', sel.address)}
+                    ${f('ph-user', '대표자', sel.ceo_name)}
+                    ${f('ph-identification-card', '사업자번호', sel.biz_no)}
+                    ${f('ph-note', '메모', sel.memo)}
+                    ${(() => {
+                        const jobs = (sel.jobs || []).filter(j => j.status !== 'done');
+                        return jobs.length ? `<div class="m3-f" style="flex-direction:column;align-items:stretch">
+                            <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:6px">진행 중 ${jobs.length}건</div>
+                            ${jobs.slice(0, 6).map(j => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0">
+                                <span>${esc(j.title)}</span><span style="color:var(--text-muted)">${esc(j.due_date || '')}</span></div>`).join('')}
+                        </div>` : '';
+                    })()}
+                </div>` : `<div class="m3-none mid">왼쪽에서 연락처를 고르세요</div>`}
+            </section>
         </div>`;
+    }
+    setContactCat(c) { this.contactCat = c; this.contactSel = null; this.requestRender(); }
+    selectContact(id) { this.contactSel = id; this.requestRender(); }
+    contactMenu(ev, id) {
+        const v = (this.vendors || []).find(x => x.id === id); if (!v) return;
+        this.ctxMenu(ev, [
+            { t: '보기', icon: 'ph-arrow-square-out', run: () => this.selectContact(id) },
+            { t: '수정', icon: 'ph-pencil-simple', run: () => this.showVendorModal(id) },
+            ...(v.phone ? [{ t: '전화 걸기', icon: 'ph-phone', run: () => { location.href = 'tel:' + String(v.phone).replace(/[^0-9+]/g, ''); } }] : []),
+            ...(v.phone ? [{ t: '번호 복사', icon: 'ph-copy', run: () => { navigator.clipboard?.writeText(v.phone); this.showToast('번호를 복사했습니다'); } }] : []),
+            { sep: true },
+            { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.deleteVendor(id) },
+        ]);
     }
     showVendorModal(id) {
         const v = id ? (this.vendors||[]).find(x=>x.id===id) : null;
