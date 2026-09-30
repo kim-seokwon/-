@@ -4905,7 +4905,7 @@ class BhasApp {
         el.style.top = (rec.y != null ? rec.y : 130 + idx * 24) + 'px';
         el.style.width = (rec.w || 230) + 'px';
         el.style.height = (rec.h || 200) + 'px';
-        const swatch = (c, sc) => `<i data-c="${c}" data-s="${sc}" style="background:${c}" title="${sc === 'shared' ? '공용 — 모두가 봅니다' : '개인 — 나만 봅니다'}"></i>`;
+        const swatch = (c, sc) => `<i data-c="${c}" data-s="${sc}" style="background:${c}" title="${this._vesc(this._labelOf(c))} · ${sc === 'shared' ? '공용' : '개인'}"></i>`;
         el.innerHTML = `<div class="st-bar"><button class="st-x" title="치우기 — 기록은 남습니다"></button><button class="st-plus" title="새 스티커"></button>
                 <button class="st-who" title="누가 보나 — 눌러서 바꿉니다">개인</button>
                 <span class="st-col">
@@ -4970,6 +4970,52 @@ class BhasApp {
         setTimeout(() => ta.focus(), 50);
         return el;
     }
+    // ── 색 이름 ──────────────────────────────────────────────
+    //  색마다 뜻을 붙여 쓴다(예: 노랑=급한 일). 회사 공용 한 벌이라 모두가 같은 이름을 본다.
+    //  notes 에 folder='스티커라벨' 한 줄로 두고, DB 가 막히면 이 기기에 남긴다.
+    ST_LABEL_DEFAULT = {
+        '#fff5a5': '노랑', '#ffd8e4': '분홍', '#e7dcff': '라벤더',
+        '#d3f2ff': '하늘', '#d9f7d0': '연두', '#ccf5ec': '민트',
+    };
+    _labelsLocal(next) {
+        if (next !== undefined) { try { localStorage.setItem('bhas_sticky_labels', JSON.stringify(next)); } catch (_e) {} return next; }
+        try { return JSON.parse(localStorage.getItem('bhas_sticky_labels') || 'null'); } catch (_e) { return null; }
+    }
+    async _loadStickyLabels() {
+        if (this._stLabels) return this._stLabels;
+        let m = null;
+        try {
+            const { data } = await this.supabase.from('notes').select('id,body')
+                .eq('folder', '스티커라벨').limit(1);
+            if (data && data[0]) { this._stLabelRow = data[0].id; m = JSON.parse(data[0].body || '{}'); }
+        } catch (_e) { /* 막히면 이 기기 것으로 */ }
+        this._stLabels = { ...this.ST_LABEL_DEFAULT, ...(m || this._labelsLocal() || {}) };
+        return this._stLabels;
+    }
+    _labelOf(color) {
+        const c = String(color || '').trim();
+        const m = this._stLabels || this.ST_LABEL_DEFAULT;
+        if (m[c]) return m[c];
+        const hit = Object.keys(this.ST_LABEL_DEFAULT).find(h => this._rgb(h) === c);
+        return hit ? (m[hit] || this.ST_LABEL_DEFAULT[hit]) : '';
+    }
+    async _saveStickyLabels() {
+        const m = this._stLabels || {};
+        this._labelsLocal(m);
+        const body = JSON.stringify(m);
+        try {
+            if (this._stLabelRow) {
+                const { error } = await this.supabase.from('notes').update({ body }).eq('id', this._stLabelRow);
+                if (error) throw error;
+            } else {
+                const { data, error } = await this.supabase.from('notes')
+                    .insert([{ title: '스티커 색 이름', body, folder: '스티커라벨', scope: 'shared',
+                               created_by: this.currentUser?.name || null }]).select('id').single();
+                if (error) throw error;
+                this._stLabelRow = data && data.id;
+            }
+        } catch (_e) { this.showToast('색 이름은 이 기기에만 저장됐습니다.'); }
+    }
     // ── 스티커 메뉴 (맥 독 메뉴 모양) ─────────────────────────
     //  독의 스티커를 누르면 아이콘 위로 뜬다. 새로 만들기 · 색으로 바로 만들기 · 지난 스티커.
     openStickyList() {
@@ -4978,25 +5024,19 @@ class BhasApp {
         const esc = s => this._vesc(s);
         const el = document.createElement('div');
         el.className = 'stmenu'; el.id = 'sticky-list';
-        const dot = (c, sc) => `<button class="stm-dot" data-c="${c}" data-s="${sc}" style="background:${c}"
-            title="${sc === 'shared' ? '공용 스티커 — 모두가 봅니다' : '개인 스티커 — 나만 봅니다'}"></button>`;
         el.innerHTML = `
             <button class="stm-item stm-new"><i class="ph ph-plus"></i><span>새 스티커</span></button>
-            <div class="stm-colors">
-                <div class="stm-cg"><div class="stm-cdots">${this.ST_COLORS.private.map(c => dot(c, 'private')).join('')}</div><em>개인</em></div>
-                <div class="stm-cvr"></div>
-                <div class="stm-cg"><div class="stm-cdots">${this.ST_COLORS.shared.map(c => dot(c, 'shared')).join('')}</div><em>공용</em></div>
-            </div>
             <div class="stm-sep"></div>
-            <div class="stm-list">불러오는 중…</div>
+            <div class="stm-cap">색</div>
+            <div class="stm-pal">불러오는 중…</div>
+            <div class="stm-sep"></div>
+            <div class="stm-cap">지난 스티커</div>
+            <div class="stm-list"></div>
             <span class="stm-caret"></span>`;
         document.body.appendChild(el);
         this._placeStickyMenu(el);
         el.querySelector('.stm-new').onclick = () => { this.addSticky(); this._closeStickyMenu(); };
-        el.querySelectorAll('.stm-dot').forEach(b => b.onclick = () => {
-            this.addSticky({ color: b.dataset.c, scope: b.dataset.s });
-            this._closeStickyMenu();
-        });
+        this._renderPalette();
         // 맥 메뉴처럼 바깥을 누르거나 Esc 를 누르면 닫힌다
         this._stmOutside = (ev) => {
             if (el.contains(ev.target) || ev.target.closest('.mac-dock .mdi')) return;
@@ -5009,6 +5049,58 @@ class BhasApp {
         }, 0);
         this._syncStickyList();
         return el;
+    }
+    // 색을 세로로 한 줄씩. 줄을 누르면 그 색으로 스티커가 켜지고, 연필로 이름을 바꾼다.
+    async _renderPalette() {
+        const el = document.getElementById('sticky-list'); if (!el) return;
+        const pal = el.querySelector('.stm-pal'); if (!pal) return;
+        await this._loadStickyLabels();
+        if (!document.getElementById('sticky-list')) return;
+        const esc = s => this._vesc(s);
+        const row = (c, sc) => `<div class="stm-prow" data-c="${c}" data-s="${sc}">
+                <span class="stm-chip" style="background:${c}"></span>
+                <span class="stm-name">${esc(this._labelOf(c))}</span>
+                <span class="stm-tag2${sc === 'shared' ? ' shared' : ''}">${sc === 'shared' ? '공용' : '개인'}</span>
+                <button class="stm-edit" title="이름 바꾸기"><i class="ph ph-pencil-simple"></i></button>
+            </div>`;
+        pal.innerHTML = this.ST_COLORS.private.map(c => row(c, 'private')).join('')
+                      + this.ST_COLORS.shared.map(c => row(c, 'shared')).join('');
+        pal.querySelectorAll('.stm-prow').forEach(r => {
+            r.onclick = (ev) => {
+                if (ev.target.closest('.stm-edit') || r.classList.contains('editing')) return;
+                this.addSticky({ color: r.dataset.c, scope: r.dataset.s });
+                this._closeStickyMenu();
+            };
+            r.querySelector('.stm-edit').onclick = (ev) => { ev.stopPropagation(); this._renameColor(r); };
+        });
+    }
+    _renameColor(r) {
+        if (r.classList.contains('editing')) return;
+        r.classList.add('editing');
+        const name = r.querySelector('.stm-name');
+        const old = name.textContent;
+        const inp = document.createElement('input');
+        inp.className = 'stm-input'; inp.value = old; inp.maxLength = 12;
+        name.replaceWith(inp);
+        inp.focus(); inp.select();
+        const done = async (ok) => {
+            const v = (inp.value || '').trim().slice(0, 12);
+            const span = document.createElement('span');
+            span.className = 'stm-name';
+            span.textContent = (ok && v) ? v : old;
+            inp.replaceWith(span);
+            r.classList.remove('editing');
+            if (ok && v && v !== old) {
+                this._stLabels = { ...(this._stLabels || {}), [r.dataset.c]: v };
+                await this._saveStickyLabels();
+                this._syncStickyList();
+            }
+        };
+        inp.onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); done(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+        };
+        inp.onblur = () => done(true);
     }
     _closeStickyMenu() {
         document.removeEventListener('mousedown', this._stmOutside || (() => {}));
@@ -5051,15 +5143,16 @@ class BhasApp {
             rows = (data || []).map(r => ({ ...r, local: false }));
         } catch (_e) { /* DB 가 막혀도 기기 저장분은 보여준다 */ }
         rows = rows.concat(this._localStickies().slice().reverse());
-        if (!rows.length) { body.innerHTML = `<div class="stm-empty">지난 스티커가 없습니다</div>`; return; }
+        if (!rows.length) { body.innerHTML = `<div class="stm-empty">없음</div>`; return; }
         body.innerHTML = rows.map(r => {
             const shared = (r.scope || 'private') === 'shared';
             const txt = (r.body || '').trim().split('\n')[0].slice(0, 26) || '빈 스티커';
             const up = !!document.querySelector(`.sticky[data-id="${r.id}"]`);
-            return `<button class="stm-item stm-row${up ? ' up' : ''}" data-id="${esc(String(r.id))}">
+            const lab = this._labelOf(r.color || (shared ? '#d3f2ff' : '#fff5a5'));
+            return `<button class="stm-item stm-row${up ? ' up' : ''}" data-id="${esc(String(r.id))}" title="${esc(lab)}">
                 <span class="stm-chip" style="background:${esc(r.color || (shared ? '#d3f2ff' : '#fff5a5'))}"></span>
                 <span class="stm-txt">${esc(txt)}</span>
-                ${shared ? '<span class="stm-tag">공용</span>' : ''}
+                ${lab ? `<span class="stm-tag2${shared ? ' shared' : ''}">${esc(lab)}</span>` : ''}
                 <span class="stm-del" title="지우기">✕</span>
             </button>`;
         }).join('');
