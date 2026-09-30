@@ -1025,7 +1025,7 @@ class BhasApp {
                         <div class="noti-trigger" onclick="app.openCalc()" title="계산기">
                             <i class="ph ph-calculator"></i>
                         </div>
-                        <div class="noti-trigger" onclick="app.addSticky()" title="스티커 메모">
+                        <div class="noti-trigger" onclick="app.openStickyList()" title="스티커 메모">
                             <i class="ph ph-note-blank"></i>
                         </div>
                         <div class="noti-trigger" onclick="app.toggleMacMode()" title="맥 모드(창·독)">
@@ -1125,7 +1125,7 @@ class BhasApp {
                 <div class="top-toolbar">
                     <div class="tt-util">
                         <button onclick="app.openCalc()" title="계산기"><i class="ph ph-calculator"></i></button>
-                        <button onclick="app.addSticky()" title="스티커 메모"><i class="ph ph-note-blank"></i></button>
+                        <button onclick="app.openStickyList()" title="스티커 메모"><i class="ph ph-note-blank"></i></button>
                         <button onclick="app.toggleMacMode()" title="맥 모드(창·독)"><i class="ph ph-squares-four"></i></button>
                     </div>
                     <div class="tt-search" id="open-search-btn" title="통합 검색 (단축키 /)">
@@ -4970,29 +4970,75 @@ class BhasApp {
         setTimeout(() => ta.focus(), 50);
         return el;
     }
-    // ── 스티커 목록 (맥 Stickies 의 '모든 메모 보기') ────────────
-    //  치워둔 스티커를 다시 꺼내는 자리. 독의 스티커를 누르면 열린다.
+    // ── 스티커 메뉴 (맥 독 메뉴 모양) ─────────────────────────
+    //  독의 스티커를 누르면 아이콘 위로 뜬다. 새로 만들기 · 색으로 바로 만들기 · 지난 스티커.
     openStickyList() {
         const cur = document.getElementById('sticky-list');
-        if (cur) { cur.remove(); return; }
+        if (cur) { this._closeStickyMenu(); return; }
+        const esc = s => this._vesc(s);
         const el = document.createElement('div');
-        el.className = 'stlist'; el.id = 'sticky-list';
-        el.style.left = Math.max(8, Math.min(window.innerWidth - 300, window.innerWidth - 330)) + 'px';
-        el.style.top = Math.max(8, Math.min(90, window.innerHeight - 420)) + 'px';
-        el.innerHTML = `<div class="stl-bar"><button class="stl-x" title="닫기"></button><span>스티커</span></div>
-            <button class="stl-new">+ 새 스티커</button>
-            <div class="stl-body">불러오는 중…</div>`;
+        el.className = 'stmenu'; el.id = 'sticky-list';
+        const dot = (c, sc) => `<button class="stm-dot" data-c="${c}" data-s="${sc}" style="background:${c}"
+            title="${sc === 'shared' ? '공용 스티커 — 모두가 봅니다' : '개인 스티커 — 나만 봅니다'}"></button>`;
+        el.innerHTML = `
+            <button class="stm-item stm-new"><i class="ph ph-plus"></i><span>새 스티커</span></button>
+            <div class="stm-colors">
+                <div class="stm-cg"><div class="stm-cdots">${this.ST_COLORS.private.map(c => dot(c, 'private')).join('')}</div><em>개인</em></div>
+                <div class="stm-cvr"></div>
+                <div class="stm-cg"><div class="stm-cdots">${this.ST_COLORS.shared.map(c => dot(c, 'shared')).join('')}</div><em>공용</em></div>
+            </div>
+            <div class="stm-sep"></div>
+            <div class="stm-list">불러오는 중…</div>
+            <span class="stm-caret"></span>`;
         document.body.appendChild(el);
-        this._dragWin(el, el.querySelector('.stl-bar'));
-        el.querySelector('.stl-x').onclick = () => el.remove();
-        el.querySelector('.stl-new').onclick = () => { this.addSticky(); setTimeout(() => this._syncStickyList(), 400); };
+        this._placeStickyMenu(el);
+        el.querySelector('.stm-new').onclick = () => { this.addSticky(); this._closeStickyMenu(); };
+        el.querySelectorAll('.stm-dot').forEach(b => b.onclick = () => {
+            this.addSticky({ color: b.dataset.c, scope: b.dataset.s });
+            this._closeStickyMenu();
+        });
+        // 맥 메뉴처럼 바깥을 누르거나 Esc 를 누르면 닫힌다
+        this._stmOutside = (ev) => {
+            if (el.contains(ev.target) || ev.target.closest('.mac-dock .mdi')) return;
+            this._closeStickyMenu();
+        };
+        this._stmKey = (ev) => { if (ev.key === 'Escape') this._closeStickyMenu(); };
+        setTimeout(() => {
+            document.addEventListener('mousedown', this._stmOutside);
+            document.addEventListener('keydown', this._stmKey);
+        }, 0);
         this._syncStickyList();
         return el;
     }
-    // 목록 내용 다시 채우기 — DB(내 개인칸 + 모두의 공용) + 이 기기 저장분
+    _closeStickyMenu() {
+        document.removeEventListener('mousedown', this._stmOutside || (() => {}));
+        document.removeEventListener('keydown', this._stmKey || (() => {}));
+        const el = document.getElementById('sticky-list');
+        if (!el) return;
+        el.classList.add('out');
+        setTimeout(() => el.remove(), 110);
+        setTimeout(() => this.requestRender(), 140);
+    }
+    // 독의 스티커 아이콘 바로 위에 붙인다. 독이 없으면(기본 화면) 오른쪽 위에.
+    _placeStickyMenu(el) {
+        const btn = [...document.querySelectorAll('.mac-dock .mdi')].find(b => b.title === '스티커');
+        const w = 268;
+        if (btn) {
+            const r = btn.getBoundingClientRect();
+            const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+            el.style.left = left + 'px';
+            el.style.bottom = (window.innerHeight - r.top + 14) + 'px';
+            el.style.setProperty('--caret', (r.left + r.width / 2 - left) + 'px');
+        } else {
+            el.style.left = Math.max(8, window.innerWidth - w - 16) + 'px';
+            el.style.top = '72px';
+            el.classList.add('nocaret');
+        }
+    }
+    // 목록 내용 채우기 — DB(내 개인칸 + 모두의 공용) + 이 기기 저장분
     async _syncStickyList() {
         const el = document.getElementById('sticky-list'); if (!el) return;
-        const body = el.querySelector('.stl-body');
+        const body = el.querySelector('.stm-list');
         const esc = s => this._vesc(s);
         let rows = [];
         try {
@@ -5005,32 +5051,30 @@ class BhasApp {
             rows = (data || []).map(r => ({ ...r, local: false }));
         } catch (_e) { /* DB 가 막혀도 기기 저장분은 보여준다 */ }
         rows = rows.concat(this._localStickies().slice().reverse());
-        if (!rows.length) { body.innerHTML = `<div class="stl-empty">아직 스티커가 없습니다.<br>위의 <b>+ 새 스티커</b>를 누르세요.</div>`; return; }
+        if (!rows.length) { body.innerHTML = `<div class="stm-empty">지난 스티커가 없습니다</div>`; return; }
         body.innerHTML = rows.map(r => {
             const shared = (r.scope || 'private') === 'shared';
-            const txt = (r.body || '').trim().split('\n')[0].slice(0, 34) || '(빈 스티커)';
-            const when = r.updated_at ? new Date(r.updated_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '이 기기';
+            const txt = (r.body || '').trim().split('\n')[0].slice(0, 26) || '빈 스티커';
             const up = !!document.querySelector(`.sticky[data-id="${r.id}"]`);
-            return `<div class="stl-row${up ? ' up' : ''}" data-id="${esc(String(r.id))}">
-                <span class="stl-dot" style="background:${esc(r.color || (shared ? '#d3f2ff' : '#fff5a5'))}"></span>
-                <span class="stl-who${shared ? ' shared' : ''}">${shared ? '공용' : '개인'}</span>
-                <span class="stl-txt">${esc(txt)}</span>
-                <span class="stl-when">${up ? '열림' : esc(when)}</span>
-                <button class="stl-del" title="지우기">✕</button>
-            </div>`;
+            return `<button class="stm-item stm-row${up ? ' up' : ''}" data-id="${esc(String(r.id))}">
+                <span class="stm-chip" style="background:${esc(r.color || (shared ? '#d3f2ff' : '#fff5a5'))}"></span>
+                <span class="stm-txt">${esc(txt)}</span>
+                ${shared ? '<span class="stm-tag">공용</span>' : ''}
+                <span class="stm-del" title="지우기">✕</span>
+            </button>`;
         }).join('');
         const byId = Object.fromEntries(rows.map(r => [String(r.id), r]));
-        body.querySelectorAll('.stl-row').forEach(row => {
+        body.querySelectorAll('.stm-row').forEach(row => {
             const rec = byId[row.dataset.id];
             row.onclick = (ev) => {
-                if (ev.target.closest('.stl-del')) return;
+                if (ev.target.closest('.stm-del')) return;
                 const up = document.querySelector(`.sticky[data-id="${row.dataset.id}"]`);
-                if (up) { up.style.zIndex = 1395; up.querySelector('textarea').focus(); return; }
-                this.addSticky(rec);
-                this._syncStickyList();
+                if (up) { up.style.zIndex = 1394; up.querySelector('textarea').focus(); }
+                else this.addSticky(rec);
+                this._closeStickyMenu();
             };
-            row.querySelector('.stl-del').onclick = async (ev) => {
-                ev.stopPropagation();
+            row.querySelector('.stm-del').onclick = async (ev) => {
+                ev.stopPropagation(); ev.preventDefault();
                 await this._deleteSticky(rec);
                 this._syncStickyList();
             };

@@ -2641,34 +2641,52 @@ body.light .wall-thumb{background:var(--wall-light);background-size:cover}
 .wall-opt.on em{color:var(--primary);font-weight:700}
 @media (max-width:520px){ .settings-pane{padding:12px} .wall-pick{grid-template-columns:1fr 1fr;padding:12px;gap:10px} }
 
-/* ── 스티커 목록 — 치워둔 스티커를 다시 꺼내는 자리 ────────── */
-.stlist{position:fixed;width:300px;max-height:min(460px,72vh);z-index:1395;border-radius:12px;overflow:hidden;
-  display:flex;flex-direction:column;background:rgba(32,32,36,.94);backdrop-filter:blur(30px) saturate(170%);
-  border:1px solid rgba(255,255,255,.14);box-shadow:0 26px 60px rgba(0,0,0,.5);color:#f2f2f4}
-body.light .stlist{background:rgba(252,252,253,.97);border-color:rgba(0,0,0,.12);color:#1b1b1f;
-  box-shadow:0 22px 52px rgba(0,0,0,.22)}
-.stl-bar{height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;cursor:grab;flex:0 0 auto;
-  background:rgba(127,127,127,.14);border-bottom:1px solid rgba(127,127,127,.20)}
-.stl-bar.drag{cursor:grabbing}
-.stl-bar span{font-size:.78rem;font-weight:700;flex:1;text-align:center;opacity:.85}
-.stl-x{width:12px;height:12px;border-radius:50%;border:0;padding:0;cursor:pointer;background:#ff5f57;position:relative}
-.stl-x::before{content:'';position:absolute;inset:-8px;border-radius:50%}
-.stl-new{margin:9px 10px;padding:8px 0;border:1px dashed rgba(127,127,127,.5);border-radius:9px;
-  background:transparent;color:inherit;font-family:inherit;font-size:.8rem;font-weight:700;cursor:pointer;flex:0 0 auto}
-.stl-new:hover{background:rgba(127,127,127,.16)}
-.stl-body{flex:1;overflow:auto;min-height:0;padding:0 6px 8px}
-.stl-empty{padding:1.6rem .8rem;text-align:center;font-size:.79rem;opacity:.6;line-height:1.7}
-.stl-row{display:flex;align-items:center;gap:7px;padding:8px 8px;border-radius:8px;cursor:pointer;font-size:.8rem}
-.stl-row:hover{background:rgba(127,127,127,.16)}
-.stl-row.up{background:rgba(59,130,246,.14)}
-.stl-dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(0,0,0,.2)}
-.stl-who{font-size:.6rem;font-weight:800;padding:1px 6px;border-radius:99px;flex:0 0 auto;
-  background:rgba(127,127,127,.28);color:inherit}
-.stl-who.shared{background:#1d6fe0;color:#fff}
-.stl-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stl-when{font-size:.68rem;opacity:.5;flex:0 0 auto}
-.stl-del{border:0;background:transparent;color:inherit;opacity:0;cursor:pointer;font-size:.72rem;
-  padding:2px 4px;flex:0 0 auto;font-family:inherit}
-.stl-row:hover .stl-del{opacity:.55}
-.stl-del:hover{opacity:1 !important;color:#ef4444}
-@media (max-width:520px){ .stlist{width:calc(100vw - 24px);left:12px !important} }
+/* ── 스티커 메뉴 — 맥 독 메뉴 모양 ──────────────────────── */
+.stmenu{position:fixed;width:268px;z-index:4600;padding:6px;border-radius:13px;
+  display:flex;flex-direction:column;
+  background:rgba(38,38,42,.72);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);
+  border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 50px rgba(0,0,0,.46),0 0 0 .5px rgba(0,0,0,.3);
+  color:#f4f4f6;transform-origin:bottom center;animation:stmIn .13s cubic-bezier(.2,.9,.3,1.1)}
+body.light .stmenu{background:rgba(247,247,249,.80);border-color:rgba(0,0,0,.10);color:#17171a;
+  box-shadow:0 18px 44px rgba(0,0,0,.20),0 0 0 .5px rgba(0,0,0,.08)}
+.stmenu.out{animation:stmOut .1s ease-in forwards}
+@keyframes stmIn{from{opacity:0;transform:scale(.94) translateY(6px)}to{opacity:1;transform:none}}
+@keyframes stmOut{to{opacity:0;transform:scale(.97) translateY(3px)}}
+/* 독 아이콘을 가리키는 꼬리 */
+.stmenu .stm-caret{position:absolute;bottom:-7px;left:var(--caret,50%);transform:translateX(-50%) rotate(45deg);
+  width:13px;height:13px;background:inherit;border-right:1px solid rgba(255,255,255,.16);
+  border-bottom:1px solid rgba(255,255,255,.16);backdrop-filter:inherit;border-radius:0 0 3px 0}
+body.light .stmenu .stm-caret{border-color:rgba(0,0,0,.10)}
+.stmenu.nocaret .stm-caret{display:none}
+/* 줄 */
+.stm-item{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;border:0;border-radius:7px;
+  background:transparent;color:inherit;font-family:inherit;font-size:.84rem;cursor:pointer;text-align:left;
+  line-height:1.4}
+.stm-item:hover{background:#2f7cf6;color:#fff}
+.stm-new{font-weight:600}
+.stm-new i{font-size:1rem;opacity:.8}
+.stm-new:hover i{opacity:1}
+/* 색으로 바로 만들기 */
+.stm-colors{display:flex;align-items:flex-start;gap:10px;padding:8px 9px 4px}
+.stm-cg{flex:1;text-align:center}
+.stm-cdots{display:flex;gap:8px;justify-content:center}
+.stm-cg em{display:block;font-style:normal;font-size:.63rem;opacity:.52;margin-top:5px;font-weight:600}
+.stm-cvr{width:1px;align-self:stretch;background:rgba(127,127,127,.30);margin-top:2px}
+.stm-dot{width:19px;height:19px;border-radius:50%;border:1px solid rgba(0,0,0,.20);padding:0;cursor:pointer;
+  transition:transform .11s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.stm-dot:hover{transform:scale(1.22)}
+.stm-sep{height:1px;background:rgba(127,127,127,.28);margin:5px 8px}
+/* 지난 스티커 */
+.stm-list{max-height:min(300px,44vh);overflow:auto;min-height:0}
+.stm-list::-webkit-scrollbar{width:7px}
+.stm-list::-webkit-scrollbar-thumb{background:rgba(128,128,128,.4);border-radius:7px}
+.stm-empty{padding:12px 9px;font-size:.78rem;opacity:.5;text-align:center}
+.stm-row.up{font-weight:700}
+.stm-chip{width:12px;height:12px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(0,0,0,.22)}
+.stm-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stm-tag{font-size:.58rem;font-weight:800;padding:1px 5px;border-radius:99px;background:#1d6fe0;color:#fff;flex:0 0 auto}
+.stm-item:hover .stm-tag{background:rgba(255,255,255,.28)}
+.stm-del{opacity:0;font-size:.72rem;padding:0 2px;flex:0 0 auto}
+.stm-row:hover .stm-del{opacity:.7}
+.stm-del:hover{opacity:1}
+@media (max-width:520px){ .stmenu{width:calc(100vw - 24px)} }
