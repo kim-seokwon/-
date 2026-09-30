@@ -3341,3 +3341,39 @@ body:not(.light) .launcher{background:rgba(24,24,28,.66)}
 .rm-plus{border:0;background:transparent;color:var(--text-muted);font-size:15px;cursor:pointer;
   padding:0 4px;border-radius:5px;line-height:1}
 .rm-plus:hover{background:rgba(127,127,127,.18);color:var(--primary)}
+
+/* 로그인이 풀렸을 때 — 조용히 비어 보이지 않게 */
+.authbar{position:fixed;left:50%;top:38px;transform:translateX(-50%);z-index:9000;
+  display:flex;align-items:center;gap:10px;padding:10px 15px;border-radius:12px;
+  background:rgba(224,41,79,.96);color:#fff;font-size:13px;
+  box-shadow:0 14px 40px rgba(0,0,0,.35);animation:stmIn .16s cubic-bezier(.2,.9,.3,1.05)}
+.authbar i{font-size:16px}
+.authbar button{border:0;border-radius:8px;background:rgba(255,255,255,.22);color:#fff;
+  font-family:inherit;font-size:12.5px;font-weight:700;padding:5px 12px;cursor:pointer}
+.authbar button:hover{background:rgba(255,255,255,.34)}
+.nt-shead{display:flex;align-items:center;justify-content:space-between}
+.nt-add{border:0;background:transparent;color:var(--text-muted);font-size:14px;cursor:pointer;
+  padding:0 4px;border-radius:5px;line-height:1}
+.nt-add:hover{background:rgba(127,127,127,.18);color:var(--primary)}
+
+/* ═══════════ 남은 화면들도 파인더·메모와 같은 결로 ═══════════
+   인라인 style 로 박힌 유리 카드·큰 모서리·두꺼운 그림자를 창 안에서 걷어낸다. */
+.macwin-body .glass{border-radius:12px !important;border:.5px solid var(--card-border) !important;
+  background:var(--card-bg) !important;box-shadow:0 1px 2px rgba(0,0,0,.05) !important;
+  backdrop-filter:none !important;padding:16px 18px !important}
+.macwin-body .glass.modal-content{padding:1.6rem !important}
+/* 제목 */
+.macwin-body h2{font-size:17px !important;font-weight:800 !important}
+.macwin-body h3{font-size:14px !important;font-weight:700 !important}
+/* 단추 — 맥 치수로 */
+.macwin-body .btn-primary,.macwin-body .btn-secondary,.macwin-body .btn-danger{
+  border-radius:8px !important;font-size:12.5px !important;font-weight:600 !important;
+  padding:6px 13px !important;box-shadow:none !important}
+.macwin-body .btn-secondary{border:.5px solid var(--card-border) !important;background:var(--card-bg) !important}
+/* 칩·필터 */
+.macwin-body .filter-btn,.macwin-body .oms-tab{border-radius:99px !important;font-size:12.5px !important;
+  padding:5px 13px !important;border:.5px solid var(--card-border) !important}
+/* 입력칸 */
+.macwin-body .login-input,.macwin-body input[type=text],.macwin-body input[type=date],
+.macwin-body input[type=number],.macwin-body select,.macwin-body textarea{
+  border-radius:8px !important;font-size:13px !important}

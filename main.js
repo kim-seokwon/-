@@ -74,6 +74,26 @@ class BhasApp {
         } catch (e) { /* init error */ }
     }
 
+    // 저장해둔 로그인 정보로 들어왔을 때 진짜 Supabase 세션이 살아 있는지 확인한다.
+    //  없으면 데이터가 하나도 안 보이므로, 조용히 두지 말고 다시 로그인하게 한다.
+    async _verifyAuth() {
+        try {
+            const { data } = await this.supabase.auth.getSession();
+            if (data && data.session) { this._authOk = true; return true; }
+        } catch (_e) { /* 아래로 */ }
+        this._authOk = false;
+        this._showAuthBar();
+        return false;
+    }
+    _showAuthBar() {
+        if (document.getElementById('auth-bar')) return;
+        const el = document.createElement('div');
+        el.id = 'auth-bar'; el.className = 'authbar';
+        el.innerHTML = `<i class="ph ph-warning-circle"></i>
+            <span>로그인이 풀렸습니다. 데이터가 안 보이고 저장도 되지 않습니다.</span>
+            <button onclick="app.logout()">다시 로그인</button>`;
+        document.body.appendChild(el);
+    }
     showToast(message) {
         // 전역 중복 알림 방지: 동일 메시지가 화면에 활성 상태이면 무시
         if (!window.__BHAS_ACTIVE_TOASTS__) window.__BHAS_ACTIVE_TOASTS__ = new Set();
@@ -128,6 +148,10 @@ class BhasApp {
                     if (parsed && parsed.role && parsed.name) {
                         this.currentUser = parsed;
                         this.currentView = 'home';
+                        // ★ 여기서 Supabase 세션을 확인하지 않으면, 화면은 로그인한 것처럼 보이는데
+                        //   RLS 가 전부 막아 데이터가 0 으로 뜨고 새로 만드는 것도 안 된다.
+                        //   (다른 컴퓨터·토큰 만료 때 이런 일이 난다)
+                        this._verifyAuth();
                     } else {
                         throw new Error('Invalid session data');
                     }
@@ -922,6 +946,7 @@ class BhasApp {
                         this.currentUser.company_id = authData.user.id; // 폴백: 이 경우 RLS 위반 가능성 있음
                     }
 
+                    this._authOk = true; document.getElementById('auth-bar')?.remove();
                     if (saveIdChecked) localStorage.setItem('bhas_saved_id', identifier);
                     else localStorage.removeItem('bhas_saved_id');
                     
@@ -6172,7 +6197,8 @@ class BhasApp {
         <div class="nt">
             <aside class="nt-side">
                 ${fold('private', 'ph-note', '개인 메모', cnt(n => n.scope === 'private' && n.owner === me))}
-                <div class="nt-shead">우리 회사</div>
+                <div class="nt-shead">우리 회사
+                    <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-folder-simple', '메모', all.length)}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
                 <div class="nt-shead">프로젝트</div>
