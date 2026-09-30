@@ -2714,6 +2714,103 @@ class BhasApp {
         return `<div class="projsw">${b('cards', '카드', 'ph-squares-four')}${b('timeline', '타임라인', 'ph-chart-bar-horizontal')}</div>`;
     }
     setProjTab(k) { this.projTab = k; this.requestRender(); }
+    // ── 알림 센터 (오른쪽에서 밀려나온다) ─────────────────────
+    //  담당자로 지정된 할일, 나에게 온 요청, 오늘·지난 기한을 한 곳에 모은다.
+    //  안 읽은 게 있으면 메뉴바 종에 빨간 점이 깜빡인다.
+    _notifs() {
+        const me = this._myId();
+        const myName = this.currentUser?.name || '';
+        const today = new Date().toISOString().slice(0, 10);
+        const nameOf = id => (mockData.companies || []).find(c => c.id === id)?.name || '';
+        const out = [];
+        // 1) 나에게 배정된 할일
+        (mockData.products || []).forEach(p => (p.todos || []).forEach(t => {
+            if (t.completed) return;
+            if (t.assignee === me && t.created_by !== me) {
+                out.push({ id: 'todo:' + t.id, kind: '담당 지정', icon: 'ph-user-check', col: '#0a84ff',
+                    title: t.text, sub: `${p.name} · ${nameOf(t.created_by) || '요청'}님이 맡겼습니다`,
+                    when: t.due_date, view: 'reminders' });
+            } else if (t.created_by === me && t.assignee && t.assignee !== me) {
+                out.push({ id: 'req:' + t.id, kind: '내가 요청', icon: 'ph-paper-plane-tilt', col: '#30d158',
+                    title: t.text, sub: `${p.name} · ${nameOf(t.assignee)}님이 맡는 중`,
+                    when: t.due_date, view: 'reminders' });
+            }
+        }));
+        // 2) 메모에서 나를 부른 줄
+        this._allNoteTodos().forEach(t => {
+            if (t.done || !t.at.includes(myName)) return;
+            out.push({ id: 'note:' + t.id, kind: '메모에서 호출', icon: 'ph-at', col: '#bf5af2',
+                title: t.title, sub: t.from, when: t.due, view: 'notes' });
+        });
+        // 3) 오늘까지인 미리알림 · 지난 것
+        (this.remList || []).forEach(r => {
+            if (r.done || !r.due_date || r.due_date > today) return;
+            out.push({ id: 'rem:' + r.id, kind: r.due_date < today ? '기한 지남' : '오늘까지',
+                icon: 'ph-bell-ringing', col: r.due_date < today ? '#ff453a' : '#ff9f0a',
+                title: r.title, sub: r.list_name || '미리 알림', when: r.due_date, view: 'reminders' });
+        });
+        out.sort((a, b) => String(a.when || '9999').localeCompare(String(b.when || '9999')));
+        return out;
+    }
+    _readSet() {
+        try { return new Set(JSON.parse(localStorage.getItem('bhas_read:' + this._me()) || '[]')); }
+        catch (_e) { return new Set(); }
+    }
+    _saveRead(set) {
+        try { localStorage.setItem('bhas_read:' + this._me(), JSON.stringify([...set].slice(-400))); } catch (_e) {}
+    }
+    unreadCount() {
+        const read = this._readSet();
+        return this._notifs().filter(n => !read.has(n.id)).length;
+    }
+    openNotifCenter() {
+        if (document.getElementById('noti-center')) { this.closeNotifCenter(); return; }
+        const esc = s => this._vesc(s);
+        const read = this._readSet();
+        const list = this._notifs();
+        const el = document.createElement('div');
+        el.id = 'noti-center'; el.className = 'notic';
+        el.innerHTML = `
+            <div class="nc-top"><b>알림 센터</b>
+                ${list.length ? `<button class="nc-all" onclick="app.readAllNotifs()">모두 읽음</button>` : ''}
+                <button class="nc-x" onclick="app.closeNotifCenter()" title="닫기">✕</button></div>
+            <div class="nc-body">
+                ${list.length ? list.map(n => `
+                <div class="nc-card${read.has(n.id) ? ' read' : ''}" onclick="app.openNotif('${esc(n.id)}','${n.view}')">
+                    <span class="nc-ic" style="background:${n.col}"><i class="ph ${n.icon}"></i></span>
+                    <div class="nc-tx">
+                        <div class="nc-h"><b>${esc(n.kind)}</b><span>${esc(n.when || '')}</span></div>
+                        <div class="nc-t">${esc(n.title)}</div>
+                        <div class="nc-s">${esc(n.sub || '')}</div>
+                    </div>
+                </div>`).join('') : `<div class="nc-none">새 알림이 없습니다</div>`}
+            </div>`;
+        document.body.appendChild(el);
+        this._ncOff = (ev) => {
+            if (el.contains(ev.target) || ev.target.closest('.mac-bell')) return;
+            this.closeNotifCenter();
+        };
+        setTimeout(() => document.addEventListener('mousedown', this._ncOff), 0);
+    }
+    closeNotifCenter() {
+        document.removeEventListener('mousedown', this._ncOff || (() => {}));
+        const el = document.getElementById('noti-center');
+        if (!el) return;
+        el.classList.add('out');
+        setTimeout(() => el.remove(), 160);
+        setTimeout(() => this.requestRender(), 200);
+    }
+    openNotif(id, view) {
+        const read = this._readSet(); read.add(id); this._saveRead(read);
+        this.closeNotifCenter();
+        if (view) this.macOpen(view);
+    }
+    readAllNotifs() {
+        const read = this._readSet();
+        this._notifs().forEach(n => read.add(n.id));
+        this._saveRead(read);
+        this.closeNotifCenter();
+    }
     // ── 전체 메뉴 (독 맨 왼쪽) ────────────────────────────────
     //  대시보드의 모든 화면을 한 판에 펼친다. 글자를 치면 걸러지고 Enter 로 첫 번째를 연다.
     LAUNCH = [
@@ -5738,6 +5835,9 @@ class BhasApp {
                 <span>${esc(this.currentUser?.name || '')}</span>
                 <span class="mac-mb-right">
                     <span class="mac-ver" title="지금 보고 있는 판">${esc(this._buildTag())}</span>
+                    ${(() => { const n = this.unreadCount(); return `<button class="mac-bell${n ? ' has' : ''}"
+                        onclick="app.openNotifCenter()" title="알림 센터${n ? ` · 안 읽음 ${n}` : ''}">
+                        <i class="ph ph-bell"></i>${n ? '<i class="dot"></i>' : ''}</button>`; })()}
 
                 </span>
             </div>
