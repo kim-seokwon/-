@@ -2528,3 +2528,5 @@ body.light .mac-dock{background:rgba(255,255,255,.55);border-color:rgba(0,0,0,.1
   width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.9)}
 .mdi.min img{opacity:.75}
 .mdsep{width:1px;height:46px;align-self:center;background:rgba(255,255,255,.22);margin:0 4px}
+.note-grp{font-size:.74rem;font-weight:800;color:var(--text-muted);padding:12px 12px 4px}
+.note-tag{font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:99px}

@@ -5008,11 +5008,21 @@ class BhasApp {
         } catch (e) { this.noteList = []; this._noteLoaded = true; this.showToast('메모를 불러오지 못했습니다: ' + (e.message || e)); }
         this._noteLoading = false; this.requestRender();
     }
+    _noteScopeOf(folderKey) {
+        if (folderKey === 'private') return { scope: 'private', owner: this._me(), folder: '개인', product_id: null };
+        if ((folderKey || '').startsWith('p:')) {
+            const pid = folderKey.slice(2);
+            const pr = (mockData.products || []).find(x => x.id === pid);
+            return { scope: 'project', owner: null, folder: pr ? pr.name : '프로젝트', product_id: pid, brand_id: pr?.brand_id || null };
+        }
+        return { scope: 'shared', owner: null, folder: '공용', product_id: null };
+    }
+    _me() { return (this.currentUser?.email || '').split('@')[0] || this.currentUser?.name || null; }
     async addNote() {
+        const meta = this._noteScopeOf(this.noteFolder);
         try {
             const { data, error } = await this.supabase.from('notes')
-                .insert([{ title: '새 메모', body: '', folder: this.noteFolder && this.noteFolder !== '전체' ? this.noteFolder : '메모',
-                           created_by: this.currentUser?.name || null }]).select('*').single();
+                .insert([{ title: '새 메모', body: '', created_by: this.currentUser?.name || null, ...meta }]).select('*').single();
             if (error) throw error;
             this.noteList = [data, ...(this.noteList || [])]; this.noteSel = data.id;
             this.requestRender();
@@ -5040,24 +5050,58 @@ class BhasApp {
             if (error) throw error;
             this.noteList = this.noteList.filter(x => x.id !== n.id); this.noteSel = this.noteList[0]?.id || null;
             this.requestRender();
-        } catch (e) { this.showToast('삭제 실패(마스터만 가능): ' + (e.message || e)); }
+        } catch (e) { this.showToast('삭제 실패(개인 메모 또는 마스터만 가능): ' + (e.message || e)); }
     }
     renderNotes() {
         if (!this._noteLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">메모를 불러오는 중...</div>`;
         const esc = s => this._vesc(s);
         const all = this.noteList || [];
-        const folders = [...new Set(all.map(n => n.folder || '메모'))];
-        const cur = this.noteFolder || '전체';
-        const list = cur === '전체' ? all : all.filter(n => (n.folder || '메모') === cur);
+        const me = this._me();
+        const cur = this.noteFolder || 'private';
+        const projects = (mockData.products || []);
+        const inFolder = (n) => {
+            if (cur === 'all') return true;
+            if (cur === 'private') return n.scope === 'private' && n.owner === me;
+            if (cur === 'shared') return n.scope === 'shared';
+            if (cur.startsWith('p:')) return n.product_id === cur.slice(2);
+            if (cur.startsWith('f:')) return (n.folder || '') === cur.slice(2);
+            return true;
+        };
+        const list = all.filter(inFolder);
         const sel = list.find(n => n.id === this.noteSel) || list[0];
-        const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
-        const side = `<div class="mac-sh">폴더</div>
-            <div class="mac-si${cur === '전체' ? ' on' : ''}" onclick="app.setNoteFolder('전체')"><i class="ph ph-folder"></i> 전체 <span class="mac-cnt">${all.length}</span></div>
-            ${folders.map(f => `<div class="mac-si${cur === f ? ' on' : ''}" onclick="app.setNoteFolder('${esc(f)}')"><i class="ph ph-folder"></i> ${esc(f)} <span class="mac-cnt">${all.filter(n => (n.folder || '메모') === f).length}</span></div>`).join('')}`;
-        const items = list.map(n => `<div class="note-i${sel && n.id === sel.id ? ' on' : ''}" onclick="app.selectNote('${n.id}')">
-            <b>${esc(n.title || '새 메모')}</b>
-            <span>${esc(when(n.updated_at))} · ${esc((n.body || '').replace(/\n/g, ' ').slice(0, 40)) || '추가 텍스트 없음'}</span></div>`).join('')
-            || `<div style="padding:1.4rem;color:var(--text-muted);font-size:.85rem;text-align:center">메모가 없습니다</div>`;
+        const cnt = (fn) => all.filter(fn).length;
+        // 맥 메모처럼 날짜 묶음으로 나눈다
+        const bucket = (t) => {
+            if (!t) return '이전 항목';
+            const d = (Date.now() - new Date(t).getTime()) / 86400000;
+            if (d < 1) return '오늘'; if (d < 7) return '이전 7일'; if (d < 30) return '이전 30일';
+            return new Date(t).getFullYear() + '년 ' + (new Date(t).getMonth() + 1) + '월';
+        };
+        const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' }) : '';
+        let items = '', last = null;
+        list.forEach(n => {
+            const b = bucket(n.updated_at);
+            if (b !== last) { last = b; items += `<div class="note-grp">${esc(b)}</div>`; }
+            items += `<div class="note-i${sel && n.id === sel.id ? ' on' : ''}" onclick="app.selectNote('${n.id}')">
+                <b>${esc(n.title || '새 메모')}</b>
+                <span>${esc(when(n.updated_at))} · ${esc((n.body || '').replace(/\n/g, ' ').slice(0, 34)) || '추가 텍스트 없음'}</span></div>`;
+        });
+        if (!items) items = `<div style="padding:1.4rem;color:var(--text-muted);font-size:.85rem;text-align:center">메모가 없습니다</div>`;
+        const si = (key, icon, label, n, color) => `<div class="mac-si${cur === key ? ' on' : ''}" onclick="app.setNoteFolder('${key}')">
+            <i class="ph ${icon}"${color ? ` style="color:${color}"` : ''}></i> ${esc(label)} <span class="mac-cnt">${n}</span></div>`;
+        const otherFolders = [...new Set(all.filter(n => n.scope === 'shared').map(n => n.folder || '공용'))];
+        const side = `
+            <div class="mac-sh">내 칸</div>
+            ${si('private', 'ph-lock-simple', '개인 메모', cnt(n => n.scope === 'private' && n.owner === me), '#f59e0b')}
+            <div class="mac-sh">프로젝트</div>
+            ${projects.map(pr => si('p:' + pr.id, 'ph-folder', pr.name, cnt(n => n.product_id === pr.id), '#3b82f6')).join('')
+              || '<div style="padding:6px 10px;font-size:.76rem;color:var(--text-muted)">프로젝트 없음</div>'}
+            <div class="mac-sh">공용</div>
+            ${otherFolders.map(f => si('f:' + f, 'ph-folder-open', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#94a3b8')).join('')}
+            ${si('all', 'ph-tray', '전체', all.length)}`;
+        const scopeTag = (n) => n.scope === 'private' ? '<span class="note-tag" style="background:#f59e0b22;color:#b45309">개인</span>'
+            : n.scope === 'project' ? '<span class="note-tag" style="background:#3b82f622;color:#2563eb">프로젝트</span>'
+            : '<span class="note-tag" style="background:#94a3b822;color:#64748b">공용</span>';
         return `<div class="fade-in" style="padding:1.2rem">
             <div class="mac">
                 <div class="mac-side">${side}</div>
@@ -5067,15 +5111,14 @@ class BhasApp {
                     ${items}
                 </div>
                 <div class="mac-main">
-                    ${sel ? `<div class="mac-bar"><h3 style="font-size:.86rem;color:var(--text-muted);font-weight:600">${esc(sel.folder || '메모')}</h3>
+                    ${sel ? `<div class="mac-bar">${scopeTag(sel)}
+                            <h3 style="font-size:.84rem;color:var(--text-muted);font-weight:600">${esc(sel.folder || '메모')}</h3>
                             <button class="mac-btn" onclick="app.saveNote()">저장</button>
                             <button class="mac-btn" onclick="app.deleteNote()">삭제</button></div>
                         <div class="note-edit">
-                            <div class="note-date">${esc(when(sel.updated_at))}</div>
-                            <input id="note-title" class="note-title" value="${esc(sel.title || '')}" placeholder="제목"
-                                oninput="app._noteDirty=1" onblur="app.saveNote()">
-                            <textarea id="note-body" class="note-body" placeholder="내용을 적어주세요"
-                                oninput="app._noteDirty=1" onblur="app.saveNote()">${esc(sel.body || '')}</textarea>
+                            <div class="note-date">${esc(when(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
+                            <input id="note-title" class="note-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
+                            <textarea id="note-body" class="note-body" placeholder="내용을 적어주세요" onblur="app.saveNote()">${esc(sel.body || '')}</textarea>
                         </div>` : `<div style="padding:3rem;text-align:center;color:var(--text-muted)">왼쪽에서 메모를 선택하세요</div>`}
                 </div>
             </div></div>`;
