@@ -4405,81 +4405,92 @@ class BhasApp {
         </div>`;
     }
 
-    // 인스타 피드 톤앤매너 미리보기 — 실제 인스타 프로필 화면 모양 그대로 보여준다.
-    //  대시보드 카드처럼 보이면 "올렸을 때 어떻게 보이나"가 와닿지 않아서, 프로필 헤더·탭·2px 격자까지 인스타와 같게 맞췄다.
+    // 인스타 피드 톤앤매너 미리보기 — 실제 인스타 프로필 화면 그대로.
+    //  프로필(이름·소개·프로필사진·팔로워/팔로잉/게시물)은 Graph API 실값을 쓴다(지어내지 않는다).
+    //  격자는 인스타 현행과 같은 4:5 세로 비율, 간격 2px. 대시보드 테마에 맞춰 라이트/다크 둘 다.
     async igFeedPreview(igId, brand, accountId) {
         if (!igId) { this.showToast('먼저 계정 연동이 필요해요'); return; }
         const c = document.getElementById('global-modal-container'); if (!c) return;
+        this._feedCoverUrl = null; this._feedItems = []; this._feedProfile = null;
         const acc = (this.igAccounts || []).find(x => x.id === accountId) || {};
-        const snaps = (this.igSnapshots || []).filter(s => s.account_id === accountId)
-            .slice().sort((a, b) => (a.snap_date < b.snap_date ? 1 : -1));
-        const last = snaps[0] || {};
-        const handle = (acc.username || '').replace(/^@/, '') || 'account';
-        const nf = n => n == null ? '—' : (n >= 10000 ? (n / 10000).toFixed(1).replace(/\.0$/, '') + '만' : Number(n).toLocaleString());
-        const esc = s => this._vesc(s);
-        this._feedCoverUrl = null; this._feedItems = [];
-        c.innerHTML = `<div class="fade-in" style="width:94%;max-width:430px;max-height:92vh;overflow-y:auto;background:#fff;color:#000;border-radius:16px;
-                font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;box-shadow:0 24px 64px rgba(0,0,0,.35)">
-            <!-- 상단 바 -->
-            <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid #efefef;position:sticky;top:0;background:#fff;z-index:2">
-                <button onclick="app.closeGlobalModal()" style="border:0;background:transparent;font-size:1.2rem;cursor:pointer;color:#000;line-height:1;padding:0">←</button>
-                <b style="font-size:1rem;flex:1">${esc(handle)}</b>
-                <label style="font-size:.78rem;font-weight:700;color:#0095f6;cursor:pointer">커버 올리기<input type="file" accept="image/*" onchange="app._feedSetCover(event)" style="display:none"></label>
-            </div>
-            <!-- 프로필 -->
-            <div style="padding:16px 16px 0">
-                <div style="display:flex;align-items:center;gap:22px">
-                    <div id="ig-pf-avatar" style="width:80px;height:80px;border-radius:50%;flex:0 0 auto;background:linear-gradient(45deg,#f09433,#dc2743,#bc1888);padding:2.5px">
-                        <div style="width:100%;height:100%;border-radius:50%;background:#fff;padding:2px;box-sizing:border-box">
-                            <div id="ig-pf-img" style="width:100%;height:100%;border-radius:50%;background:#efefef"></div>
-                        </div>
-                    </div>
-                    <div style="display:flex;flex:1;text-align:center">
-                        <div style="flex:1"><div id="ig-pf-posts" style="font-weight:700;font-size:1rem">${nf(last.media_count)}</div><div style="font-size:.82rem;color:#262626">게시물</div></div>
-                        <div style="flex:1"><div style="font-weight:700;font-size:1rem">${nf(last.followers)}</div><div style="font-size:.82rem;color:#262626">팔로워</div></div>
-                        <div style="flex:1"><div style="font-weight:700;font-size:1rem">—</div><div style="font-size:.82rem;color:#262626">팔로잉</div></div>
-                    </div>
-                </div>
-                <div style="margin-top:12px;font-size:.86rem;font-weight:600">${esc(brand)}</div>
-                <div style="font-size:.86rem;color:#262626;line-height:1.45">아동복 브랜드</div>
-                <div style="display:flex;gap:6px;margin:14px 0 4px">
-                    <button style="flex:1;border:0;background:#efefef;border-radius:8px;padding:7px 0;font-size:.82rem;font-weight:700;color:#000;cursor:default">프로필 편집</button>
-                    <button style="flex:1;border:0;background:#efefef;border-radius:8px;padding:7px 0;font-size:.82rem;font-weight:700;color:#000;cursor:default">프로필 공유</button>
-                </div>
-            </div>
-            <!-- 탭 -->
-            <div style="display:flex;border-top:1px solid #efefef;margin-top:12px">
-                <div style="flex:1;text-align:center;padding:11px 0;border-bottom:1.5px solid #000;font-size:1.05rem">▦</div>
-                <div style="flex:1;text-align:center;padding:11px 0;color:#c7c7c7;font-size:1.05rem">▷</div>
-                <div style="flex:1;text-align:center;padding:11px 0;color:#c7c7c7;font-size:1.05rem">☺</div>
-            </div>
-            <div id="ig-feed-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:#fff">
-                <div style="grid-column:1/-1;padding:2.5rem;text-align:center;color:#8e8e8e;font-size:.85rem">피드 불러오는 중…</div>
-            </div>
-            <p style="margin:0;padding:12px 16px 16px;font-size:.7rem;color:#8e8e8e;line-height:1.5">
-                실제 계정의 최근 게시물 위에 새 커버를 얹어 봅니다. 미리보기 전용이라 인스타엔 올라가지 않아요.
-            </p>
-        </div>`;
+        this._feedFallback = { username: (acc.username || '').replace(/^@/, ''), brand };
+        this._renderFeedModal();
         c.style.display = 'flex';
         try {
             const { data, error } = await this.supabase.functions.invoke('ig-feed', { body: { ig_business_id: igId, limit: 17 } });
             if (error) throw error;
             if (!data?.ok) throw new Error(data?.error || '불러오기 실패');
             this._feedItems = data.items || [];
-            // 프로필 사진 자리는 가장 최근 게시물로 채운다(실제 프로필 이미지는 API로 못 가져옴)
-            const pf = document.getElementById('ig-pf-img');
-            if (pf && this._feedItems[0]?.thumb) pf.style.cssText += `background-image:url('${this._feedItems[0].thumb}');background-size:cover;background-position:center`;
-            this._renderFeedGrid();
+            this._feedProfile = data.profile || null;
+            this._renderFeedModal();
         } catch (e) {
-            const g = document.getElementById('ig-feed-grid');
-            if (g) g.innerHTML = `<div style="grid-column:1/-1;padding:1.5rem;text-align:center;color:#ed4956;font-size:0.82rem">피드 로드 실패: ${esc(String(e?.message || e))}</div>`;
+            this._feedError = String(e?.message || e);
+            this._renderFeedModal();
         }
+    }
+    _igTheme() {
+        const light = document.body.classList.contains('light');
+        return light
+            ? { bg: '#fff', fg: '#000', sub: '#737373', line: '#dbdbdb', btn: '#efefef', ph: '#efefef', link: '#0095f6' }
+            : { bg: '#000', fg: '#fff', sub: '#a8a8a8', line: '#262626', btn: '#363636', ph: '#1a1a1a', link: '#0095f6' };
+    }
+    _renderFeedModal() {
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const t = this._igTheme(), esc = s => this._vesc(s);
+        const p = this._feedProfile || {};
+        const fb = this._feedFallback || {};
+        const handle = (p.username || fb.username || '').replace(/^@/, '');
+        const nf = n => (n == null ? '—' : (n >= 10000 ? (n / 10000).toFixed(1).replace(/\.0$/, '') + '만' : Number(n).toLocaleString()));
+        const bio = (p.biography || '').split('\n').map(l => esc(l)).join('<br>');
+        c.innerHTML = `<div class="fade-in" style="width:94%;max-width:430px;max-height:92vh;overflow-y:auto;background:${t.bg};color:${t.fg};border-radius:16px;
+                font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;box-shadow:0 24px 64px rgba(0,0,0,.45)">
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid ${t.line};position:sticky;top:0;background:${t.bg};z-index:2">
+                <button onclick="app.closeGlobalModal()" style="border:0;background:transparent;font-size:1.15rem;cursor:pointer;color:${t.fg};line-height:1;padding:0">←</button>
+                <b style="font-size:1rem;flex:1">${esc(handle) || '계정'}</b>
+                <label style="font-size:.78rem;font-weight:700;color:${t.link};cursor:pointer">커버 올리기<input type="file" accept="image/*" onchange="app._feedSetCover(event)" style="display:none"></label>
+            </div>
+            <div style="padding:16px 16px 0">
+                <div style="display:flex;align-items:center;gap:22px">
+                    <div style="width:80px;height:80px;border-radius:50%;flex:0 0 auto;background:linear-gradient(45deg,#f09433,#dc2743,#bc1888);padding:2.5px">
+                        <div style="width:100%;height:100%;border-radius:50%;background:${t.bg};padding:2px;box-sizing:border-box">
+                            <div style="width:100%;height:100%;border-radius:50%;background:${t.ph} ${p.profile_picture_url ? `url('${p.profile_picture_url}') center/cover no-repeat` : ''}"></div>
+                        </div>
+                    </div>
+                    <div style="display:flex;flex:1;text-align:center">
+                        <div style="flex:1"><div style="font-weight:700;font-size:1rem">${nf(p.media_count)}</div><div style="font-size:.82rem">게시물</div></div>
+                        <div style="flex:1"><div style="font-weight:700;font-size:1rem">${nf(p.followers_count)}</div><div style="font-size:.82rem">팔로워</div></div>
+                        <div style="flex:1"><div style="font-weight:700;font-size:1rem">${nf(p.follows_count)}</div><div style="font-size:.82rem">팔로잉</div></div>
+                    </div>
+                </div>
+                ${p.name ? `<div style="margin-top:12px;font-size:.86rem;font-weight:600">${esc(p.name)}</div>` : ''}
+                ${bio ? `<div style="font-size:.86rem;line-height:1.45;margin-top:2px">${bio}</div>` : ''}
+                ${p.website ? `<a href="${esc(p.website)}" target="_blank" rel="noreferrer" style="font-size:.86rem;color:${t.link};text-decoration:none">${esc(String(p.website).replace(/^https?:\/\//, ''))}</a>` : ''}
+                <div style="display:flex;gap:6px;margin:14px 0 4px">
+                    <button style="flex:1;border:0;background:${t.btn};border-radius:8px;padding:7px 0;font-size:.82rem;font-weight:700;color:${t.fg};cursor:default">프로필 편집</button>
+                    <button style="flex:1;border:0;background:${t.btn};border-radius:8px;padding:7px 0;font-size:.82rem;font-weight:700;color:${t.fg};cursor:default">프로필 공유</button>
+                </div>
+            </div>
+            <div style="display:flex;border-top:1px solid ${t.line};margin-top:12px">
+                <div style="flex:1;text-align:center;padding:11px 0;border-bottom:1.5px solid ${t.fg};font-size:1.05rem">▦</div>
+                <div style="flex:1;text-align:center;padding:11px 0;color:${t.sub};font-size:1.05rem">▷</div>
+                <div style="flex:1;text-align:center;padding:11px 0;color:${t.sub};font-size:1.05rem">☺</div>
+            </div>
+            <div id="ig-feed-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:${t.bg}"></div>
+            <p style="margin:0;padding:12px 16px 16px;font-size:.7rem;color:${t.sub};line-height:1.5">
+                실제 계정의 최근 게시물 위에 새 커버를 얹어 봅니다. 미리보기 전용이라 인스타엔 올라가지 않아요.
+            </p>
+        </div>`;
+        this._renderFeedGrid();
     }
     _renderFeedGrid() {
         const g = document.getElementById('ig-feed-grid'); if (!g) return;
-        const cell = (src, isCover) => `<div style="position:relative;aspect-ratio:1;background:#efefef;overflow:hidden">
+        const t = this._igTheme();
+        if (this._feedError) { g.innerHTML = `<div style="grid-column:1/-1;padding:1.5rem;text-align:center;color:#ed4956;font-size:.82rem">피드 로드 실패: ${this._vesc(this._feedError)}</div>`; return; }
+        if (!this._feedItems.length && !this._feedCoverUrl) { g.innerHTML = `<div style="grid-column:1/-1;padding:2.5rem;text-align:center;color:${t.sub};font-size:.85rem">피드 불러오는 중…</div>`; return; }
+        // 인스타 프로필 격자는 4:5 세로 비율(정사각형 아님) — 실제로 잘리는 범위가 그대로 보이게 맞춘다.
+        const cell = (src, isCover) => `<div style="position:relative;aspect-ratio:4/5;background:${t.ph};overflow:hidden">
             ${src ? `<img src="${src}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover;display:block">`
-                : (isCover ? '<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8e8e8e;font-size:.72rem;gap:4px"><span style="font-size:1.3rem">＋</span>커버 올리기</div>' : '')}
+                : (isCover ? `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:${t.sub};font-size:.72rem;gap:4px"><span style="font-size:1.3rem">＋</span>커버 올리기</div>` : '')}
             ${isCover && src ? '<div style="position:absolute;top:5px;left:5px;background:rgba(0,0,0,.72);color:#fff;font-size:.56rem;font-weight:700;padding:2px 6px;border-radius:4px">새 커버</div>' : ''}
         </div>`;
         g.innerHTML = cell(this._feedCoverUrl, true) + (this._feedItems || []).map(it => cell(it.thumb, false)).join('');

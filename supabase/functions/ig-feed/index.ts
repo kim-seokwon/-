@@ -40,15 +40,26 @@ Deno.serve(async (req) => {
     tokens.push(userTok); // 폴백
 
     const fields = "id,media_type,media_url,thumbnail_url,permalink,caption,timestamp,like_count,comments_count";
-    let media: unknown[] | null = null;
+    let media: Record<string, unknown>[] | null = null;
+    let okToken = "";
     for (const t of tokens) {
       const r = await fetch(`${GRAPH}/${igId}/media?fields=${fields}&limit=${limit}&access_token=${encodeURIComponent(t)}`);
       const p = await r.json();
-      if (!p.error && Array.isArray(p.data)) { media = p.data; break; }
+      if (!p.error && Array.isArray(p.data)) { media = p.data; okToken = t; break; }
     }
     if (!media) return j({ ok: false, error: "피드를 불러오지 못했어요(권한/토큰 확인)" }, 200);
 
-    const items = media.map((m: Record<string, unknown>) => ({
+    // 프로필(이름·소개·프로필사진·팔로워/팔로잉·게시물 수) — 미리보기를 실제 인스타 화면처럼 보이게 하려면 필요.
+    //  임의로 지어내지 말고 계정에 실제로 적혀 있는 값을 쓴다.
+    let profile: Record<string, unknown> | null = null;
+    try {
+      const pf = "username,name,biography,profile_picture_url,followers_count,follows_count,media_count,website";
+      const pr = await fetch(`${GRAPH}/${igId}?fields=${pf}&access_token=${encodeURIComponent(okToken)}`);
+      const pj = await pr.json();
+      if (!pj.error) profile = pj;
+    } catch (_e) { /* 프로필 실패해도 피드는 보여준다 */ }
+
+    const items = media.map((m) => ({
       id: m.id,
       type: m.media_type,
       // 이미지=media_url, 영상=thumbnail_url. CDN 서명 URL(만료 있음) → 즉시 표시용.
@@ -60,7 +71,7 @@ Deno.serve(async (req) => {
       timestamp: m.timestamp || null,
     })).filter((x) => x.thumb);
 
-    return j({ ok: true, count: items.length, items });
+    return j({ ok: true, count: items.length, items, profile });
   } catch (e) {
     return j({ ok: false, error: String(e) }, 200);
   }
