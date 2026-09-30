@@ -3045,3 +3045,55 @@ body:not(.light) .mac-deskboard .glass{
 .fd-none.sm{padding:6px 9px;text-align:left;font-size:12px}
 @media (max-width:760px){ .fd{grid-template-columns:1fr} .fd-side{display:none}
   .fd-r{grid-template-columns:1fr 92px} .fd-r span:nth-child(3),.fd-r span:nth-child(4){display:none} }
+
+/* ═══════════════ 맥 공통 틀 — 설정·관리 화면 ═══════════════
+   시스템 설정처럼 둥근 카드 안에 줄을 쌓고, 줄 사이는 머리카락선.
+   글씨 13px · 줄 높이 넉넉히 · 버튼은 작고 단정하게. */
+.mpane{padding:18px 20px 30px;max-width:860px;margin:0 auto;
+  font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Pretendard',sans-serif}
+.mpane-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 2px 16px}
+.mpane-top h2{font-size:20px;font-weight:800;margin:0;display:flex;align-items:center;gap:8px}
+.mpane-top h2 i{font-size:20px;color:var(--text-muted)}
+.mcard{border:.5px solid var(--card-border);border-radius:12px;overflow:hidden;background:var(--card-bg);
+  margin-bottom:18px}
+.mcard-h{font-size:11.5px;font-weight:800;color:var(--text-muted);padding:10px 15px 9px;
+  border-bottom:.5px solid var(--card-border);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mrow{display:flex;align-items:center;gap:12px;padding:11px 15px;border-bottom:.5px solid var(--card-border);font-size:13px}
+.mrow:last-child{border-bottom:0}
+.mrow:hover{background:rgba(127,127,127,.06)}
+.mrow-face{width:32px;height:32px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
+  font-weight:700;font-size:13px;color:#fff;background:linear-gradient(140deg,#8ab4ff,#3b82f6)}
+.mrow-sq{width:30px;height:30px;border-radius:8px;flex:0 0 auto;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.18)}
+.mrow-main{flex:1;min-width:0}
+.mrow-t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow-s{font-size:11.5px;color:var(--text-muted);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow-r{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.mpill{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:99px;letter-spacing:.02em;
+  background:rgba(127,127,127,.20);color:var(--text-muted)}
+.mpill.blue{background:rgba(10,132,255,.16);color:#0a84ff}
+.mpill.green{background:rgba(48,209,88,.18);color:#1a9e3c}
+.mpill.gray{background:rgba(127,127,127,.20);color:var(--text-muted)}
+.mbtn{border:.5px solid var(--card-border);background:var(--card-bg);color:inherit;font-family:inherit;
+  font-size:12px;font-weight:600;padding:4px 11px;border-radius:7px;cursor:pointer;white-space:nowrap;
+  box-shadow:0 .5px 1px rgba(0,0,0,.08)}
+.mbtn:hover{background:rgba(127,127,127,.14)}
+.mbtn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+.mbtn.pri:hover{filter:brightness(1.08);background:var(--primary)}
+.mbtn.danger{color:#ef4444}
+.mbtn.danger:hover{background:rgba(239,68,68,.12)}
+.mbtn.icon{padding:4px 7px;font-size:13px}
+.mrow-add{display:flex;align-items:center;gap:7px;padding:10px 15px;font-size:13px;color:var(--primary);
+  cursor:pointer;font-weight:600}
+.mrow-add:hover{background:rgba(127,127,127,.08)}
+.mnone{padding:22px 15px;text-align:center;color:var(--text-muted);font-size:12.5px}
+/* 맥식 표 — 줄무늬 · 머리카락선 · 작은 글씨 */
+.mtbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.mtbl th{text-align:left;font-weight:700;font-size:11.5px;color:var(--text-muted);
+  padding:8px 12px;border-bottom:.5px solid var(--card-border);white-space:nowrap;
+  position:sticky;top:0;background:var(--card-bg);z-index:2}
+.mtbl td{padding:9px 12px;border-bottom:.5px solid var(--card-border);vertical-align:middle}
+.mtbl tbody tr:nth-child(even){background:rgba(127,127,127,.05)}
+.mtbl tbody tr:hover{background:rgba(59,130,246,.10)}
+.mtbl tbody tr:last-child td{border-bottom:0}
+@media (max-width:620px){ .mpane{padding:12px 12px 24px} .mrow{padding:10px 12px} }

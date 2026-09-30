@@ -1029,6 +1029,7 @@ class BhasApp {
             // ★ 여기서 return 하는 바람에 아래쪽 ensureViewData 가 아예 안 불렸다.
             //   창으로 연 화면은 아무도 데이터를 안 받아와서 늦게 뜨거나 빈 채로 있었다.
             this._macEnsureData();
+            this._macBind();
             return;
         }
 
@@ -3262,131 +3263,75 @@ class BhasApp {
                 </div>
             `;
         } else if (this.currentView === 'user_management') {
+            // 맥 시스템 설정의 '사용자' 처럼 — 둥근 카드 안에 줄을 쌓는다
+            const esc = s => this._vesc(s);
+            const accs = (mockData.companies || []).filter(c => c.username);
+            const roleP = r => r === 'MASTER' ? 'blue' : (r === 'STAFF' ? 'green' : 'gray');
+            const scopeOf = (c) => {
+                const brand = (mockData.brands || []).find(b => b.id === c.brand_id);
+                return c.role === 'CLIENT' ? (brand ? brand.name : '브랜드 미지정')
+                     : (c.role === 'MASTER' ? '전체 관리' : '운영 관리');
+            };
             return `
-                <div class="glass" style="padding: 2rem; border-radius: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-                        <h2 style="display: flex; align-items: center; gap: 8px;"><i class="ph ph-user-plus"></i> 계정 관리</h2>
-                        <button class="btn-primary" id="add-account-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">+ 계정 추가</button>
-                    </div>
-                    <div class="table-responsive-container">
-                        <table class="responsive-table" style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="text-align: left; border-bottom: 1px solid var(--card-border); color: var(--text-muted); font-size: 0.8rem;">
-                                <th style="padding: 1rem;">성함</th>
-                                <th style="padding: 1rem;">ID</th>
-                                <th style="padding: 1rem;">배정 브랜드(등급)</th>
-                                <th style="padding: 1rem;">권한 역할</th>
-                                <th style="padding: 1rem; text-align: center;">관리</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${mockData.companies.filter(c => c.username).map(c => {
-                                const brand = mockData.brands?.find(b => b.id === c.brand_id);
-                                return `
-                                <tr style="border-bottom: 1px solid rgba(var(--tint),0.05); font-size: 0.85rem;">
-                                    <td style="padding: 1rem; font-weight: 500;">${c.name}</td>
-                                    <td style="padding: 1rem; color: var(--text-muted);">${c.username}</td>
-                                    <td style="padding: 1rem;">
-                                        <span style="color: var(--primary); font-weight: 600;">
-                                            ${c.role === 'CLIENT' ? (brand ? brand.name : '브랜드 미지정') : (c.role === 'MASTER' ? '전체 관리' : '운영 관리')}
-                                        </span>
-                                    </td>
-                                    <td style="padding: 1rem;">
-                                        <span style="background: ${c.role === 'MASTER' ? 'rgba(37,99,235,0.2)' : (c.role === 'STAFF' ? 'rgba(16,185,129,0.1)' : 'rgba(var(--tint),0.05)')}; 
-                                              color: ${c.role === 'MASTER' ? 'var(--primary)' : (c.role === 'STAFF' ? '#10b981' : 'var(--text-muted)')};
-                                              padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700;">
-                                            ${c.role}
-                                        </span>
-                                    </td>
-                                    <td style="padding: 1rem; text-align: center; white-space: nowrap;">
-                                        <button class="btn-secondary edit-user-btn" data-id="${c.id}" style="padding: 4px 10px; font-size: 0.75rem; border-radius: 6px;">수정</button>
-                                        <button class="btn-secondary" onclick="app.changeAccountPassword('${c.id}','${this._vesc(c.username)}')" style="padding: 4px 10px; font-size: 0.75rem; border-radius: 6px; margin-left: 4px;">비번변경</button>
-                                        <button class="btn-danger" onclick="app.deleteAccount('${c.id}','${this._vesc(c.name)}')" style="padding: 4px; border-radius: 6px; margin-left: 4px;"><i class="ph ph-trash"></i></button>
-                                    </td>
-                                </tr>
-                            `}).join('')}
-                        </tbody>
-                    </table>
+            <div class="mpane">
+                <div class="mpane-top"><h2><i class="ph ph-users-three"></i> 계정</h2></div>
+                <div class="mcard">
+                    <div class="mcard-h">이 회사를 쓰는 사람 ${accs.length}명</div>
+                    ${accs.map(c => `
+                    <div class="mrow">
+                        <span class="mrow-face">${esc((c.name || '?').trim()[0] || '?')}</span>
+                        <div class="mrow-main">
+                            <div class="mrow-t">${esc(c.name)}</div>
+                            <div class="mrow-s">${esc(c.username)} · ${esc(scopeOf(c))}</div>
+                        </div>
+                        <div class="mrow-r">
+                            <span class="mpill ${roleP(c.role)}">${esc(c.role)}</span>
+                            <button class="mbtn edit-user-btn" data-id="${c.id}">수정</button>
+                            <button class="mbtn" onclick="app.changeAccountPassword('${c.id}','${esc(c.username)}')">비번</button>
+                            <button class="mbtn danger icon" title="삭제" onclick="app.deleteAccount('${c.id}','${esc(c.name)}')"><i class="ph ph-trash"></i></button>
+                        </div>
+                    </div>`).join('') || '<div class="mnone">계정이 없습니다</div>'}
+                    <div class="mrow-add" id="add-account-btn"><i class="ph ph-plus-circle"></i> 계정 추가</div>
                 </div>
-            `;
+            </div>`;
         } else if (this.currentView === 'brand_management') {
+            const esc = s => this._vesc(s);
             const allBrands = mockData.brands || [];
             const activeBrands = allBrands.filter(b => b.status !== 'closed');
             const closedBrands = allBrands.filter(b => b.status === 'closed');
-
-            const renderBrandTable = (brands, emptyMsg) => {
-                if (brands.length === 0) return `<div style="color: var(--text-muted); text-align: center; padding: 2rem; font-size: 0.9rem;">${emptyMsg}</div>`;
+            const brandRow = (b) => {
+                const projectCount = (mockData.products || []).filter(p => p.brand_id === b.id).length;
+                const userCount = (mockData.companies || []).filter(u => u.brand_id === b.id).length;
+                const isClosed = b.status === 'closed';
                 return `
-                    <div class="table-responsive-container">
-                        <table class="responsive-table" style="width: 100%; border-collapse: collapse;">
-                            <thead>
-                                <tr style="border-bottom: 1px solid var(--card-border);">
-                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">컬러</th>
-                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">브랜드명</th>
-                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">프로젝트</th>
-                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">소속 계정</th>
-                                    <th style="text-align: left; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">상태</th>
-                                    <th style="text-align: center; padding: 12px; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">관리</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${brands.map(b => {
-                                    const projectCount = mockData.products.filter(p => p.brand_id === b.id).length;
-                                    const userCount = mockData.companies.filter(u => u.brand_id === b.id).length;
-                                    const isClosed = b.status === 'closed';
-                                    return `
-                                    <tr style="border-bottom: 1px solid rgba(var(--tint),0.04); transition: 0.2s; ${isClosed ? 'opacity: 0.5;' : ''}" onmouseover="this.style.background='rgba(var(--tint),0.03)'" onmouseout="this.style.background='transparent'">
-                                        <td data-label="컬러" style="padding: 14px 12px;">
-                                            <div style="width: 28px; height: 28px; border-radius: 8px; background: ${b.brand_color || 'var(--primary)'}; border: 2px solid rgba(var(--tint),0.1);"></div>
-                                        </td>
-                                        <td data-label="브랜드명" style="padding: 14px 12px; font-weight: 600; font-size: 0.95rem;">${b.name}</td>
-                                        <td data-label="프로젝트" style="padding: 14px 12px; color: var(--text-muted); font-size: 0.9rem;">${projectCount}개</td>
-                                        <td data-label="소속 계정" style="padding: 14px 12px; color: var(--text-muted); font-size: 0.9rem;">${userCount}명</td>
-                                        <td data-label="상태" style="padding: 14px 12px;">
-                                            <span style="font-size: 0.75rem; padding: 3px 10px; border-radius: 10px; font-weight: 600; ${isClosed
-                                                ? 'background: rgba(148,163,184,0.1); color: #94a3b8;'
-                                                : 'background: rgba(16,185,129,0.1); color: #10b981;'
-                                            }">${isClosed ? '종료' : '진행 중'}</span>
-                                        </td>
-                                        <td data-label="관리" style="padding: 14px 12px; text-align: center;">
-                                            <button class="btn-secondary edit-brand-btn" data-id="${b.id}" style="padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; margin-right: 4px;">수정</button>
-                                            <button class="btn-danger" onclick="app.handleDelete(event, 'brand', '${b.id}')" style="padding: 4px; border-radius: 6px;"><i class="ph ph-trash"></i></button>
-                                        </td>
-                                    </tr>
-                                `}).join('')}
-                            </tbody>
-                        </table>
+                <div class="mrow"${isClosed ? ' style="opacity:.55"' : ''}>
+                    <span class="mrow-sq" style="background:${esc(b.brand_color || '#3b82f6')}"></span>
+                    <div class="mrow-main">
+                        <div class="mrow-t">${esc(b.name)}</div>
+                        <div class="mrow-s">프로젝트 ${projectCount}개 · 소속 계정 ${userCount}명</div>
                     </div>
-                `;
+                    <div class="mrow-r">
+                        <span class="mpill ${isClosed ? 'gray' : 'green'}">${isClosed ? '종료' : '진행 중'}</span>
+                        <button class="mbtn edit-brand-btn" data-id="${b.id}">수정</button>
+                        <button class="mbtn danger icon" title="삭제" onclick="app.handleDelete(event,'brand','${b.id}')"><i class="ph ph-trash"></i></button>
+                    </div>
+                </div>`;
             };
-
             return `
-                <div class="glass" style="padding: 2rem; border-radius: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-                        <h2 style="display: flex; align-items: center; gap: 8px;"><i class="ph ph-shield-check"></i> 브랜드(등급) 관리</h2>
-                        <button class="btn-primary" id="add-brand-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">+ 브랜드 생성</button>
-                    </div>
-
-                    <h3 style="font-size: 1rem; color: var(--text-muted); margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
-                        <i class="ph ph-rocket-launch"></i> 진행 중 (${activeBrands.length})
-                    </h3>
-                    ${renderBrandTable(activeBrands, '진행 중인 브랜드가 없습니다.')}
-
-                    ${closedBrands.length > 0 ? `
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 2rem; margin-bottom: 1rem; border-top: 1px solid var(--card-border); padding-top: 1.5rem;">
-                            <h3 style="font-size: 1rem; color: var(--text-muted); margin: 0; display: flex; align-items: center; gap: 8px;">
-                                <i class="ph ph-archive"></i> 종료됨 (${closedBrands.length})
-                            </h3>
-                            <button class="toggle-btn ${!this.brandClosedExpanded ? 'collapsed' : ''}" id="toggle-closed-brands-btn" title="토글">
-                                <i class="ph ph-caret-down" style="font-size: 1.2rem;"></i>
-                            </button>
-                        </div>
-                        <div class="collapsible-content ${!this.brandClosedExpanded ? 'collapsed' : ''}">
-                            ${renderBrandTable(closedBrands, '')}
-                        </div>
-                    ` : ''}
+            <div class="mpane">
+                <div class="mpane-top"><h2><i class="ph ph-shield-check"></i> 브랜드</h2></div>
+                <div class="mcard">
+                    <div class="mcard-h">진행 중 ${activeBrands.length}개</div>
+                    ${activeBrands.map(brandRow).join('') || '<div class="mnone">진행 중인 브랜드가 없습니다</div>'}
+                    <div class="mrow-add" id="add-brand-btn"><i class="ph ph-plus-circle"></i> 브랜드 만들기</div>
                 </div>
-            `;
+                ${closedBrands.length ? `
+                <div class="mcard">
+                    <div class="mcard-h">종료됨 ${closedBrands.length}개
+                        <button class="mbtn" id="toggle-closed-brands-btn">${this.brandClosedExpanded ? '접기' : '펼치기'}</button></div>
+                    ${this.brandClosedExpanded ? closedBrands.map(brandRow).join('') : ''}
+                </div>` : ''}
+            </div>`;
         } else if (this.currentView === 'timeline') {
             // 생산 타임라인: 프로젝트별 8단계 공정을 마감순으로 한눈에
             const stageState = (p, s) => {
@@ -5536,6 +5481,25 @@ class BhasApp {
     }
     // 맥 모드 전용 — 바탕화면(홈)과 열려 있는 창마다 ensureViewData 를 한 번씩 돌린다.
     //  currentView 는 창을 그리는 동안만 바뀌므로 여기서 직접 갈아끼워 부른다.
+    // ★ 맥 모드에선 renderDashboard 가 일찍 return 해서 버튼 연결(bind)이 통째로 안 돌았다.
+    //   창으로 연 화면의 단추·입력이 전부 먹통이었다 — 창마다 한 번씩 연결해준다.
+    _macBind() {
+        const prev = this.currentView;
+        const views = [...new Set(['home', ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
+        const per = {
+            orders: 'bindOrdersEvents', inventory: 'bindInventoryEvents', pages: 'bindPagesEvents',
+            kanban: 'bindKanbanEvents', table: 'bindTableEvents', calendar: 'bindCalendarEvents',
+            vendors: 'bindVendorsEvents', integrations: 'bindIntegrationsEvents', quotes: 'bindQuotesEvents',
+            detail: 'bindDetailEvents', all_todos: 'bindAllTodosEvents',
+        };
+        views.forEach(v => {
+            this.currentView = v;
+            try { this.bindDashboardEvents(); } catch (_e) {}
+            const fn = per[v];
+            if (fn && typeof this[fn] === 'function') { try { this[fn](); } catch (_e) {} }
+        });
+        this.currentView = prev;
+    }
     _macEnsureData() {
         const prev = this.currentView;
         const views = [...new Set(['home', ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
