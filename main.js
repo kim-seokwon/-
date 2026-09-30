@@ -45,6 +45,8 @@ class BhasApp {
         // 타임라인 관련 상태
         
         window.app = this; // 전역 참조 추가 (타임라인 등에서 필요)
+        // 로컬에서 화면을 확인할 때만 데이터에 손댈 수 있게 열어둔다(배포본에선 안 열린다)
+        if (['localhost', '127.0.0.1'].includes(location.hostname)) window.mockData = mockData;
         this.supabase = supabase;
         
         this.products = [];
@@ -2968,174 +2970,105 @@ class BhasApp {
                 </div>
             `;
         } else if (this.currentView === 'documents') {
-            const categories = ['전체', '작업지시서', '회의록', '참고이미지', '기타자료', '세금계산서'];
-            
-            // 데이터 통합 및 자동 분류 로직
-            // 1. 글로벌 문서 필터링 (선택된 브랜드 프로젝트에 해당하는 문서만)
+            // ── 자료실 = 파인더 ────────────────────────────────────────
+            //  왼쪽 즐겨찾기(분류·프로젝트) · 위 도구막대(보기 전환·검색) ·
+            //  가운데 아이콘 격자 또는 목록 · 아래 경로막대(개수). 맥 파인더 그대로.
+            const categories = ['작업지시서', '회의록', '참고이미지', '기타자료', '세금계산서'];
             const filteredProjectIds = products.map(p => p.id);
-            let aggregatedDocs = mockData.globalDocuments.filter(d => filteredProjectIds.includes(d.productId));
-            
-            // 2. 전달받은 필터링된 products에서 사진/문서 수집
+            let aggregatedDocs = (mockData.globalDocuments || []).filter(d => filteredProjectIds.includes(d.productId));
             products.forEach(p => {
-                // 프로젝트별 사진 -> '참고이미지'로 분류
                 (p.photos || []).forEach((photo, idx) => {
                     const photoUrl = typeof photo === 'string' ? photo : photo.url;
                     aggregatedDocs.push({
                         id: typeof photo === 'object' ? photo.id : `auto-photo-${p.id}-${idx}`,
-                        date: (p.history || [])[0]?.date || '2024.03.01',
+                        date: (p.history || [])[0]?.date || '',
                         name: `${p.name} 제작 사진 ${idx + 1}`,
-                        category: '참고이미지',
-                        productId: p.id,
-                        url: photoUrl,
-                        memo: '프로젝트 상세에서 등록된 사진'
+                        category: '참고이미지', productId: p.id, url: photoUrl, memo: '',
                     });
                 });
-                
-                // 프로젝트별 문서 -> 기존 카테고리 유지 혹은 기본값
                 (p.documents || []).forEach((doc, idx) => {
                     aggregatedDocs.push({
                         id: doc.id || `auto-doc-${p.id}-${idx}`,
-                        date: doc.date,
-                        name: doc.name,
-                        category: doc.category || '기타자료',
-                        productId: p.id,
-                        url: doc.url,
-                        memo: '프로젝트 내 관련 문서'
+                        date: doc.date, name: doc.name,
+                        category: doc.category || '기타자료', productId: p.id, url: doc.url, memo: '',
                     });
                 });
             });
-
-            let filteredDocs = aggregatedDocs;
-            if (this.selectedDocCategory !== '전체') {
-                filteredDocs = aggregatedDocs.filter(d => d.category === this.selectedDocCategory);
-            }
-
-            const isMobile = window.innerWidth <= 768;
-
+            const cur = this.selectedDocCategory || '전체';
+            const q = (this.docQ || '').trim().toLowerCase();
+            let docs = aggregatedDocs;
+            if (cur.startsWith('p:')) docs = docs.filter(d => d.productId === cur.slice(2));
+            else if (cur !== '전체') docs = docs.filter(d => d.category === cur);
+            if (q) docs = docs.filter(d => (d.name || '').toLowerCase().includes(q));
+            const view = this.docView || 'grid';
+            const esc = s => this._vesc(s);
+            const isImg = u => /\.(jpe?g|png|gif|webp|heic|avif)$/i.test(u || '') || (u || '').includes('photos/');
+            const kindOf = (d) => {
+                const u = d.url || '';
+                if (isImg(u)) return { i: 'ph-image', c: '#34c759', t: '이미지' };
+                if (/\.pdf$/i.test(u)) return { i: 'ph-file-pdf', c: '#ff3b30', t: 'PDF' };
+                if (/\.(xlsx?|csv)$/i.test(u)) return { i: 'ph-file-xls', c: '#1d9e4b', t: '스프레드시트' };
+                if (/\.(docx?|hwp)$/i.test(u)) return { i: 'ph-file-doc', c: '#2b7de9', t: '문서' };
+                if (/\.(zip|rar|7z)$/i.test(u)) return { i: 'ph-file-zip', c: '#a2845e', t: '압축' };
+                return { i: 'ph-file', c: '#8e8e93', t: '파일' };
+            };
+            const nameOfP = id => (mockData.products.find(p => p.id === id) || {}).name || '';
+            const side = (key, label, icon, n, color) => `<div class="fd-s${cur === key ? ' on' : ''}"
+                onclick="app.setDocCategory('${key}')"><i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
+            const grid = docs.map(d => {
+                const k = kindOf(d);
+                return `<button class="fd-it" ondblclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')"
+                        onclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')" title="${esc(d.name)}">
+                    <span class="fd-th">${isImg(d.url) ? `<img src="${esc(d.url)}" alt="" loading="lazy">`
+                        : `<i class="ph ${k.i}" style="color:${k.c}"></i>`}</span>
+                    <span class="fd-nm">${esc(d.name)}</span>
+                </button>`;
+            }).join('');
+            const rows = docs.map(d => {
+                const k = kindOf(d);
+                return `<div class="fd-r" onclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')">
+                    <span class="fd-rn"><i class="ph ${k.i}" style="color:${k.c}"></i>${esc(d.name)}</span>
+                    <span>${esc(d.date || '')}</span>
+                    <span>${esc(k.t)}</span>
+                    <span>${esc(nameOfP(d.productId))}</span>
+                </div>`;
+            }).join('');
+            const where = cur === '전체' ? '자료실' : (cur.startsWith('p:') ? nameOfP(cur.slice(2)) : cur);
             return `
-                <div class="glass" style="padding: 2rem; border-radius: 20px;">
-                    <div class="mobile-responsive-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; gap: 1.5rem; flex-wrap: wrap;">
-                        <div style="display: flex; align-items: center; gap: 12px; width: ${isMobile ? '100%' : 'auto'}; flex-direction: ${isMobile ? 'column' : 'row'};">
-                            <h2 style="display: flex; align-items: center; gap: 8px; font-size: 1.5rem; margin: 0; white-space: nowrap;"><i class="ph ph-folder-open"></i> 통합 문서 관리</h2>
-                            ${(role === 'MASTER' || role === 'STAFF') ? `
-                                <select id="doc-global-company-filter" class="glass brand-select" style="margin-top: ${isMobile ? '5px' : '0'}; width: ${isMobile ? '100%' : 'auto'}; min-width: ${isMobile ? '0' : '200px'}; max-width: 100%; color: white; border: 1px solid rgba(var(--tint),0.1); border-radius: 8px; padding: 6px 12px; outline: none; cursor: pointer; box-sizing: border-box;">
-                                    <option value="all" style="background: #0f172a; color: white;" ${this.selectedCompanyId === 'all' ? 'selected' : ''}>전체 브랜드 보기</option>
-                                    ${(mockData.brands || []).map(b => `
-                                        <option value="${b.id}" style="background: #0f172a; color: white;" ${this.selectedCompanyId === b.id ? 'selected' : ''}>${b.name}</option>
-                                    `).join('')}
-                                </select>
-                            ` : ''}
+            <div class="fd">
+                <aside class="fd-side">
+                    <div class="fd-sh">즐겨찾기</div>
+                    ${side('전체', '모든 자료', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#0a84ff')}
+                    <div class="fd-sh">분류</div>
+                    ${categories.map(c => side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join('')}
+                    <div class="fd-sh">프로젝트</div>
+                    ${products.length ? products.map(p => side('p:' + p.id, p.name, 'ph-folder-simple',
+                        aggregatedDocs.filter(d => d.productId === p.id).length, '#5ac8fa')).join('')
+                      : '<div class="fd-none sm">프로젝트 없음</div>'}
+                </aside>
+                <section class="fd-main">
+                    <div class="fd-bar">
+                        <b>${esc(where)}</b>
+                        <div class="fd-seg">
+                            <button class="${view === 'grid' ? 'on' : ''}" onclick="app.setDocView('grid')" title="아이콘"><i class="ph ph-squares-four"></i></button>
+                            <button class="${view === 'list' ? 'on' : ''}" onclick="app.setDocView('list')" title="목록"><i class="ph ph-list-dashes"></i></button>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 12px; width: ${isMobile ? '100%' : 'auto'}; flex-direction: ${isMobile ? 'column' : 'row'};">
-                            <div class="category-filters" style="display: flex; gap: 8px; align-items: center; width: ${isMobile ? '100%' : 'auto'}; flex-wrap: ${isMobile ? 'nowrap' : 'wrap'}; overflow-x: auto;">
-                                ${categories.map(cat => `
-                                    <button class="filter-btn glass ${this.selectedDocCategory === cat ? 'active' : ''}" 
-                                            data-cat="${cat}" 
-                                            style="padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: 0.3s;
-                                                   white-space: nowrap; flex-shrink: 0;
-                                                   color: ${this.selectedDocCategory === cat ? 'white' : 'var(--text-muted)'};
-                                                   background: ${this.selectedDocCategory === cat ? 'var(--primary)' : 'rgba(var(--tint),0.05)'};">
-                                        ${cat}
-                                    </button>
-                                `).join('')}
-                            </div>
-                            <button class="btn-primary" id="quick-add-doc-btn" style="padding: 10px 16px; border-radius: 20px; font-size: 0.9rem; width: ${isMobile ? '100%' : 'auto'}; white-space: nowrap;">+ 새 문서 추가</button>
-                        </div>
+                        <div class="fd-find"><i class="ph ph-magnifying-glass"></i>
+                            <input placeholder="검색" value="${esc(this.docQ || '')}" oninput="app.docQ=this.value;app.requestRender()"></div>
+                        <button class="fd-add" id="quick-add-doc-btn"><i class="ph ph-plus"></i> 올리기</button>
                     </div>
-                    
-                    <div class="table-container fade-in">
-                        ${isMobile ? `
-                            <div class="doc-card-grid">
-                                ${filteredDocs.map(doc => {
-                                    const product = mockData.products.find(p => p.id === doc.productId);
-                                    const brand = product ? mockData.brands?.find(b => b.id === product.brand_id) : null;
-                                    return `
-                                        <div class="doc-mobile-card glass" onclick="app.showFileModal('${doc.url}', '${doc.name}')">
-                                            <div class="doc-card-top">
-                                                <div class="doc-card-info">
-                                                    <span class="doc-card-brand">${brand ? brand.name : '-'}</span>
-                                                    <span class="doc-card-project">${product ? product.name : '알 수 없음'}</span>
-                                                </div>
-                                                <span class="badge badge-${doc.category || '기타'}" style="font-size: 0.7rem;">
-                                                    ${doc.category || '기타'}
-                                                </span>
-                                            </div>
-                                            <div class="doc-card-name" style="display: flex; align-items: center; gap: 6px;">
-                                                <i class="ph ph-file-text"></i>
-                                                <input type="text" class="inline-docname-input"
-                                                       data-doc-id="${doc.id}"
-                                                       data-p-id="${doc.productId || ''}"
-                                                       value="${(doc.name || '').replace(/"/g, '&quot;')}"
-                                                       style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(var(--tint),0.1); font-weight: 600; font-size: 0.85rem;"
-                                                       onclick="event.stopPropagation()">
-                                            </div>
-                                            <div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
-                                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                                    <span><i class="ph ph-calendar"></i> ${doc.date || '-'}</span>
-                                                    ${doc.memo ? `<span><i class="ph ph-note"></i> ${doc.memo}</span>` : ''}
-                                                </div>
-                                                ${this.canDelete(doc) ? `<button class="icon-btn" onclick="event.stopPropagation(); app.handleDelete(event, 'document', '${doc.id}', '${doc.productId || ''}')" style="width: 32px; height: 32px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #ef4444; display: flex; align-items: center; justify-content: center;"><i class="ph ph-trash" style="font-size: 1.1rem;"></i></button>` : ''}
-                                            </div>
-                                        </div>
-                                    `;
-                                }).reverse().join('')}
-                                ${filteredDocs.length === 0 ? '<div style="text-align: center; padding: 3rem 0; color: var(--text-muted);">표시할 문서가 없습니다.</div>' : ''}
-                            </div>
-                        ` : `
-                            <table class="doc-table" style="width: 100%; border-collapse: collapse;">
-                                <thead>
-                                    <tr style="text-align: left; border-bottom: 1px solid var(--card-border); color: var(--text-muted); font-size: 0.8rem;">
-                                        <th style="padding: 12px;">날짜</th>
-                                        <th style="padding: 12px;">브랜드명</th>
-                                        <th style="padding: 12px;">프로젝트</th>
-                                        <th style="padding: 12px;">문서이름</th>
-                                        <th style="padding: 12px;">간단메모 (수정가능)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${filteredDocs.map(doc => {
-                                        const product = mockData.products.find(p => p.id === doc.productId);
-                                        const brand = product ? mockData.brands?.find(b => b.id === product.brand_id) : null;
-                                        return `
-                                            <tr class="table-row doc-row" style="border-bottom: 1px solid rgba(var(--tint),0.05); font-size: 0.85rem; cursor: pointer;" 
-                                                onclick="app.showFileModal('${doc.url}', '${doc.name}')">
-                                                <td style="padding: 12px; color: var(--text-muted);">${doc.date || '-'}</td>
-                                                <td style="padding: 12px;">${brand ? brand.name : '-'}</td>
-                                                <td style="padding: 12px; color: var(--primary);">${product ? product.name : '알 수 없음'}</td>
-                                                <td style="padding: 12px; font-weight: 600;">
-                                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                                        <span class="badge badge-${doc.category || '기타'}" style="padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; vertical-align: middle;">
-                                                            ${doc.category || '기타'}
-                                                        </span>
-                                                        <input type="text" class="inline-docname-input"
-                                                               data-doc-id="${doc.id}"
-                                                               data-p-id="${doc.productId || ''}"
-                                                               value="${(doc.name || '').replace(/"/g, '&quot;')}"
-                                                               style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(var(--tint),0.1); font-weight: 600;"
-                                                               onclick="event.stopPropagation()">
-                                                    </div>
-                                                </td>
-                                                <td style="padding: 12px; font-size: 0.8rem;" class="memo-cell">
-                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                                                        <input type="text" class="inline-memo-input" 
-                                                               data-doc-id="${doc.id}" 
-                                                               data-p-id="${doc.productId || ''}"
-                                                               value="${doc.memo || ''}" 
-                                                               style="background: transparent; border: none; color: white; width: 100%; padding: 4px; border-radius: 4px; border-bottom: 1px dashed rgba(var(--tint),0.1);"
-                                                               onclick="event.stopPropagation()">
-                                                        ${this.canDelete(doc) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'document', '${doc.id}', '${doc.productId || ''}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        `;
-                                    }).reverse().join('')}
-                                    ${filteredDocs.length === 0 ? '<tr><td colspan="5" style="text-align: center; padding: 3rem 0; color: var(--text-muted);">표시할 문서가 없습니다.</td></tr>' : ''}
-                                </tbody>
-                            </table>
-                        `}
+                    <div class="fd-body">
+                        ${docs.length
+                            ? (view === 'grid' ? `<div class="fd-grid">${grid}</div>`
+                               : `<div class="fd-list"><div class="fd-r head"><span>이름</span><span>날짜</span><span>종류</span><span>프로젝트</span></div>${rows}</div>`)
+                            : `<div class="fd-none">${q ? '찾는 자료가 없습니다' : '이 위치에 자료가 없습니다'}</div>`}
                     </div>
-                </div>
-            `;
+                    <div class="fd-path">
+                        <i class="ph ph-folder-simple"></i> ${esc(where)}
+                        <span class="fd-cnt">항목 ${docs.length}개${cur !== '전체' || q ? ` · 전체 ${aggregatedDocs.length}개` : ''}</span>
+                    </div>
+                </section>
+            </div>`;
         } else if (this.currentView === 'detail') {
             const product = mockData.products.find(p => p.id === this.activeProjectId);
             const brand = mockData.brands?.find(b => b.id === product.brand_id);
@@ -5339,30 +5272,40 @@ class BhasApp {
     //  아이콘: 맥 기본앱과 뜻이 그대로 맞는 것만 그림 파일(png)을 쓰고,
     //  우리 업무 앱(주문·CS·매출·재고·SNS·지출·생산현황)은 각자 다른 색·기호로 그린다.
     //  전에는 prod.png 가 CS·재고·생산현황 셋에, settle.png 가 매출·지출 둘에 겹쳐 있었다.
+    //  아이콘은 맥 그림 그대로. 앱을 세 묶음으로 합치면서 겹치던 게 풀려
+    //  이제 하나씩 제 아이콘을 쓴다(전엔 prod/settle 가 겹쳤다).
     MAC_DOCK = [
-        { id: 'home', label: '바탕화면', g: ['#5fd0c5', '#12a594'], ph: 'ph-house-simple', desktop: true },
-        { id: 'orders', label: '주문', g: ['#ffa93a', '#f26a00'], ph: 'ph-shopping-bag-open' },
-        { id: 'sales', label: '정산', g: ['#5ade72', '#17a544'], ph: 'ph-chart-line-up' },
-        { id: 'vendors', label: '생산', g: ['#bf8cff', '#7b3fe4'], ph: 'ph-factory' },
-        { id: 'sns', label: 'SNS', g: ['#ff87b8', '#c13584'], ph: 'ph-instagram-logo' },
-        { id: 'documents', label: '자료실', g: ['#62c8ff', '#0a72e8'], ph: 'ph-folder-simple' },
-        { id: 'calendar', label: '캘린더', g: ['#ff8a80', '#ec3226'], ph: 'ph-calendar-blank' },
-        { id: 'reminders', label: '미리알림', g: ['#93a0ff', '#4a5bd4'], ph: 'ph-list-checks' },
-        { id: 'notes', label: '메모', g: ['#ffe27a', '#f0b200'], ph: 'ph-note-pencil', fg: '#4a3600' },
-        { id: 'contacts', label: '연락처', g: ['#e0b184', '#a06a3c'], ph: 'ph-address-book' },
-        { id: 'settings', label: '설정', g: ['#b3b3bd', '#6a6a76'], ph: 'ph-gear-six' },
+        { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
+        { id: 'orders', label: '주문', icon: 'sales' },
+        { id: 'sales', label: '정산', icon: 'settle' },
+        { id: 'vendors', label: '생산', icon: 'prod' },
+        { id: 'sns', label: 'SNS', icon: 'mkt' },
+        { id: 'documents', label: '자료실', icon: 'finder' },
+        { id: 'calendar', label: '캘린더', icon: 'cal' },
+        { id: 'reminders', label: '미리알림', icon: 'rem' },
+        { id: 'notes', label: '메모', icon: 'notes' },
+        { id: 'contacts', label: '연락처', icon: 'contacts' },
+        { id: 'settings', label: '설정', icon: 'set' },
         // 창이 아니라 그 자리에서 뜨는 도구 — 독 오른쪽 끝에 따로 둔다
-        { id: 'calc', label: '계산기', g: ['#6a6a76', '#2b2b31'], ph: 'ph-calculator', tool: true },
-        { id: 'sticky', label: '스티커', g: ['#ffc48a', '#ff7043'], ph: 'ph-sticker', tool: true },
+        { id: 'calc', label: '계산기', icon: 'calc', tool: true },
+        { id: 'sticky', label: '스티커', svg: 'sticky', tool: true },
     ];
-    // 업무 앱 아이콘 — 맥 아이콘과 같은 둥근 사각형에 색·기호만 달리한다
-    _appIcon(d) {
-        return `<span class="appic" style="--a:${d.g[0]};--b:${d.g[1]}${d.fg ? `;--fg:${d.fg}` : ''}"><i class="ph ${d.ph}"></i></span>`;
+    // 스티커만 맥 그림이 없어 같은 결로 그린다
+    _stickySvg() {
+        return `<svg viewBox="0 0 58 58" width="58" height="58" aria-hidden="true">
+            <defs><linearGradient id="stkg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#fff6a8"/><stop offset="1" stop-color="#ffd84d"/></linearGradient></defs>
+            <path d="M8 12a4 4 0 0 1 4-4h34a4 4 0 0 1 4 4v22L36 50H12a4 4 0 0 1-4-4z" fill="url(#stkg)"/>
+            <path d="M50 34H40a4 4 0 0 0-4 4v12z" fill="#e8bf2e"/>
+            <g stroke="#b08f14" stroke-width="2.4" stroke-linecap="round" opacity=".55">
+                <path d="M16 20h26"/><path d="M16 28h26"/><path d="M16 36h16"/></g>
+        </svg>`;
     }
+    // 업무 앱 아이콘 — 맥 아이콘과 같은 둥근 사각형에 색·기호만 달리한다
     _dockFace(d) {
-        if (d && d.g) return this._appIcon(d);
+        if (d && d.svg) return this._stickySvg();
         if (d && d.icon) return `<img src="icons/${d.icon}.png" alt="${this._vesc(d.label || '')}" draggable="false">`;
-        return this._appIcon({ g: ['#b3b3bd', '#6a6a76'], ph: 'ph-app-window' });
+        return `<img src="icons/finder.png" alt="" draggable="false">`;
     }
     // ── 바탕화면 ────────────────────────────────────────────
     MAC_WALLS = [
@@ -6052,6 +5995,8 @@ class BhasApp {
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
     setCSFilter(f) { this.csFilter = f; this.requestRender(); }
+    setDocCategory(c) { this.selectedDocCategory = c; this.requestRender(); }
+    setDocView(v) { this.docView = v; this.requestRender(); }
     renderCS() {
         if (!this._csLoaded) return this._loadingSkeleton('CS');
         const esc = s => this._vesc(s);
