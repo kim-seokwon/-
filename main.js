@@ -37,7 +37,7 @@ class BhasApp {
         this.currentTodoFilter = 'all'; // all, my, requested
         this.sampleConfig = defaultSampleConfig(); // 샘플 제작 도구 상태
         // 맥 모드(데스크톱·창·독) — 켜둔 상태를 기억한다
-        try { this.macMode = localStorage.getItem('macMode') === '1'; } catch (_e) { this.macMode = false; }
+        this.macMode = true;   // 화면은 맥 모드 하나로 통일했다(기본 화면 폐지)
         this.wins = [];
         this._macZ = 10;
         
@@ -986,12 +986,9 @@ class BhasApp {
             { id: 'integrations', label: '연동', icon: '<i class="ph ph-plugs-connected"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'notes', label: '메모', icon: '<i class="ph ph-note"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'reminders', label: '미리알림', icon: '<i class="ph ph-list-checks"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
-            { id: 'pages', label: '페이지', icon: '<i class="ph ph-note-pencil"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
-            { id: 'kanban', label: '보드', icon: '<i class="ph ph-kanban"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'calendar', label: '캘린더', icon: '<i class="ph ph-calendar-dots"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'table', label: '표', icon: '<i class="ph ph-table"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'sns', label: 'SNS', icon: '<i class="ph ph-instagram-logo"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
-            { id: 'all_todos', label: '할일', icon: '<i class="ph ph-list-checks"></i>', group: 'work', visible: true },
             { id: 'documents', label: '문서', icon: '<i class="ph ph-folder-open"></i>', group: 'archive', visible: perms.includes('documents') },
             { id: 'user_management', label: '계정', icon: '<i class="ph ph-user-plus"></i>', group: 'admin', visible: perms.includes('user_management') },
             { id: 'brand_management', label: '브랜드', icon: '<i class="ph ph-shield-check"></i>', group: 'admin', visible: perms.includes('user_management') },
@@ -2579,9 +2576,20 @@ class BhasApp {
             { id: 'feedback', label: '불편사항', need: 'MASTER' },
         ].filter(l => l.need === 'STAFF' ? (role === 'MASTER' || role === 'STAFF') : role === 'MASTER');
 
-        return `
-        <div class="settings-pane">
-            <div class="set-card">
+        const sec = this.setSec || 'look';
+        const SIDE = [
+            { k: 'look', t: '바탕화면·화면', i: 'ph-desktop' },
+            { k: 'tools', t: '도구', i: 'ph-wrench' },
+            ...(role === 'MASTER' ? [{ k: 'admin', t: '관리', i: 'ph-shield-check' }] : []),
+            { k: 'account', t: '계정', i: 'ph-user-circle' },
+            { k: 'build', t: '이 판', i: 'ph-info' },
+        ];
+        const side = `<aside class="appside"><div class="m3-h">설정</div>
+            ${SIDE.map(x => `<div class="m3-s${sec === x.k ? ' on' : ''}" onclick="app.setSetSec('${x.k}')">
+                <i class="ph ${x.i}" style="color:#0a84ff"></i><span>${esc(x.t)}</span></div>`).join('')}</aside>`;
+        return `<div class="appwrap">${side}<div class="appmain">
+        <div class="settings-pane" data-sec="${esc(sec)}">
+            <div class="set-card" data-s="look">
                 <div class="set-head">바탕화면</div>
                 <div class="wall-pick">
                     ${this.MAC_WALLS.map(w => `
@@ -2591,32 +2599,35 @@ class BhasApp {
                         </button>`).join('')}
                 </div>
             </div>
-            <div class="set-card">
+            <div class="set-card" data-s="look">
                 <div class="set-head">화면</div>
                 ${row('밝은 화면 · 어두운 화면', isLight ? '지금은 밝은 화면입니다' : '지금은 어두운 화면입니다',
                     `<button class="set-btn" onclick="app.toggleTheme()">${isLight ? '어둡게' : '밝게'}</button>`)}
-                ${row('맥 모드', this.macMode ? '창과 독으로 씁니다' : '기본 화면(사이드바)으로 씁니다',
-                    `<button class="set-btn" onclick="app.toggleMacMode()">${this.macMode ? '기본 화면으로' : '맥 모드로'}</button>`)}
+
+            </div>
+            <div class="set-card" data-s="tools">
+                <div class="set-head">도구</div>
                 ${row('계산기 · 스티커', '독 오른쪽 끝에 있습니다',
                     `<button class="set-btn" onclick="app.openCalc()">계산기</button>
                      <button class="set-btn" onclick="app.addSticky()">스티커</button>`)}
             </div>
-            ${links.length ? `<div class="set-card">
+            ${links.length ? `<div class="set-card" data-s="admin">
                 <div class="set-head">관리</div>
                 ${links.map(l => row(l.label, '', `<button class="set-btn" onclick="${this.macMode ? `app.macOpen('${l.id}')` : `app.switchView('${l.id}')`}">열기</button>`)).join('')}
             </div>` : ''}
-            <div class="set-card">
+            <div class="set-card" data-s="build">
                 <div class="set-head">이 판</div>
                 ${row('버전', this._buildTag(), `<button class="set-btn" onclick="app.checkNewBuild(true)">새 판 확인</button>
                     <button class="set-btn" onclick="location.reload(true)">새로 받기</button>`)}
             </div>
-            <div class="set-card">
+            <div class="set-card" data-s="account">
                 <div class="set-head">계정</div>
                 ${row(this.currentUser?.name || '-', role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사'),
                     `<button class="set-btn danger" onclick="app.logout()">로그아웃</button>`)}
             </div>
-        </div>`;
+        </div></div></div>`;
     }
+    setSetSec(k) { this.setSec = k; this.requestRender(); }
     // ── 묶음 앱 ──────────────────────────────────────────────
     //  따로 떨어져 있던 화면 중 같이 쓰는 것들을 한 앱의 탭으로 묶는다.
     //   · 주문 ↔ CS   : 주문을 찾아 그 자리에서 교환·반품을 접수한다
@@ -2629,9 +2640,10 @@ class BhasApp {
             { k: 'sales', t: '정산' }, { k: 'expenses', t: '지출' },
         ] },
         // 만드는 쪽 — 견적 내고, 샘플 뜨고, 작업지시서 쓰고, 생산처가 만든다
-        { head: 'vendors', label: '생산', tabs: [
-            { k: 'vendors', t: '생산현황' }, { k: 'tech_packs', t: '작업지시서' },
-            { k: 'sample_maker', t: '샘플·디자인' }, { k: 'quotes', t: '견적' },
+        { head: 'dashboard', label: '생산', tabs: [
+            { k: 'dashboard', t: '프로젝트' }, { k: 'vendors', t: '생산현황' },
+            { k: 'tech_packs', t: '작업지시서' }, { k: 'sample_maker', t: '샘플·디자인' },
+            { k: 'quotes', t: '견적' },
         ] },
     ];
     _groupOf(view) { return this.APP_GROUPS.find(g => g.tabs.some(t => t.k === view)); }
@@ -2639,7 +2651,8 @@ class BhasApp {
     APP_ICONS = {
         orders: 'ph-shopping-bag-open', cs: 'ph-arrows-counter-clockwise', inventory: 'ph-package',
         sales: 'ph-chart-line-up', expenses: 'ph-credit-card',
-        vendors: 'ph-factory', tech_packs: 'ph-clipboard-text', sample_maker: 'ph-scissors', quotes: 'ph-receipt',
+        dashboard: 'ph-chart-bar', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
+        sample_maker: 'ph-scissors', quotes: 'ph-receipt',
     };
     _appTabBar(view) {
         const g = this._groupOf(view); if (!g) return '';
@@ -2667,6 +2680,71 @@ class BhasApp {
         </aside><div class="appmain">${inner}</div></div>`;
     }
     setSnsAcc(k) { this.snsAcc = k; this.requestRender(); }
+    // 프로젝트 화면 안의 보기 전환 — 카드 / 타임라인
+    _projSwitch() {
+        const cur = this.projTab || 'cards';
+        const b = (k, t, i) => `<button class="${cur === k ? 'on' : ''}" onclick="app.setProjTab('${k}')">
+            <i class="ph ${i}"></i> ${t}</button>`;
+        return `<div class="projsw">${b('cards', '카드', 'ph-squares-four')}${b('timeline', '타임라인', 'ph-chart-bar-horizontal')}</div>`;
+    }
+    setProjTab(k) { this.projTab = k; this.requestRender(); }
+    // ── 전체 메뉴 (독 맨 왼쪽) ────────────────────────────────
+    //  대시보드의 모든 화면을 한 판에 펼친다. 글자를 치면 걸러지고 Enter 로 첫 번째를 연다.
+    LAUNCH = [
+        { g: '판매', items: [['orders', '주문', 'ph-shopping-bag-open'], ['cs', 'CS', 'ph-arrows-counter-clockwise'],
+            ['inventory', '재고', 'ph-package'], ['sales', '정산', 'ph-chart-line-up'],
+            ['expenses', '지출', 'ph-credit-card'], ['analysis', '분석', 'ph-chart-donut'],
+            ['integrations', '연동', 'ph-plugs-connected']] },
+        { g: '생산', items: [['dashboard', '프로젝트', 'ph-chart-bar'], ['vendors', '생산현황', 'ph-factory'],
+            ['tech_packs', '작업지시서', 'ph-clipboard-text'], ['sample_maker', '샘플·디자인', 'ph-scissors'],
+            ['quotes', '견적', 'ph-receipt']] },
+        { g: '업무', items: [['notes', '메모', 'ph-note'], ['reminders', '미리알림', 'ph-list-checks'],
+            ['calendar', '캘린더', 'ph-calendar-dots'], ['table', '표', 'ph-table'],
+            ['contacts', '연락처', 'ph-address-book'], ['sns', 'SNS', 'ph-instagram-logo'],
+            ['documents', '자료실', 'ph-folder-open']] },
+        { g: '관리', items: [['settings', '설정', 'ph-gear-six'], ['user_management', '계정', 'ph-users-three'],
+            ['brand_management', '브랜드', 'ph-shield-check'], ['feedback', '불편사항', 'ph-chat-dots']] },
+    ];
+    openLauncher() {
+        if (document.getElementById('launcher')) { this.closeLauncher(); return; }
+        const el = document.createElement('div');
+        el.id = 'launcher'; el.className = 'launcher';
+        el.innerHTML = `<div class="lc-find"><i class="ph ph-magnifying-glass"></i>
+                <input id="lc-q" placeholder="찾기" autocomplete="off"></div>
+            <div class="lc-body" id="lc-body"></div>`;
+        document.body.appendChild(el);
+        this._drawLauncher('');
+        const q = el.querySelector('#lc-q');
+        q.oninput = () => this._drawLauncher(q.value);
+        q.onkeydown = (e) => {
+            if (e.key === 'Escape') this.closeLauncher();
+            else if (e.key === 'Enter') { const f = el.querySelector('.lc-i'); if (f) f.click(); }
+        };
+        el.onmousedown = (e) => { if (e.target === el) this.closeLauncher(); };
+        setTimeout(() => q.focus(), 40);
+    }
+    closeLauncher() { document.getElementById('launcher')?.remove(); }
+    _drawLauncher(q) {
+        const body = document.getElementById('lc-body'); if (!body) return;
+        const esc = s => this._vesc(s);
+        const k = (q || '').trim().toLowerCase();
+        const role = this.currentUser?.role;
+        let html = '';
+        this.LAUNCH.forEach(sec => {
+            let items = sec.items;
+            if (sec.g === '관리' && role !== 'MASTER') items = items.filter(i => i[0] === 'settings');
+            if (k) items = items.filter(i => i[1].toLowerCase().includes(k));
+            if (!items.length) return;
+            html += `<div class="lc-g">${esc(sec.g)}</div><div class="lc-grid">` + items.map(([id, label, icon]) =>
+                `<button class="lc-i" onclick="app.launch('${id}')">
+                    <span class="lc-ic"><i class="ph ${icon}"></i></span><em>${esc(label)}</em></button>`).join('') + '</div>';
+        });
+        body.innerHTML = html || `<div class="m3-none">찾는 화면이 없습니다</div>`;
+    }
+    launch(view) {
+        this.closeLauncher();
+        if (this.macMode) this.macOpen(view); else this.switchView(view);
+    }
     _appShell(view, inner) {
         const side = this._appTabBar(view);
         return side ? `<div class="appwrap">${side}<div class="appmain">${inner}</div></div>` : inner;
@@ -2696,6 +2774,14 @@ class BhasApp {
             return Math.round((completedCount / STAGES.length) * 100);
         };
 
+        if (this.currentView === 'dashboard' && (this.projTab || 'cards') === 'timeline') {
+            const prev = this.currentView;
+            this.currentView = 'timeline';
+            let tl = '';
+            try { tl = this.renderSubView(products) || ''; } catch (_e) { tl = ''; }
+            this.currentView = prev;
+            return this._appShell('dashboard', this._projSwitch() + tl);
+        }
         if (this.currentView === 'dashboard') {
             const isActive = (p) => {
                 const stage = p.currentStage || 'consulting';
@@ -2898,7 +2984,7 @@ class BhasApp {
                 </div>
             `;
 
-            return `
+            return this._appShell('dashboard', this._projSwitch() + `
                 <div class="dashboard-sections">
                     ${kpiStrip}
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -2934,7 +3020,7 @@ class BhasApp {
                         <div style="margin-top: 1rem; font-size: 0.7rem; color: var(--text-muted);">${this.currentUser.name} (${this.currentUser.role})</div>
                     </div>
                 </div>
-            `;
+            `);
         } else if (this.currentView === 'all_todos') {
             const allTodos = mockData.products.flatMap(p => {
                 const projectCompany = mockData.companies.find(c => c.id === p.company_id);
@@ -5337,6 +5423,7 @@ class BhasApp {
     //  아이콘은 맥 그림 그대로. 앱을 세 묶음으로 합치면서 겹치던 게 풀려
     //  이제 하나씩 제 아이콘을 쓴다(전엔 prod/settle 가 겹쳤다).
     MAC_DOCK = [
+        { id: '__menu', label: '전체 메뉴', launcher: true },
         { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
         { id: 'orders', label: '판매', icon: 'sales' },
         { id: 'vendors', label: '생산', icon: 'prod' },
@@ -5364,6 +5451,7 @@ class BhasApp {
     }
     // 업무 앱 아이콘 — 맥 아이콘과 같은 둥근 사각형에 색·기호만 달리한다
     _dockFace(d) {
+        if (d && d.launcher) return `<span class="launchic"><i class="ph ph-squares-four"></i></span>`;
         if (d && d.svg) return this._stickySvg();
         if (d && d.icon) return `<img src="icons/${d.icon}.png" alt="${this._vesc(d.label || '')}" draggable="false">`;
         return `<img src="icons/finder.png" alt="" draggable="false">`;
@@ -5568,8 +5656,9 @@ class BhasApp {
         try { deskboard = this.renderHome(products) || ''; }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
         const dock = this.MAC_DOCK.filter(d => !d.tool).map(d => {
-            const open = d.desktop ? !this.wins.some(w => !w.min) : this.wins.find(w => w.view === d.id);
-            return `<button class="mdi${open ? ' open' : ''}" onclick="app.macOpen('${d.id}')" title="${esc(d.label)}">
+            const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this.wins.find(w => w.view === d.id));
+            const act = d.launcher ? 'app.openLauncher()' : `app.macOpen('${d.id}')`;
+            return `<button class="mdi${open ? ' open' : ''}" onclick="${act}" title="${esc(d.label)}">
                 ${this._dockFace(d)}<em>${esc(d.label)}</em></button>`;
         }).join('');
         const tools = this.MAC_DOCK.filter(d => d.tool).map(d => {
@@ -5588,7 +5677,7 @@ class BhasApp {
                 <span>${esc(this.currentUser?.name || '')}</span>
                 <span class="mac-mb-right">
                     <span class="mac-ver" title="지금 보고 있는 판">${esc(this._buildTag())}</span>
-                    <button onclick="app.toggleMacMode()" title="기본 화면으로">기본 화면</button>
+
                 </span>
             </div>
             <div id="mac-snap-hint" class="mac-snap-hint"></div>
@@ -5624,12 +5713,8 @@ class BhasApp {
         views.forEach(v => { this.currentView = v; try { this.ensureViewData(); } catch (_e) {} });
         this.currentView = prev;
     }
-    toggleMacMode() {
-        this.macMode = !this.macMode;
-        try { localStorage.setItem('macMode', this.macMode ? '1' : '0'); } catch (_e) {}
-        if (this.macMode && !(this.wins || []).length) this.macOpen('home');
-        this.requestRender();
-    }
+    // 기본 화면은 없앴다. 남은 호출은 바탕화면 보기로 넘긴다.
+    toggleMacMode() { this.macMode = true; this.macShowDesktop(); }
 
     // ── 메모 (맥 '메모' 앱 형태) ─────────────────────────────
     //  프로젝트 댓글(memos)·노션 노트를 한 곳에서. 폴더 = 맥 메모의 폴더, 프로젝트에 붙이면 그 프로젝트의 기록이 된다.
