@@ -2563,6 +2563,31 @@ class BhasApp {
             </div>
         </div>`;
     }
+    // ── 묶음 앱 ──────────────────────────────────────────────
+    //  따로 떨어져 있던 화면 중 같이 쓰는 것들을 한 앱의 탭으로 묶는다.
+    //   · 주문 ↔ CS   : 주문을 찾아 그 자리에서 교환·반품을 접수한다
+    //   · 매출 ↔ 지출 : 둘 다 돈. '정산' 하나로
+    //   · 생산현황 ↔ 재고 : 만든 것과 쌓인 것
+    APP_GROUPS = [
+        { head: 'orders', label: '주문', tabs: [{ k: 'orders', t: '주문' }, { k: 'cs', t: 'CS' }] },
+        { head: 'sales', label: '정산', tabs: [{ k: 'sales', t: '매출' }, { k: 'expenses', t: '지출' }] },
+        { head: 'vendors', label: '생산', tabs: [{ k: 'vendors', t: '생산현황' }, { k: 'inventory', t: '재고' }] },
+    ];
+    _groupOf(view) { return this.APP_GROUPS.find(g => g.tabs.some(t => t.k === view)); }
+    _appTabBar(view) {
+        const g = this._groupOf(view); if (!g) return '';
+        const esc = s => this._vesc(s);
+        const win = this._renderingWin || '';
+        return `<div class="apptabs">${g.tabs.map(t => `
+            <button class="apptab${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">${esc(t.t)}</button>`).join('')}
+        </div>`;
+    }
+    // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
+    switchAppTab(winId, view) {
+        const w = (this.wins || []).find(x => x.id === winId);
+        if (w) { w.view = view; this.requestRender(); return; }
+        this.switchView(view);
+    }
     renderSubView(products) {
         const { role, id: currentUserId, name: currentUserName } = this.currentUser;
         if (this.currentView === 'home') return this.renderHome(products);
@@ -3514,9 +3539,9 @@ class BhasApp {
         } else if (this.currentView === 'sample_maker') {
             return renderSampleMaker(this.sampleConfig);
         } else if (this.currentView === 'orders') {
-            return this.renderOrders();
+            return this._appTabBar('orders') + this.renderOrders();
         } else if (this.currentView === 'inventory') {
-            return this.renderInventory();
+            return this._appTabBar('inventory') + this.renderInventory();
         } else if (this.currentView === 'pages') {
             return this.renderPagesView();
         } else if (this.currentView === 'kanban') {
@@ -3526,13 +3551,13 @@ class BhasApp {
         } else if (this.currentView === 'table') {
             return this.renderTableView();
         } else if (this.currentView === 'vendors') {
-            return this.renderVendors();
+            return this._appTabBar('vendors') + this.renderVendors();
         } else if (this.currentView === 'integrations') {
             return this.renderIntegrations();
         } else if (this.currentView === 'quotes') {
             return this.renderQuotes();
         } else if (this.currentView === 'sales') {
-            return this.renderSales();
+            return this._appTabBar('sales') + this.renderSales();
         } else if (this.currentView === 'analysis') {
             return this.renderAnalysis();
         } else if (this.currentView === 'notes') {
@@ -3540,9 +3565,9 @@ class BhasApp {
         } else if (this.currentView === 'reminders') {
             return this.renderReminders();
         } else if (this.currentView === 'cs') {
-            return this.renderCS();
+            return this._appTabBar('cs') + this.renderCS();
         } else if (this.currentView === 'expenses') {
-            return this.renderExpenses();
+            return this._appTabBar('expenses') + this.renderExpenses();
         } else if (this.currentView === 'feedback') {
             return this.renderFeedback();
         } else if (this.currentView === 'sns') {
@@ -4718,10 +4743,10 @@ class BhasApp {
             if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); }
         }
         if (v === 'feedback' && !this._fbLoaded && !this._fbLoading) this.loadFeedback();
-        if (v === 'cs' && !this._csLoaded && !this._csLoading) this.loadCS();
+        if ((v === 'cs' || v === 'orders') && !this._csLoaded && !this._csLoading) this.loadCS();
         if (v === 'notes' && !this._noteLoaded && !this._noteLoading) this.loadNotes();
         if (v === 'reminders' && !this._remLoaded && !this._remLoading) this.loadReminders();
-        if (v === 'expenses' && !this._expLoaded && !this._expLoading) this.loadExpenses();
+        if ((v === 'expenses' || v === 'sales') && !this._expLoaded && !this._expLoading) this.loadExpenses();
         if (v === 'tech_packs') this.ensureTechPacks();
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
@@ -4738,7 +4763,8 @@ class BhasApp {
         if (v === 'inventory' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
-        if ((v === 'vendors' || v === 'contacts') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+        if ((v === 'vendors' || v === 'contacts' || v === 'inventory') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+        if (v === 'vendors' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'sns' && !this._igLoaded && !this._igLoading) this.loadIG();
         if (v === 'quotes' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         if (v === 'home') {
@@ -5310,25 +5336,34 @@ class BhasApp {
     //   · 신호등으로 닫기/내리기(독으로)/키우기, 가장자리로 끌면 화면 반쪽에 붙는다(분할)
     //   · 창 내용은 기존 renderSubView 를 그대로 재사용 → 기능이 전부 그대로 살아 있다
     // ══════════════════════════════════════════════════════════════
+    //  아이콘: 맥 기본앱과 뜻이 그대로 맞는 것만 그림 파일(png)을 쓰고,
+    //  우리 업무 앱(주문·CS·매출·재고·SNS·지출·생산현황)은 각자 다른 색·기호로 그린다.
+    //  전에는 prod.png 가 CS·재고·생산현황 셋에, settle.png 가 매출·지출 둘에 겹쳐 있었다.
     MAC_DOCK = [
         { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
-        { id: 'orders', label: '주문', icon: 'sales' },
-        { id: 'cs', label: 'CS', icon: 'prod' },
-        { id: 'sales', label: '매출', icon: 'settle' },
-        { id: 'inventory', label: '재고', icon: 'prod' },
-        { id: 'sns', label: 'SNS', icon: 'mkt' },
-        { id: 'expenses', label: '지출', icon: 'settle' },
+        { id: 'orders', label: '주문', g: ['#ff9f0a', '#ff6a00'], ph: 'ph-shopping-bag-open' },
+        { id: 'sales', label: '정산', g: ['#4cd964', '#1a9e3c'], ph: 'ph-chart-line-up' },
+        { id: 'vendors', label: '생산', g: ['#bf8cff', '#7b3fe4'], ph: 'ph-factory' },
+        { id: 'sns', label: 'SNS', g: ['#ff7ab0', '#c13584'], ph: 'ph-instagram-logo' },
         { id: 'documents', label: '자료실', icon: 'finder' },
+        { id: 'calendar', label: '캘린더', icon: 'cal' },
         { id: 'reminders', label: '미리알림', icon: 'rem' },
         { id: 'notes', label: '메모', icon: 'notes' },
-        { id: 'calendar', label: '캘린더', icon: 'cal' },
-        { id: 'vendors', label: '생산현황', icon: 'prod' },
         { id: 'contacts', label: '연락처', icon: 'contacts' },
         { id: 'settings', label: '설정', icon: 'set' },
         // 창이 아니라 그 자리에서 뜨는 도구 — 독 오른쪽 끝에 따로 둔다
         { id: 'calc', label: '계산기', icon: 'calc', tool: true },
         { id: 'sticky', label: '스티커', svg: 'sticky', tool: true },
     ];
+    // 업무 앱 아이콘 — 맥 아이콘과 같은 둥근 사각형에 색·기호만 달리한다
+    _appIcon(d) {
+        return `<span class="appic" style="--a:${d.g[0]};--b:${d.g[1]}"><i class="ph ${d.ph}"></i></span>`;
+    }
+    _dockFace(d) {
+        if (d.svg) return this._stickySvg();
+        if (d.g) return this._appIcon(d);
+        return `<img src="icons/${d.icon}.png" alt="${this._vesc(d.label)}" draggable="false">`;
+    }
     // 스티커 아이콘 (그림 파일 대신 그린다)
     _stickySvg() {
         return `<svg viewBox="0 0 58 58" width="58" height="58" aria-hidden="true">
@@ -5359,7 +5394,8 @@ class BhasApp {
     _macTitle(view) {
         const m = (this.MAC_DOCK.find(d => d.id === view));
         if (m) return m.label;
-        return ({ settings: '설정', contacts: '연락처', dashboard: '프로젝트', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
+        return ({ settings: '설정', contacts: '연락처', cs: 'CS', expenses: '지출', inventory: '재고',
+                  dashboard: '프로젝트', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
                   integrations: '연동', user_management: '계정', brand_management: '브랜드',
                   feedback: '불편사항', pages: '페이지', kanban: '보드', table: '표',
                   all_todos: '할일', timeline: '타임라인', sample_maker: '샘플' })[view] || view;
@@ -5508,6 +5544,7 @@ class BhasApp {
         const prevView = this.currentView;
         const winsHtml = this.wins.filter(w => !w.min).map(w => {
             this.currentView = w.view;
+            this._renderingWin = w.id;
             let body = '';
             try { body = this.renderSubView(products) || ''; }
             catch (e) { body = `<div style="padding:2rem;color:#ef4444">화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
@@ -5530,6 +5567,7 @@ class BhasApp {
                     `<span class="mwr mwr-${d}" onmousedown="app.macResizeStart(event,'${w.id}','${d}')"></span>`).join('')}
             </section>`;
         }).join('');
+        this._renderingWin = null;
         this.currentView = prevView;
         // 바탕화면 = 홈 대시보드. 여기 블록을 누르면 switchView 를 타고 창이 열린다.
         let deskboard = '';
@@ -5538,18 +5576,18 @@ class BhasApp {
         const dock = this.MAC_DOCK.filter(d => !d.tool).map(d => {
             const open = d.desktop ? !this.wins.some(w => !w.min) : this.wins.find(w => w.view === d.id);
             return `<button class="mdi${open ? ' open' : ''}" onclick="app.macOpen('${d.id}')" title="${esc(d.label)}">
-                <img src="icons/${d.icon}.png" alt="${esc(d.label)}" draggable="false"><em>${esc(d.label)}</em></button>`;
+                ${this._dockFace(d)}<em>${esc(d.label)}</em></button>`;
         }).join('');
         const tools = this.MAC_DOCK.filter(d => d.tool).map(d => {
             const on = d.id === 'calc' ? !!document.getElementById('calc-pop')
                 : !!(document.querySelector('.sticky') || document.getElementById('sticky-list'));
-            const face = d.svg ? this._stickySvg() : `<img src="icons/${d.icon}.png" alt="${esc(d.label)}" draggable="false">`;
+            const face = this._dockFace(d);
             return `<button class="mdi${on ? ' open' : ''}" onclick="app.macTool('${d.id}')" title="${esc(d.label)}">
                 ${face}<em>${esc(d.label)}</em></button>`;
         }).join('');
         const mins = this.wins.filter(w => w.min).map(w =>
             `<button class="mdi min" onclick="app.macOpen('${w.view}')" title="${esc(this._macTitle(w.view))}">
-                <img src="icons/${(this.MAC_DOCK.find(d => d.id === w.view) || { icon: 'notes' }).icon}.png" alt=""><em>${esc(this._macTitle(w.view))}</em></button>`).join('');
+                ${this._dockFace(this.MAC_DOCK.find(d => d.id === w.view) || { icon: 'notes', label: '' })}<em>${esc(this._macTitle(w.view))}</em></button>`).join('');
         return `<div class="mac-desktop" data-wall="${esc(this.wallpaper)}">
             <div class="mac-menubar">
                 <b>2179</b>
@@ -5646,6 +5684,8 @@ class BhasApp {
             this.requestRender();
         } catch (e) { this.showToast('삭제 실패(개인 메모 또는 마스터만 가능): ' + (e.message || e)); }
     }
+    // ── 메모 (맥 '메모' 앱 그대로) ────────────────────────────
+    //  왼쪽 폴더 · 가운데 목록(날짜 묶음) · 오른쪽 본문. 세 칸 구조와 치수를 맥에 맞췄다.
     renderNotes() {
         if (!this._noteLoaded) return this._loadingSkeleton('메모');
         const esc = s => this._vesc(s);
@@ -5664,58 +5704,69 @@ class BhasApp {
         const list = all.filter(inFolder);
         const sel = list.find(n => n.id === this.noteSel) || list[0];
         const cnt = (fn) => all.filter(fn).length;
-        // 맥 메모처럼 날짜 묶음으로 나눈다
+        // 맥 메모의 날짜 묶음: 오늘 · 어제 · 이전 7일 · 이전 30일 · 월 · 연도
         const bucket = (t) => {
             if (!t) return '이전 항목';
-            const d = (Date.now() - new Date(t).getTime()) / 86400000;
-            if (d < 1) return '오늘'; if (d < 7) return '이전 7일'; if (d < 30) return '이전 30일';
-            return new Date(t).getFullYear() + '년 ' + (new Date(t).getMonth() + 1) + '월';
+            const now = new Date(), d = new Date(t);
+            const day = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                        - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+            if (day <= 0) return '오늘';
+            if (day === 1) return '어제';
+            if (day < 7) return '이전 7일';
+            if (day < 30) return '이전 30일';
+            if (d.getFullYear() === now.getFullYear()) return (d.getMonth() + 1) + '월';
+            return d.getFullYear() + '년';
         };
         const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' }) : '';
+        const longWhen = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
         let items = '', last = null;
         list.forEach(n => {
             const b = bucket(n.updated_at);
-            if (b !== last) { last = b; items += `<div class="note-grp">${esc(b)}</div>`; }
-            items += `<div class="note-i${sel && n.id === sel.id ? ' on' : ''}" onclick="app.selectNote('${n.id}')">
+            if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
+            const prev = (n.body || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+            items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}" onclick="app.selectNote('${n.id}')">
                 <b>${esc(n.title || '새 메모')}</b>
-                <span>${esc(when(n.updated_at))} · ${esc((n.body || '').replace(/\n/g, ' ').slice(0, 34)) || '추가 텍스트 없음'}</span></div>`;
+                <div class="nt-sub"><span class="nt-d">${esc(when(n.updated_at))}</span>
+                    <span class="nt-p">${esc(prev) || '추가 텍스트 없음'}</span></div>
+            </div>`;
         });
-        if (!items) items = `<div style="padding:1.4rem;color:var(--text-muted);font-size:.85rem;text-align:center">메모가 없습니다</div>`;
-        const si = (key, icon, label, n, color) => `<div class="mac-si${cur === key ? ' on' : ''}" onclick="app.setNoteFolder('${key}')">
-            <i class="ph ${icon}"${color ? ` style="color:${color}"` : ''}></i> ${esc(label)} <span class="mac-cnt">${n}</span></div>`;
+        if (!items) items = `<div class="nt-none">메모 없음</div>`;
+        const fold = (key, icon, label, n, color) => `<div class="nt-f${cur === key ? ' on' : ''}" onclick="app.setNoteFolder('${key}')">
+            <i class="ph ${icon}" style="color:${color || '#e0a800'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
         const otherFolders = [...new Set(all.filter(n => n.scope === 'shared').map(n => n.folder || '공용'))];
-        const side = `
-            <div class="mac-sh">내 칸</div>
-            ${si('private', 'ph-lock-simple', '개인 메모', cnt(n => n.scope === 'private' && n.owner === me), '#f59e0b')}
-            <div class="mac-sh">프로젝트</div>
-            ${projects.map(pr => si('p:' + pr.id, 'ph-folder', pr.name, cnt(n => n.product_id === pr.id), '#3b82f6')).join('')
-              || '<div style="padding:6px 10px;font-size:.76rem;color:var(--text-muted)">프로젝트 없음</div>'}
-            <div class="mac-sh">공용</div>
-            ${otherFolders.map(f => si('f:' + f, 'ph-folder-open', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#94a3b8')).join('')}
-            ${si('all', 'ph-tray', '전체', all.length)}`;
-        const scopeTag = (n) => n.scope === 'private' ? '<span class="note-tag" style="background:#f59e0b22;color:#b45309">개인</span>'
-            : n.scope === 'project' ? '<span class="note-tag" style="background:#3b82f622;color:#2563eb">프로젝트</span>'
-            : '<span class="note-tag" style="background:#94a3b822;color:#64748b">공용</span>';
-        return `<div class="fade-in" style="padding:1.2rem">
-            <div class="mac">
-                <div class="mac-side">${side}</div>
-                <div class="mac-mid">
-                    <div class="mac-bar"><h3>메모 ${list.length}</h3>
-                        <button class="mac-btn pri" onclick="app.addNote()"><i class="ph ph-plus"></i> 새 메모</button></div>
-                    ${items}
+        return `
+        <div class="nt">
+            <aside class="nt-side">
+                ${fold('private', 'ph-note', '개인 메모', cnt(n => n.scope === 'private' && n.owner === me))}
+                <div class="nt-shead">우리 회사</div>
+                ${fold('all', 'ph-folder-simple', '메모', all.length)}
+                ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
+                <div class="nt-shead">프로젝트</div>
+                ${projects.length ? projects.map(pr => fold('p:' + pr.id, 'ph-folder-simple', pr.name, cnt(n => n.product_id === pr.id), '#e0a800')).join('')
+                  : '<div class="nt-none sm">프로젝트 없음</div>'}
+            </aside>
+            <section class="nt-list">
+                <div class="nt-lbar">
+                    <div><b>${esc(cur === 'private' ? '개인 메모' : (cur === 'all' ? '메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2))))}</b>
+                        <span>${list.length}개의 메모</span></div>
+                    <button class="nt-new" onclick="app.addNote()" title="새 메모"><i class="ph ph-note-pencil"></i></button>
                 </div>
-                <div class="mac-main">
-                    ${sel ? `<div class="mac-bar">${scopeTag(sel)}
-                            <h3 style="font-size:.84rem;color:var(--text-muted);font-weight:600">${esc(sel.folder || '메모')}</h3>
-                            <button class="mac-btn" onclick="app.saveNote()">저장</button>
-                            <button class="mac-btn" onclick="app.deleteNote()">삭제</button></div>
-                        <div class="note-edit">
-                            <div class="note-date">${esc(when(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
-                            <input id="note-title" class="note-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
-                            <textarea id="note-body" class="note-body" placeholder="내용을 적어주세요" onblur="app.saveNote()">${esc(sel.body || '')}</textarea>
-                        </div>` : `<div style="padding:3rem;text-align:center;color:var(--text-muted)">왼쪽에서 메모를 선택하세요</div>`}
+                <div class="nt-rows">${items}</div>
+            </section>
+            <section class="nt-doc">
+                ${sel ? `
+                <div class="nt-tools">
+                    <button onclick="app.saveNote()" title="저장"><i class="ph ph-check"></i></button>
+                    <button onclick="app.deleteNote()" title="삭제"><i class="ph ph-trash"></i></button>
+                    <span class="nt-scope">${sel.scope === 'private' ? '개인' : (sel.scope === 'project' ? '프로젝트' : '공용')}</span>
                 </div>
-            </div></div>`;
+                <div class="nt-page">
+                    <div class="nt-when">${esc(longWhen(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
+                    <input id="note-title" class="nt-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
+                    <textarea id="note-body" class="nt-body" placeholder="내용을 적어주세요" onblur="app.saveNote()">${esc(sel.body || '')}</textarea>
+                </div>` : `<div class="nt-none big">메모를 선택하세요</div>`}
+            </section>
+        </div>`;
     }
 
     // ── 미리알림 (맥 '미리알림' 앱 형태) ──────────────────────
@@ -5733,7 +5784,8 @@ class BhasApp {
         const el = document.getElementById('rem-new');
         const title = (el?.value || '').trim(); if (!title) { el?.focus(); return; }
         const due = (document.getElementById('rem-due')?.value || '') || null;
-        const list_name = (this.remList2 && this.remList2 !== '전체' && this.remList2 !== '오늘') ? this.remList2 : '내 할 일';
+        const cur = this.remList2 || '';
+        const list_name = cur.startsWith('l:') && cur.slice(2) !== '할일' ? cur.slice(2) : '미리 알림';
         try {
             const { data, error } = await this.supabase.from('reminders')
                 .insert([{ title, due_date: due, list_name, created_by: this.currentUser?.name || null }]).select('*').single();
@@ -5753,48 +5805,132 @@ class BhasApp {
         } catch (e) { r.done = !done; this.showToast('변경 실패: ' + (e.message || e)); this.requestRender(); }
     }
     setRemList(l) { this.remList2 = l; this.requestRender(); }
+    // ── 미리알림 (맥 '미리알림' 앱 그대로) ─────────────────────
+    //  왼쪽에 색 타일 6개 + 나의 목록, 오른쪽에 목록별 색 제목 + 동그란 체크.
+    //  우리 '할일(todos)'도 한 목록으로 같이 얹어서 담당자까지 보이게 했다.
     renderReminders() {
         if (!this._remLoaded) return this._loadingSkeleton('미리알림');
         const esc = s => this._vesc(s);
-        const all = this.remList || [];
         const today = new Date().toISOString().slice(0, 10);
-        const lists = [...new Set(all.map(r => r.list_name || '내 할 일'))];
-        const cur = this.remList2 || '오늘';
-        const openAll = all.filter(r => !r.done);
-        let list;
-        if (cur === '오늘') list = openAll.filter(r => r.due_date && r.due_date <= today);
-        else if (cur === '전체') list = all;
-        else list = all.filter(r => (r.list_name || '내 할 일') === cur);
-        const COLORS = ['#3b82f6', '#f59e0b', '#a855f7', '#16a34a', '#ef4444'];
-        const side = `<div class="mac-sh">목록</div>
-            <div class="mac-si${cur === '오늘' ? ' on' : ''}" onclick="app.setRemList('오늘')"><span class="mac-dot" style="background:#3b82f6"></span> 오늘 <span class="mac-cnt">${openAll.filter(r => r.due_date && r.due_date <= today).length}</span></div>
-            <div class="mac-si${cur === '전체' ? ' on' : ''}" onclick="app.setRemList('전체')"><span class="mac-dot" style="background:#64748b"></span> 전체 <span class="mac-cnt">${all.length}</span></div>
-            <div class="mac-sh">내 목록</div>
-            ${lists.map((l, i) => `<div class="mac-si${cur === l ? ' on' : ''}" onclick="app.setRemList('${esc(l)}')">
-                <span class="mac-dot" style="background:${COLORS[i % COLORS.length]}"></span> ${esc(l)}
-                <span class="mac-cnt">${all.filter(r => (r.list_name || '내 할 일') === l && !r.done).length}</span></div>`).join('')}`;
-        const dueCls = d => !d ? '' : (d < today ? ' over' : (d === today ? ' today' : ''));
-        const rows = list.map(r => `<div class="rem-i">
-            <button class="rem-ck${r.done ? ' on' : ''}" onclick="app.toggleReminder('${r.id}')" aria-label="완료"></button>
-            <div class="rem-t${r.done ? ' done' : ''}"><b>${esc(r.title)}</b>
-                ${r.memo ? `<span>${esc(r.memo)}</span>` : ''}</div>
-            ${r.due_date ? `<span class="rem-due${dueCls(r.due_date)}">${esc(r.due_date)}</span>` : ''}
-        </div>`).join('') || `<div style="padding:2rem;color:var(--text-muted);font-size:.85rem;text-align:center">항목이 없습니다</div>`;
-        return `<div class="fade-in" style="padding:1.2rem">
-            <div class="mac two">
-                <div class="mac-side">${side}</div>
-                <div class="mac-main">
-                    <div class="mac-bar"><h3>${esc(cur)}</h3>
-                        <span style="font-size:.78rem;color:var(--text-muted)">미완료 ${list.filter(r => !r.done).length} / ${list.length}</span></div>
-                    <div style="display:flex;gap:7px;padding:10px 13px;border-bottom:1px solid var(--card-border)">
-                        <input id="rem-new" class="mac-inp" placeholder="새 미리알림" style="flex:1"
-                            onkeydown="if(event.key==='Enter')app.addReminder()">
-                        <input id="rem-due" type="date" class="mac-inp" style="width:150px">
-                        <button class="mac-btn pri" onclick="app.addReminder()">추가</button>
+        const me = this._myId();
+        const nameOf = id => (mockData.companies || []).find(c => c.id === id)?.name || '';
+        // 미리알림 + 기존 할일을 한 줄 모양으로 합친다
+        const rems = (this.remList || []).map(r => ({
+            src: 'rem', id: r.id, title: r.title, memo: r.memo, due: r.due_date,
+            done: !!r.done, list: r.list_name || '미리 알림',
+        }));
+        const todos = (mockData.products || []).flatMap(p => (p.todos || []).map(t => ({
+            src: 'todo', id: t.id, title: t.text, due: t.due_date, done: !!t.completed,
+            list: '할일', project: p.name, assignee: t.assignee, createdBy: t.created_by,
+        })));
+        const all = [...rems, ...todos];
+        const open = all.filter(x => !x.done);
+        const F = {
+            today: x => !x.done && x.due && x.due <= today,
+            plan:  x => !x.done && x.due && x.due > today,
+            all:   x => !x.done,
+            late:  x => !x.done && x.due && x.due < today,
+            mine:  x => !x.done && x.src === 'todo' && x.assignee === me,
+            done:  x => x.done,
+        };
+        const cur = this.remList2 || 'today';
+        const TILES = [
+            { k: 'today', label: '오늘',  icon: 'ph-calendar-blank', cls: 'blue' },
+            { k: 'plan',  label: '예정',  icon: 'ph-calendar-dots',  cls: 'red' },
+            { k: 'all',   label: '전체',  icon: 'ph-tray',           cls: 'dark' },
+            { k: 'late',  label: '지연',  icon: 'ph-flag',           cls: 'orange' },
+            { k: 'mine',  label: '내 할 일', icon: 'ph-user',        cls: 'pink' },
+            { k: 'done',  label: '완료됨', icon: 'ph-check',         cls: 'gray' },
+        ];
+        const listNames = [...new Set(all.map(x => x.list))];
+        const LCOL = { '할일': '#0a84ff', '미리 알림': '#ff9f0a' };
+        const colorOf = (l, i) => LCOL[l] || ['#ff9f0a', '#0a84ff', '#30d158', '#bf5af2', '#ff453a'][i % 5];
+        let shown = cur.startsWith('l:') ? all.filter(x => x.list === cur.slice(2) && !x.done)
+                                         : all.filter(F[cur] || F.all);
+        const title = cur.startsWith('l:') ? cur.slice(2) : (TILES.find(t => t.k === cur) || {}).label || '전체';
+        const doneCnt = all.filter(x => x.done).length;
+        // 목록별로 묶어 색 제목을 얹는다
+        const groups = {};
+        shown.forEach(x => { (groups[x.list] = groups[x.list] || []).push(x); });
+        const sections = Object.keys(groups).map((l, i) => {
+            const col = colorOf(l, listNames.indexOf(l));
+            return `<div class="rm-sec" style="color:${col}">${esc(l)}</div>
+            ${groups[l].map(x => `
+                <div class="rm-item${x.done ? ' done' : ''}">
+                    <button class="rm-ck${x.done ? ' on' : ''}" style="--c:${col}"
+                        onclick="app.toggleRemItem('${x.src}','${x.id}')" aria-label="완료"></button>
+                    <div class="rm-tx">
+                        <div class="rm-tt">${esc(x.title)}</div>
+                        ${(x.memo || x.project || x.assignee) ? `<div class="rm-meta">
+                            ${x.project ? `<span class="rm-tag"><i class="ph ph-folder"></i>${esc(x.project)}</span>` : ''}
+                            ${x.assignee ? `<span class="rm-tag"><i class="ph ph-user"></i>${esc(nameOf(x.assignee) || '담당')}</span>` : ''}
+                            ${x.memo ? `<span>${esc(x.memo)}</span>` : ''}
+                        </div>` : ''}
                     </div>
-                    <div style="overflow:auto">${rows}</div>
+                    ${x.due ? `<span class="rm-due${x.due < today ? ' over' : (x.due === today ? ' now' : '')}">${esc(x.due)}</span>` : ''}
+                </div>`).join('')}`;
+        }).join('') || `<div class="rm-none">항목 없음</div>`;
+
+        return `
+        <div class="rm">
+            <aside class="rm-side">
+                <div class="rm-tiles">
+                    ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')">
+                        <span class="rm-ti"><i class="ph ${t.icon}"></i></span>
+                        <b>${all.filter(F[t.k]).length}</b>
+                        <em>${t.label}</em>
+                    </button>`).join('')}
                 </div>
-            </div></div>`;
+                <div class="rm-lhead">나의 목록</div>
+                ${listNames.map((l, i) => `<div class="rm-l${cur === 'l:' + l ? ' on' : ''}" onclick="app.setRemList('l:${esc(l)}')">
+                    <span class="rm-lic" style="background:${colorOf(l, i)}"><i class="ph ph-list-bullets"></i></span>
+                    <span class="rm-ln">${esc(l)}</span>
+                    <em>${all.filter(x => x.list === l && !x.done).length}</em></div>`).join('')}
+            </aside>
+            <section class="rm-main">
+                <div class="rm-top">
+                    <button class="rm-add" onclick="app.focusNewReminder()" title="새 미리알림"><i class="ph ph-plus"></i></button>
+                    <div class="rm-search"><i class="ph ph-magnifying-glass"></i><input placeholder="검색"
+                        value="${esc(this.remQ || '')}" oninput="app.remQ=this.value;app.requestRender()"></div>
+                </div>
+                <h1 class="rm-h1">${esc(title)}</h1>
+                <div class="rm-sub">${doneCnt}개 완료됨${doneCnt ? ` · <a onclick="app.clearDoneReminders()">지우기</a>` : ''}</div>
+                <div class="rm-new">
+                    <button class="rm-ck ghost"></button>
+                    <input id="rem-new" placeholder="새 미리알림" onkeydown="if(event.key==='Enter')app.addReminder()">
+                    <input id="rem-due" type="date">
+                </div>
+                <div class="rm-body">${sections}</div>
+            </section>
+        </div>`;
+    }
+    focusNewReminder() { setTimeout(() => document.getElementById('rem-new')?.focus(), 30); }
+    toggleRemItem(src, id) {
+        if (src === 'rem') return this.toggleReminder(id);
+        return this.toggleTodoFromReminders(id);
+    }
+    // 미리알림 화면에서 기존 할일을 끄고 켠다 — todos 테이블을 그대로 쓴다
+    async toggleTodoFromReminders(id) {
+        let hit = null;
+        (mockData.products || []).forEach(p => (p.todos || []).forEach(t => { if (t.id === id) hit = t; }));
+        if (!hit) return;
+        const next = !hit.completed;
+        hit.completed = next; this.requestRender();
+        try {
+            const { error } = await this.supabase.from('todos').update({ completed: next }).eq('id', id);
+            if (error) throw error;
+        } catch (e) { hit.completed = !next; this.requestRender(); this.showToast('할일 저장 실패: ' + (e.message || e)); }
+    }
+    async clearDoneReminders() {
+        const ids = (this.remList || []).filter(r => r.done).map(r => r.id);
+        if (!ids.length) { this.showToast('지울 완료 항목이 없습니다.'); return; }
+        if (!confirm(`완료된 미리알림 ${ids.length}건을 지울까요?`)) return;
+        try {
+            const { error } = await this.supabase.from('reminders').delete().in('id', ids);
+            if (error) throw error;
+            this.remList = (this.remList || []).filter(r => !r.done);
+            this.requestRender();
+        } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
     }
 
     // ── CS(교환·반품) ─────────────────────────────────────────
@@ -5836,6 +5972,52 @@ class BhasApp {
                 customer_name: o.receiver_name || o.buyer_name || null,
             };
         } catch (e) { return null; }
+    }
+    // 주문 화면에서 그 주문으로 바로 교환·반품을 올린다
+    csFromOrder(orderNo) {
+        const esc = s => this._vesc(s);
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in" style="width:92%;max-width:400px;padding:1.6rem;border-radius:18px">
+            <h2 style="margin:0 0 .4rem;font-size:1.1rem">CS 접수</h2>
+            <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.1rem">
+                주문번호 <b style="font-family:monospace;color:var(--text-main)">${esc(orderNo)}</b><br>
+                고객·상품·구매처는 주문에서 자동으로 끌어옵니다.
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+                ${this.CS_KINDS.map(k => `<button class="btn-secondary cs-kind" style="padding:9px 16px;border-radius:10px"
+                    onclick="app.addCSForOrder('${esc(orderNo)}','${k}')">${k}</button>`).join('')}
+            </div>
+            <div style="text-align:right;margin-top:1.3rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:8px 16px;border-radius:10px">취소</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+    }
+    async addCSForOrder(orderNo, kind) {
+        this.closeGlobalModal();
+        const found = await this._csLookupOrder(orderNo);
+        try {
+            const { error } = await this.supabase.from('cs_tickets').insert([{
+                customer_name: found?.customer_name || '(이름없음)',
+                kind, status: '접수',
+                order_no: orderNo,
+                channel_order_id: found?.channel_order_id || null,
+                brand_id: found?.brand_id || null,
+                purchase_from: found?.purchase_from || '공홈',
+                contact_channel: '카톡채널',
+                product_name: found?.product_name || null,
+                created_by: this.currentUser?.name || null,
+            }]);
+            if (error) throw error;
+            this._csLoaded = false; await this.loadCS();
+            this.csQuery = orderNo;
+            // CS 탭으로 넘겨서 방금 올린 건을 보여준다
+            const w = (this.wins || []).find(x => x.view === 'orders');
+            if (w) { w.view = 'cs'; } else if (!this.macMode) { this.currentView = 'cs'; }
+            this.requestRender();
+            this.showToast(`${kind} 접수됐습니다 · ${orderNo}`);
+        } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
     async addCS(kind) {
         const nameEl = document.getElementById('cs-name'), orderEl = document.getElementById('cs-order');
@@ -5882,7 +6064,7 @@ class BhasApp {
     }
     setCSFilter(f) { this.csFilter = f; this.requestRender(); }
     renderCS() {
-        if (!this._csLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">CS를 불러오는 중...</div>`;
+        if (!this._csLoaded) return this._loadingSkeleton('CS');
         const esc = s => this._vesc(s);
         const all = this.csList || [];
         const filter = this.csFilter || '진행중';
@@ -6268,7 +6450,7 @@ class BhasApp {
     _orderQtySum(o) { return (o.items || []).reduce((s, it) => s + (it.quantity || 0), 0); }
 
     renderOrders() {
-        if (!this._ordersLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">주문을 불러오는 중...</div>`;
+        if (!this._ordersLoaded) return this._loadingSkeleton('주문');
         const filter = this.orderFilter || 'target';
         const all = this.orders || [];
         const counts = {
@@ -6295,7 +6477,8 @@ class BhasApp {
             return `
             <tr style="border-bottom:1px solid var(--card-border)">
                 <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" style="accent-color:var(--primary)"></td>
-                <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}</td>
+                <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}
+                    <button class="ord-cs" title="이 주문으로 CS 접수" onclick="event.stopPropagation();app.csFromOrder('${o.order_id}')">CS</button></td>
                 <td style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1'; return `<span style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._mallLabel(o.mall_key)}</span>`; })()}</td>
                 <td style="padding:10px;color:var(--text-muted);font-size:0.82rem">${o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : '-'}</td>
                 <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
