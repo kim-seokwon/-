@@ -2598,13 +2598,41 @@ class BhasApp {
         ] },
     ];
     _groupOf(view) { return this.APP_GROUPS.find(g => g.tabs.some(t => t.k === view)); }
+    // 묶음 앱의 첫 칸 — 가로 탭 대신 세로 분류 목록(메모·자료실과 같은 결)
+    APP_ICONS = {
+        orders: 'ph-shopping-bag-open', cs: 'ph-arrows-counter-clockwise', inventory: 'ph-package',
+        sales: 'ph-chart-line-up', expenses: 'ph-credit-card',
+        vendors: 'ph-factory', tech_packs: 'ph-clipboard-text', sample_maker: 'ph-scissors', quotes: 'ph-receipt',
+    };
     _appTabBar(view) {
         const g = this._groupOf(view); if (!g) return '';
         const esc = s => this._vesc(s);
         const win = this._renderingWin || '';
-        return `<div class="apptabs">${g.tabs.map(t => `
-            <button class="apptab${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">${esc(t.t)}</button>`).join('')}
-        </div>`;
+        return `<aside class="appside">
+            <div class="m3-h">${esc(g.label)}</div>
+            ${g.tabs.map(t => `<div class="m3-s${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
+                <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}" style="color:#0a84ff"></i><span>${esc(t.t)}</span></div>`).join('')}
+        </aside>`;
+    }
+    // 분류 칸 + 본문을 한 틀에 담는다
+    // SNS 첫 칸 — 계정 목록
+    _snsShell(inner) {
+        const esc = s => this._vesc(s);
+        const accs = this.igAccounts || [];
+        const cur = this.snsAcc || '전체';
+        const row = (k, label, icon) => `<div class="m3-s${String(cur) === String(k) ? ' on' : ''}"
+            onclick="app.setSnsAcc('${k}')"><i class="ph ${icon}" style="color:#c13584"></i><span>${esc(label)}</span></div>`;
+        return `<div class="appwrap"><aside class="appside">
+            <div class="m3-h">SNS</div>
+            ${row('전체', '모든 계정', 'ph-instagram-logo')}
+            ${accs.map(a => row(a.id, a.username || a.name || '계정', 'ph-user-circle')).join('')
+              || '<div style="padding:8px 10px;font-size:12px;color:var(--text-muted)">연결된 계정 없음</div>'}
+        </aside><div class="appmain">${inner}</div></div>`;
+    }
+    setSnsAcc(k) { this.snsAcc = k; this.requestRender(); }
+    _appShell(view, inner) {
+        const side = this._appTabBar(view);
+        return side ? `<div class="appwrap">${side}<div class="appmain">${inner}</div></div>` : inner;
     }
     // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
     switchAppTab(winId, view) {
@@ -3462,13 +3490,13 @@ class BhasApp {
                 </div>
             `;
         } else if (this.currentView === 'tech_packs') {
-            return this._appTabBar('tech_packs') + this.renderTechPacks();
+            return this._appShell('tech_packs', this.renderTechPacks());
         } else if (this.currentView === 'sample_maker') {
-            return this._appTabBar('sample_maker') + renderSampleMaker(this.sampleConfig);
+            return this._appShell('sample_maker', renderSampleMaker(this.sampleConfig));
         } else if (this.currentView === 'orders') {
-            return this._appTabBar('orders') + this.renderOrders();
+            return this._appShell('orders', this.renderOrders());
         } else if (this.currentView === 'inventory') {
-            return this._appTabBar('inventory') + this.renderInventory();
+            return this._appShell('inventory', this.renderInventory());
         } else if (this.currentView === 'pages') {
             return this.renderPagesView();
         } else if (this.currentView === 'kanban') {
@@ -3478,13 +3506,13 @@ class BhasApp {
         } else if (this.currentView === 'table') {
             return this.renderTableView();
         } else if (this.currentView === 'vendors') {
-            return this._appTabBar('vendors') + this.renderVendors();
+            return this._appShell('vendors', this.renderVendors());
         } else if (this.currentView === 'integrations') {
             return this.renderIntegrations();
         } else if (this.currentView === 'quotes') {
-            return this._appTabBar('quotes') + this.renderQuotes();
+            return this._appShell('quotes', this.renderQuotes());
         } else if (this.currentView === 'sales') {
-            return this._appTabBar('sales') + this.renderSales();
+            return this._appShell('sales', this.renderSales());
         } else if (this.currentView === 'analysis') {
             return this.renderAnalysis();
         } else if (this.currentView === 'notes') {
@@ -3492,13 +3520,13 @@ class BhasApp {
         } else if (this.currentView === 'reminders') {
             return this.renderReminders();
         } else if (this.currentView === 'cs') {
-            return this._appTabBar('cs') + this.renderCS();
+            return this._appShell('cs', this.renderCS());
         } else if (this.currentView === 'expenses') {
-            return this._appTabBar('expenses') + this.renderExpenses();
+            return this._appShell('expenses', this.renderExpenses());
         } else if (this.currentView === 'feedback') {
             return this.renderFeedback();
         } else if (this.currentView === 'sns') {
-            return this.renderSNS();
+            return this._snsShell(this.renderSNS());
         }
     }
 
@@ -4380,7 +4408,9 @@ class BhasApp {
 
     renderSNS() {
         if (!this._igLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">SNS 데이터를 불러오는 중...</div>`;
-        const accounts = this.igAccounts || [];
+        const allAccounts = this.igAccounts || [];
+        const accSel = this.snsAcc || '전체';
+        const accounts = accSel === '전체' ? allAccounts : allAccounts.filter(a => String(a.id) === String(accSel));
         const palette = ['#ec4899', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b'];
         const esc = s => this._vesc ? this._vesc(s) : String(s ?? '');
         const cards = accounts.map((a, idx) => {
@@ -8765,12 +8795,22 @@ class BhasApp {
         const v = (this.vendors || []).find(x => x.id === id); if (!v) return;
         this.ctxMenu(ev, [
             { t: '보기', icon: 'ph-arrow-square-out', run: () => this.selectContact(id) },
+            { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameVendor(id) },
             { t: '수정', icon: 'ph-pencil-simple', run: () => this.showVendorModal(id) },
             ...(v.phone ? [{ t: '전화 걸기', icon: 'ph-phone', run: () => { location.href = 'tel:' + String(v.phone).replace(/[^0-9+]/g, ''); } }] : []),
             ...(v.phone ? [{ t: '번호 복사', icon: 'ph-copy', run: () => { navigator.clipboard?.writeText(v.phone); this.showToast('번호를 복사했습니다'); } }] : []),
             { sep: true },
             { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.deleteVendor(id) },
         ]);
+    }
+    async renameVendor(id) {
+        const v = (this.vendors || []).find(x => x.id === id); if (!v) return;
+        const nv = window.prompt('상호', v.name || ''); if (nv === null || !nv.trim()) return;
+        v.name = nv.trim(); this.requestRender();
+        try {
+            const { error } = await this.supabase.from('vendors').update({ name: v.name }).eq('id', id);
+            if (error) throw error;
+        } catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
     }
     showVendorModal(id) {
         const v = id ? (this.vendors||[]).find(x=>x.id===id) : null;

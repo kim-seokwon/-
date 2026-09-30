@@ -2992,7 +2992,7 @@ body:not(.light) .mac-deskboard .glass{
 .ord-cs:hover{background:var(--primary);border-color:var(--primary);color:#fff}
 
 /* ═══════════════ 자료실 = 파인더 ═══════════════ */
-.fd{display:grid;grid-template-columns:200px 1fr 250px;height:100%;min-height:520px;
+.fd{display:grid;grid-template-columns:188px 1fr 232px;height:100%;min-height:520px;
   font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Pretendard',sans-serif}
 .fd-side{border-right:.5px solid var(--card-border);padding:10px 8px 20px;overflow:auto}
 .fd-sh{font-size:11px;font-weight:700;color:var(--text-muted);padding:13px 9px 4px;opacity:.75}
@@ -3043,7 +3043,8 @@ body:not(.light) .mac-deskboard .glass{
 .fd-cnt{margin-left:auto}
 .fd-none{padding:3rem 1rem;text-align:center;color:var(--text-muted);font-size:13px}
 .fd-none.sm{padding:6px 9px;text-align:left;font-size:12px}
-@media (max-width:1100px){ .fd{grid-template-columns:200px 1fr} .fd-prev{display:none} }
+@media (max-width:1000px){ .fd{grid-template-columns:176px 1fr 210px} }
+@media (max-width:860px){ .fd{grid-template-columns:176px 1fr} .fd-prev{display:none} }
 @media (max-width:760px){ .fd{grid-template-columns:1fr} .fd-side{display:none}
   .fd-r{grid-template-columns:1fr 92px} .fd-r span:nth-child(3),.fd-r span:nth-child(4){display:none} }
 
@@ -3245,3 +3246,11 @@ body:not(.light) .mac-deskboard .glass{
 .np-ck.on::after{content:'';position:absolute;left:5px;top:1.5px;width:4px;height:8px;
   border:solid #fff;border-width:0 2px 2px 0;transform:rotate(43deg)}
 .mac-ver{font-size:.68rem;opacity:.45;margin-right:8px;font-variant-numeric:tabular-nums}
+
+/* 묶음 앱·SNS 의 첫 칸 — 메모·자료실과 같은 분류 목록 */
+.appwrap{display:grid;grid-template-columns:172px 1fr;height:100%;min-height:520px}
+.appside{border-right:.5px solid var(--card-border);padding:10px 8px 20px;overflow:auto;
+  font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Pretendard',sans-serif}
+.appmain{min-width:0;overflow:auto}
+@media (max-width:760px){ .appwrap{grid-template-columns:1fr} .appside{display:none} }
+/* 자료실 미리보기 칸이 너무 일찍 접히던 것 완화 */
