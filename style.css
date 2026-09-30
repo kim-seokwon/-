@@ -2470,8 +2470,11 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
 .st-x,.st-plus{width:13px;height:13px;border-radius:50%;border:0;padding:0;cursor:pointer;font-size:.6rem;
   line-height:1;color:rgba(0,0,0,.45)}
 .st-x{background:#ff5f57}.st-plus{background:#28c840}
-.st-col{margin-left:auto;display:flex;gap:4px}
-.st-col i{width:11px;height:11px;border-radius:50%;cursor:pointer;display:block;border:1px solid rgba(0,0,0,.14)}
+.st-col{margin-left:auto;display:flex;gap:4px;align-items:center}
+.st-col i{width:11px;height:11px;border-radius:50%;cursor:pointer;display:block;border:1px solid rgba(0,0,0,.18)}
+.st-col i.on{box-shadow:0 0 0 2px rgba(0,0,0,.42);border-color:rgba(0,0,0,.42)}
+/* 왼쪽 3개 = 개인(나만) · 오른쪽 3개 = 공용(모두) */
+.st-sep{width:1px;height:11px;background:rgba(0,0,0,.22);display:block;margin:0 3px}
 .sticky textarea{flex:1;border:0;background:transparent;resize:none;outline:none;padding:9px 11px;
   font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;font-size:.86rem;line-height:1.6;color:#2b2200}
 .sticky .st-ft{font-size:.64rem;color:rgba(0,0,0,.38);padding:0 22px 6px 10px;text-align:right;flex:0 0 auto}

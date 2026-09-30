@@ -4854,9 +4854,17 @@ class BhasApp {
     }
     // ── 스티커 메모 (맥 Stickies) — notes 테이블 '스티커' 폴더에 저장 ──
     //  DB가 막혀도(권한·네트워크) 스티커는 바로 뜬다. 저장만 이 기기(localStorage)로 내려간다.
+    // 로그인한 계정 — DB의 current_username() 과 같은 규칙(이메일 @ 앞부분)
+    _me() {
+        const em = this.currentUser?.email || '';
+        return em.includes('@') ? em.split('@')[0] : (this.currentUser?.username || this.currentUser?.name || '');
+    }
+    // 기기 저장분도 계정별로 나눈다 — 한 컴퓨터를 같이 써도 남의 스티커가 안 보이게
+    _stickyKey() { return 'bhas_stickies:' + (this._me() || 'anon'); }
     _localStickies(next) {
-        if (next !== undefined) { try { localStorage.setItem('bhas_stickies', JSON.stringify(next)); } catch (_e) {} return next; }
-        try { return JSON.parse(localStorage.getItem('bhas_stickies') || '[]'); } catch (_e) { return []; }
+        const k = this._stickyKey();
+        if (next !== undefined) { try { localStorage.setItem(k, JSON.stringify(next)); } catch (_e) {} return next; }
+        try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (_e) { return []; }
     }
     _saveLocalSticky(rec) {
         const list = this._localStickies().filter(x => String(x.id) !== String(rec.id));
@@ -4865,8 +4873,23 @@ class BhasApp {
     _dropLocalSticky(id) {
         this._localStickies(this._localStickies().filter(x => String(x.id) !== String(id)));
     }
+    // 스티커 색 = 누가 보나. 따뜻한 3색은 나만, 시원한 3색은 모두가 본다.
+    ST_COLORS = {
+        private: ['#fff5a5', '#ffd8e4', '#e7dcff'],
+        shared:  ['#d3f2ff', '#d9f7d0', '#ccf5ec'],
+    };
+    _rgb(hex) {
+        const h = hex.replace('#', '');
+        return `rgb(${parseInt(h.slice(0,2),16)}, ${parseInt(h.slice(2,4),16)}, ${parseInt(h.slice(4,6),16)})`;
+    }
+    _scopeOfColor(c) {
+        if (!c) return 'private';
+        const v = String(c).trim();
+        const hit = (arr) => arr.some(h => h === v || this._rgb(h) === v);
+        return hit(this.ST_COLORS.shared) ? 'shared' : 'private';
+    }
     addSticky(row) {
-        const colors = ['#fff5a5', '#ffd8e4', '#d3f2ff', '#d9f7d0', '#e7dcff'];
+        const colors = [...this.ST_COLORS.private, ...this.ST_COLORS.shared];
         const rec = row || {};
         const idx = document.querySelectorAll('.sticky').length;
         if (rec.id && document.querySelector(`.sticky[data-id="${rec.id}"]`)) return null; // 두 번 띄우지 않는다
@@ -4874,13 +4897,21 @@ class BhasApp {
         el.className = 'sticky';
         el.dataset.id = rec.id || '';
         el.dataset.local = rec.local ? '1' : '';
-        el.style.background = rec.color || colors[idx % colors.length];
+        el.dataset.owner = rec.owner || '';
+        const startColor = rec.color || this.ST_COLORS.private[idx % 3];
+        el.dataset.scope = rec.scope || this._scopeOfColor(startColor);
+        el.style.background = startColor;
         el.style.left = (rec.x != null ? rec.x : Math.min(140 + idx * 26, Math.max(8, window.innerWidth - 250))) + 'px';
         el.style.top = (rec.y != null ? rec.y : 130 + idx * 24) + 'px';
         el.style.width = (rec.w || 230) + 'px';
         el.style.height = (rec.h || 200) + 'px';
+        const swatch = (c, sc) => `<i data-c="${c}" data-s="${sc}" style="background:${c}" title="${sc === 'shared' ? '공용 — 모두가 봅니다' : '개인 — 나만 봅니다'}"></i>`;
         el.innerHTML = `<div class="st-bar"><button class="st-x" title="닫기"></button><button class="st-plus" title="새 스티커"></button>
-                <span class="st-col">${colors.map(c => `<i data-c="${c}" style="background:${c}"></i>`).join('')}</span></div>
+                <span class="st-col">
+                    ${this.ST_COLORS.private.map(c => swatch(c, 'private')).join('')}
+                    <b class="st-sep"></b>
+                    ${this.ST_COLORS.shared.map(c => swatch(c, 'shared')).join('')}
+                </span></div>
             <textarea placeholder="메모를 적어주세요">${this._vesc(rec.body || '')}</textarea>
             <div class="st-ft">자동 저장됨</div>
             <span class="st-grip" title="크기 조절"></span>`;
@@ -4888,6 +4919,11 @@ class BhasApp {
         this._dragWin(el, el.querySelector('.st-bar'));
         const ft = el.querySelector('.st-ft');
         const ta = el.querySelector('textarea');
+        const label = (tail) => {
+            const who = el.dataset.scope === 'shared' ? '공용' : '개인';
+            ft.textContent = who + ' · ' + (tail || ft.dataset.tail || '자동 저장됨');
+            if (tail) ft.dataset.tail = tail;
+        };
         el.querySelector('.st-x').onclick = () => {
             if (el.dataset.local === '1') this._dropLocalSticky(el.dataset.id);
             el.remove();
@@ -4896,18 +4932,29 @@ class BhasApp {
         let t = null;
         el.querySelector('.st-grip').onmousedown = (ev) => this._stickyResize(ev, el, () => save());
         const save = () => { clearTimeout(t); t = setTimeout(() => this._persistSticky(el), 600); };
-        el.querySelectorAll('.st-col i').forEach(i => i.onclick = () => { el.style.background = i.dataset.c; save(); });
+        const mark = () => {
+            el.querySelectorAll('.st-col i').forEach(i => i.classList.toggle('on', i.dataset.c === el.dataset.color));
+            el.dataset.color = el.dataset.color || '';
+        };
+        el.querySelectorAll('.st-col i').forEach(i => i.onclick = () => {
+            el.style.background = i.dataset.c; el.dataset.color = i.dataset.c;
+            el.dataset.scope = i.dataset.s;       // 색 = 공개 범위
+            mark(); label(); save();
+        });
+        el.dataset.color = this.ST_COLORS.private.concat(this.ST_COLORS.shared)
+            .find(c => c === startColor || this._rgb(c) === String(startColor).trim()) || '';
+        mark();
         ta.oninput = save;
         // 옮긴 자리도 기억한다(기기 저장분)
         el.addEventListener('mouseup', () => { if (el.dataset.local === '1') save(); });
         if (!rec.id) {
             // 새 스티커: 화면엔 이미 떠 있고, 저장 자리만 뒤에서 만든다. 실패해도 스티커는 사라지지 않는다.
-            ft.textContent = '저장 준비 중…';
-            this._createStickyRow().then(id => {
-                if (id) { el.dataset.id = id; ft.textContent = '자동 저장됨'; }
-                else { el.dataset.local = '1'; el.dataset.id = 'L' + Date.now() + idx; ft.textContent = '이 기기에만 저장됨'; this._persistSticky(el); }
+            label('저장 준비 중…');
+            this._createStickyRow(el.dataset.scope).then(id => {
+                if (id) { el.dataset.id = id; el.dataset.owner = this._me(); label('자동 저장됨'); }
+                else { el.dataset.local = '1'; el.dataset.id = 'L' + Date.now() + idx; label('이 기기에만 저장됨'); this._persistSticky(el); }
             });
-        }
+        } else { label(); }
         setTimeout(() => ta.focus(), 50);
         return el;
     }
@@ -4926,10 +4973,11 @@ class BhasApp {
         };
         document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
     }
-    async _createStickyRow() {
+    async _createStickyRow(scope = 'private') {
         try {
             const { data, error } = await this.supabase.from('notes')
-                .insert([{ title: '스티커', body: '', folder: '스티커', created_by: this.currentUser?.name || null }])
+                .insert([{ title: '스티커', body: '', folder: '스티커', scope, owner: this._me() || null,
+                           created_by: this.currentUser?.name || null }])
                 .select('id').single();
             if (error) throw error;
             return data && data.id;
@@ -4938,20 +4986,25 @@ class BhasApp {
     async _persistSticky(el) {
         if (!document.body.contains(el)) return;
         const ft = el.querySelector('.st-ft');
+        const who = el.dataset.scope === 'shared' ? '공용' : '개인';
         const body = el.querySelector('textarea').value;
         const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
         const local = () => {
-            this._saveLocalSticky({ id: el.dataset.id, body, color: el.style.background,
+            this._saveLocalSticky({ id: el.dataset.id, body, color: el.dataset.color || el.style.background,
+                scope: el.dataset.scope, owner: el.dataset.owner || this._me(),
                 x: parseInt(el.style.left, 10) || 0, y: parseInt(el.style.top, 10) || 0,
                 w: parseInt(el.style.width, 10) || 230, h: parseInt(el.style.height, 10) || 200, local: true });
-            ft.textContent = '이 기기에만 저장됨 · ' + now;
+            ft.textContent = who + ' · 이 기기에만 저장됨 · ' + now;
         };
         if (el.dataset.local === '1' || !el.dataset.id) { local(); return; }
+        const patch = { title: body.split('\n')[0].slice(0, 60) || '스티커', body, scope: el.dataset.scope };
+        // 주인이 안 찍힌 옛 스티커만 내 것으로 표시한다. 남의 공용 스티커를 가로채면 안 된다.
+        if (!el.dataset.owner) { patch.owner = this._me() || null; }
         try {
-            const { error } = await this.supabase.from('notes')
-                .update({ title: body.split('\n')[0].slice(0, 60) || '스티커', body }).eq('id', el.dataset.id);
+            const { error } = await this.supabase.from('notes').update(patch).eq('id', el.dataset.id);
             if (error) throw error;
-            ft.textContent = '자동 저장됨 · ' + now;
+            if (!el.dataset.owner) el.dataset.owner = this._me();
+            ft.textContent = who + ' · 자동 저장됨 · ' + now;
         } catch (_e) { el.dataset.local = '1'; local(); }
     }
     // 로그인 후 한 번: 지난 스티커를 도로 띄운다 (DB 것 먼저, 이 기기 것도 같이)
@@ -4959,8 +5012,14 @@ class BhasApp {
         if (this._stickiesRestored) return;
         this._stickiesRestored = true;
         try {
+            const me = this._me(), nm = this.currentUser?.name || '';
+            // 내 개인칸 + 모두의 공용. 주인이 안 찍힌 옛 스티커는 만든 사람 이름으로 골라낸다.
+            const parts = ['scope.eq.shared'];
+            if (me) parts.push(`owner.eq.${me}`);
+            if (nm && !/[,()"]/.test(nm)) parts.push(`and(owner.is.null,created_by.eq.${nm})`);
             const { data } = await this.supabase.from('notes').select('*').eq('folder', '스티커')
-                .order('updated_at', { ascending: false }).limit(6);
+                .or(parts.join(','))
+                .order('updated_at', { ascending: false }).limit(10);
             (data || []).forEach(r => this.addSticky(r));
         } catch (_e) { /* 없으면 그만 */ }
         this._localStickies().forEach(r => this.addSticky(r));
