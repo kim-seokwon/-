@@ -2882,21 +2882,33 @@ class BhasApp {
         if (document.getElementById('launcher')) { this.closeLauncher(); return; }
         const el = document.createElement('div');
         el.id = 'launcher'; el.className = 'launcher';
-        el.innerHTML = `<div class="lc-find"><i class="ph ph-magnifying-glass"></i>
+        el.innerHTML = `
+            <button class="lc-x" onclick="app.closeLauncher()" title="닫기 (Esc)"><i class="ph ph-x"></i></button>
+            <div class="lc-find"><i class="ph ph-magnifying-glass"></i>
                 <input id="lc-q" placeholder="찾기" autocomplete="off"></div>
-            <div class="lc-body" id="lc-body"></div>`;
+            <div class="lc-body" id="lc-body"></div>
+            <div class="lc-hint">아무 데나 누르거나 Esc 로 닫습니다</div>`;
         document.body.appendChild(el);
         this._drawLauncher('');
         const q = el.querySelector('#lc-q');
         q.oninput = () => this._drawLauncher(q.value);
         q.onkeydown = (e) => {
-            if (e.key === 'Escape') this.closeLauncher();
-            else if (e.key === 'Enter') { const f = el.querySelector('.lc-i'); if (f) f.click(); }
+            if (e.key === 'Enter') { const f = el.querySelector('.lc-i'); if (f) f.click(); }
         };
-        el.onmousedown = (e) => { if (e.target === el) this.closeLauncher(); };
+        // 앱 타일·검색칸·닫기 말고 아무 데나 누르면 닫힌다
+        el.onmousedown = (e) => {
+            if (e.target.closest('.lc-i, .lc-find, .lc-x')) return;
+            this.closeLauncher();
+        };
+        // Esc 는 커서가 어디 있든 먹어야 한다 (전에는 검색칸에 있을 때만 먹었다)
+        this._lcKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); this.closeLauncher(); } };
+        document.addEventListener('keydown', this._lcKey, true);
         setTimeout(() => q.focus(), 40);
     }
-    closeLauncher() { document.getElementById('launcher')?.remove(); }
+    closeLauncher() {
+        document.removeEventListener('keydown', this._lcKey || (() => {}), true);
+        document.getElementById('launcher')?.remove();
+    }
     _drawLauncher(q) {
         const body = document.getElementById('lc-body'); if (!body) return;
         const esc = s => this._vesc(s);
