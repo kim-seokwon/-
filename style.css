@@ -4300,3 +4300,11 @@ body:not(.light) .ntoast .nt-ac button.pri{background:#0a84ff;color:#fff}
 .dt-li.job span{flex:1;min-width:0;white-space:normal}
 .dt-li.job b{font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap}
 .macwin .dt-ck{box-shadow:none !important}
+
+/* 바탕화면 미리알림 줄 — 종류를 적고 누르면 간다 */
+.due-row{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:.82rem;cursor:default;
+  border-top:1px solid var(--card-border)}
+.due-row:hover{background:rgba(127,127,127,.07)}
+.due-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.due-tag{font-size:10px;font-weight:800;border-radius:99px;padding:1px 7px;white-space:nowrap;flex:0 0 auto}
+.due-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

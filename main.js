@@ -2462,10 +2462,13 @@ class BhasApp {
             return soon.map(x => {
                 const dd = dday(x.date);
                 const col = dd == null ? 'var(--text-muted)' : (dd < 0 ? '#ef4444' : (dd === 0 ? '#0a84ff' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)')));
-                return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.82rem">
-                    <span style="width:7px;height:7px;border-radius:50%;background:${x.color};flex-shrink:0"></span>
-                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.title)}${x.sub ? ` · <span style="color:var(--text-muted)">${this._vesc(x.sub)}</span>` : ''}</span>
-                    ${x.date ? `<span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span>` : ''}
+                const go = x.go || `app.switchView('${x.view || 'reminders'}')`;
+                return `<div class="due-row" onclick="${go}" title="눌러서 열기">
+                    <span class="due-dot" style="background:${x.color}"></span>
+                    <span class="due-tag" style="color:${x.color};background:${x.color}1f">${this._vesc(x.tag || '')}</span>
+                    <span class="due-t">${this._vesc(x.title)}${x.sub ? ` · <span style="color:var(--text-muted)">${this._vesc(x.sub)}</span>` : ''}</span>
+                    ${x.date ? `<span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span>`
+                             : `<span style="color:var(--text-muted);font-size:.72rem;white-space:nowrap">날짜 없음</span>`}
                 </div>`;
             }).join('');
         })();
@@ -2654,7 +2657,7 @@ class BhasApp {
         this.wins = []; this._stickiesRestored = false;
         this.setState({ currentUser: null, currentView: 'login', activeProjectId: null, selectedCompanyId: 'all' });
     }
-    // ── 새 판 확인 ───────────────────────────────────────────
+    // ── 업데이트 확인 ────────────────────────────────────────
     //  브라우저가 옛 index.html 을 붙들고 있으면 아무리 배포해도 옛 화면이 뜬다.
     //  지금 돌고 있는 번들 이름과 서버의 index.html 이 가리키는 번들을 대본다.
     _myBundle() {
@@ -2723,7 +2726,7 @@ class BhasApp {
         this._updSnoozeUntil = Date.now() + 30 * 60 * 1000;   // 30분 뒤 다시 묻는다
         document.querySelector('#noti-stack [data-n="upd"]')?.remove();
     }
-    // 지금 보고 있는 판이 어느 것인지 — 주소가 여럿일 때 헷갈리지 않게 화면에 박아둔다
+    // 지금 쓰는 버전이 무엇인지 — 주소가 여럿일 때 헷갈리지 않게 화면에 박아둔다
     _buildTag() {
         try {
             const h = location.hostname.replace('.vercel.app', '');
@@ -2755,7 +2758,7 @@ class BhasApp {
             { k: 'tools', t: '도구', i: 'ph-wrench' },
             ...(role === 'MASTER' ? [{ k: 'admin', t: '관리', i: 'ph-shield-check' }] : []),
             { k: 'account', t: '계정', i: 'ph-user-circle' },
-            { k: 'build', t: '이 판', i: 'ph-info' },
+            { k: 'build', t: '버전', i: 'ph-info' },
         ];
         const side = `<aside class="appside"><div class="m3-h">설정</div>
             ${SIDE.map(x => `<div class="m3-s${sec === x.k ? ' on' : ''}" onclick="app.setSetSec('${x.k}')">
@@ -2789,9 +2792,9 @@ class BhasApp {
                 ${links.map(l => row(l.label, '', `<button class="set-btn" onclick="${this.macMode ? `app.macOpen('${l.id}')` : `app.switchView('${l.id}')`}">열기</button>`)).join('')}
             </div>` : ''}
             <div class="set-card" data-s="build">
-                <div class="set-head">이 판</div>
-                ${row('버전', this._buildTag(), `<button class="set-btn" onclick="app.checkNewBuild(true)">새 판 확인</button>
-                    <button class="set-btn" onclick="location.reload(true)">새로 받기</button>`)}
+                <div class="set-head">버전</div>
+                ${row('지금 쓰는 버전', this._buildTag(), `<button class="set-btn" onclick="app.checkNewBuild(true)">업데이트 확인</button>
+                    <button class="set-btn" onclick="location.reload(true)">새로고침</button>`)}
             </div>
             <div class="set-card" data-s="account">
                 <div class="set-head">계정</div>
@@ -3361,7 +3364,7 @@ class BhasApp {
         const out = [];
         // 0) 새 버전 — 누를 때까지 남는다
         if (this._updReady) out.push({ id: 'upd:' + __BUILD__, kind: '업데이트', icon: 'ph-arrow-circle-down',
-            col: '#0a84ff', title: '새 버전이 나왔습니다', sub: '눌러서 새로 받기', when: '', view: '__update' });
+            col: '#0a84ff', title: '새 버전이 나왔습니다', sub: '눌러서 업데이트', when: '', view: '__update' });
         // 1) 나에게 배정된 할일
         (mockData.products || []).forEach(p => (p.todos || []).forEach(t => {
             if (t.completed) return;
@@ -6727,7 +6730,7 @@ class BhasApp {
                 <span>${esc(this.currentUser?.name || '')}</span>
                 <span class="mac-mb-right">
                     <button class="mac-find" onclick="app.openFind()" title="모두 찾기 (⌘K)"><i class="ph ph-magnifying-glass"></i></button>
-                    <span class="mac-ver" title="지금 보고 있는 판">${esc(this._buildTag())}</span>
+                    <span class="mac-ver" title="지금 쓰는 버전">${esc(this._buildTag())}</span>
                     ${(() => { const n = this.unreadCount(); return `<button class="mac-bell${n ? ' has' : ''}"
                         onclick="app.openNotifCenter()" title="알림 센터${n ? ` · 안 읽음 ${n}` : ''}">
                         <i class="ph ph-bell"></i>${n ? '<i class="dot"></i>' : ''}</button>`; })()}
@@ -7476,25 +7479,28 @@ class BhasApp {
         const out = [];
         (this.remList || []).forEach(r => out.push({
             date: r.due_date, title: r.title, sub: r.list_name || '미리 알림',
-            done: !!r.done, color: '#ff9f0a', kind: 'rem', view: 'reminders',
+            done: !!r.done, color: '#ff9f0a', kind: 'rem', view: 'reminders', tag: '미리알림',
         }));
         (mockData.products || []).forEach(p => {
             (p.todos || []).forEach(t => out.push({
                 date: t.due_date, title: t.text, sub: p.name,
-                done: !!t.completed, color: '#0a84ff', kind: 'todo', view: 'reminders',
+                done: !!t.completed, color: '#0a84ff', kind: 'todo', view: 'reminders', tag: '할일',
             }));
             if (p.due_date) out.push({
                 date: p.due_date, title: p.name, sub: '시즌 마감',
                 done: (p.currentStage || '') === 'shipping', color: '#bf5af2', kind: 'proj', view: 'dashboard',
+                tag: '시즌', go: `app.openSeasonItems('${p.id}')`,
             });
         });
         this._allNoteTodos().forEach(t => out.push({
             date: t.due, title: t.title, sub: t.from,
-            done: t.done, color: '#30d158', kind: 'note', view: 'notes',
+            done: t.done, color: '#30d158', kind: 'note', view: 'notes', tag: '메모',
+            go: `app.findGo('notes','${t.noteId}')`,
         }));
         (this.vendors || []).forEach(v => (v.jobs || []).forEach(j => out.push({
             date: j.due_date, title: j.title || '작업', sub: v.name,
-            done: j.status === 'done', color: '#6366f1', kind: 'job', view: 'vendors',
+            done: j.status === 'done', color: '#6366f1', kind: 'job', view: 'vendors', tag: '생산',
+            go: `app.goVendorJob('${v.id}')`,
         })));
         return out;
     }
@@ -10549,6 +10555,12 @@ class BhasApp {
     }
     venFind(v) { this.venQ = v; clearTimeout(this._venT); this._venT = setTimeout(() => this.requestRender(), 180); }
     toggleVenMap() { this.venMap = !this.venMap; this.requestRender(); }
+    //  바탕화면 미리알림에서 생산 작업을 누르면 그 생산처를 골라서 연다
+    goVendorJob(vid) {
+        this.venCat = 'ALL'; this.venQ = ''; this.venSel = vid; this.venEdit = false;
+        if (this.macMode) this.macOpen('vendors'); else this.switchView('vendors');
+        this.requestRender();
+    }
     //  고르면 오른쪽 칸에서 바로 고친다 — 팝업을 띄우지 않는다
     selectVendor(id, isNew) {
         this.venSel = isNew ? '__new' : id;
@@ -13295,7 +13307,7 @@ class BhasApp {
     HELP_KEYS = [
         { g: '어디서든', rows: [
             ['⌘ K', '모두 찾기 — 제품·시즌·주문·CS·메모·자료·화면'],
-            ['⌘ ⇧ R', '새로 받기 (바뀐 게 안 보일 때)'],
+            ['⌘ ⇧ R', '새로고침 (바뀐 게 안 보일 때)'],
             ['esc', '열린 창 닫기'],
         ] },
         { g: '메모 쓸 때', rows: [
