@@ -1071,7 +1071,7 @@ class BhasApp {
         const { role, name } = this.currentUser;
         // 지난 스티커 되살리기 — 로그인 후 딱 한 번
         if (!this._stickiesRestored) this.restoreStickies();
-        // 메모·미리알림은 열고 나서 받으면 매번 기다린다 → 로그인 직후 뒤에서 미리 받아둔다
+        // 메모·할 일은 열고 나서 받으면 매번 기다린다 → 로그인 직후 뒤에서 미리 받아둔다
         if (!this._prefetched) {
             this._prefetched = true;
             setTimeout(() => {
@@ -1098,7 +1098,7 @@ class BhasApp {
             { id: 'inventory', label: '재고', icon: '<i class="ph ph-package"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'integrations', label: '연동', icon: '<i class="ph ph-plugs-connected"></i>', group: 'stock', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'notes', label: '메모', icon: '<i class="ph ph-note"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
-            { id: 'reminders', label: '미리알림', icon: '<i class="ph ph-list-checks"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
+            { id: 'reminders', label: '할 일', icon: '<i class="ph ph-list-checks"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'calendar', label: '캘린더', icon: '<i class="ph ph-calendar-dots"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'table', label: '표', icon: '<i class="ph ph-table"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
             { id: 'sns', label: 'SNS', icon: '<i class="ph ph-instagram-logo"></i>', group: 'work', visible: role === 'MASTER' || role === 'STAFF' },
@@ -2443,7 +2443,7 @@ class BhasApp {
             </div>`;
         }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem;padding:10px 0">주문 없음</div>';
 
-        // ── 모든 일정 한 벌 — 미리알림·할일·메모 체크·생산 작업·시즌 마감 ──
+        // ── 모든 일정 한 벌 — 할 일·메모 체크·생산 작업·시즌 마감 ──
         const allDue = this._allDated();
         // ── 이번달 캘린더 ──
         const yy = today.getFullYear(), moIdx = today.getMonth();
@@ -2457,17 +2457,17 @@ class BhasApp {
         });
         const remList = (() => {
             const t = new Date().toISOString().slice(0, 10);
-            //  미리알림은 '체크해서 끝내는 것' 만. 생산 작업·시즌 마감은 캘린더에만 둔다.
+            //  할 일은 '체크해서 끝내는 것' 만. 생산 작업·시즌 마감은 캘린더에만 둔다.
             const open = allDue.filter(x => !x.done && ['rem', 'todo', 'note'].includes(x.kind)).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
             const soon = open.filter(x => x.date && x.date <= t).concat(open.filter(x => !x.date || x.date > t)).slice(0, 12);
-            if (!soon.length) return '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">미리알림·할일을 넣으면 여기 모입니다</div>';
+            if (!soon.length) return '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">할 일을 넣으면 여기 모입니다</div>';
             return soon.map(x => {
                 const dd = dday(x.date);
                 const col = dd == null ? 'var(--text-muted)' : (dd < 0 ? '#ef4444' : (dd === 0 ? '#0a84ff' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)')));
                 const go = x.go || `app.switchView('${x.view || 'reminders'}')`;
                 return `<div class="due-row" onclick="${go}" title="눌러서 열기">
                     <span class="due-dot" style="background:${x.color}"></span>
-                    <span class="due-tag" style="color:${x.color};background:${x.color}1f">${this._vesc(x.tag || '')}</span>
+                    ${x.kind === 'rem' ? '' : `<span class="due-tag" style="color:${x.color};background:${x.color}1f">${this._vesc(x.tag || '')}</span>`}
                     <span class="due-t">${this._vesc(x.title)}${x.sub ? ` · <span style="color:var(--text-muted)">${this._vesc(x.sub)}</span>` : ''}</span>
                     ${x.date ? `<span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span>`
                              : `<span style="color:var(--text-muted);font-size:.72rem;white-space:nowrap">날짜 없음</span>`}
@@ -2503,8 +2503,8 @@ class BhasApp {
         const sectionHead = (icon, title, sub) => `<div style="display:flex;align-items:baseline;gap:10px;margin:1.6rem 0 0.85rem">
             <h2 style="margin:0;font-size:1.1rem;display:flex;align-items:center;gap:8px"><i class="ph ${icon}" style="color:var(--primary)"></i>${title}</h2>
             ${sub ? `<span style="font-size:0.78rem;color:var(--text-muted)">${sub}</span>` : ''}</div>`;
-        const panel = (title, bodyHTML, right) => `<div class="glass" style="padding:1.1rem 1.25rem;border-radius:16px">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.85rem;border-bottom:2px solid var(--card-border)"><span style="font-size:0.94rem;font-weight:800;color:var(--text-main)">${title}</span>${right || ''}</div>${bodyHTML}</div>`;
+        const panel = (title, bodyHTML, right, fill) => `<div class="glass${fill ? ' pfill' : ''}" style="padding:1.1rem 1.25rem;border-radius:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.85rem;border-bottom:2px solid var(--card-border)"><span style="font-size:0.94rem;font-weight:800;color:var(--text-main)">${title}</span>${right || ''}</div>${fill ? `<div class="pfill-b">${bodyHTML}</div>` : bodyHTML}</div>`;
 
         // ── BI 스타일: 스파크라인 · KPI카드 · 도넛 · 일별차트 ──
         const daysBackSeries = fn => { const a = []; for (let i = 13; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); a.push(fn(localYMD(d))); } return a; };
@@ -2635,11 +2635,11 @@ class BhasApp {
                 </div>
             </div>
 
-            <!-- ═══ 블록 2: 미리알림 · 통합 캘린더 ═══ -->
-            ${sectionHead('ph-list-checks', '미리알림 · 통합 캘린더', '미리알림 · 할일 · 메모 체크 · 생산 작업 · 시즌 마감을 한데')}
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;align-items:start">
-                ${panel('미리알림', remList,
-                    `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('reminders')">미리알림 →</span>`)}
+            <!-- ═══ 블록 2: 할 일 · 통합 캘린더 ═══ -->
+            ${sectionHead('ph-list-checks', '할 일 · 통합 캘린더', '메모 체크 · 시즌 할 일 · 생산 작업 · 시즌 마감까지 한데')}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;align-items:stretch">
+                ${panel('할 일', remList,
+                    `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('reminders')">전체 →</span>`, true)}
                 ${panel(`${mm}월 통합 캘린더`, calendar,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('calendar')">캘린더 →</span>`)}
             </div>
@@ -3167,7 +3167,7 @@ class BhasApp {
     }
     // 시즌 담당자·권한 고치기
     //  시즌 할 일 — 그 시즌에 붙은 메모 한 장에 담는다.
-    //  따로 만들지 않고 메모를 쓰는 이유: [ ] → 미리알림 흐름이 이미 메모에 붙어 있다.
+    //  따로 만들지 않고 메모를 쓰는 이유: [ ] → 할 일 흐름이 이미 메모에 붙어 있다.
     _seasonTodoNote(pid) {
         return (this.noteList || []).find(n => String(n.product_id) === String(pid) && n.is_season_todo)
             || (this.noteList || []).find(n => String(n.product_id) === String(pid)
@@ -3305,7 +3305,7 @@ class BhasApp {
                 </select></div>
             <div class="fi-r"><span>마감</span><input id="fi-due" type="date" class="nw-f" value="${esc((p.deadline || p.due_date || '').slice(0, 10))}" ${isMaster ? '' : 'disabled'}></div>
 
-            <div class="fi-sec">할 일 <em class="fi-hint">[ ] 로 쓰면 미리알림에 올라갑니다 · 날짜·@담당자도 같이</em></div>
+            <div class="fi-sec">할 일 <em class="fi-hint">[ ] 로 쓰면 할 일 화면에 올라갑니다 · 날짜·@담당자도 같이</em></div>
             <textarea id="fi-todo" class="nw-f fi-todo" rows="5"
                 placeholder="[ ] 원단 확정 2026-03-05&#10;[ ] 샘플 확인 @조영신&#10;[x] 끝낸 일">${esc(this._seasonTodoText(id))}</textarea>
             <div class="fi-sec">누가 볼 수 있나</div>
@@ -3319,7 +3319,7 @@ class BhasApp {
                     <span class="mrow-face" style="width:24px;height:24px;font-size:11px">${esc((a.name || '?')[0])}</span>
                     <span>${esc(a.name)}<em>${esc(a.username)} · ${a.role === 'MASTER' ? '마스터' : (a.role === 'STAFF' ? '직원' : '파트너')}</em></span></label>`).join('')}
             </div>
-            <p class="fi-note">이 시즌의 <b>메모·할일·미리알림</b>에 적용됩니다. 제품·자료는 브랜드 권한을 따릅니다.</p>
+            <p class="fi-note">이 시즌의 <b>메모·할 일</b>에 적용됩니다. 제품·자료는 브랜드 권한을 따릅니다.</p>
             ` : `
             <div class="fi-r ro"><span>${acc === 'all' ? '전체 권한' : '담당자만'}</span><b>${esc(who)}</b></div>
             <p class="fi-note">권한은 마스터만 바꿀 수 있습니다.</p>`}
@@ -3373,7 +3373,7 @@ class BhasApp {
         <div class="glass modal-content fade-in" style="width:92%;max-width:420px;padding:1.6rem;border-radius:18px">
             <h2 style="margin:0 0 .3rem;font-size:1.1rem">${esc(p.name)} · 접근 권한</h2>
             <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:1.1rem">
-                누가 이 시즌의 메모·할일·미리알림을 볼 수 있는지 정합니다.
+                누가 이 시즌의 메모·할 일을 볼 수 있는지 정합니다.
             </div>
             <label class="pa-opt"><input type="radio" name="pa" value="all" ${(p.access || 'all') === 'all' ? 'checked' : ''}>
                 <span><b>전체 권한</b><em>브랜드에 접근할 수 있는 사람 모두</em></span></label>
@@ -3478,12 +3478,12 @@ class BhasApp {
             out.push({ id: 'note:' + t.id, kind: '메모에서 호출', icon: 'ph-at', col: '#bf5af2',
                 title: t.title, sub: t.from, when: t.due, view: 'notes' });
         });
-        // 3) 오늘까지인 미리알림 · 지난 것
+        // 3) 오늘까지인 할 일 · 지난 것
         (this.remList || []).forEach(r => {
             if (r.done || !r.due_date || r.due_date > today) return;
             out.push({ id: 'rem:' + r.id, kind: r.due_date < today ? '기한 지남' : '오늘까지',
                 icon: 'ph-bell-ringing', col: r.due_date < today ? '#ff453a' : '#ff9f0a',
-                title: r.title, sub: r.list_name || '미리 알림', when: r.due_date, view: 'reminders' });
+                title: r.title, sub: r.list_name || '', when: r.due_date, view: 'reminders' });
         });
         out.sort((a, b) => String(a.when || '9999').localeCompare(String(b.when || '9999')));
         return out;
@@ -3558,7 +3558,7 @@ class BhasApp {
         { g: '생산', items: [['items', '제품리스트', 'ph-t-shirt'], ['dashboard', '시즌', 'ph-calendar-blank'], ['vendors', '생산현황', 'ph-factory'],
             ['tech_packs', '작업지시서', 'ph-clipboard-text'], ['sample_maker', '샘플·디자인', 'ph-scissors'],
             ['quotes', '견적', 'ph-receipt']] },
-        { g: '업무', items: [['news', '뉴스', 'ph-newspaper'], ['notes', '메모', 'ph-note'], ['reminders', '미리알림', 'ph-list-checks'],
+        { g: '업무', items: [['news', '뉴스', 'ph-newspaper'], ['notes', '메모', 'ph-note'], ['reminders', '할 일', 'ph-list-checks'],
             ['calendar', '캘린더', 'ph-calendar-dots'], ['table', '표', 'ph-table'],
             ['contacts', '연락처', 'ph-address-book'], ['sns', 'SNS', 'ph-instagram-logo'],
             ['documents', '자료실', 'ph-folder-open']] },
@@ -3567,7 +3567,7 @@ class BhasApp {
     ];
     // ============================================================
     //  모두 찾기 — 어디서든 ⌘K. 한 칸에서 전부 뒤진다.
-    //   제품 · 시즌 · 주문 · CS · 메모 · 미리알림 · 자료 · 공장 · 고객사 · 화면
+    //   제품 · 시즌 · 주문 · CS · 메모 · 할 일 · 자료 · 공장 · 고객사 · 화면
     // ============================================================
     openFind(preset) {
         if (document.getElementById('spot')) { this.closeFind(); return; }
@@ -3660,7 +3660,7 @@ class BhasApp {
                 (this._noteText(n) || '').replace(/\s+/g, ' ').trim().slice(0, 40), `app.findGo('notes','${n.id}')`);
         });
         (this.reminders || []).forEach(r => {
-            if (hit(r.title, r.memo)) add('미리알림', 'ph-list-checks', '#ff453a', r.title,
+            if (hit(r.title, r.memo)) add('할 일', 'ph-list-checks', '#ff453a', r.title,
                 [r.list_name, r.due_date].filter(Boolean).join(' · '), `app.findGo('reminders','${r.id}')`);
         });
         (this._techPacks || []).forEach(t => {
@@ -3701,7 +3701,7 @@ class BhasApp {
         }
         const all = this._findAll(k);
         if (!all.length) { body.innerHTML = `<div class="spot-hint">'${esc(k)}' 로 찾은 게 없습니다</div>`; return; }
-        const order = ['제품', '시즌', '주문', 'CS', '메모', '미리알림', '작업지시서', '견적', '거래처', '고객사', '자료', '화면'];
+        const order = ['제품', '시즌', '주문', 'CS', '메모', '할 일', '작업지시서', '견적', '거래처', '고객사', '자료', '화면'];
         const by = {};
         all.forEach(r => (by[r.kind] = by[r.kind] || []).push(r));
         let html = '', n = 0;
@@ -6615,7 +6615,7 @@ class BhasApp {
         { id: 'news', label: '뉴스', icon: 'news' },
         { id: 'documents', label: '자료실', icon: 'finder' },
         { id: 'calendar', label: '캘린더', icon: 'cal' },
-        { id: 'reminders', label: '미리알림', icon: 'rem' },
+        { id: 'reminders', label: '할 일', icon: 'rem' },
         { id: 'notes', label: '메모', icon: 'notes' },
         { id: 'contacts', label: '연락처', icon: 'contacts' },
         { id: 'settings', label: '설정', icon: 'set' },
@@ -7575,7 +7575,7 @@ class BhasApp {
     }
     // ── 메모 안의 할 일 · 태그 ────────────────────────────────
     //  본문 줄머리에 [] / [x] 를 쓰면 할 일이 된다(노션의 to-do 블록).
-    //  @이름 을 쓰면 담당자, #말머리 는 꼬리표. 체크한 것은 미리알림에도 뜬다.
+    //  @이름 을 쓰면 담당자, #말머리 는 꼬리표. 체크한 것은 할 일에도 뜬다.
     NOTE_TODO_RE = /^(\s*)\[( |x|X)?\]\s?(.*)$/;
     _noteTodos(n) {
         const out = [];
@@ -7596,17 +7596,18 @@ class BhasApp {
         return out;
     }
     _allNoteTodos() { return (this.noteList || []).flatMap(n => this._noteTodos(n)); }
-    // 날짜가 붙은 모든 것 한 벌 — 홈의 미리알림 목록과 통합 캘린더가 같이 쓴다
+    // 날짜가 붙은 모든 것 한 벌 — 홈의 할 일 칸과 통합 캘린더가 같이 쓴다
     _allDated() {
         const out = [];
         (this.remList || []).forEach(r => out.push({
-            date: r.due_date, title: r.title, sub: r.list_name || '미리 알림',
-            done: !!r.done, color: '#ff9f0a', kind: 'rem', view: 'reminders', tag: '미리알림',
+            //  기본 분류면 이름을 또 적지 않는다 — 칸 이름이 이미 '할 일' 이다
+            date: r.due_date, title: r.title, sub: /^(기본|미리\s*알림)$/.test(r.list_name || '') ? '' : (r.list_name || ''),
+            done: !!r.done, color: '#ff9f0a', kind: 'rem', view: 'reminders', tag: '할 일',
         }));
         (mockData.products || []).forEach(p => {
             (p.todos || []).forEach(t => out.push({
                 date: t.due_date, title: t.text, sub: p.name,
-                done: !!t.completed, color: '#0a84ff', kind: 'todo', view: 'reminders', tag: '할일',
+                done: !!t.completed, color: '#0a84ff', kind: 'todo', view: 'reminders', tag: '시즌',
             }));
             if (p.due_date) out.push({
                 date: p.due_date, title: p.name, sub: '시즌 마감',
@@ -8158,7 +8159,7 @@ class BhasApp {
         </div>`;
     }
 
-    // ── 미리알림 (맥 '미리알림' 앱 형태) ──────────────────────
+    // ── 할 일 (맥 '미리알림' 앱 형태) ─────────────────────────
     async loadReminders() {
         this._remLoading = true;
         try {
@@ -8166,7 +8167,7 @@ class BhasApp {
                 .order('done', { ascending: true }).order('due_date', { ascending: true, nullsFirst: false }).limit(300);
             if (error) throw error;
             this.remList = data || []; this._remLoaded = true;
-        } catch (e) { this.remList = []; this._remLoaded = true; this.showToast('미리알림을 불러오지 못했습니다: ' + (e.message || e)); }
+        } catch (e) { this.remList = []; this._remLoaded = true; this.showToast('할 일을 불러오지 못했습니다: ' + (e.message || e)); }
         this._remLoading = false; this.requestRender();
     }
     async addReminder() {
@@ -8174,7 +8175,7 @@ class BhasApp {
         const title = (el?.value || '').trim(); if (!title) { el?.focus(); return; }
         const due = (document.getElementById('rem-due')?.value || '') || null;
         const cur = this.remList2 || '';
-        const list_name = cur.startsWith('l:') && cur.slice(2) !== '할일' ? cur.slice(2) : '미리 알림';
+        const list_name = cur.startsWith('l:') && !['시즌', '메모'].includes(cur.slice(2)) ? cur.slice(2) : '기본';
         try {
             const { data, error } = await this.supabase.from('reminders')
                 .insert([{ title, due_date: due, list_name, created_by: this.currentUser?.name || null }]).select('*').single();
@@ -8195,24 +8196,24 @@ class BhasApp {
     }
     setRemList(l) { this.remList2 = l; this.requestRender(); }
     setRemGroup(g) { this.remGroup = g; this.remList2 = 'all'; this.requestRender(); }
-    // ── 미리알림 (맥 '미리알림' 앱 그대로) ─────────────────────
+    // ── 할 일 (맥 '미리알림' 앱 그대로) ────────────────────────
     //  왼쪽에 색 타일 6개 + 나의 목록, 오른쪽에 목록별 색 제목 + 동그란 체크.
     //  우리 '할일(todos)'도 한 목록으로 같이 얹어서 담당자까지 보이게 했다.
     renderReminders() {
-        if (!this._remLoaded) return this._loadingSkeleton('미리알림');
+        if (!this._remLoaded) return this._loadingSkeleton('할 일');
         const esc = s => this._vesc(s);
         const today = new Date().toISOString().slice(0, 10);
         const me = this._myId();
         const nameOf = id => (mockData.companies || []).find(c => c.id === id)?.name || '';
-        // 미리알림 + 기존 할일을 한 줄 모양으로 합친다
+        // 직접 적은 할 일 + 기존 todos을 한 줄 모양으로 합친다
         const rems = (this.remList || []).map(r => ({
             src: 'rem', id: r.id, title: r.title, memo: r.memo, due: r.due_date,
-            done: !!r.done, list: (this.remGroup || 'list') === 'project' ? '시즌 없음' : (r.list_name || '미리 알림'),
+            done: !!r.done, list: (this.remGroup || 'list') === 'project' ? '시즌 없음' : (r.list_name || '기본'),
         }));
         const byProj = (this.remGroup || 'list') === 'project';
         const todos = (mockData.products || []).flatMap(p => (p.todos || []).map(t => ({
             src: 'todo', id: t.id, title: t.text, due: t.due_date, done: !!t.completed,
-            list: byProj ? (p.name || '시즌 없음') : '할일',
+            list: byProj ? (p.name || '시즌 없음') : '시즌',
             project: p.name, assignee: t.assignee, createdBy: t.created_by,
         })));
         // 메모 본문의 [ ] 도 할 일이다 — 대시보드 안의 할 일을 한 군데로 모은다
@@ -8250,7 +8251,7 @@ class BhasApp {
             { k: 'done',  label: '완료됨', icon: 'ph-check',         cls: 'gray' },
         ];
         const listNames = [...new Set(all.map(x => x.list))];
-        const LCOL = { '할일': '#0a84ff', '미리 알림': '#ff9f0a', '메모': '#30d158' };
+        const LCOL = { '시즌': '#0a84ff', '기본': '#ff9f0a', '메모': '#30d158' };
         const colorOf = (l, i) => LCOL[l] || ['#ff9f0a', '#0a84ff', '#30d158', '#bf5af2', '#ff453a'][i % 5];
         let shown = cur.startsWith('l:') ? all.filter(x => x.list === cur.slice(2) && !x.done)
                                          : all.filter(F[cur] || F.all);
@@ -8305,7 +8306,7 @@ class BhasApp {
             </aside>
             <section class="rm-main">
                 <div class="rm-top">
-                    <button class="rm-add" onclick="app.focusNewReminder()" title="새 미리알림"><i class="ph ph-plus"></i></button>
+                    <button class="rm-add" onclick="app.focusNewReminder()" title="새 할 일"><i class="ph ph-plus"></i></button>
                     <div class="rm-search"><i class="ph ph-magnifying-glass"></i><input placeholder="검색"
                         value="${esc(this.remQ || '')}" oninput="app.remQ=this.value;app.requestRender()"></div>
                 </div>
@@ -8313,7 +8314,7 @@ class BhasApp {
                 <div class="rm-sub">${doneCnt}개 완료됨${doneCnt ? ` · <a onclick="app.clearDoneReminders()">지우기</a>` : ''}</div>
                 <div class="rm-new">
                     <button class="rm-ck ghost"></button>
-                    <input id="rem-new" placeholder="새 미리알림" onkeydown="if(event.key==='Enter')app.addReminder()">
+                    <input id="rem-new" placeholder="새 할 일" onkeydown="if(event.key==='Enter')app.addReminder()">
                     <input id="rem-due" type="date">
                 </div>
                 <div class="rm-body">${sections}</div>
@@ -8387,7 +8388,7 @@ class BhasApp {
     async delRemItem(src, id) {
         try {
             if (src === 'rem') {
-                if (!await this.showConfirm('이 미리알림을 지울까요?', '삭제')) return;
+                if (!await this.showConfirm('이 할 일을 지울까요?', '삭제')) return;
                 const { error } = await this.supabase.from('reminders').delete().eq('id', id);
                 if (error) throw error;
                 this.remList = (this.remList || []).filter(x => String(x.id) !== String(id));
@@ -8432,7 +8433,7 @@ class BhasApp {
         if (src === 'note') { const [nid, line] = String(id).split('#'); return this.toggleNoteTodo(nid, Number(line)); }
         return this.toggleTodoFromReminders(id);
     }
-    // 미리알림 화면에서 기존 할일을 끄고 켠다 — todos 테이블을 그대로 쓴다
+    // 할 일 화면에서 기존 할일을 끄고 켠다 — todos 테이블을 그대로 쓴다
     async toggleTodoFromReminders(id) {
         let hit = null;
         (mockData.products || []).forEach(p => (p.todos || []).forEach(t => { if (t.id === id) hit = t; }));
@@ -8447,7 +8448,7 @@ class BhasApp {
     async clearDoneReminders() {
         const ids = (this.remList || []).filter(r => r.done).map(r => r.id);
         if (!ids.length) { this.showToast('지울 완료 항목이 없습니다.'); return; }
-        if (!await this.showConfirm(`완료된 미리알림 ${ids.length}건을 지울까요?`, '삭제')) return;
+        if (!await this.showConfirm(`완료된 할 일 ${ids.length}건을 지울까요?`, '삭제')) return;
         try {
             const { error } = await this.supabase.from('reminders').delete().in('id', ids);
             if (error) throw error;
@@ -10253,8 +10254,8 @@ class BhasApp {
 
     // ── 캘린더 (맥 캘린더 그대로 · 분류 / 달력 / 그날 일정) ─────
     CAL_SRC = [
-        { k: 'rem',  t: '미리알림',    c: '#ff9f0a' },
-        { k: 'todo', t: '할일',        c: '#0a84ff' },
+        { k: 'rem',  t: '할 일',      c: '#ff9f0a' },
+        { k: 'todo', t: '시즌 할 일',  c: '#0a84ff' },
         { k: 'note', t: '메모 체크',   c: '#30d158' },
         { k: 'job',  t: '생산 작업',   c: '#6366f1' },
         { k: 'proj', t: '시즌 마감', c: '#bf5af2' },
@@ -10350,7 +10351,7 @@ class BhasApp {
             </aside>
             <section class="cal-main">
                 <div class="cal-top">
-                    <button class="cal-add" onclick="app.quickAddFromCalendar()" title="새 미리알림"><i class="ph ph-plus"></i></button>
+                    <button class="cal-add" onclick="app.quickAddFromCalendar()" title="새 할 일"><i class="ph ph-plus"></i></button>
                     <div class="cal-seg">
                         ${[['day', '일'], ['week', '주'], ['month', '월']].map(([k, t]) =>
                             `<button class="${view === k ? 'on' : ''}" onclick="app.setCalView('${k}')">${t}</button>`).join('')}
@@ -10375,14 +10376,14 @@ class BhasApp {
             </aside>
         </div>`;
     }
-    //  캘린더에서 더하기 — 미리알림 목록에 넣거나, 메모 폴더에 [ ] 로 적는다.
+    //  캘린더에서 더하기 — 할 일 목록에 넣거나, 메모 폴더에 [ ] 로 적는다.
     //  메모에 적으면 그 메모에서도 보이고 체크하면 여기서도 지워진다(양방향).
     quickAddFromCalendar() {
         const day = this.calDay || new Date().toISOString().slice(0, 10);
         const c = document.getElementById('global-modal-container'); if (!c) return;
         const esc = x => this._vesc(x);
-        const lists = [...new Set((this.remList || []).map(r => r.list_name || '미리 알림'))];
-        if (!lists.length) lists.push('미리 알림');
+        const lists = [...new Set((this.remList || []).map(r => r.list_name || '기본'))];
+        if (!lists.length) lists.push('기본');
         const folders = [...new Set((this.noteList || []).filter(n => !n.item_id).map(n => n.folder || '공용'))];
         c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:400px">
             <div class="hk-top"><b>${esc(day)} 에 더하기</b>
@@ -10391,7 +10392,7 @@ class BhasApp {
                 <input id="qa-t" class="nw-f" placeholder="할 일 또는 일정" autocomplete="off"></div>
             <div class="fi-r"><span>어디에</span>
                 <select id="qa-w" class="nw-f">
-                    <optgroup label="미리알림 목록">
+                    <optgroup label="할 일 목록">
                         ${lists.map(l => `<option value="r:${esc(l)}">${esc(l)}</option>`).join('')}
                     </optgroup>
                     ${folders.length ? `<optgroup label="메모 폴더 — [ ] 로 적힙니다">
@@ -10420,7 +10421,7 @@ class BhasApp {
     async _addRemOn(day, title, list) {
         try {
             const { data, error } = await this.supabase.from('reminders')
-                .insert([{ title, due_date: day, list_name: list || '미리 알림', created_by: this.currentUser?.name || null }])
+                .insert([{ title, due_date: day, list_name: list || '기본', created_by: this.currentUser?.name || null }])
                 .select('*').single();
             if (error) throw error;
             this.remList = [data, ...(this.remList || [])];
@@ -11009,7 +11010,7 @@ class BhasApp {
     }
     venFind(v) { this.venQ = v; clearTimeout(this._venT); this._venT = setTimeout(() => this.requestRender(), 180); }
     toggleVenMap() { this.venMap = !this.venMap; this.requestRender(); }
-    //  바탕화면 미리알림에서 생산 작업을 누르면 그 생산처를 골라서 연다
+    //  바탕화면 할 일에서 생산 작업을 누르면 그 생산처를 골라서 연다
     goVendorJob(vid) {
         this.venCat = 'ALL'; this.venQ = ''; this.venSel = vid; this.venEdit = false;
         if (this.macMode) this.macOpen('vendors'); else this.switchView('vendors');
@@ -13772,9 +13773,9 @@ class BhasApp {
             ['esc', '열린 창 닫기'],
         ] },
         { g: '메모 쓸 때', rows: [
-            ['[ ]', '할 일 — 미리알림에 저절로 올라간다'],
+            ['[ ]', '할 일 — 할 일 화면에 저절로 올라간다'],
             ['[x]', '끝낸 할 일'],
-            ['@이름', '담당자 — 그 사람 미리알림에 뜬다'],
+            ['@이름', '담당자 — 그 사람 할 일에 뜬다'],
             ['#꼬리표', '말머리 — 같은 꼬리표끼리 모인다'],
             ['⏎', '제목 칸에서 누르면 본문으로'],
         ] },

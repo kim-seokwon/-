@@ -4377,3 +4377,7 @@ body:not(.light){ --pane-line: rgba(255,255,255,.16); }
 .np-hit:hover span{opacity:.85;color:#fff}
 .np-hit.none{cursor:default;opacity:.55;font-size:.78rem}
 .np-hit.none:hover{background:transparent;color:inherit}
+
+/* 미리알림 칸은 옆 캘린더 높이에 맞춰 끝까지 내려온다 */
+.glass.pfill{display:flex;flex-direction:column}
+.glass.pfill .pfill-b{flex:1;min-height:0;overflow:auto}
