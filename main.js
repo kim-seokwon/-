@@ -2854,6 +2854,39 @@ class BhasApp {
         return (p.members || []).includes(this._me());
     }
     // 시즌 담당자·권한 고치기
+    //  시즌 할 일 — 그 시즌에 붙은 메모 한 장에 담는다.
+    //  따로 만들지 않고 메모를 쓰는 이유: [ ] → 미리알림 흐름이 이미 메모에 붙어 있다.
+    _seasonTodoNote(pid) {
+        return (this.noteList || []).find(n => String(n.product_id) === String(pid) && n.is_season_todo)
+            || (this.noteList || []).find(n => String(n.product_id) === String(pid)
+                && (n.title || '').endsWith(' 할 일'));
+    }
+    _seasonTodoText(pid) {
+        const n = this._seasonTodoNote(pid);
+        return n ? this._noteText(n) : '';
+    }
+    async _saveSeasonTodo(pid, text) {
+        const t = (text || '').trim();
+        const p = (mockData.products || []).find(x => String(x.id) === String(pid));
+        let n = this._seasonTodoNote(pid);
+        if (!t && !n) return;
+        const body = this._joinNote(n ? this._noteMeta(n) : {}, t);
+        if (n) {
+            n.body = body; n.updated_at = new Date().toISOString();
+            const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
+            if (error) this.showToast('할 일 저장 실패: ' + error.message);
+            return;
+        }
+        const row = {
+            title: `${(p && p.name) || '시즌'} 할 일`, body,
+            folder: (p && p.name) || '시즌', product_id: pid,
+            brand_id: (p && p.brand_id) || null, scope: 'project', created_by: this._actor(),
+        };
+        const { data, error } = await this.supabase.from('notes').insert([row]).select().single();
+        if (error) { this.showToast('할 일 저장 실패: ' + error.message); return; }
+        this.noteList = [data, ...(this.noteList || [])];
+    }
+
     // ── 폴더 속성 (맥 '정보 가져오기' 결) ───────────────────
     //  이름·브랜드·마감·담긴 것, 그리고 **접근 권한을 그 자리에서** 고친다.
     //  권한을 고치는 건 마스터만. 나머지는 누가 볼 수 있는지 읽기만 한다.
@@ -2887,6 +2920,9 @@ class BhasApp {
                 </select></div>
             <div class="fi-r"><span>마감</span><input id="fi-due" type="date" class="nw-f" value="${esc((p.deadline || p.due_date || '').slice(0, 10))}" ${isMaster ? '' : 'disabled'}></div>
 
+            <div class="fi-sec">할 일 <em class="fi-hint">[ ] 로 쓰면 미리알림에 올라갑니다 · 날짜·@담당자도 같이</em></div>
+            <textarea id="fi-todo" class="nw-f fi-todo" rows="5"
+                placeholder="[ ] 원단 확정 2026-03-05&#10;[ ] 샘플 확인 @조영신&#10;[x] 끝낸 일">${esc(this._seasonTodoText(id))}</textarea>
             <div class="fi-sec">누가 볼 수 있나</div>
             ${isMaster ? `
             <label class="pa-opt"><input type="radio" name="fi-acc" value="all" ${acc === 'all' ? 'checked' : ''}>
@@ -2932,6 +2968,7 @@ class BhasApp {
             };
             btn.disabled = true; btn.textContent = '저장 중...';
             const { error } = await this.supabase.from('products').update(patch).eq('id', id);
+            if (!error) await this._saveSeasonTodo(id, c.querySelector('#fi-todo').value);
             btn.disabled = false; btn.textContent = '저장';
             if (error) { this.showToast('저장 실패: ' + error.message); return; }
             Object.assign(p, patch);

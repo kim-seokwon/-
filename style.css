@@ -4013,3 +4013,24 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .pr .pr-msg{font-size:12.5px;color:var(--text-muted);line-height:1.6;margin:10px 0 8px}
 .pr #pr-in{width:100%;box-sizing:border-box}
 .pr textarea#pr-in{resize:vertical;line-height:1.6}
+
+/* ══ 3단은 칸마다 따로 구른다 ══════════════════════════════
+   창 본문이 통째로 구르면 2단을 내릴 때 1·3단까지 같이 밀려 올라간다.
+   3단을 담은 창은 본문을 고정하고, 각 칸이 자기 안에서 구르게 한다. */
+.macwin-body:has(> .appwrap),
+.macwin-body:has(> .nt),
+.macwin-body:has(> .fd),
+.macwin-body:has(> .m3),
+.macwin-body:has(> .mp){overflow:hidden}
+.appwrap,.nt,.fd,.m3{height:100%;min-height:0}
+.appwrap>*,.nt>*,.fd>*,.m3>*{min-height:0}
+.appmain{overflow:auto;min-height:0}
+.appdet{overflow:auto;min-height:0}
+.nt-side,.nt-list,.nt-doc,.fd-side,.fd-main,.fd-prev,.m3-side,.m3-list,.m3-doc{min-height:0}
+.nt-rows,.fd-body,.m3-rows{overflow:auto;min-height:0}
+.mp{height:100%;min-height:0}
+.mp-body,.it-scroll,.fd-body{overflow:auto;min-height:0}
+/* :has() 를 모르는 브라우저에서도 최소한 창이 넘치지는 않게 */
+@supports not (selector(:has(*))){ .macwin-body{overflow:auto} }
+.fi-sec em.fi-hint{font-style:normal;font-weight:600;font-size:10.5px;opacity:.7;margin-left:6px}
+.fi-todo{width:100%;box-sizing:border-box;resize:vertical;line-height:1.7;font-size:12.5px}
