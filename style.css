@@ -4287,3 +4287,16 @@ body:not(.light) .ntoast .nt-ac button.pri{background:#0a84ff;color:#fff}
 .m3-s.nav.d1{padding-left:22px}
 .m3-s.nav.d1 span{font-size:12px}
 .m3-s.nav>i{flex:0 0 auto}
+
+/* 생산현황 — 지도·물품 줄 */
+.ven-map{height:230px;flex:0 0 auto;border-bottom:.5px solid var(--card-border);z-index:0}
+.vd-pick{height:170px;border-radius:9px;overflow:hidden;background:rgba(127,127,127,.1);
+  margin:4px 0 2px;z-index:0}
+.dt-li.job{gap:7px}
+.dt-li.job.done span{text-decoration:line-through;color:var(--text-muted)}
+.dt-ck{width:16px;height:16px;flex:0 0 auto;border-radius:5px;border:1.5px solid var(--card-border);
+  background:transparent;color:#fff;font-size:10px;line-height:1;padding:0;cursor:default}
+.dt-ck.on{background:#30d158;border-color:#30d158}
+.dt-li.job span{flex:1;min-width:0;white-space:normal}
+.dt-li.job b{font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap}
+.macwin .dt-ck{box-shadow:none !important}

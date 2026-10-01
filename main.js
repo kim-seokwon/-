@@ -2867,6 +2867,8 @@ class BhasApp {
         } else if (view === 'expenses') {
             if (kind === 'co') { this.expCoFilter = id; }
             else { this.expMonth = id; this.expCoFilter = 'ALL'; }
+        } else if (view === 'vendors') {
+            this.venCat = id; this.venSel = null; this.venEdit = false;
         } else if (view === 'quotes') {
             if (kind === 'st') { this.quoteStatus = id; this.quoteClient = 'ALL'; }
             else { this.quoteClient = id; this.quoteStatus = 'ALL'; }
@@ -2881,6 +2883,16 @@ class BhasApp {
 
         if (view === 'items') return this._itemNav();
 
+        if (view === 'vendors') {
+            const all = this.vendors || [];
+            const cur = this.venCat || 'ALL';
+            const CATS = ['봉제', '원단', '부자재', '프린트', '기타'];
+            const n = c2 => all.filter(v => (v.category || '기타') === c2).length;
+            return `<div class="m3-h">보기</div>
+                ${R(cur === 'ALL', '전체', all.length, `app.navPick('vendors','cat','ALL')`, 0, 'ph-tray')}
+                ${S('분류별', 'vcat', CATS.filter(c2 => n(c2)).map(c2 => R(cur === c2, c2, n(c2),
+                    `app.navPick('vendors','cat','${esc(c2)}')`, 1)).join(''))}`;
+        }
         if (view === 'orders') {
             const all = this.orders || [];
             const f = this.orderFilter || 'target', m = this.orderMall || 'ALL';
@@ -3710,6 +3722,46 @@ class BhasApp {
         //  고른 게 없으면 칸을 비워 두지 않고 아예 접는다 — 자리만 먹는다
         const empty = () => '';
 
+        if (view === 'vendors') {
+            const isNew = this.venSel === '__new';
+            const v = isNew ? {} : (this.vendors || []).find(x => String(x.id) === String(this.venSel));
+            if (!v) return empty();
+            const CATS = ['봉제', '원단', '부자재', '프린트', '기타'];
+            const jobs = (v.jobs || []);
+            const act = jobs.filter(j => j.status !== 'done');
+            if (this.venEdit || isNew) {
+                return wrap(isNew ? '새 생산처' : (v.name || '생산처'), isNew ? '' : '고치는 중', `
+                    <div class="fi-r"><span>상호</span><input id="vd-name" class="nw-f" value="${esc(v.name || '')}" placeholder="예: 성수봉제"></div>
+                    <div class="fi-r"><span>분류</span><select id="vd-cat" class="nw-f">
+                        ${CATS.map(k => `<option value="${k}"${v.category === k ? ' selected' : ''}>${k}</option>`).join('')}</select></div>
+                    <div class="fi-r"><span>주소</span><input id="vd-addr" class="nw-f" value="${esc(v.address || '')}"></div>
+                    <div class="fi-r"><span>전화</span><input id="vd-phone" class="nw-f" value="${esc(v.phone || '')}"></div>
+                    <div class="fi-r"><span>사업자</span><input id="vd-biz" class="nw-f" value="${esc(v.biz_no || '')}"></div>
+                    <div class="dt-sec">위치 <em style="font-style:normal;font-weight:600;opacity:.6">지도를 눌러 찍으세요</em></div>
+                    <div id="vd-pickmap" class="vd-pick"></div>
+                    <div class="dt-sec">메모</div>
+                    <textarea id="vd-memo" class="dt-ta" style="min-height:70px">${esc(v.memo || '')}</textarea>
+                `, `<button class="mbtn pri" onclick="app.saveVendor('${isNew ? '' : v.id}')">저장</button>
+                    <button class="mbtn" onclick="app.selectVendor(${isNew ? 'null' : `'${v.id}'`})">취소</button>
+                    ${isNew ? '' : `<button class="mbtn danger" onclick="app.deleteVendor('${v.id}')">삭제</button>`}`);
+            }
+            return wrap(v.name || '생산처', [v.category, act.length ? `진행 ${act.length}` : ''].filter(Boolean).join(' · '), `
+                ${f('주소', v.address)}
+                ${f('전화', v.phone)}
+                ${f('사업자', v.biz_no)}
+                ${v.memo ? `<div class="dt-sec">메모</div><div class="dt-memo">${esc(v.memo)}</div>` : ''}
+                <div class="dt-sec">물품 ${jobs.length ? `${act.length}/${jobs.length}` : ''}
+                    <span class="dt-tools"><button class="vjob-add" data-id="${v.id}" title="물품 추가"><i class="ph ph-plus"></i></button></span></div>
+                ${jobs.length ? jobs.map(j => {
+                    const done = j.status === 'done';
+                    return `<div class="dt-li job${done ? ' done' : ''}">
+                        <button class="vjob-toggle dt-ck${done ? ' on' : ''}" data-id="${j.id}" title="완료 토글">${done ? '✓' : ''}</button>
+                        <span>${esc(j.title || '작업')}${j.qty ? ` · ${j.qty}장` : ''}</span>
+                        <b>${esc(j.due_date || '')}</b>
+                        <button class="dt-x vjob-del" data-id="${j.id}" title="삭제">×</button></div>`;
+                  }).join('') : '<div class="dt-none sm">아직 물품이 없습니다</div>'}
+            `, `<button class="mbtn pri" onclick="app.toggleVenEdit()">고치기</button>`);
+        }
         if (view === 'tech_packs') {
             const t = (this._techPacks || []).find(x => String(x.id) === String(this.tpSel));
             if (!t) return empty();
@@ -4820,7 +4872,20 @@ class BhasApp {
             ${kpi(`${shortLabel} 매출`, `${won(thisM)}<span style="font-size:1rem;font-weight:600">원</span>`,
                 (momSane ? `전월 대비 ${delta >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta / prevM * 100))}%` : (prevM > 0 ? `지난달 ${wonMan(prevM)}원` : '집계 시작')) + (cancelThisCnt ? ` · 취소 ${cancelThisCnt}건 제외` : ''),
                 momSane ? (delta >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)')}
-            ${kpi(`${shortLabel} 주문`, `${ordersThisMonth.toLocaleString()}<span style="font-size:1rem;font-weight:600">건</span>`, `전체 누적 ${orders.length.toLocaleString()}건`)}
+            ${kpi(`${shortLabel} 주문`, `${ordersThisMonth.toLocaleString()}<span style="font-size:1rem;font-weight:600">건</span>`, (() => {
+                //  누적은 서버 집계본(sales_monthly)에서 센다.
+                //  orders 는 '고른 브랜드+기간' 만 따로 받아온 조각이라 전체가 아니다(전체 통합일 땐 비어 있다).
+                const mon = this.salesAggData?.monthly;
+                if (!mon) return '';
+                let n = 0;
+                mon.forEach(r => {
+                    if (r.state === 'cancel' || r.state === 'return') return;
+                    if (_allowedNames && !_allowedNames.has(r.brand_name)) return;
+                    if (bf !== 'ALL' && r.brand_name !== bf) return;
+                    n += Number(r.cnt) || 0;
+                });
+                return n ? `누적 ${n.toLocaleString()}건` : '';
+            })())}
             ${kpi('객단가', `${won(aov)}<span style="font-size:1rem;font-weight:600">원</span>`, '주문 1건당 평균')}
             ${bf === 'ALL'
                 ? kpi('판매 브랜드', `${brandNow.length}<span style="font-size:1rem;font-weight:600">개</span>`, brandNow.slice(0, 2).map(b => b.name).join(' · ') || '—')
@@ -6701,6 +6766,7 @@ class BhasApp {
             this._bindFindKey();
             try { this._mountGrips(); } catch (_e) {}
             try { this._restoreCell(); } catch (_e) {}
+            try { this._mountPickMap(); } catch (_e) {}
             const fn = per[v];
             if (fn && typeof this[fn] === 'function') { try { this[fn](); } catch (_e) {} }
         });
@@ -10437,70 +10503,62 @@ class BhasApp {
     }
 
     renderVendors() {
-        if (!this._vendorsLoaded) return this._loadingSkeleton('거래처');
-        const vendors = this.vendors || [];
-        const allJobs = vendors.flatMap(v => (v.jobs||[]).map(j => ({...j, _vendor: v.name })));
-        const active = allJobs.filter(j => j.status !== 'done');
-        const today = new Date(); today.setHours(0,0,0,0);
-        const dday = (d) => { if(!d) return null; const dt=new Date(d); dt.setHours(0,0,0,0); return Math.round((dt-today)/86400000); };
-        const upcoming = active.filter(j=>j.due_date).sort((a,b)=> new Date(a.due_date)-new Date(b.due_date)).slice(0,8);
+        if (!this._vendorsLoaded) return this._loadingSkeleton('생산처');
+        const esc = s => this._vesc(s);
+        const all = this.vendors || [];
+        const cat = this.venCat || 'ALL';
+        const q = (this.venQ || '').trim().toLowerCase();
+        let list = all;
+        if (cat !== 'ALL') list = list.filter(v => (v.category || '기타') === cat);
+        if (q) list = list.filter(v => [v.name, v.address, v.phone].some(x => String(x || '').toLowerCase().includes(q)));
 
-        const scheduleStrip = upcoming.length ? `
-            <div class="glass" style="padding:1rem 1.2rem;border-radius:16px;margin-bottom:1rem">
-                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem"><i class="ph ph-calendar-dots"></i> 임박 스케줄</div>
-                <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
-                    ${upcoming.map(j=>{ const dd=dday(j.due_date); const col = dd<0?'#ef4444':(dd<=3?'#f59e0b':'var(--text-muted)');
-                        return `<div style="flex:0 0 auto;min-width:150px;padding:10px 12px;border-radius:12px;background:rgba(148,163,184,0.08);border:1px solid rgba(148,163,184,0.15)">
-                            <div style="font-size:0.8rem;color:${col};font-weight:700">${dd<0?`지연 ${-dd}일`:(dd===0?'오늘':`D-${dd}`)}</div>
-                            <div style="font-size:0.88rem;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this._vesc(j.title)}</div>
-                            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:1px">${this._vesc(j._vendor)}</div>
-                        </div>`; }).join('')}
-                </div>
-            </div>` : '';
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const dday = d => { if (!d) return null; const t = new Date(d); t.setHours(0, 0, 0, 0); return Math.round((t - today) / 86400000); };
+        const actOf = v => (v.jobs || []).filter(j => j.status !== 'done');
+        const soonOf = v => actOf(v).map(j => dday(j.due_date)).filter(x => x !== null).sort((a, b) => a - b)[0];
 
-        const cards = vendors.map(v => {
-            const jobs = v.jobs || [];
-            const act = jobs.filter(j=>j.status!=='done');
-            const col = this._vendorCatColor(v.category);
-            const jobRows = jobs.length ? jobs.map(j=>{ const dd=dday(j.due_date); const done=j.status==='done';
-                const ddText = j.due_date && !done ? (dd<0?`<span style="color:#ef4444">지연${-dd}일</span>`:(dd<=3?`<span style="color:#f59e0b">D-${Math.max(dd,0)}</span>`:`D-${dd}`)) : '';
-                return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid rgba(148,163,184,0.12)">
-                    <button class="vjob-toggle" data-id="${j.id}" title="완료 토글" style="flex:0 0 auto;width:18px;height:18px;border-radius:5px;border:2px solid ${done?'#10b981':'rgba(148,163,184,0.5)'};background:${done?'#10b981':'transparent'};cursor:pointer;color:#fff;font-size:0.7rem;line-height:1;padding:0">${done?'✓':''}</button>
-                    <div style="flex:1;min-width:0">
-                        <div style="font-size:0.88rem;font-weight:600;${done?'text-decoration:line-through;color:var(--text-muted)':''}">${this._vesc(j.title)}${j.qty?` <span style="color:var(--text-muted);font-weight:400">·${j.qty}장</span>`:''}${j.qc_status==='passed'?' <span style="font-size:0.66rem;font-weight:700;color:#10b981;background:rgba(16,185,129,0.12);padding:1px 6px;border-radius:6px">검수완료</span>':''}${j.quick_status?.ok===true?' <span style="font-size:0.66rem;font-weight:700;color:#191600;background:#FEE500;padding:1px 6px;border-radius:6px">퀵예약</span>':''}${!j.tech_pack_id?' <span style="font-size:0.66rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);padding:1px 6px;border-radius:6px">지시서 미연결</span>':''}${j.item_id?' <span style="font-size:0.66rem;font-weight:700;color:#0a84ff;background:rgba(10,132,255,0.12);padding:1px 6px;border-radius:6px">제품리스트</span>':''}</div>
-                        <div style="font-size:0.75rem;color:var(--text-muted)">${this._vesc(j.stage)}${ddText?' · '+ddText:''}</div>
-                    </div>
-                    ${done?'':`<button class="vjob-qc" data-id="${j.id}" title="출고 검수 · 카카오퀵" style="flex:0 0 auto;background:none;border:none;color:${j.qc_status==='passed'?'#10b981':'var(--primary)'};cursor:pointer;padding:2px 4px;font-size:1.05rem"><i class="ph ph-clipboard-text"></i></button>`}
-                    <button class="vjob-del" data-id="${j.id}" title="삭제" style="flex:0 0 auto;background:none;border:none;color:var(--text-muted);cursor:pointer"><i class="ph ph-x"></i></button>
-                </div>`; }).join('') : `<div style="padding:10px 0;color:var(--text-muted);font-size:0.83rem">진행중 물품 없음</div>`;
+        const row = v => {
+            const act = actOf(v), s2 = soonOf(v);
+            const late = s2 !== undefined && s2 < 0;
+            return `<tr class="it-row${String(this.venSel) === String(v.id) ? ' on' : ''}" data-id="${v.id}"
+                onclick="app.selectVendor('${v.id}')">
+                <td class="bd">${esc(v.name || '')}</td>
+                <td>${esc(v.address || '')}</td>
+                <td class="nw">${esc(v.phone || '')}</td>
+                <td class="num">${act.length || ''}</td>
+                <td class="nw">${s2 === undefined ? '' : `<span style="color:${late ? '#ff453a' : (s2 <= 3 ? '#ff9f0a' : 'var(--text-muted)')};font-weight:${late ? 800 : 600}">${late ? `지연 ${-s2}일` : (s2 === 0 ? '오늘' : `D-${s2}`)}</span>`}</td>
+            </tr>`;
+        };
 
-            return `<div class="glass" style="padding:1.1rem 1.2rem;border-radius:16px;display:flex;flex-direction:column;gap:2px">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-                    <div style="min-width:0">
-                        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-                            <span style="font-size:1rem;font-weight:700">${this._vesc(v.name)}</span>
-                            <span style="font-size:0.7rem;font-weight:700;color:#fff;background:${col};padding:1px 8px;border-radius:20px">${this._vesc(v.category)}</span>
-                            ${act.length?`<span style="font-size:0.72rem;color:var(--primary);font-weight:700">진행 ${act.length}</span>`:''}
-                        </div>
-                        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:3px">${v.address?`<i class="ph ph-map-pin"></i> ${this._vesc(v.address)}`:'<span style="opacity:0.6">주소 없음</span>'}${v.phone?` · ${this._vesc(v.phone)}`:''}</div>
-                    </div>
-                    <button class="vendor-edit" data-id="${v.id}" title="수정" style="flex:0 0 auto;background:none;border:none;color:var(--text-muted);cursor:pointer;padding:2px"><i class="ph ph-pencil-simple"></i></button>
-                </div>
-                <div style="margin-top:6px">${jobRows}</div>
-                <button class="vjob-add" data-id="${v.id}" style="margin-top:8px;align-self:flex-start;background:none;border:1px dashed rgba(148,163,184,0.4);color:var(--text-muted);padding:5px 12px;border-radius:8px;cursor:pointer;font-size:0.8rem"><i class="ph ph-plus"></i> 물품 추가</button>
-            </div>`;
-        }).join('');
-
-        return `
-        <div class="mp">
-            ${this._mpTop('생산현황', `생산처 ${vendors.length} · 진행중 물품 ${active.length}`,
-                `<button id="vendor-add-btn" class="mbtn pri"><i class="ph ph-plus"></i> 생산처 등록</button>`)}
-            <div class="mp-body">
-            <div id="vendor-map" style="height:380px;border-radius:16px;overflow:hidden;margin-bottom:1rem;background:rgba(148,163,184,0.1);z-index:0"></div>
-            ${scheduleStrip}
-            ${vendors.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">${cards}</div>` : `<div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted)">등록된 생산처가 없습니다. 우측 상단 [생산처 등록]으로 시작하세요.</div>`}
-        </div></div>`;
+        return `<div class="mp">
+            ${this._mpTop(cat === 'ALL' ? '생산현황' : cat, `생산처 ${list.length} · 진행중 물품 ${list.reduce((n, v) => n + actOf(v).length, 0)}`, `
+                <div class="mp-find"><i class="ph ph-magnifying-glass"></i>
+                    <input value="${esc(this.venQ || '')}" placeholder="상호·주소·전화" oninput="app.venFind(this.value)"></div>
+                <button class="mbtn" onclick="app.toggleVenMap()">${this.venMap ? '지도 접기' : '지도 보기'}</button>
+                <button class="mbtn pri" onclick="app.selectVendor(null,1)"><i class="ph ph-plus"></i> 생산처 등록</button>`)}
+            ${this.venMap ? `<div id="vendor-map" class="ven-map"></div>` : ''}
+            <div class="it-scroll">
+                <table class="it-tbl"><thead><tr>
+                    <th>상호</th><th>주소</th><th>전화</th><th class="num">진행</th><th>가장 가까운 납기</th>
+                </tr></thead>
+                <tbody>${list.length ? list.map(row).join('')
+                    : `<tr><td colspan="5" class="it-none">${all.length ? '조건에 맞는 생산처가 없습니다' : '등록된 생산처가 없습니다 — 위 [생산처 등록]'}</td></tr>`}</tbody>
+                </table>
+            </div>
+        </div>`;
     }
+    venFind(v) { this.venQ = v; clearTimeout(this._venT); this._venT = setTimeout(() => this.requestRender(), 180); }
+    toggleVenMap() { this.venMap = !this.venMap; this.requestRender(); }
+    //  고르면 오른쪽 칸에서 바로 고친다 — 팝업을 띄우지 않는다
+    selectVendor(id, isNew) {
+        this.venSel = isNew ? '__new' : id;
+        this.venEdit = !!isNew;
+        this._vendorPick = null;
+        if (id) { const v = (this.vendors || []).find(x => String(x.id) === String(id));
+            if (v && v.lat && v.lng) this._vendorPick = { lat: v.lat, lng: v.lng }; }
+        this.requestRender();
+    }
+    toggleVenEdit() { this.venEdit = !this.venEdit; this.requestRender(); }
 
     bindVendorsEvents() {
         const addBtn = document.getElementById('vendor-add-btn');
@@ -10812,24 +10870,30 @@ class BhasApp {
         document.getElementById('vd-save').onclick = () => this.saveVendor(id);
         const delBtn = document.getElementById('vd-delete');
         if (delBtn) delBtn.onclick = () => this.deleteVendor(id);
-        setTimeout(() => {
-            if (typeof L === 'undefined') return;
-            const el = document.getElementById('vd-pickmap');
-            if (!el || el._leaflet_id) return;
-            const start = this._vendorPick ? [this._vendorPick.lat, this._vendorPick.lng] : [37.5686, 127.0093];
-            const map = L.map(el).setView(start, 15);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-            let marker = this._vendorPick ? L.marker(start).addTo(map) : null;
-            map.on('click', (e) => {
-                this._vendorPick = { lat: e.latlng.lat, lng: e.latlng.lng };
-                if (marker) marker.setLatLng(e.latlng); else marker = L.marker(e.latlng).addTo(map);
-            });
-            setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} }, 80);
-        }, 60);
+        setTimeout(() => this._mountPickMap(), 60);
+    }
+    //  위치 찍는 지도 — 팝업이든 오른쪽 칸이든 #vd-pickmap 만 있으면 붙는다
+    _mountPickMap() {
+        if (typeof L === 'undefined') return;
+        const el = document.getElementById('vd-pickmap');
+        if (!el) return;
+        //  한 번 붙다 만 자국이 남으면 다시 못 붙는다 — 지도가 실제로 없으면 자국을 지운다
+        if (el._leaflet_id && !el.classList.contains('leaflet-container')) { delete el._leaflet_id; }
+        if (el._leaflet_id) return;
+        if (!el.offsetHeight) { setTimeout(() => this._mountPickMap(), 120); return; }
+        const start = this._vendorPick ? [this._vendorPick.lat, this._vendorPick.lng] : [37.5686, 127.0093];
+        const map = L.map(el).setView(start, 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+        let marker = this._vendorPick ? L.marker(start).addTo(map) : null;
+        map.on('click', (e) => {
+            this._vendorPick = { lat: e.latlng.lat, lng: e.latlng.lng };
+            if (marker) marker.setLatLng(e.latlng); else marker = L.marker(e.latlng).addTo(map);
+        });
+        setTimeout(() => { try { map.invalidateSize(); } catch (_e) {} }, 80);
     }
 
     async saveVendor(id) {
-        const name = document.getElementById('vd-name').value.trim();
+        const name = (document.getElementById('vd-name') || {}).value?.trim();
         if (!name) { this.showToast('상호는 필수입니다.'); return; }
         const row = {
             name,
@@ -10846,7 +10910,9 @@ class BhasApp {
         else ({ error } = await this.supabase.from('vendors').insert([row]));
         if (error) { this.showToast('저장 실패: ' + error.message); return; }
         this.closeGlobalModal();
+        this.venEdit = false;
         await this.loadVendors();
+        if (!id) { const made = (this.vendors || []).find(x => x.name === name); if (made) this.venSel = made.id; }
         this.showToast('저장되었습니다.');
     }
 
