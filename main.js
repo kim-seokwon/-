@@ -6711,39 +6711,97 @@ class BhasApp {
     _noteProductsHTML() {
         if (!this.noteProd) return '';
         const esc = s => this._vesc(s);
-        const q = (this.noteProdQ || '').trim().toLowerCase();
         const seasons = this._seasons();
-        let items = this.pItems || [];
-        if (q) items = items.filter(i => [i.name, i.pattern_no, i.status].some(v => String(v || '').toLowerCase().includes(q)));
-        const bySea = {};
-        items.forEach(i => { const k = String(i.product_id || ''); (bySea[k] = bySea[k] || []).push(i); });
-        const order = [...seasons.map(s => String(s.id)), ''].filter(k => bySea[k]);
-        const body = !this._itemsLoaded ? '<div class="np-none">제품을 불러오는 중…</div>'
-            : (order.length ? order.map(k => {
-                const sea = seasons.find(s => String(s.id) === k);
-                return `<div class="npv-g">${esc(sea ? sea.name : '시즌 없음')} <em>${bySea[k].length}</em></div>` +
-                    bySea[k].slice(0, 60).map(i => {
-                        const col = this.ITEM_SC[i.status] || '#8e8e93';
-                        return `<div class="npv-i" title="${esc(i.name || '')}">
-                            <button class="npv-t" onclick="app.insertProduct('${i.id}')">
-                                <b>${esc(i.name || '이름 없는 제품')}</b>
-                                <em>${esc([i.pattern_no, i.status].filter(Boolean).join(' · '))}</em>
-                            </button>
-                            <span class="npv-d" style="background:${col}"></span>
-                            ${sea ? `<button class="npv-l" title="이 메모를 '${esc(sea.name)}' 에 붙이기"
-                                onclick="app.linkNoteSeason('${sea.id}')"><i class="ph ph-link-simple"></i></button>` : ''}
-                        </div>`;
-                    }).join('');
-            }).join('') : `<div class="np-none">${q ? '찾는 제품이 없습니다' : '제품이 없습니다'}</div>`);
+        const items = this.pItems || [];
+        const back = (to, label) => `<button class="npv-back" onclick="${to}"><i class="ph ph-caret-left"></i>${esc(label)}</button>`;
+
+        //  ③ 제품 페이지 — 사이드뷰 안에서 그대로 본다
+        if (this.npItem) {
+            const it = items.find(x => String(x.id) === String(this.npItem));
+            if (it) {
+                const sea = seasons.find(p => String(p.id) === String(it.product_id));
+                const ven = (this.vendors || []).find(v => String(v.id) === String(it.vendor_id));
+                const tp = (this._techPacks || []).find(t => String(t.id) === String(it.tech_pack_id));
+                const col = this.ITEM_SC[it.status] || '#8e8e93';
+                const f = (k, v) => v ? `<div class="npv-r"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>` : '';
+                return `<aside class="npv">
+                    <div class="npv-top">${back(`app.npOpen('${it.product_id || ''}')`, sea ? sea.name : '제품')}
+                        <button class="fi-x" onclick="app.toggleNoteProducts()">×</button></div>
+                    <div class="npv-b">
+                        <div class="npv-h"><b>${esc(it.name || '이름 없는 제품')}</b>
+                            <em class="it-tag" style="--c:${col}">${esc(it.status || '')}</em></div>
+                        ${f('브랜드', this._brandNameById(it.brand_id))}
+                        ${f('패턴명', it.pattern_no)}
+                        ${f('시즌', sea ? sea.name : '')}
+                        ${f('공장', ven ? ven.name : '')}
+                        ${f('출고예정일', it.ship_date)}
+                        ${f('오픈일', it.open_date)}
+                        ${f('부자재', it.trims ? '준비됨' : '')}
+                        ${it.memo ? `<div class="npv-memo">${esc(it.memo)}</div>` : ''}
+                        ${tp ? `<button class="mbtn" style="margin:10px 12px" onclick="app.openTechPack('${tp.id}')">작업지시서 열기</button>` : ''}
+                    </div>
+                    <div class="npv-act">
+                        <button class="mbtn pri" onclick="app.quoteProduct('${it.id}')"><i class="ph ph-quotes"></i> 인용</button>
+                        <button class="mbtn" onclick="app.npOpen('${it.product_id || ''}')">목록으로</button>
+                    </div>
+                </aside>`;
+            }
+        }
+
+        //  ② 한 시즌의 제품
+        if (this.npSea !== undefined && this.npSea !== null) {
+            const sea = seasons.find(p => String(p.id) === String(this.npSea));
+            const list = items.filter(i => String(i.product_id || '') === String(this.npSea));
+            return `<aside class="npv">
+                <div class="npv-top">${back('app.npOpen(null)', '시즌')}
+                    <button class="fi-x" onclick="app.toggleNoteProducts()">×</button></div>
+                <div class="npv-sub">${esc(sea ? sea.name : '시즌 없음')} · 제품 ${list.length}</div>
+                <div class="npv-b">${list.length ? list.map(i => {
+                    const col = this.ITEM_SC[i.status] || '#8e8e93';
+                    return `<div class="npv-i">
+                        <span class="npv-t2"><b>${esc(i.name || '이름 없는 제품')}</b>
+                            <em>${esc([i.pattern_no, i.status].filter(Boolean).join(' · '))}</em></span>
+                        <span class="npv-d" style="background:${col}"></span>
+                        <span class="npv-bs">
+                            <button class="npv-b1" title="메모에 인용" onclick="app.quoteProduct('${i.id}')">인용</button>
+                            <button class="npv-b2" title="제품 자세히" onclick="app.npItemOpen('${i.id}')">보기</button>
+                        </span>
+                    </div>`;
+                }).join('') : '<div class="np-none">이 시즌에 제품이 없습니다</div>'}</div>
+            </aside>`;
+        }
+
+        //  ① 시즌 폴더
+        const cnt = pid => items.filter(i => String(i.product_id || '') === String(pid)).length;
+        const noSea = items.filter(i => !i.product_id).length;
         return `<aside class="npv">
             <div class="npv-top"><b>제품리스트</b>
                 <button class="fi-x" onclick="app.toggleNoteProducts()">×</button></div>
-            <div class="mp-find npv-f"><i class="ph ph-magnifying-glass"></i>
-                <input value="${esc(this.noteProdQ || '')}" placeholder="제품 찾기" oninput="app.noteProdFind(this.value)"></div>
-            <div class="npv-b">${body}</div>
-            <div class="npv-hint">이름을 누르면 쓰던 자리에 넣고, 🔗 는 이 메모를 그 시즌에 붙입니다</div>
+            <div class="npv-b">
+                ${!this._itemsLoaded ? '<div class="np-none">제품을 불러오는 중…</div>' : `
+                ${seasons.map(p => `<button class="npv-fd" onclick="app.npOpen('${p.id}')">
+                    <i class="ph-fill ph-folder" style="color:${((mockData.brands || []).find(b => b.id === p.brand_id) || {}).brand_color || '#5ac8fa'}"></i>
+                    <span>${esc(p.name)}</span><em>${cnt(p.id)}</em>
+                    <i class="ph ph-caret-right npv-c"></i></button>`).join('')}
+                ${noSea ? `<button class="npv-fd" onclick="app.npOpen('')">
+                    <i class="ph-fill ph-folder" style="color:#8e8e93"></i>
+                    <span>시즌 없음</span><em>${noSea}</em>
+                    <i class="ph ph-caret-right npv-c"></i></button>` : ''}
+                ${!seasons.length && !noSea ? '<div class="np-none">제품이 없습니다</div>' : ''}`}
+            </div>
+            <div class="npv-hint">시즌을 열어 제품을 고르세요 · <b>인용</b> 은 메모에 넣고 <b>보기</b> 는 자세히 봅니다</div>
         </aside>`;
     }
+    npOpen(pid) { this.npSea = (pid === null ? null : pid); this.npItem = null; this.requestRender(); }
+    npItemOpen(id) { this.npItem = id; this.requestRender(); }
+    //  인용 — 쓰던 자리에 제품 이름을 넣고, 이 메모를 그 시즌에 붙인다
+    async quoteProduct(id) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        this.insertProduct(id);
+        if (it.product_id) await this.linkNoteSeason(it.product_id);
+        else this.showToast(`'${it.name || '제품'}' 을 넣었습니다`);
+    }
+
     //  제품 이름을 쓰던 자리에 넣는다
     insertProduct(id) {
         const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
@@ -7113,12 +7171,6 @@ class BhasApp {
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-folder-simple', '메모', all.length)}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
-                <div class="nt-shead tog${this.noteSeaOpen ? ' on' : ''}" onclick="app.toggleNoteSeasons()">
-                    <i class="ph ph-caret-right"></i>시즌
-                    <button class="nt-add" title="새 시즌" onclick="event.stopPropagation();app.newProjectFromNotes()">＋</button></div>
-                ${!this.noteSeaOpen ? '' : (projects.length
-                    ? projects.map(pr => fold('p:' + pr.id, 'ph-folder-simple', pr.name, cnt(n => n.product_id === pr.id), '#e0a800')).join('')
-                    : '<div class="nt-none sm">시즌 없음</div>')}
                 <button class="nt-prod${this.noteProd ? ' on' : ''}" onclick="app.toggleNoteProducts()"
                     title="제품을 보면서 쓰기">
                     <i class="ph ph-t-shirt"></i><span>제품리스트</span>
