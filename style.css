@@ -4122,3 +4122,11 @@ body.pgripping *{cursor:col-resize !important}
 .npv-act .mbtn{flex:1}
 .macwin .npv-fd,.macwin .npv-back,.macwin .npv-b1,.macwin .npv-b2{box-shadow:none !important}
 .macwin .npv-fd,.macwin .npv-back{border:0 !important;background:transparent !important}
+.npv-fdw{position:relative;display:block}
+.npv-fi{position:absolute;right:6px;top:50%;margin-top:-11px;width:22px;height:22px;border:0;
+  border-radius:50%;background:rgba(127,127,127,.2);color:var(--text-muted);font-size:11px;
+  cursor:default;display:none;place-items:center;padding:0}
+.npv-fdw:hover .npv-fi{display:grid}
+.npv-fi:hover{background:#0a84ff;color:#fff}
+.npv-fdw:hover .npv-c{opacity:0}
+.macwin .npv-fi{padding:0 !important;box-shadow:none !important;border:0 !important}
