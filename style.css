@@ -4171,3 +4171,27 @@ body.pgripping *{cursor:col-resize !important}
   padding:2px 3px;border-radius:6px;flex:0 0 auto}
 .dt-close:hover{background:rgba(127,127,127,.18);color:inherit}
 .macwin .dt-close{box-shadow:none !important;border:0 !important;background:transparent !important}
+
+/* 제품 페이지 — 사이드바 자리까지 덮고 넓게 */
+.npv.wide{left:0;width:calc(var(--c1,212px) + 340px);max-width:92%}
+.npv-b.ip{padding:0}
+.ip-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:14px 16px 6px}
+.ip-h b{font-size:17px;font-weight:800}
+.ip-fs{display:flex;flex-wrap:wrap;gap:6px 16px;padding:0 16px 12px;
+  border-bottom:.5px solid var(--card-border)}
+.ip-f{font-size:12px;display:inline-flex;align-items:baseline;gap:5px}
+.ip-f em{font-style:normal;font-size:10.5px;color:var(--text-muted)}
+.ip-tools{display:flex;align-items:center;gap:3px;padding:7px 12px;
+  border-bottom:.5px solid var(--card-border)}
+.ip-tools button{border:0;background:transparent;color:var(--text-muted);font-size:15px;
+  cursor:default;padding:4px 7px;border-radius:7px}
+.ip-tools button:hover{background:rgba(127,127,127,.16);color:inherit}
+.ip-tools button.on{background:rgba(10,132,255,.16);color:#0a84ff}
+.ip-sv{margin-left:auto;font-size:10.5px;color:var(--text-muted)}
+.ip-ta{width:100%;box-sizing:border-box;min-height:300px;border:0;background:transparent;
+  outline:none;resize:none;font-family:inherit;font-size:13.5px;line-height:1.75;color:inherit;
+  padding:14px 16px 24px}
+.macwin .ip-ta{background:transparent !important;border:0 !important;padding:14px 16px 24px !important}
+.ip-doc{padding:14px 16px 24px;font-size:13.5px;line-height:1.75}
+.ip-doc .nb-img{max-width:100%;border-radius:9px;margin:6px 0}
+@media (max-width:980px){ .npv.wide{width:92%} }

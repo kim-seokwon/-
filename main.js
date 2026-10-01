@@ -6877,7 +6877,7 @@ class BhasApp {
         const items = this.pItems || [];
         const back = (to, label) => `<button class="npv-back" onclick="${to}"><i class="ph ph-caret-left"></i>${esc(label)}</button>`;
 
-        //  ③ 제품 페이지 — 사이드뷰 안에서 그대로 본다
+        //  ③ 제품 페이지 — 사이드바 자리까지 덮고 넓게. 사진 붙이고 글도 쓴다.
         if (this.npItem) {
             const it = items.find(x => String(x.id) === String(this.npItem));
             if (it) {
@@ -6885,25 +6885,39 @@ class BhasApp {
                 const ven = (this.vendors || []).find(v => String(v.id) === String(it.vendor_id));
                 const tp = (this._techPacks || []).find(t => String(t.id) === String(it.tech_pack_id));
                 const col = this.ITEM_SC[it.status] || '#8e8e93';
-                const f = (k, v) => v ? `<div class="npv-r"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>` : '';
-                return `<aside class="npv">
+                const note = this._itemNoteOf(it.id);
+                const text = note ? this._noteText(note) : '';
+                const f = (k, v) => v ? `<span class="ip-f"><em>${esc(k)}</em>${esc(String(v))}</span>` : '';
+                return `<aside class="npv wide">
                     <div class="npv-top">${back(`app.npOpen('${it.product_id || ''}')`, sea ? sea.name : '제품')}
                         <button class="fi-x" onclick="app.toggleNoteProducts()">×</button></div>
-                    <div class="npv-b">
-                        <div class="npv-h"><b>${esc(it.name || '이름 없는 제품')}</b>
-                            <em class="it-tag" style="--c:${col}">${esc(it.status || '')}</em></div>
-                        ${f('브랜드', this._brandNameById(it.brand_id))}
-                        ${f('패턴명', it.pattern_no)}
-                        ${f('시즌', sea ? sea.name : '')}
-                        ${f('공장', ven ? ven.name : '')}
-                        ${f('출고예정일', it.ship_date)}
-                        ${f('오픈일', it.open_date)}
-                        ${f('부자재', it.trims ? '준비됨' : '')}
-                        ${it.memo ? `<div class="npv-memo">${esc(it.memo)}</div>` : ''}
-                        ${tp ? `<button class="mbtn" style="margin:10px 12px" onclick="app.openTechPack('${tp.id}')">작업지시서 열기</button>` : ''}
+                    <div class="npv-b ip">
+                        <div class="ip-h">
+                            <b>${esc(it.name || '이름 없는 제품')}</b>
+                            <em class="it-tag" style="--c:${col}">${esc(it.status || '')}</em>
+                        </div>
+                        <div class="ip-fs">
+                            ${f('브랜드', this._brandNameById(it.brand_id))}${f('패턴명', it.pattern_no)}
+                            ${f('시즌', sea ? sea.name : '')}${f('공장', ven ? ven.name : '')}
+                            ${f('출고예정', it.ship_date)}${f('오픈', it.open_date)}
+                            ${(it.sale_names || []).length ? f('판매명', (it.sale_names || []).join(' · ')) : ''}
+                        </div>
+                        <div class="ip-tools">
+                            <button onclick="app.itemNoteInsert('todo')" title="할 일 [ ]"><i class="ph ph-check-square"></i></button>
+                            <button onclick="app.pickItemPhoto('${it.id}')" title="사진 넣기"><i class="ph ph-image"></i></button>
+                            <span class="nt-div"></span>
+                            <button class="${this.ipPreview ? 'on' : ''}" onclick="app.toggleItemPreview()"
+                                title="${this.ipPreview ? '고치기' : '보기'}"><i class="ph ${this.ipPreview ? 'ph-pencil-simple' : 'ph-eye'}"></i></button>
+                            ${tp ? `<button onclick="app.openTechPack('${tp.id}')" title="작업지시서"><i class="ph ph-clipboard-text"></i></button>` : ''}
+                            <span class="ip-sv" id="ip-sv"></span>
+                        </div>
+                        ${this.ipPreview
+                            ? `<div class="ip-doc nb">${note ? this._noteBodyHTML(note) : '<div class="np-none">아직 적은 게 없습니다</div>'}</div>`
+                            : `<textarea id="item-note" class="ip-ta" placeholder="여기에 적으세요 · [ ] 로 할 일 · 사진은 위 아이콘으로"
+                                oninput="app.itemNoteTyping()" onblur="app.saveItemNote('${it.id}')">${esc(text)}</textarea>`}
                     </div>
                     <div class="npv-act">
-                        <button class="mbtn pri" onclick="app.quoteProduct('${it.id}')"><i class="ph ph-quotes"></i> 인용</button>
+                        <button class="mbtn pri" onclick="app.quoteProduct('${it.id}')"><i class="ph ph-quotes"></i> 메모에 인용</button>
                         <button class="mbtn" onclick="app.npOpen('${it.product_id || ''}')">목록으로</button>
                     </div>
                 </aside>`;
@@ -6958,7 +6972,68 @@ class BhasApp {
             <div class="npv-hint">시즌을 열어 제품을 고르세요 · <b>인용</b> 은 메모에 넣고 <b>보기</b> 는 자세히 봅니다</div>
         </aside>`;
     }
-    npOpen(pid) { this.npSea = (pid === null ? null : pid); this.npItem = null; this.requestRender(); }
+    npOpen(pid) { this.npSea = (pid === null ? null : pid); this.npItem = null; this._itemPhotoFor = null; this.requestRender(); }
+    //  제품 페이지의 글은 그 제품에 붙은 메모 한 장에 담는다
+    //  (새 표를 만들지 않는다 — 메모엔 사진·[ ] 할 일이 이미 붙어 있다)
+    _itemNoteOf(id) { return (this.noteList || []).find(n => String(n.item_id) === String(id)); }
+    toggleItemPreview() { this.ipPreview = !this.ipPreview; this.requestRender(); }
+    itemNoteTyping() {
+        clearTimeout(this._ipT);
+        const sv = document.getElementById('ip-sv'); if (sv) sv.textContent = '쓰는 중…';
+        this._ipT = setTimeout(() => this.saveItemNote(this.npItem), 900);
+    }
+    itemNoteInsert(kind) {
+        const ta = document.getElementById('item-note'); if (!ta) return;
+        const ins = kind === 'todo' ? '[ ] ' : '';
+        const p = ta.selectionStart;
+        const pre = (p === 0 || ta.value[p - 1] === '\n') ? '' : '\n';
+        ta.value = ta.value.slice(0, p) + pre + ins + ta.value.slice(p);
+        const np = p + pre.length + ins.length;
+        ta.focus(); ta.setSelectionRange(np, np);
+        this.itemNoteTyping();
+    }
+    async saveItemNote(id, textOverride) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return null;
+        const ta = document.getElementById('item-note');
+        const text = textOverride != null ? textOverride : (ta ? ta.value : null);
+        if (text == null) return this._itemNoteOf(id);
+        let n = this._itemNoteOf(id);
+        const sv = document.getElementById('ip-sv');
+        if (n) {
+            const body = this._joinNote(this._noteMeta(n), text);
+            if (body === n.body) { if (sv) sv.textContent = ''; return n; }
+            n.body = body; n.updated_at = new Date().toISOString();
+            const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
+            if (sv) sv.textContent = error ? '저장 못 함' : '저장됨';
+            if (error) this.showToast('저장 실패: ' + error.message);
+            setTimeout(() => { const s2 = document.getElementById('ip-sv'); if (s2) s2.textContent = ''; }, 1400);
+            return n;
+        }
+        if (!text.trim()) return null;
+        const sea = this._seasons().find(p => String(p.id) === String(it.product_id));
+        const row = {
+            title: it.name || '제품', body: text, item_id: it.id,
+            product_id: it.product_id || null, brand_id: it.brand_id || null,
+            folder: sea ? sea.name : '제품', scope: it.product_id ? 'project' : 'shared',
+            created_by: this._actor(),
+        };
+        const { data, error } = await this.supabase.from('notes').insert([row]).select().single();
+        if (error) { this.showToast('저장 실패 (047 SQL 필요): ' + error.message); return null; }
+        this.noteList = [data, ...(this.noteList || [])];
+        if (sv) sv.textContent = '저장됨';
+        return data;
+    }
+    //  사진은 그 제품 메모에 붙인다
+    async pickItemPhoto(id) {
+        let n = this._itemNoteOf(id);
+        if (!n) n = await this.saveItemNote(id, (document.getElementById('item-note') || {}).value || ' ');
+        if (!n) { this.showToast('먼저 한 글자라도 적어주세요'); return; }
+        this.noteSel = n.id; this._noteShown = n.id;
+        const ta = document.getElementById('item-note');
+        this._notePhotoAt = ta ? ta.selectionStart : null;
+        this._itemPhotoFor = id;
+        this.pickNotePhoto();
+    }
     npItemOpen(id) { this.npItem = id; this.requestRender(); }
     //  인용 — 쓰던 자리에 제품 이름을 넣고, 이 메모를 그 시즌에 붙인다
     async quoteProduct(id) {
@@ -7045,6 +7120,20 @@ class BhasApp {
             n.updated_at = new Date().toISOString();
             const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
             if (error) throw error;
+            //  제품 페이지에서 넣은 사진은 그쪽 글칸에 꽂는다
+            const ipTa = document.getElementById('item-note');
+            if (this._itemPhotoFor && ipTa) {
+                const at2 = Math.min(this._notePhotoAt ?? ipTa.value.length, ipTa.value.length);
+                const b2 = ipTa.value.slice(0, at2), a2 = ipTa.value.slice(at2);
+                const p2 = (b2 && !b2.endsWith('\n')) ? '\n' : '';
+                const q2 = (a2 && !a2.startsWith('\n')) ? '\n' : '';
+                ipTa.value = b2 + p2 + mark + q2 + a2;
+                this._notePhotoAt = at2 + p2.length + mark.length + q2.length;
+                ipTa.focus(); ipTa.setSelectionRange(this._notePhotoAt, this._notePhotoAt);
+                await this.saveItemNote(this._itemPhotoFor);
+                this.showToast('사진을 넣었습니다');
+                return;
+            }
             //  보기 모드로 튕기지 않는다 — 쓰던 자리에 그대로 있게
             if (ta) {
                 ta.value = next;
@@ -7279,6 +7368,7 @@ class BhasApp {
         const cur = this.noteFolder || 'private';
         const projects = (mockData.products || []);
         const inFolder = (n) => {
+            if (n.item_id) return false;   // 제품 기록장은 제품 페이지에서 본다
             if (cur === 'all') return true;
             if (cur === 'private') return n.scope === 'private' && n.owner === me;
             if (cur.startsWith('pf:')) return n.scope === 'private' && n.owner === me && (n.folder || '개인') === cur.slice(3);
