@@ -7114,14 +7114,14 @@ class BhasApp {
                 ${fold('all', 'ph-folder-simple', '메모', all.length)}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
                 <div class="nt-shead tog${this.noteSeaOpen ? ' on' : ''}" onclick="app.toggleNoteSeasons()">
-                    <i class="ph ph-caret-right"></i>제품리스트
+                    <i class="ph ph-caret-right"></i>시즌
                     <button class="nt-add" title="새 시즌" onclick="event.stopPropagation();app.newProjectFromNotes()">＋</button></div>
                 ${!this.noteSeaOpen ? '' : (projects.length
                     ? projects.map(pr => fold('p:' + pr.id, 'ph-folder-simple', pr.name, cnt(n => n.product_id === pr.id), '#e0a800')).join('')
                     : '<div class="nt-none sm">시즌 없음</div>')}
                 <button class="nt-prod${this.noteProd ? ' on' : ''}" onclick="app.toggleNoteProducts()"
                     title="제품을 보면서 쓰기">
-                    <i class="ph ph-t-shirt"></i><span>제품 보기</span>
+                    <i class="ph ph-t-shirt"></i><span>제품리스트</span>
                     <i class="ph ${this.noteProd ? 'ph-caret-left' : 'ph-caret-right'} nt-prod-c"></i></button>
             </aside>
             ${this._noteProductsHTML()}
