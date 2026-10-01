@@ -3769,3 +3769,24 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 /* 브랜드 레일 */
 .macwin .analysis-brandbar{width:138px !important;flex-shrink:0}
 .macwin .analysis-layout{gap:14px !important}
+
+/* ── 시즌 — 파인더 결. 시즌 하나가 폴더다 ───────────────────── */
+.mp>.fd-body{flex:1;min-height:0;overflow:auto}
+.fd-gh{font-size:11.5px;font-weight:800;color:var(--text-muted);padding:14px 16px 4px;
+  display:flex;align-items:center;gap:6px}
+.fd-gh em{font-style:normal;font-weight:600;opacity:.65}
+.fd-grid{grid-template-columns:repeat(auto-fill,minmax(116px,1fr))}
+.fd-it{position:relative}
+.fd-th .fd-badge{position:absolute;right:50%;margin-right:-30px;top:6px;font-style:normal;
+  font-size:10px;font-weight:800;color:#fff;background:#0a84ff;border-radius:99px;
+  padding:1px 6px;line-height:1.5;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.fd-sub{font-size:10.5px;color:var(--text-muted);text-align:center;margin-top:2px;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fd-r.se{grid-template-columns:1fr 130px 54px 112px 92px}
+.fd-r.se span:not(.fd-rn){color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fd-r.se.head span{color:var(--text-muted)}
+.macwin .fd-it,.macwin .fd-r.se{cursor:default}
+.macwin .fd-seg button{border:0 !important;background:transparent !important;box-shadow:none !important;
+  color:var(--text-muted) !important;padding:3px 9px !important;border-radius:6px !important;font-size:14px !important}
+.macwin .fd-seg button.on{background:var(--card-bg) !important;color:inherit !important;
+  box-shadow:0 .5px 2px rgba(0,0,0,.14) !important}

@@ -3203,224 +3203,69 @@ class BhasApp {
             });
             const completedProducts = products.filter(p => (p.currentStage || 'consulting') === 'shipping');
 
-            const renderProjectCard = (product) => {
-                const brand = mockData.brands?.find(b => b.id === product.brand_id);
-                const company = mockData.companies.find(c => c.id === product.company_id);
-                const brandName = brand ? brand.name : (company ? company.name : '알 수 없는 브랜드');
-                const brandColor = brand ? (brand.brand_color || 'var(--primary)') : 'var(--primary)';
-                const progress = getProgress(product);
-                
-                const lastCompletedStage = STAGES.slice().reverse().find(s => isStageCompleted(product, s));
-                const currentStageObj = lastCompletedStage || STAGES[0];
-                const statusLabel = lastCompletedStage ? lastCompletedStage.label : (progress === 0 && (product.history || []).length > 1 ? '상담 진행' : '시작 전');
-                return `
-                    <div class="project-card glass fade-in" data-id="${product.id}"
-                        oncontextmenu="app.projectMenu(event,'${product.id}')"
-                        style="cursor: pointer; border: 1px solid ${brandColor}20;">
-                        <div class="card-header" style="margin-bottom: 12px;">
-                            <span class="company-tag" style="border-color: ${brandColor}; color: ${this._contrastText(brandColor)}; background: ${brandColor}; border-width: 1px;">
-                                <i class="ph ph-buildings"></i> ${brandName}
-                            </span>
-                            <span class="deadline" style="font-size: 0.75rem; color: var(--text-muted);">~ ${this.formatDateToUI(product.deadline)}</span>
-                        </div>
-                        <h3>${product.name}</h3>
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${progress}%"></div>
-                            </div>
-                            <div class="progress-labels" style="justify-content: flex-start; margin-top: 8px;">
-                                <span style="font-size: 0.8rem; font-weight: 500;">현재: ${statusLabel}</span>
-                            </div>
-                        </div>
-                        <div class="card-footer" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                            <div style="display: flex; align-items: center; gap: 4px;"><i class="ph ph-clock"></i> 마감: ${this.formatDateToUI(product.deadline)}</div>
-                            <div style="display: flex; gap: 6px; align-items: center;">
-                                <span onclick="event.stopPropagation();app.openSeasonItems('${product.id}')" title="이 시즌의 제품리스트"
-                                    style="display:flex;align-items:center;gap:3px;font-size:0.72rem;font-weight:700;color:#0a84ff;background:rgba(10,132,255,0.12);padding:2px 7px;border-radius:7px;cursor:pointer"><i class="ph ph-t-shirt"></i> 제품 ${(this.pItems || []).filter(i => String(i.product_id) === String(product.id)).length}</span>
-                                ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="시즌 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
+            //  맥 '파인더' 결 — 시즌 한 칸이 폴더다. 열면 그 시즌의 제품리스트로 간다.
+            const esc = x => this._vesc(x);
+            const view = this.seasonView || 'grid';
+            const sq = (this.seasonQ || '').trim().toLowerCase();
+            const brandOf = p => (mockData.brands || []).find(b => b.id === p.brand_id);
+            const itemsOf = p => (this.pItems || []).filter(i => String(i.product_id) === String(p.id)).length;
+            const dueOf = p => p.deadline || p.due_date || '';
+            const stageOf = p => {
+                const last = STAGES.slice().reverse().find(x => isStageCompleted(p, x));
+                return last ? last.label : '시작 전';
             };
+            const match = p => !sq || [p.name, (brandOf(p) || {}).name].some(v => String(v || '').toLowerCase().includes(sq));
 
-            const renderProjectTable = (productList) => {
-                if (productList.length === 0) return '';
-                
-                // 브랜드(또는 회사)별 그룹화
-                const grouped = productList.reduce((acc, p) => {
-                    const groupId = p.brand_id || p.company_id;
-                    if (!acc[groupId]) acc[groupId] = [];
-                    acc[groupId].push(p);
-                    return acc;
-                }, {});
-
-                return Object.keys(grouped).map(groupId => {
-                    const brand = mockData.brands?.find(b => b.id === groupId);
-                    const company = mockData.companies.find(c => c.id === groupId);
-                    const groupName = brand ? brand.name : (company ? company.name : '알 수 없는 브랜드');
-                    
-                    // 브랜드 색상 결정: 브랜드 DB에 정의된 색상 -> 기존 하드코딩된 대행사 색상 -> 기본색
-                    let brandColor = 'var(--primary)';
-                    if (brand && brand.brand_color) {
-                        brandColor = brand.brand_color;
-                    } else if (groupId === 'company_a') {
-                        brandColor = '#3b82f6';
-                    } else if (groupId === 'company_b') {
-                        brandColor = '#10b981';
-                    }
-                    
-                    const projects = grouped[groupId].sort((a, b) => a.name.localeCompare(b.name));
-
-                    const isActive = (p) => {
-                        const stage = p.currentStage || 'consulting';
-                        if (stage === 'shipping') return false;
-                        if (stage !== 'consulting') return true;
-                        return (p.stages_data?.consulting?.status === 'completed' || p.history?.length > 0 || (p.documents && p.documents.length > 0));
-                    };
-                    const activeCount = projects.filter(p => isActive(p)).length;
-                    const scheduledCount = projects.filter(p => {
-                        const stage = p.currentStage || 'consulting';
-                        return stage !== 'shipping' && !isActive(p);
-                    }).length;
-                    const completedCount = projects.filter(p => (p.currentStage || 'consulting') === 'shipping').length;
-
-                    return `
-                        <div class="glass" style="border-radius: 16px; overflow: hidden; margin-bottom: 2rem; border: 1px solid ${brandColor}30;">
-                            <div style="background: ${brandColor}10; padding: 12px 16px; border-bottom: 1px solid ${brandColor}20; display: flex; align-items: center; justify-content: space-between;">
-                                <h3 style="font-size: 1rem; color: white; display: flex; align-items: center; gap: 8px; margin: 0;">
-                                    <span class="company-tag" style="border-color: ${brandColor}; color: ${this._contrastText(brandColor)}; background: ${brandColor}; border-width: 1px; scale: 0.9;">
-                                        <i class="ph ph-buildings"></i> ${groupName}
-                                    </span>
-                                </h3>
-                                <div style="display: flex; gap: 1.5rem;">
-                                    <div class="stat-item">
-                                        <div class="stat-label" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                            <i class="ph ph-rocket-launch" style="color: var(--primary);"></i> 진행 중
-                                        </div>
-                                        <div class="stat-value" style="font-size: 2rem; font-weight: 800; color: var(--primary);">${activeCount}</div>
-                                    </div>
-                                    <div class="stat-item">
-                                        <div class="stat-label" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                            <i class="ph ph-calendar-blank" style="color: #f59e0b;"></i> 예정
-                                        </div>
-                                        <div class="stat-value" style="font-size: 2rem; font-weight: 800; color: #f59e0b;">${scheduledCount}</div>
-                                    </div>
-                                    <div class="stat-item">
-                                        <div class="stat-label" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                            <i class="ph ph-check-circle" style="color: #10b981;"></i> 완료 됨
-                                        </div>
-                                        <div class="stat-value" style="font-size: 2rem; font-weight: 800; color: #10b981;">${completedCount}</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <table class="mtbl" style="width: 100%; border-collapse: collapse; text-align: left;">
-                                <thead>
-                                    <tr style="background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--card-border);">
-                                        <th style="color: var(--text-muted); font-weight: 500">시즌 명</th>
-                                        <th style="color: var(--text-muted); font-weight: 500">마감일</th>
-                                        <th style="color: var(--text-muted); font-weight: 500">진행 상황</th>
-                                        <th style="text-align: center; color: var(--text-muted); font-weight: 500">액션</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${projects.map(product => {
-                                        const progress = getProgress(product);
-                                        const lastCompletedStage = STAGES.slice().reverse().find(s => isStageCompleted(product, s));
-                                        const statusLabel = lastCompletedStage ? lastCompletedStage.label : (progress === 0 && (product.history || []).length > 1 ? '상담 진행' : '시작 전');
-                                        
-                                        return `
-                                            <tr class="project-row" data-id="${product.id}" style="border-bottom: 1px solid rgba(var(--tint),0.05); transition: 0.2s; cursor: pointer;" onmouseover="this.style.background='rgba(var(--tint),0.02)'" onmouseout="this.style.background='transparent'">
-                                                <td style="font-weight: 600">
-                                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                                        <i class="ph ph-briefcase" style="color: ${brandColor}; opacity: 0.7;"></i>
-                                                        ${product.name}
-                                                    </div>
-                                                </td>
-                                                <td style="color: var(--text-muted)">${this.formatDateToUI(product.deadline)}</td>
-                                                <td>
-                                                    <div style="display: flex; align-items: center; gap: 10px;">
-                                                        <div style="flex: 1; height: 6px; background: rgba(var(--tint),0.05); border-radius: 3px; overflow: hidden; max-width: 100px;">
-                                                            <div style="width: ${progress}%; height: 100%; background: ${brandColor}; box-shadow: 0 0 10px ${brandColor}44;"></div>
-                                                        </div>
-                                                        <span style="font-size: 0.75rem; color: ${progress > 0 ? 'white' : 'var(--text-muted)'};">${statusLabel} (${progress}%)</span>
-                                                    </div>
-                                                </td>
-                                                <td style="text-align: center">
-                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                                        ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="시즌 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        `;
-                                    }).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    `;
-                }).join('');
+            const tile = p => {
+                const b = brandOf(p), col = (b && b.brand_color) || '#0a84ff', n = itemsOf(p);
+                return `<button class="fd-it" onclick="app.openSeasonItems('${p.id}')"
+                    oncontextmenu="app.projectMenu(event,'${p.id}')" title="${esc(p.name)}">
+                    <span class="fd-th"><i class="ph-fill ph-folder" style="color:${col}"></i>${n ? `<em class="fd-badge">${n}</em>` : ''}</span>
+                    <span class="fd-nm">${esc(p.name)}</span>
+                    <span class="fd-sub">${b ? esc(b.name) : '브랜드 없음'}</span>
+                </button>`;
             };
-
-            const renderSection = (list, isTable, emptyMsg) => {
-                if (list.length === 0) return `<p style="color: var(--text-muted); margin-bottom: 2rem;">${emptyMsg}</p>`;
-                return isTable ? renderProjectTable(list) : `<div class="project-grid" style="margin-bottom: 3rem;">${list.map(renderProjectCard).join('')}</div>`;
+            const row = p => {
+                const b = brandOf(p), col = (b && b.brand_color) || '#0a84ff';
+                return `<div class="fd-r se" onclick="app.openSeasonItems('${p.id}')"
+                    oncontextmenu="app.projectMenu(event,'${p.id}')">
+                    <span class="fd-rn"><i class="ph-fill ph-folder" style="color:${col}"></i>${esc(p.name)}</span>
+                    <span>${b ? esc(b.name) : '—'}</span>
+                    <span style="text-align:right">${itemsOf(p) || '—'}</span>
+                    <span>${esc(dueOf(p) || '—')}</span>
+                    <span>${esc(stageOf(p))}</span>
+                </div>`;
             };
-
-            const isTable = this.dashboardViewType === 'table';
+            const group = (label, list) => {
+                const l = list.filter(match);
+                if (!l.length) return '';
+                return `<div class="fd-gh">${esc(label)} <em>${l.length}</em></div>` +
+                    (view === 'grid' ? `<div class="fd-grid">${l.map(tile).join('')}</div>`
+                                     : `<div class="fd-list">${l.map(row).join('')}</div>`);
+            };
+            const head = view === 'list'
+                ? `<div class="fd-r se head"><span>이름</span><span>브랜드</span><span style="text-align:right">제품</span><span>마감</span><span>진행</span></div>`
+                : '';
+            const body = [['진행 중', activeProducts], ['예정', scheduledProducts], ['완료', completedProducts]]
+                .map(([k, v]) => group(k, v)).join('');
 
             const kpi = this.getDashboardKPIs(products);
-            const kpiStrip = `
-                <div class="kpi-strip">
-                    <div class="glass kpi-card">
-                        <span class="kpi-ico"><i class="ph ph-rocket-launch"></i></span>
-                        <div class="kpi-body"><span class="kpi-num">${kpi.activeCount}</span><span class="kpi-label">진행 시즌</span></div>
-                    </div>
-                    <div class="glass kpi-card">
-                        <span class="kpi-ico"><i class="ph ph-chart-line-up"></i></span>
-                        <div class="kpi-body"><span class="kpi-num">${kpi.avgProgress}<small>%</small></span><span class="kpi-label">평균 진행률</span></div>
-                    </div>
-                    <div class="glass kpi-card ${kpi.delayed > 0 ? 'kpi-danger' : ''}">
-                        <span class="kpi-ico"><i class="ph ph-warning-circle"></i></span>
-                        <div class="kpi-body"><span class="kpi-num">${kpi.delayed}</span><span class="kpi-label">지연 시즌</span></div>
-                    </div>
-                    <div class="glass kpi-card ${kpi.dueThisWeek > 0 ? 'kpi-warn' : ''}">
-                        <span class="kpi-ico"><i class="ph ph-clock-countdown"></i></span>
-                        <div class="kpi-body"><span class="kpi-num">${kpi.dueThisWeek}</span><span class="kpi-label">7일내 마감</span></div>
-                    </div>
-                    <div class="glass kpi-card">
-                        <span class="kpi-ico"><i class="ph ph-list-checks"></i></span>
-                        <div class="kpi-body"><span class="kpi-num">${kpi.openTodos}</span><span class="kpi-label">미완료 할일</span></div>
-                    </div>
-                </div>
-            `;
-
             const canAdd = this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF';
+            const seg = (k, icon, t) => `<button class="${view === k ? 'on' : ''}" onclick="app.setSeasonView('${k}')" title="${t}"><i class="ph ${icon}"></i></button>`;
+
             return this._appShell('dashboard', `<div class="mp">
-                ${this._mpTop('시즌', `진행 ${activeProducts.length} · 예정 ${scheduledProducts.length} · 완료 ${completedProducts.length}`,
-                    `${canAdd ? `<button id="add-project-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 시즌</button>` : ''}`)}
-                <div class="mp-body">
-                    ${kpiStrip}
-                    <div class="mp-sec">진행 중</div>
-                    ${renderSection(activeProducts, isTable, '진행 중인 시즌이 없습니다.')}
-
-                    <div class="mp-sec" style="display:flex;align-items:center;justify-content:space-between">예정
-                        <button class="toggle-btn ${this.scheduledExpanded === false ? 'collapsed' : ''}" id="toggle-scheduled-btn" title="접기/펴기"><i class="ph ph-caret-down"></i></button>
-                    </div>
-                    <div class="collapsible-content ${this.scheduledExpanded === false ? 'collapsed' : ''}" id="scheduled-section">
-                        ${renderSection(scheduledProducts, isTable, '예정된 시즌이 없습니다.')}
-                    </div>
-
-                    <div class="mp-sec" style="display:flex;align-items:center;justify-content:space-between">완료
-                        <button class="toggle-btn ${!this.completedExpanded ? 'collapsed' : ''}" id="toggle-completed-btn" title="접기/펴기"><i class="ph ph-caret-down"></i></button>
-                    </div>
-                    <div class="collapsible-content ${!this.completedExpanded ? 'collapsed' : ''}" id="completed-section">
-                        ${renderSection(completedProducts, isTable, '완료된 시즌이 없습니다.')}
-                    </div>
-
-                    <div class="mobile-logout-area" style="margin-top:28px;padding-top:16px;border-top:.5px solid var(--card-border);text-align:center">
-                        <button id="mobile-logout-btn" class="mbtn danger"><i class="ph ph-sign-out"></i> 로그아웃</button>
-                        <div style="margin-top:8px;font-size:11px;color:var(--text-muted)">${this.currentUser.name} (${this.currentUser.role})</div>
-                    </div>
+                ${this._mpTop('시즌', `${products.length}개`, `
+                    <div class="fd-seg">${seg('grid', 'ph-squares-four', '아이콘 보기')}${seg('list', 'ph-list-dashes', '목록 보기')}</div>
+                    <div class="mp-find"><i class="ph ph-magnifying-glass"></i>
+                        <input value="${esc(this.seasonQ || '')}" placeholder="시즌 찾기" oninput="app.seasonFind(this.value)"></div>
+                    ${canAdd ? `<button id="add-project-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 시즌</button>` : ''}`)}
+                <div class="fd-body">
+                    ${head}
+                    ${body || `<div class="fd-none">${sq ? '찾는 시즌이 없습니다' : '시즌이 없습니다 — 위 [새 시즌]으로 만드세요'}</div>`}
+                </div>
+                <div class="fd-path">
+                    <i class="ph ph-folder"></i><span>시즌 ${products.length}개</span>
+                    <span class="fd-cnt">평균 진행 ${kpi.avgProgress}%${kpi.delayed ? ` · 지연 ${kpi.delayed}` : ''}${kpi.dueThisWeek ? ` · 7일내 마감 ${kpi.dueThisWeek}` : ''}${kpi.openTodos ? ` · 미완료 할일 ${kpi.openTodos}` : ''}</span>
                 </div>
             </div>`);
         } else if (this.currentView === 'all_todos') {
@@ -10212,6 +10057,8 @@ class BhasApp {
     }
 
     selItem(id) { this.itemSel = id; this.requestRender(); }
+    setSeasonView(v) { this.seasonView = v; this.requestRender(); }
+    seasonFind(v) { this.seasonQ = v; clearTimeout(this._seaQT); this._seaQT = setTimeout(() => this.requestRender(), 200); }
     //  시즌 카드 → 그 시즌만 걸러진 제품리스트
     openSeasonItems(pid) {
         this.itemSeason = pid; this.itemStatus = 'ALL'; this.itemQ = '';
