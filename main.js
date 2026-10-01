@@ -2456,7 +2456,8 @@ class BhasApp {
         });
         const remList = (() => {
             const t = new Date().toISOString().slice(0, 10);
-            const open = allDue.filter(x => !x.done).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+            //  미리알림은 '체크해서 끝내는 것' 만. 생산 작업·시즌 마감은 캘린더에만 둔다.
+            const open = allDue.filter(x => !x.done && ['rem', 'todo', 'note'].includes(x.kind)).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
             const soon = open.filter(x => x.date && x.date <= t).concat(open.filter(x => !x.date || x.date > t)).slice(0, 7);
             if (!soon.length) return '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">미리알림·할일을 넣으면 여기 모입니다</div>';
             return soon.map(x => {
@@ -9988,16 +9989,78 @@ class BhasApp {
             </aside>
         </div>`;
     }
-    async quickAddFromCalendar() {
+    //  캘린더에서 더하기 — 미리알림 목록에 넣거나, 메모 폴더에 [ ] 로 적는다.
+    //  메모에 적으면 그 메모에서도 보이고 체크하면 여기서도 지워진다(양방향).
+    quickAddFromCalendar() {
         const day = this.calDay || new Date().toISOString().slice(0, 10);
-        const title = await this.showPrompt(`${day} 에 추가할 내용`); if (!title || !title.trim()) return;
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const esc = x => this._vesc(x);
+        const lists = [...new Set((this.remList || []).map(r => r.list_name || '미리 알림'))];
+        if (!lists.length) lists.push('미리 알림');
+        const folders = [...new Set((this.noteList || []).filter(n => !n.item_id).map(n => n.folder || '공용'))];
+        c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:400px">
+            <div class="hk-top"><b>${esc(day)} 에 더하기</b>
+                <button class="fi-x" onclick="app.closeGlobalModal()">×</button></div>
+            <div class="fi-r" style="margin-top:12px"><span>내용</span>
+                <input id="qa-t" class="nw-f" placeholder="할 일 또는 일정" autocomplete="off"></div>
+            <div class="fi-r"><span>어디에</span>
+                <select id="qa-w" class="nw-f">
+                    <optgroup label="미리알림 목록">
+                        ${lists.map(l => `<option value="r:${esc(l)}">${esc(l)}</option>`).join('')}
+                    </optgroup>
+                    ${folders.length ? `<optgroup label="메모 폴더 — [ ] 로 적힙니다">
+                        ${folders.map(f => `<option value="f:${esc(f)}">${esc(f)}</option>`).join('')}
+                    </optgroup>` : ''}
+                </select></div>
+            <p class="fi-note">메모 폴더를 고르면 그 폴더의 <b>${esc(day)}</b> 메모에 <b>[ ] 내용 ${esc(day)}</b> 로 적힙니다.
+                메모에서 체크하면 여기서도 지워집니다.</p>
+            <div class="fi-act">
+                <button class="mbtn" onclick="app.closeGlobalModal()">취소</button>
+                <button class="mbtn pri" id="qa-ok">더하기</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        const ti = c.querySelector('#qa-t');
+        ti.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); c.querySelector('#qa-ok').click(); } };
+        setTimeout(() => ti.focus(), 40);
+        c.querySelector('#qa-ok').onclick = async () => {
+            const title = ti.value.trim(); if (!title) { ti.focus(); return; }
+            const w = c.querySelector('#qa-w').value;
+            this.closeGlobalModal();
+            if (w.startsWith('r:')) return this._addRemOn(day, title, w.slice(2));
+            return this._addNoteTodoOn(day, title, w.slice(2));
+        };
+    }
+    async _addRemOn(day, title, list) {
         try {
             const { data, error } = await this.supabase.from('reminders')
-                .insert([{ title: title.trim(), due_date: day, list_name: '미리 알림', created_by: this.currentUser?.name || null }])
+                .insert([{ title, due_date: day, list_name: list || '미리 알림', created_by: this.currentUser?.name || null }])
                 .select('*').single();
             if (error) throw error;
             this.remList = [data, ...(this.remList || [])];
             this.requestRender();
+            this.showToast(`'${list}' 에 넣었습니다`);
+        } catch (e) { this.showToast('추가 실패: ' + (e.message || e)); }
+    }
+    //  그 폴더의 그 날짜 메모를 찾거나 만들어 [ ] 한 줄을 붙인다
+    async _addNoteTodoOn(day, title, folder) {
+        const line = `[ ] ${title} ${day}`;
+        let n = (this.noteList || []).find(x => (x.folder || '공용') === folder && x.title === day);
+        try {
+            if (n) {
+                const text = this._noteText(n);
+                const body = this._joinNote(this._noteMeta(n), (text ? text + '\n' : '') + line);
+                const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
+                if (error) throw error;
+                n.body = body; n.updated_at = new Date().toISOString();
+            } else {
+                const row = { title: day, body: line, folder, scope: 'shared', created_by: this._actor() };
+                const { data, error } = await this.supabase.from('notes').insert([row]).select().single();
+                if (error) throw error;
+                this.noteList = [data, ...(this.noteList || [])];
+            }
+            this.requestRender();
+            this.showToast(`'${folder}' 메모에 [ ] 로 적었습니다`);
         } catch (e) { this.showToast('추가 실패: ' + (e.message || e)); }
     }
     bindCalendarEvents() {
