@@ -2459,7 +2459,7 @@ class BhasApp {
             const t = new Date().toISOString().slice(0, 10);
             //  미리알림은 '체크해서 끝내는 것' 만. 생산 작업·시즌 마감은 캘린더에만 둔다.
             const open = allDue.filter(x => !x.done && ['rem', 'todo', 'note'].includes(x.kind)).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
-            const soon = open.filter(x => x.date && x.date <= t).concat(open.filter(x => !x.date || x.date > t)).slice(0, 7);
+            const soon = open.filter(x => x.date && x.date <= t).concat(open.filter(x => !x.date || x.date > t)).slice(0, 12);
             if (!soon.length) return '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">미리알림·할일을 넣으면 여기 모입니다</div>';
             return soon.map(x => {
                 const dd = dday(x.date);
@@ -2637,7 +2637,7 @@ class BhasApp {
 
             <!-- ═══ 블록 2: 미리알림 · 통합 캘린더 ═══ -->
             ${sectionHead('ph-list-checks', '미리알림 · 통합 캘린더', '미리알림 · 할일 · 메모 체크 · 생산 작업 · 시즌 마감을 한데')}
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;align-items:start">
                 ${panel('미리알림', remList,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('reminders')">미리알림 →</span>`)}
                 ${panel(`${mm}월 통합 캘린더`, calendar,
@@ -2838,6 +2838,95 @@ class BhasApp {
         items: 'ph-t-shirt', dashboard: 'ph-calendar-blank', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
         sample_maker: 'ph-scissors', quotes: 'ph-receipt',
     };
+    // ── 모든 표에 쓰는 줄 세우기 · 거르기 ──────────────────────
+    //  화면마다 따로 짜지 않는다. 머리글을 누르면 정렬, 깔때기를 누르면 그 칸 값으로 거른다.
+    _tblState(view) {
+        this.tblSort = this.tblSort || {};
+        this.tblFilt = this.tblFilt || {};
+        return { srt: this.tblSort[view] || { k: '', dir: 1 }, flt: this.tblFilt[view] || {} };
+    }
+    sortTbl(view, k) {
+        this.tblSort = this.tblSort || {};
+        const cur = this.tblSort[view] || { k: '', dir: 1 };
+        this.tblSort[view] = cur.k === k ? (cur.dir > 0 ? { k, dir: -1 } : { k: '', dir: 1 }) : { k, dir: 1 };
+        this.requestRender();
+    }
+    clearTblFilters(view) {
+        this.tblFilt = this.tblFilt || {}; this.tblFilt[view] = {};
+        document.getElementById('colf')?.remove();
+        this.requestRender();
+    }
+    //  머리글 한 줄 — cols: [[키, 이름, 칸모양]]
+    _thead(view, cols) {
+        const esc = s => this._vesc(s);
+        const { srt, flt } = this._tblState(view);
+        return cols.map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${flt[k] ? ' flt' : ''}"
+            onclick="app.sortTbl('${view}','${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
+            onclick="app.openTblFilter(event,'${view}','${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${flt[k] ? '-fill' : ''}"></i></button></th>`).join('');
+    }
+    //  거르고 줄 세운 결과 — val(row, key) 가 그 칸의 값을 돌려준다
+    _applyTbl(view, rows, val, base) {
+        const { srt, flt } = this._tblState(view);
+        this._tblVal = this._tblVal || {};
+        this._tblVal[view] = val;
+        this._tblBase = this._tblBase || {};
+        this._tblBase[view] = base || rows;
+        let out = rows;
+        Object.keys(flt).forEach(k => {
+            const keep = new Set(flt[k]);
+            out = out.filter(r => keep.has(String(val(r, k) ?? '')));
+        });
+        if (srt.k) {
+            out = [...out].sort((a, b) => {
+                const A = val(a, srt.k), B = val(b, srt.k);
+                if (typeof A === 'number' && typeof B === 'number') return (A - B) * srt.dir;
+                return String(A ?? '').localeCompare(String(B ?? ''), 'ko', { numeric: true }) * srt.dir;
+            });
+        }
+        return out;
+    }
+    openTblFilter(ev, view, k, label) {
+        ev && ev.stopPropagation();
+        document.getElementById('colf')?.remove();
+        const esc = x => this._vesc(x);
+        const val = (this._tblVal || {})[view];
+        const base = (this._tblBase || {})[view] || [];
+        if (!val) return;
+        const counts = new Map();
+        base.forEach(r => { const v = String(val(r, k) ?? ''); counts.set(v, (counts.get(v) || 0) + 1); });
+        const vals = [...counts.keys()].sort((a, b) => String(a).localeCompare(String(b), 'ko', { numeric: true }));
+        const cur = (this.tblFilt || {})[view]?.[k];
+        const sel = new Set(cur || vals);
+        const el = document.createElement('div');
+        el.id = 'colf'; el.className = 'colf';
+        el.innerHTML = `<div class="colf-h">${esc(label)} 거르기
+                <button onclick="app.clearTblFilters('${view}')">모두</button></div>
+            <div class="colf-b">${vals.map(v => `<label class="pa-m colf-m">
+                <input type="checkbox" value="${esc(v)}" ${sel.has(v) ? 'checked' : ''}>
+                <span>${esc(v) || '<em>(빈칸)</em>'}<em>${counts.get(v)}</em></span></label>`).join('')}</div>
+            <div class="colf-a"><button class="mbtn" id="colf-x">취소</button>
+                <button class="mbtn pri" id="colf-ok">적용</button></div>`;
+        document.body.appendChild(el);
+        const th = ev && ev.target.closest('th');
+        if (th) { const r = th.getBoundingClientRect();
+            el.style.left = Math.min(r.left, innerWidth - el.offsetWidth - 10) + 'px';
+            el.style.top = (r.bottom + 4) + 'px'; }
+        el.querySelector('#colf-x').onclick = () => el.remove();
+        el.querySelector('#colf-ok').onclick = () => {
+            const picked = [...el.querySelectorAll('input:checked')].map(i => i.value);
+            this.tblFilt = this.tblFilt || {}; this.tblFilt[view] = this.tblFilt[view] || {};
+            if (picked.length === vals.length) delete this.tblFilt[view][k]; else this.tblFilt[view][k] = picked;
+            el.remove(); this.requestRender();
+        };
+        this._colfOff = (e) => { if (!el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', this._colfOff); } };
+        setTimeout(() => document.addEventListener('mousedown', this._colfOff), 0);
+    }
+    //  거르는 중 표시 — 머리막대에 붙인다
+    _fltBadge(view) {
+        const n = Object.keys((this.tblFilt || {})[view] || {}).length;
+        return n ? `<button class="flt-off" onclick="app.clearTblFilters('${view}')" title="거르기 모두 풀기"><i class="ph ph-funnel-fill"></i> ${n}칸 거르는 중 ✕</button>` : '';
+    }
+
     // ── 1단 '보기' 트리 — 화면마다 묶어 보는 방식 ──────────────
     //  2단(표)에서 깔때기로 더 좁히면 되니, 여기는 큰 갈래만 둔다.
     _navRow(on, label, count, click, depth, color) {
@@ -3953,7 +4042,7 @@ class BhasApp {
 
             //  맥 '파인더' 결 — 시즌 한 칸이 폴더다. 열면 그 시즌의 제품리스트로 간다.
             const esc = x => this._vesc(x);
-            const view = this.seasonView || 'grid';
+            const view = this.seasonView || 'list';   // 기본은 목록
             const sq = (this.seasonQ || '').trim().toLowerCase();
             const brandOf = p => (mockData.brands || []).find(b => b.id === p.brand_id);
             const itemsOf = p => (this.pItems || []).filter(i => String(i.product_id) === String(p.id)).length;
@@ -4197,7 +4286,7 @@ class BhasApp {
                 docs = docs.filter(d => d.productId === pid && (!cat || d.category === cat));
             } else if (cur !== '전체') docs = docs.filter(d => d.category === cur);
             if (q) docs = docs.filter(d => (d.name || '').toLowerCase().includes(q));
-            const view = this.docView || 'grid';
+            const view = this.docView || 'list';   // 파인더 기본은 목록
             const esc = s => this._vesc(s);
             const isImg = u => /\.(jpe?g|png|gif|webp|heic|avif)$/i.test(u || '') || (u || '').includes('photos/');
             const kindOf = (d) => {
@@ -4211,6 +4300,11 @@ class BhasApp {
                 return { i: 'ph-file', c: '#8e8e93', t: '파일' };
             };
             const nameOfP = id => (mockData.products.find(p => p.id === id) || {}).name || '';
+            const brandOfP = id => {
+                const p = (mockData.products || []).find(x => x.id === id);
+                const b = p && (mockData.brands || []).find(x => x.id === p.brand_id);
+                return b ? { n: b.name, c: b.brand_color || '#8e8e93' } : null;
+            };
             //  pid 를 주면 왼쪽에 펼침 삼각형이 붙는다(대분류). depth 1 은 그 아래 중분류.
             const side = (key, label, icon, n, color, depth, pid, open) => `<div class="fd-s${cur === key ? ' on' : ''}${depth ? ' d1' : ''}"
                 onclick="app.setDocCategory('${key}')" oncontextmenu="app.docFolderMenu(event,'${key}')">
@@ -4236,6 +4330,12 @@ class BhasApp {
                     <span class="fd-nm">${esc(d.name)}</span>
                 </button>`;
             }).join('');
+            //  자료실 표 — 머리글로 줄 세우고 깔때기로 거른다
+            const docVal = (d, k2) => ({
+                name: d.name || '', brand: (brandOfP(d.productId) || {}).n || '',
+                season: nameOfP(d.productId), kind: kindOf(d).t, date: d.date || '',
+            })[k2] ?? '';
+            docs = this._applyTbl('documents', docs, docVal, aggregatedDocs);
             const rows = docs.map(d => {
                 const k = kindOf(d);
                 return `<div class="fd-r${String(this.docSel) === String(d.id) ? ' on' : ''}"
@@ -4243,9 +4343,11 @@ class BhasApp {
                         ondblclick="${d.open || `app.showFileModal('${esc(d.url)}','${esc(d.name)}')`}"
                         oncontextmenu="app.docMenu(event,'${esc(String(d.id))}','${esc(d.url)}','${esc(d.name)}')">
                     <span class="fd-rn"><i class="ph ${k.i}" style="color:${k.c}"></i>${esc(d.name)}</span>
-                    <span>${esc(d.date || '')}</span>
-                    <span>${esc(k.t)}</span>
+                    <span>${(() => { const b = brandOfP(d.productId);
+                        return b ? `<i class="ph-fill ph-circle" style="font-size:7px;color:${b.c};margin-right:5px;vertical-align:1px"></i>${esc(b.n)}` : ''; })()}</span>
                     <span>${esc(nameOfP(d.productId))}</span>
+                    <span>${esc(k.t)}</span>
+                    <span>${esc(d.date || '')}</span>
                 </div>`;
             }).join('');
             const where = cur === '전체' ? '자료실'
@@ -4274,7 +4376,7 @@ class BhasApp {
                 </aside>
                 <section class="fd-main">
                     <div class="fd-bar">
-                        <b>${esc(where)}</b>
+                        <b>${esc(where)}</b>${this._fltBadge('documents')}
                         <div class="fd-seg">
                             <button class="${view === 'grid' ? 'on' : ''}" onclick="app.setDocView('grid')" title="아이콘"><i class="ph ph-squares-four"></i></button>
                             <button class="${view === 'list' ? 'on' : ''}" onclick="app.setDocView('list')" title="목록"><i class="ph ph-list-dashes"></i></button>
@@ -4286,7 +4388,9 @@ class BhasApp {
                     <div class="fd-body">
                         ${docs.length
                             ? (view === 'grid' ? `<div class="fd-grid">${grid}</div>`
-                               : `<div class="fd-list"><div class="fd-r head"><span>이름</span><span>날짜</span><span>종류</span><span>시즌</span></div>${rows}</div>`)
+                               : `<div class="fd-list"><div class="fd-r head">${[['name', '이름'], ['brand', '브랜드'], ['season', '시즌'], ['kind', '종류'], ['date', '날짜']]
+                                    .map(([k2, t]) => { const { srt, flt } = this._tblState('documents');
+                                        return `<span class="fh${srt.k === k2 ? ' srt' : ''}${flt[k2] ? ' flt' : ''}" onclick="app.sortTbl('documents','${k2}')">${esc(t)}${srt.k === k2 ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f" onclick="app.openTblFilter(event,'documents','${k2}','${esc(t)}')"><i class="ph ph-funnel${flt[k2] ? '-fill' : ''}"></i></button></span>`; }).join('')}</div>${rows}</div>`)
                             : `<div class="fd-none">${q ? '찾는 자료가 없습니다' : '이 위치에 자료가 없습니다'}</div>`}
                     </div>
                     <div class="fd-path">
@@ -6856,9 +6960,9 @@ class BhasApp {
         } catch (e) { this.showToast('메모 추가 실패: ' + (e.message || e)); }
     }
     async saveNote() {
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const n = this._curNote(); if (!n) return;
         const t = document.getElementById('note-title')?.value ?? n.title;
-        const typed = document.getElementById('note-body')?.value;
+        const typed = this._noteTyped();
         const b = typed == null ? n.body : this._joinNote(this._noteMeta(n), typed);
         if (t === n.title && b === n.body) return;
         n.title = t; n.body = b; n.updated_at = new Date().toISOString();
@@ -6867,7 +6971,7 @@ class BhasApp {
             if (error) throw error;
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
-    toggleNotePreview() { if (!this.notePreview) this.saveNote(); this.notePreview = !this.notePreview; this.requestRender(); }
+    toggleNotePreview() { this.saveNote(); this.notePreview = !this.notePreview; this._nbDrop(); this.requestRender(); }
     // ── 우클릭 메뉴 ───────────────────────────────────────────
     //  맥처럼 그 자리에 뜬다. 바깥을 누르거나 Esc 면 닫힌다.
     ctxMenu(ev, items) {
@@ -7033,13 +7137,13 @@ class BhasApp {
         try { await this.supabase.from('notes').update({ folder: v.trim() }).eq('folder', oldName); }
         catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
     }
-    selectNote(id) { this.saveNote(); this.noteSel = id; this.notePreview = true; this.requestRender(); }
+    selectNote(id) { this.saveNote(); this._nbDrop(); this.noteSel = id; this.notePreview = false; this.requestRender(); }
     togglePrivFolders() { this.notePrivOpen = this.notePrivOpen === false; this.requestRender(); }
     toggleNoteSeasons() { this.noteSeaOpen = !this.noteSeaOpen; this.requestRender(); }
     setNoteSea(v) { this.noteSea = v; this.noteSel = null; this.requestRender(); }
-    setNoteFolder(f) { this.saveNote(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
+    setNoteFolder(f) { this.saveNote(); this._nbDrop(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
     async deleteNote() {
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const n = this._curNote(); if (!n) return;
         if (!await this.showConfirm(`"${n.title || '제목 없음'}" 메모를 삭제할까요?`, '삭제')) return;
         try {
             const { error } = await this.supabase.from('notes').delete().eq('id', n.id);
@@ -7070,7 +7174,8 @@ class BhasApp {
         return (Object.keys(bare).length ? `<!--p ${JSON.stringify(bare)}-->\n` : '') + text;
     }
     async setNoteProp(key, value) {
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const n = this._curNote(); if (!n) return;
+        await this.saveNote();                 // 쓰던 글을 먼저 담는다
         const meta = this._noteMeta(n);
         meta[key] = value;
         n.body = this._joinNote(meta, this._noteText(n));
@@ -7084,7 +7189,7 @@ class BhasApp {
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
     async toggleNotePin() {
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const n = this._curNote(); if (!n) return;
         n.pinned = !n.pinned; this.requestRender();
         try { await this.supabase.from('notes').update({ pinned: n.pinned }).eq('id', n.id); }
         catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
@@ -7118,7 +7223,6 @@ class BhasApp {
         const accs = (mockData.companies || []).filter(c => c.username);
         const projs = (mockData.products || []);
         const who = accs.find(c => c.name === meta.who);
-        const others = (this.noteList || []).filter(x => x.id !== n.id);
         const links = (meta.links || []).map(id => (this.noteList || []).find(x => String(x.id) === String(id))).filter(Boolean);
         const row = (icon, label, body) => `<div class="np-r"><span class="np-k"><i class="ph ${icon}"></i>${esc(label)}</span>
             <span class="np-v">${body}</span></div>`;
@@ -7144,10 +7248,11 @@ class BhasApp {
             ${row('ph-link-simple', '연결된 메모', `
                 ${links.map(l => `<button class="np-chip" onclick="app.selectNote('${l.id}')">${esc(l.title || '메모')}
                     <i onclick="event.stopPropagation();app.unlinkNote('${l.id}')">✕</i></button>`).join('')}
-                <select class="np-sel add" onchange="app.linkNote(this.value);this.value=''">
-                    <option value="">+ 메모 연결</option>
-                    ${others.slice(0, 40).map(o => `<option value="${o.id}">${esc(o.title || '메모')}</option>`).join('')}
-                </select>`)}
+                <span class="np-find">
+                    <input class="np-in find" id="np-link-q" placeholder="메모 이름으로 찾기" autocomplete="off"
+                        oninput="app.linkFind(this.value)" onfocus="app.linkFind(this.value)" onblur="app.linkFindClose()">
+                    <div class="np-hits" id="np-link-hits"></div>
+                </span>`)}
             ${row('ph-lock-simple', '공개 범위', `
                 <select class="np-sel pill" style="--c:${n.scope === 'private' ? '#ff9f0a' : '#30d158'}"
                     onchange="app.setNoteOpen(this.value)">
@@ -7161,7 +7266,7 @@ class BhasApp {
         </div>`;
     }
     async setNoteOpen(v) {
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const n = this._curNote(); if (!n) return;
         n.scope = v; if (v === 'private' && !n.owner) n.owner = this._me();
         this.requestRender();
         try {
@@ -7360,7 +7465,7 @@ class BhasApp {
     //  제품 이름을 쓰던 자리에 넣는다
     insertProduct(id) {
         const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
-        const ta = document.getElementById('note-body');
+        const ta = this._nbTA();
         if (!ta) { this.showToast('메모를 열고 눌러주세요'); return; }
         const p = ta.selectionStart;
         const name = it.name || '제품';
@@ -7392,8 +7497,7 @@ class BhasApp {
     pickNotePhoto() {
         const n = this._curNote(); if (!n) { this.showToast('메모가 없습니다. 먼저 하나 만드세요.'); return; }
         //  고르기 창이 뜨면 커서 자리를 잃는다 — 지금 자리를 적어 둔다
-        const ta = document.getElementById('note-body');
-        this._notePhotoAt = ta ? ta.selectionStart : null;
+        this._notePhotoAt = this._nbAbs();
         let el = document.getElementById('note-photo-input');
         if (!el) {
             el = document.createElement('input');
@@ -7418,9 +7522,9 @@ class BhasApp {
             if (upErr) throw upErr;
             const { data } = this.supabase.storage.from('bhas').getPublicUrl(path);
             const url = data.publicUrl;
-            const ta = document.getElementById('note-body');
+            const ta = document.getElementById('note-raw');
             //  글을 쓰던 중이면 화면의 글을 믿는다(아직 저장 안 된 글자가 있을 수 있다)
-            const text = ta ? ta.value : this._noteText(n);
+            const text = this._noteTyped() ?? this._noteText(n);
             let at = this._notePhotoAt;
             if (at == null || at > text.length) at = text.length;
             const before = text.slice(0, at), after = text.slice(at);
@@ -7453,26 +7557,26 @@ class BhasApp {
                 ta.value = next;
                 ta.focus();
                 ta.setSelectionRange(this._notePhotoAt, this._notePhotoAt);
-            } else { this.requestRender(); }
+            } else { this._nbDrop(); this.requestRender(); }
             this.showToast('커서 자리에 사진을 넣었습니다');
         } catch (e) { this.showToast('사진 올리기 실패: ' + (e.message || e)); }
     }
     linkNote(id) {
         if (!id) return;
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const n = this._curNote(); if (!n) return;
         const meta = this._noteMeta(n);
         const links = [...new Set([...(meta.links || []), id])];
         this.setNoteProp('links', links);
     }
     unlinkNote(id) {
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const n = this._curNote(); if (!n) return;
         const meta = this._noteMeta(n);
         this.setNoteProp('links', (meta.links || []).filter(x => String(x) !== String(id)));
     }
     // ── 메모 안의 할 일 · 태그 ────────────────────────────────
     //  본문 줄머리에 [] / [x] 를 쓰면 할 일이 된다(노션의 to-do 블록).
     //  @이름 을 쓰면 담당자, #말머리 는 꼬리표. 체크한 것은 미리알림에도 뜬다.
-    NOTE_TODO_RE = /^(\s*)\[( |x|X)\]\s?(.*)$/;
+    NOTE_TODO_RE = /^(\s*)\[( |x|X)?\]\s?(.*)$/;
     _noteTodos(n) {
         const out = [];
         this._noteText(n).split('\n').forEach((line, i) => {
@@ -7482,7 +7586,7 @@ class BhasApp {
             out.push({
                 src: 'note', id: `${n.id}#${i}`, noteId: n.id, line: i,
                 title: text.replace(/[@#][^\s]+/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim() || '(내용 없음)',
-                done: m[2].toLowerCase() === 'x',
+                done: (m[2] || ' ').toLowerCase() === 'x',
                 at: (text.match(/@([^\s]+)/g) || []).map(x => x.slice(1)),
                 tags: (text.match(/#([^\s]+)/g) || []).map(x => x.slice(1)),
                 due: (text.match(/\b(\d{4}-\d{2}-\d{2})\b/) || [])[1] || n.due_date || null,
@@ -7527,7 +7631,7 @@ class BhasApp {
         const n = (this.noteList || []).find(x => String(x.id) === String(noteId)); if (!n) return;
         const lines = this._noteText(n).split('\n');
         const m = (lines[line] || '').match(this.NOTE_TODO_RE); if (!m) return;
-        const now = m[2].toLowerCase() === 'x';
+        const now = (m[2] || ' ').toLowerCase() === 'x';
         lines[line] = `${m[1]}[${now ? ' ' : 'x'}] ${m[3]}`;
         n.body = this._joinNote(this._noteMeta(n), lines.join('\n'));
         this.requestRender();
@@ -7542,7 +7646,7 @@ class BhasApp {
         return this._noteText(n).split('\n').map((line, i) => {
             const m = line.match(this.NOTE_TODO_RE);
             if (m) {
-                const done = m[2].toLowerCase() === 'x';
+                const done = (m[2] || ' ').toLowerCase() === 'x';
                 const body = esc(m[3]).replace(/@([^\s]+)/g, '<b class="nb-at">@$1</b>')
                                       .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
                 return `<div class="nb-todo${done ? ' done' : ''}">
@@ -7563,6 +7667,7 @@ class BhasApp {
     //  사진 지우기 — 그 줄만 들어낸다
     async removeNotePhoto(lineNo) {
         const n = this._curNote(); if (!n) return;
+        await this.saveNote();                 // 줄 번호가 어긋나지 않게 먼저 담는다
         const lines = this._noteText(n).split('\n');
         const line = lines[lineNo] || '';
         if (!/^!\[[^\]]*\]\(.+?\)\s*$/.test(line)) return;
@@ -7574,17 +7679,237 @@ class BhasApp {
         n.updated_at = new Date().toISOString();
         const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
         if (error) { this.showToast('지우지 못했습니다: ' + error.message); return; }
-        this.requestRender();
+        this._nbDrop(); this.requestRender();
         this.showToast('사진을 지웠습니다');
     }
 
+
+    // ── 메모 본문 live 편집 ───────────────────────────────────
+    //  맥 '메모' 처럼 체크박스가 보이는 채로 고친다. 한 줄만 글칸이고
+    //  나머지는 그려진 상태다. 줄머리에 [ ] 를 치면 그 자리에서 네모가 된다.
+    _nbTA() { return document.getElementById('note-body') || document.getElementById('note-raw'); }
+    _nbLoad(n) {
+        if (this._nbFor !== n.id || !this._nbLines) {
+            this._nbFor = n.id;
+            this._nbLines = this._noteText(n).split('\n');
+            if (!this._nbLines.length) this._nbLines = [''];
+            this.nbLine = null;
+        }
+        return this._nbLines;
+    }
+    _nbDrop() { this._nbFor = null; this._nbLines = null; this.nbLine = null; this._nbPre = ''; }
+    _nbPreOf(line) {
+        const m = String(line).match(this.NOTE_TODO_RE);
+        return m ? `${m[1]}[${(m[2] || ' ').toLowerCase() === 'x' ? 'x' : ' '}] ` : '';
+    }
+    //  글칸의 글자를 줄 꾸러미에 되돌린다
+    _nbSync() {
+        const ta = document.getElementById('note-body');
+        if (!ta || this.nbLine == null || !this._nbLines) return;
+        if (Number(ta.dataset.i) !== this.nbLine) return;   // 아직 다시 그리기 전 — 덮어쓰면 줄이 어긋난다
+        this._nbLines[this.nbLine] = (this._nbPre || '') + ta.value;
+    }
+    //  지금 화면에 쓰여 있는 본문 전체 (원문칸이면 그 값, live 면 줄을 이어서)
+    _noteTyped() {
+        const raw = document.getElementById('note-raw');
+        if (raw) return raw.value;
+        const cur = this._curNote();
+        if (this._nbLines && cur && this._nbFor === cur.id) { this._nbSync(); return this._nbLines.join('\n'); }
+        return null;
+    }
+    //  본문 전체에서 커서가 몇 번째 글자인지 (사진 넣을 자리 계산용)
+    _nbAbs() {
+        const raw = document.getElementById('note-raw');
+        if (raw) return raw.selectionStart;
+        const ta = document.getElementById('note-body');
+        if (!ta || this.nbLine == null || !this._nbLines) return null;
+        let at = 0;
+        for (let i = 0; i < this.nbLine; i++) at += this._nbLines[i].length + 1;
+        return at + (this._nbPre || '').length + ta.selectionStart;
+    }
+    _nbGrow(ta) { if (ta) { ta.style.height = 'auto'; ta.style.height = Math.max(24, ta.scrollHeight) + 'px'; } }
+    _nbFocus() {
+        requestAnimationFrame(() => {
+            const ta = document.getElementById('note-body'); if (!ta) return;
+            const c = this._nbCaret;
+            const at = (c == null || c < 0) ? ta.value.length : Math.min(c, ta.value.length);
+            ta.focus(); ta.setSelectionRange(at, at); this._nbGrow(ta);
+            this._nbCaret = null;
+        });
+    }
+    _nbSave() { clearTimeout(this._nbT); this._nbT = setTimeout(() => this.saveNote(), 700); }
+    nbPick(i, toStart) {
+        this._nbSync();
+        this.nbLine = i; this._nbCaret = toStart ? 0 : -1;
+        this.requestRender(); this._nbFocus();
+    }
+    //  빈 바닥을 누르면 마지막 줄로 간다 (없으면 한 줄 만든다)
+    nbBlank(ev) {
+        if (ev.target.closest('.nb-row,.nb-in,.nb-ck')) return;
+        const L = this._nbLines; if (!L) return;
+        if (L.length && L[L.length - 1].trim() !== '') L.push('');
+        this.nbPick(L.length - 1);
+    }
+    nbToggle(i) {
+        this._nbSync();
+        const L = this._nbLines; if (!L) return;
+        const m = (L[i] || '').match(this.NOTE_TODO_RE); if (!m) return;
+        const now = (m[2] || ' ').toLowerCase() === 'x';
+        L[i] = `${m[1]}[${now ? ' ' : 'x'}] ${m[3]}`;
+        if (i === this.nbLine) this._nbPre = this._nbPreOf(L[i]);
+        this.saveNote(); this.requestRender();
+    }
+    nbInput(ev) {
+        const ta = ev.target;
+        //  [] · [ ] · [x] 를 치면 그 줄이 할 일 줄이 된다 — 네모가 바로 생긴다
+        if (!this._nbPre) {
+            const m = ta.value.match(/^(\s*)\[( |x|X)?\]\s?/);
+            if (m) {
+                const pre = `${m[1]}[${(m[2] || ' ').toLowerCase() === 'x' ? 'x' : ' '}] `;
+                const rest = ta.value.slice(m[0].length);
+                this._nbLines[this.nbLine] = pre + rest;
+                this._nbPre = pre; ta.value = rest;        // 머리표는 네모가 맡는다
+                this._nbCaret = 0;
+                this.saveNote(); this.requestRender(); this._nbFocus();
+                return;
+            }
+            //  '- ' 는 글머리로
+            if (ta.value === '- ') { ta.value = '· '; ta.setSelectionRange(2, 2); }
+        }
+        this._nbSync(); this._nbGrow(ta); this.noteTyping(); this._nbSave();
+    }
+    nbKey(ev) {
+        if (this._atHits) { this.noteKey(ev); return; }
+        const ta = ev.target, i = this.nbLine, L = this._nbLines;
+        if (i == null || !L) return;
+        if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {
+            ev.preventDefault();
+            const pre = this._nbPre || '', at = ta.selectionStart;
+            if (pre && !ta.value.trim()) { L[i] = ''; this._nbPre = ''; this._nbCaret = 0; }   // 빈 할 일에서 Enter → 네모를 뗀다
+            else {
+                L[i] = pre + ta.value.slice(0, at);
+                L.splice(i + 1, 0, pre + ta.value.slice(at));
+                this.nbLine = i + 1; this._nbCaret = 0;
+            }
+            this.saveNote(); this.requestRender(); this._nbFocus();
+            return;
+        }
+        if (ev.key === 'Backspace' && ta.selectionStart === 0 && ta.selectionEnd === 0) {
+            ev.preventDefault();
+            if (this._nbPre) { L[i] = ta.value; this._nbPre = ''; this._nbCaret = 0; }   // 네모만 뗀다
+            else if (i > 0) {
+                const prev = L[i - 1];
+                if (/^!\[[^\]]*\]\(.+?\)\s*$/.test(prev)) { L.splice(i - 1, 1); this.nbLine = i - 1; this._nbCaret = 0; }
+                else {
+                    const p2 = this._nbPreOf(prev), t2 = prev.slice(p2.length);
+                    L[i - 1] = p2 + t2 + ta.value; L.splice(i, 1);
+                    this.nbLine = i - 1; this._nbCaret = t2.length;
+                }
+            } else return;
+            this.saveNote(); this.requestRender(); this._nbFocus();
+            return;
+        }
+        if ((ev.key === 'ArrowUp' && ta.selectionStart === 0 && i > 0)
+         || (ev.key === 'ArrowDown' && ta.selectionStart === ta.value.length && i < L.length - 1)) {
+            ev.preventDefault(); this._nbSync();
+            this.nbLine = i + (ev.key === 'ArrowUp' ? -1 : 1); this._nbCaret = -1;
+            this.requestRender(); this._nbFocus();
+            return;
+        }
+        this.noteKey(ev);
+    }
+    nbBlur() { setTimeout(() => this.closeAtPop(), 120); this._nbSync(); this.saveNote(); }
+    //  본문을 그린다 — 고르는 줄만 글칸, 나머지는 읽기 좋은 모습
+    _noteLiveHTML(n) {
+        const esc = s => this._vesc(s);
+        const paint = t => esc(t).replace(/@([^\s]+)/g, '<b class="nb-at">@$1</b>')
+                                 .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
+        const lines = this._nbLoad(n);
+        const body = lines.map((line, i) => {
+            const img = line.match(/^!\[[^\]]*\]\((.+?)\)\s*$/);
+            if (img) return `<div class="nb-row"><span class="nb-ph">
+                <img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
+                <button class="nb-ph-x" title="사진 지우기" onclick="event.stopPropagation();app.removeNotePhoto(${i})"><i class="ph ph-x"></i></button>
+            </span></div>`;
+            const m = line.match(this.NOTE_TODO_RE);
+            const done = !!m && (m[2] || ' ').toLowerCase() === 'x';
+            const raw = m ? m[3] : line;
+            if (i === this.nbLine) this._nbPre = m ? `${m[1]}[${done ? 'x' : ' '}] ` : '';
+            const inner = (i === this.nbLine)
+                ? `<textarea id="note-body" class="nb-in" rows="1" spellcheck="false" data-i="${i}"
+                     oninput="app.nbInput(event)" onkeydown="app.nbKey(event)" onblur="app.nbBlur()">${esc(raw)}</textarea>`
+                : `<span class="nb-t" onclick="app.nbPick(${i})">${raw.trim() ? paint(raw) : '<i class="nb-e"></i>'}</span>`;
+            if (m) return `<div class="nb-row nb-todo${done ? ' done' : ''}">
+                <button class="nb-ck${done ? ' on' : ''}" onclick="app.nbToggle(${i})"></button>${inner}</div>`;
+            return `<div class="nb-row nb-l">${inner}</div>`;
+        }).join('');
+        return `<div class="nt-live" onclick="app.nbBlank(event)">${body}
+            ${lines.length === 1 && !lines[0] && this.nbLine == null ? '<div class="nb-hint">내용을 적어주세요 · [ ] 를 치면 할 일이 됩니다</div>' : ''}</div>`;
+    }
+    // ── 연결된 메모 찾기 — 메모가 수백 개라 목록으로는 못 고른다 ──
+    linkFind(q) {
+        const esc = s => this._vesc(s);
+        const n = this._curNote(); if (!n) return;
+        const box = document.getElementById('np-link-hits'); if (!box) return;
+        const has = (this._noteMeta(n).links || []).map(String);
+        const s2 = String(q || '').trim().toLowerCase();
+        let pool = (this.noteList || []).filter(x => x.id !== n.id && !has.includes(String(x.id)));
+        if (s2) pool = pool.filter(x => ((x.title || '') + ' ' + this._noteText(x)).toLowerCase().includes(s2));
+        const hits = pool.slice(0, 8);
+        box.innerHTML = hits.length
+            ? hits.map(o => `<button class="np-hit" data-id="${o.id}"><b>${esc(o.title || '새 메모')}</b>
+                <span>${esc(this._noteText(o).replace(/\s+/g, ' ').trim().slice(0, 26) || '내용 없음')}</span></button>`).join('')
+            : `<div class="np-hit none">${s2 ? '찾는 메모가 없습니다' : '이름을 적어 찾으세요'}</div>`;
+        box.classList.add('on');
+        box.querySelectorAll('.np-hit[data-id]').forEach(b => b.onmousedown = (e) => {
+            e.preventDefault(); this.linkNote(b.dataset.id);
+        });
+    }
+    linkFindClose() { setTimeout(() => document.getElementById('np-link-hits')?.classList.remove('on'), 150); }
+    // ── 메모를 끌어다 폴더에 넣기 ─────────────────────────────
+    nbDragStart(ev, id) {
+        this._nbDragId = id;
+        try { ev.dataTransfer.setData('text/plain', String(id)); ev.dataTransfer.effectAllowed = 'move'; } catch (_e) { }
+    }
+    nbDragOver(ev, key) {
+        if (!this._nbDragId || key === 'all') return;
+        ev.preventDefault(); ev.dataTransfer.dropEffect = 'move';
+        ev.currentTarget.classList.add('drop');
+    }
+    nbDragOut(ev) { ev.currentTarget.classList.remove('drop'); }
+    async nbDrop(ev, key) {
+        ev.preventDefault(); ev.currentTarget.classList.remove('drop');
+        const id = this._nbDragId || (ev.dataTransfer && ev.dataTransfer.getData('text/plain'));
+        this._nbDragId = null;
+        if (!id || key === 'all') return;
+        await this.moveNoteTo(id, key);
+    }
+    async moveNoteTo(id, key) {
+        const n = (this.noteList || []).find(x => String(x.id) === String(id)); if (!n) return;
+        let patch = null, where = '';
+        if (key === 'private') { patch = { scope: 'private', folder: '개인', owner: n.owner || this._me() }; where = '개인 메모'; }
+        else if (key.startsWith('pf:')) { patch = { scope: 'private', folder: key.slice(3), owner: n.owner || this._me() }; where = key.slice(3); }
+        else if (key.startsWith('f:')) { patch = { scope: 'shared', folder: key.slice(2) }; where = key.slice(2); }
+        if (!patch) return;
+        if (n.scope === patch.scope && (n.folder || '') === patch.folder) return;
+        const back = { scope: n.scope, folder: n.folder, owner: n.owner };
+        Object.assign(n, patch); this.requestRender();
+        try {
+            const { error } = await this.supabase.from('notes').update(patch).eq('id', n.id);
+            if (error) throw error;
+            this.showToast(`'${n.title || '메모'}' 을 ${where} 로 옮겼습니다`);
+        } catch (e) {
+            Object.assign(n, back); this.requestRender();
+            this.showToast('옮기지 못했습니다: ' + (e.message || e));
+        }
+    }
     // ── @ 자동완성 ────────────────────────────────────────────
     //  본문에서 @ 를 치면 계정 목록이 뜬다. ↑↓ 로 고르고 Enter·Tab 으로 넣는다.
     _atPool() {
         return (mockData.companies || []).filter(c => c.username).map(c => ({ n: c.name, u: c.username }));
     }
     noteTyping() {
-        const ta = document.getElementById('note-body'); if (!ta) return;
+        const ta = this._nbTA(); if (!ta) return;
         const upto = ta.value.slice(0, ta.selectionStart);
         const m = upto.match(/@([^\s@]*)$/);
         if (!m) { this.closeAtPop(); return; }
@@ -7612,7 +7937,7 @@ class BhasApp {
     }
     closeAtPop() { document.getElementById('at-pop')?.remove(); this._atHits = null; }
     pickAt(i) {
-        const ta = document.getElementById('note-body'); if (!ta || !this._atHits) return;
+        const ta = this._nbTA(); if (!ta || !this._atHits) return;
         const h = this._atHits[i]; if (!h) return;
         const end = ta.selectionStart;
         ta.value = ta.value.slice(0, this._atStart) + '@' + h.n + ' ' + ta.value.slice(end);
@@ -7664,7 +7989,17 @@ class BhasApp {
     noteBlur() { setTimeout(() => this.closeAtPop(), 120); this.saveNote(); }
     // 커서 자리에 넣기 — 노션의 '/' 블록처럼
     noteInsert(kind) {
-        const ta = document.getElementById('note-body'); if (!ta) return;
+        const ta = this._nbTA(); if (!ta) return;
+        //  live 편집 중이면 '지금 줄' 을 할 일 · 글머리 줄로 바꾼다
+        if (ta.id === 'note-body' && this._nbLines && this.nbLine != null && (kind === 'todo' || kind === 'bullet')) {
+            this._nbSync();
+            const i = this.nbLine;
+            const bare = this._nbLines[i].slice(this._nbPreOf(this._nbLines[i]).length).replace(/^·\s*/, '');
+            this._nbLines[i] = (kind === 'todo' ? '[ ] ' : '· ') + bare;
+            this._nbCaret = -1;
+            this.saveNote(); this.requestRender(); this._nbFocus();
+            return;
+        }
         const map = { todo: '[ ] ', at: '@', tag: '#', date: new Date().toISOString().slice(0, 10) + ' ', bullet: '· ' };
         const ins = map[kind] || '';
         const p = ta.selectionStart;
@@ -7724,6 +8059,7 @@ class BhasApp {
             const prev = this._noteText(n).replace(/!\[[^\]]*\]\([^)]*\)/g, '[사진]').replace(/\s+/g, ' ').trim().slice(0, 30);
             const td = this._noteTodos(n);
             items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}" oncontextmenu="app.noteMenu(event,'${n.id}')"
+                    draggable="true" ondragstart="app.nbDragStart(event,'${n.id}')" title="끌어서 폴더로 옮길 수 있습니다"
                     onclick="app.selectNote('${n.id}')">
                 <b>${esc(n.title || '새 메모')}</b>
                 <div class="nt-sub"><span class="nt-d">${esc(when(n.updated_at))}</span>
@@ -7734,6 +8070,7 @@ class BhasApp {
         });
         if (!items) items = `<div class="nt-none">메모 없음</div>`;
         const fold = (key, icon, label, n, color) => `<div class="nt-f${cur === key ? ' on' : ''}" onclick="app.setNoteFolder('${key}')"
+            ondragover="app.nbDragOver(event,'${key}')" ondragleave="app.nbDragOut(event)" ondrop="app.nbDrop(event,'${key}')"
             oncontextmenu="app.folderMenu(event,'${key}')">
             <i class="ph ${icon}" style="color:${color || '#e0a800'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
         const otherFolders = [...new Set(all.filter(n => n.scope === 'shared').map(n => n.folder || '공용'))];
@@ -7787,8 +8124,8 @@ class BhasApp {
                     <button onclick="app.noteInsert('date')" title="오늘 날짜"><i class="ph ph-calendar-blank"></i></button>
                     <button onclick="app.pickNotePhoto()" title="사진 넣기"><i class="ph ph-image"></i></button>
                     <span class="nt-div"></span>
-                    <button class="${this.notePreview ? 'on' : ''}" onclick="app.toggleNotePreview()" title="보기/고치기">
-                        <i class="ph ${this.notePreview ? 'ph-pencil-simple' : 'ph-eye'}"></i></button>
+                    <button class="${this.notePreview ? 'on' : ''}" onclick="app.toggleNotePreview()" title="${this.notePreview ? '원래대로' : '원문 고치기'}">
+                        <i class="ph ${this.notePreview ? 'ph-check-square' : 'ph-code'}"></i></button>
                     <button onclick="app.deleteNote()" title="삭제"><i class="ph ph-trash"></i></button>
                     <span class="nt-scope">${sel.scope === 'private' ? '개인' : (sel.scope === 'project' ? '시즌' : '공용')}</span>
                     <button class="${this.noteProps ? 'on' : ''}" onclick="app.toggleNoteProps()" title="속성 펼치기"><i class="ph ph-sliders-horizontal"></i></button>
@@ -7812,10 +8149,10 @@ class BhasApp {
                         </div>`;
                     })()}
                     ${this.notePreview
-                        ? `<div class="nt-view" ondblclick="app.toggleNotePreview()">${this._noteBodyHTML(sel)}</div>`
-                        : `<textarea id="note-body" class="nt-body" placeholder="내용을 적어주세요"
+                        ? `<textarea id="note-raw" class="nt-body" placeholder="내용을 적어주세요"
                               oninput="app.noteTyping(event)" onkeydown="app.noteKey(event)"
-                              onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`}
+                              onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`
+                        : this._noteLiveHTML(sel)}
                 </div>` : `<div class="nt-none big">메모를 선택하세요</div>`}
             </section>
         </div>`;
@@ -8338,6 +8675,7 @@ class BhasApp {
                 <td class="nw">${esc((t.occurred_on || '').slice(2))}</td>
                 <td><span class="it-tag" style="--c:${kc}">${esc(t.kind)}</span></td>
                 <td class="bd">${esc(t.customer_name || '')}</td>
+                <td>${esc(this._brandNameById(t.brand_id) === '-' ? '' : this._brandNameById(t.brand_id))}</td>
                 <td>${esc(t.purchase_from || '')}</td>
                 <td class="nw">${t.order_no ? `${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨" style="color:#0a84ff"></i>' : ''}` : ''}</td>
                 <td>${esc(t.product_name || '')}${t.exchange_product ? ` <span class="mu">→</span> ${esc(t.exchange_product)}` : ''}</td>
@@ -8348,6 +8686,12 @@ class BhasApp {
                         onclick="event.stopPropagation()" onchange="app.setCSMemo('${t.id}',this.value)"></td>
             </tr>`;
         };
+        list = this._applyTbl('cs', list, (t, k2) => ({
+            occurred_on: t.occurred_on || '', kind: t.kind || '', customer_name: t.customer_name || '',
+            brand: this._brandNameById(t.brand_id) === '-' ? '' : this._brandNameById(t.brand_id),
+            purchase_from: t.purchase_from || '', order_no: t.order_no || '',
+            product_name: t.product_name || '', status: t.status || '', memo: t.memo || '',
+        })[k2] ?? '', all);
         const cnt = k => all.filter(t => t.kind === k).length;
         const pill = (k, label, n) => `<button class="it-pill${filter === k ? ' on' : ''}" onclick="app.setCSFilter('${k}')"
             ${k === '교환' ? 'style="--pc:#6366f1"' : (k === '반품' ? 'style="--pc:#ef4444"' : '')}>${esc(label)}<em>${n}</em></button>`;
@@ -8368,11 +8712,13 @@ class BhasApp {
                 ${['오배송', '불량', '수선', '기타'].map(k => `<button class="mbtn" onclick="app.addCS('${k}')">+ ${k}</button>`).join('')}
             </div>
             <div class="it-scroll">
-                <table class="it-tbl"><thead><tr>
-                    <th>접수일</th><th>유형</th><th>고객</th><th>구매처</th><th>주문번호</th><th>상품</th><th>상태</th><th>메모</th>
+                <table class="it-tbl"><thead><tr>${this._thead('cs', [
+                    ['occurred_on', '접수일'], ['kind', '유형'], ['customer_name', '고객'], ['brand', '브랜드'],
+                    ['purchase_from', '구매처'], ['order_no', '주문번호'], ['product_name', '상품'],
+                    ['status', '상태'], ['memo', '메모']])}
                 </tr></thead>
                 <tbody>${list.length ? list.slice(0, 300).map(row).join('')
-                    : `<tr><td colspan="8" class="it-none">해당하는 건이 없습니다</td></tr>`}</tbody></table>
+                    : `<tr><td colspan="9" class="it-none">해당하는 건이 없습니다</td></tr>`}</tbody></table>
                 ${list.length > 300 ? `<div class="it-more">최근 300건만 보입니다 · 전체 ${list.length}건</div>` : ''}
             </div>
         </div>`;
@@ -8453,6 +8799,10 @@ class BhasApp {
             <td class="it-c"><button class="it-ib${e.done ? ' on' : ''}" title="${e.done ? '처리됨' : '미처리'}"
                 onclick="app.toggleExpenseDone('${e.id}')"><i class="ph ${e.done ? 'ph-check-circle' : 'ph-circle'}"></i></button></td>
         </tr>`;
+        list = this._applyTbl('expenses', list, (e, k2) => ({
+            spent_on: e.spent_on || '', vendor: e.vendor || '', company: e.company || '미지정',
+            memo: e.memo || '', amount: Number(e.amount) || 0, done: e.done ? '처리됨' : '미처리',
+        })[k2] ?? '', all);
         const coBits = Object.entries(byCo).sort((a, b) => b[1] - a[1])
             .map(([k, v]) => `<span class="sum-b"><em>${esc(k)}</em>${won(v)}원</span>`).join('');
 
@@ -8474,7 +8824,8 @@ class BhasApp {
             ${coBits ? `<div class="sum-bar">${coBits}</div>` : ''}
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>
-                    <th>지출일</th><th>사용처</th><th>회사</th><th>메모</th><th class="num">금액</th><th class="it-c">처리</th>
+                    ${this._thead('expenses', [['spent_on', '지출일'], ['vendor', '사용처'], ['company', '회사'],
+                        ['memo', '메모'], ['amount', '금액', 'num'], ['done', '처리', 'it-c']])}
                 </tr></thead>
                 <tbody>${list.length ? list.map(row).join('')
                     : `<tr><td colspan="6" class="it-none">이 달 기록이 없습니다</td></tr>`}</tbody>
@@ -9091,6 +9442,12 @@ class BhasApp {
                  <i class="ph ph-arrows-clockwise"></i> 마지막 동기화: ${new Date(ls.run_at).toLocaleString('ko-KR')} · ${ls.result}</span>`
             : `<span class="glass" style="padding:6px 12px; border-radius:20px; font-size:0.8rem; color:var(--text-muted)"><i class="ph ph-plug"></i> 카페24 미연동</span>`;
 
+        items = this._applyTbl('inventory', items, (i, k2) => ({
+            sku: i.sku || '', name: i.name || '', option_name: i.option_name || '',
+            brand: this._brandNameById(i.brand_id) === '-' ? '' : this._brandNameById(i.brand_id),
+            on_hand: Number(i.on_hand) || 0, safety_stock: Number(i.safety_stock) || 0,
+            map: listingOf(i.id)?.channel_variant_code ? '연결됨' : '미매핑',
+        })[k2] ?? '', inv.items || []);
         const rows = items.map(i => {
             const map = listingOf(i.id);
             const low = i.on_hand <= i.safety_stock;
@@ -9141,8 +9498,9 @@ class BhasApp {
             </div>` : ''}
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>
-                    <th>SKU</th><th>품목명</th><th>옵션</th><th>브랜드</th>
-                    <th class="num">현재고</th><th class="num">안전재고</th><th class="it-c">카페24</th>
+                    ${this._thead('inventory', [['sku', 'SKU'], ['name', '품목명'], ['option_name', '옵션'],
+                        ['brand', '브랜드'], ['on_hand', '현재고', 'num'], ['safety_stock', '안전재고', 'num'],
+                        ['map', '카페24', 'it-c']])}
                 </tr></thead>
                 <tbody>${rows || `<tr><td colspan="7" class="it-none">등록된 품목이 없습니다 — 위 [품목 추가]로 시작하세요</td></tr>`}</tbody>
                 </table>
@@ -10614,6 +10972,10 @@ class BhasApp {
         const actOf = v => (v.jobs || []).filter(j => j.status !== 'done');
         const soonOf = v => actOf(v).map(j => dday(j.due_date)).filter(x => x !== null).sort((a, b) => a - b)[0];
 
+        list = this._applyTbl('vendors', list, (v, k2) => ({
+            name: v.name || '', address: v.address || '', phone: v.phone || '',
+            act: actOf(v).length, soon: (soonOf(v) === undefined ? '' : String(soonOf(v))),
+        })[k2] ?? '', all);
         const row = v => {
             const act = actOf(v), s2 = soonOf(v);
             const late = s2 !== undefined && s2 < 0;
@@ -10636,7 +10998,8 @@ class BhasApp {
             ${this.venMap ? `<div id="vendor-map" class="ven-map"></div>` : ''}
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>
-                    <th>상호</th><th>주소</th><th>전화</th><th class="num">진행</th><th>가장 가까운 납기</th>
+                    ${this._thead('vendors', [['name', '상호'], ['address', '주소'], ['phone', '전화'],
+                        ['act', '진행', 'num'], ['soon', '가장 가까운 납기']])}
                 </tr></thead>
                 <tbody>${list.length ? list.map(row).join('')
                     : `<tr><td colspan="5" class="it-none">${all.length ? '조건에 맞는 생산처가 없습니다' : '등록된 생산처가 없습니다 — 위 [생산처 등록]'}</td></tr>`}</tbody>
@@ -12277,6 +12640,12 @@ class BhasApp {
         if ((this.quoteStatus || 'ALL') !== 'ALL') qs = qs.filter(q => (q.status || 'draft') === this.quoteStatus);
         if ((this.quoteClient || 'ALL') !== 'ALL') qs = qs.filter(q => q.client_name === this.quoteClient);
         const stc = st => st === 'confirmed' ? '#30d158' : (st === 'sent' ? '#0a84ff' : '#ff9f0a');
+        qs = this._applyTbl('quotes', qs, (q, k2) => ({
+            quote_date: q.quote_date || '', client_name: q.client_name || '',
+            item: ((this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id)) || {}).name || '',
+            n: (q.items || []).length, total_amount: Number(q.total_amount) || 0,
+            status: this._quoteStatusLabel(q.status || 'draft'),
+        })[k2] ?? '', this.quotes || []);
         const rows = qs.map(q => {
             const it = (this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id));
             return `<tr class="it-row q-row" data-id="${q.id}">
@@ -12295,7 +12664,8 @@ class BhasApp {
                 `<button id="q-new-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 견적</button>`)}
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>
-                    <th>견적일</th><th>고객사</th><th>제품</th><th>품목</th><th class="num">합계</th><th>상태</th><th class="it-c">인쇄</th>
+                    ${this._thead('quotes', [['quote_date', '견적일'], ['client_name', '고객사'], ['item', '제품'],
+                        ['n', '품목', 'num'], ['total_amount', '합계', 'num'], ['status', '상태']])}<th class="it-c">인쇄</th>
                 </tr></thead><tbody>${rows}</tbody></table>
             </div>
         </div>`;

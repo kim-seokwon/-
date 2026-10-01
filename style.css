@@ -3034,7 +3034,7 @@ body:not(.light) .mac-deskboard .glass{
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all}
 /* 목록 보기 */
 .fd-list{padding:0 0 14px}
-.fd-r{display:grid;grid-template-columns:1fr 110px 96px 150px;gap:10px;align-items:center;
+.fd-r{display:grid;grid-template-columns:1fr 120px 120px 96px 100px;gap:10px;align-items:center;
   padding:6px 16px;font-size:12.5px;cursor:default;color:var(--text-muted)}
 .fd-r:nth-child(odd){background:rgba(127,127,127,.06)}
 .fd-r:hover{background:rgba(59,130,246,.14)}
@@ -4334,3 +4334,46 @@ body:not(.light){ --pane-line: rgba(255,255,255,.16); }
 .fd-pvsvg{width:100%;max-height:150px;display:grid;place-items:center;overflow:hidden}
 .fd-pvsvg svg{max-width:100%;max-height:150px}
 .fd-pv{height:auto;min-height:120px}
+/* 파인더 목록 머리글 — 줄 세우기·거르기 */
+.fd-r.head span{position:relative;padding-right:18px;cursor:default;user-select:none;
+  display:flex;align-items:center;gap:3px}
+.fd-r.head span.srt{color:#0a84ff}
+.fd-r.head span.flt{color:#0a84ff}
+.fd-r.head span:hover{color:inherit}
+.fd-r.head .th-f{right:0}
+.fd-r.head span:hover .th-f,.fd-r.head span.flt .th-f{opacity:1}
+.fd-r.head i.ph-caret-up,.fd-r.head i.ph-caret-down{font-size:10px}
+
+/* ── 메모 본문 live 편집 — 체크박스가 보이는 채로 고친다 ───────────── */
+.nt-live{font-size:14px;line-height:1.75;min-height:320px;cursor:text;padding-bottom:48px;position:relative}
+.nb-row{display:flex;align-items:flex-start;gap:9px;min-height:25px}
+.nb-row.nb-l{gap:0}
+.nb-in{flex:1;border:0;background:transparent;outline:none;resize:none;overflow:hidden;
+  font:inherit;color:inherit;line-height:1.75;padding:0;margin:0;min-height:25px;width:100%}
+.nb-t{flex:1;white-space:pre-wrap;word-break:break-word;min-height:25px;display:block}
+.nb-e{display:block;height:25px}
+.nt-live .nb-todo.done .nb-t,.nt-live .nb-todo.done .nb-in{color:var(--text-muted);text-decoration:line-through}
+.nt-live .nb-ck{margin-top:5px}
+.nb-hint{position:absolute;top:0;left:0;color:var(--text-muted);opacity:.55;pointer-events:none}
+.macwin .nb-in,.macwin .nb-in:focus{background:transparent !important;box-shadow:none !important;border:0 !important}
+
+/* 메모를 끌어다 폴더에 넣기 */
+.nt-row[draggable]{cursor:default}
+.nt-f.drop{background:var(--primary);color:#fff;box-shadow:inset 0 0 0 2px var(--primary)}
+.nt-f.drop i,.nt-f.drop em,.nt-f.drop span{color:#fff !important}
+
+/* 연결된 메모 — 적어서 찾기 */
+.np-find{position:relative;display:inline-block;min-width:230px}
+.np-in.find{width:100%;min-width:220px}
+.np-hits{display:none;position:absolute;z-index:40;left:0;top:calc(100% + 5px);min-width:260px;max-width:340px;
+  background:var(--card-bg,#fff);border:1px solid var(--pane-line);border-radius:10px;overflow:hidden;
+  box-shadow:0 12px 32px rgba(0,0,0,.18)}
+.np-hits.on{display:block}
+.np-hit{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;padding:7px 11px;
+  border:0;background:transparent;cursor:pointer;text-align:left;color:inherit}
+.np-hit:hover{background:var(--primary);color:#fff}
+.np-hit b{font-size:.82rem;font-weight:600}
+.np-hit span{font-size:.72rem;opacity:.6}
+.np-hit:hover span{opacity:.85;color:#fff}
+.np-hit.none{cursor:default;opacity:.55;font-size:.78rem}
+.np-hit.none:hover{background:transparent;color:inherit}
