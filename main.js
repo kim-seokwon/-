@@ -7582,15 +7582,17 @@ class BhasApp {
         this._noteText(n).split('\n').forEach((line, i) => {
             const m = line.match(this.NOTE_TODO_RE);
             if (!m) return;
-            const text = (m[3] || '').trim();
-            if (!text) return;            // 아직 아무것도 안 적은 줄은 할 일이 아니다
+            const raw = (m[3] || '').trim();
+            if (!raw) return;             // 아직 아무것도 안 적은 줄은 할 일이 아니다
+            //  날짜는 한 군데(_splitDue)에서만 떼어낸다 — '까지' 같은 꼬리말도 같이 떨어진다
+            const sp = this._splitDue(raw);
             out.push({
                 src: 'note', id: `${n.id}#${i}`, noteId: n.id, line: i,
-                title: text.replace(/[@#][^\s]+/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim() || '(내용 없음)',
+                title: sp.text.replace(/[@#][^\s]+/g, '').replace(/\s{2,}/g, ' ').trim() || '(내용 없음)',
                 done: (m[2] || ' ').toLowerCase() === 'x',
-                at: (text.match(/@([^\s]+)/g) || []).map(x => x.slice(1)),
-                tags: (text.match(/#([^\s]+)/g) || []).map(x => x.slice(1)),
-                due: (text.match(/\b(\d{4}-\d{2}-\d{2})\b/) || [])[1] || n.due_date || null,
+                at: (raw.match(/@([^\s]+)/g) || []).map(x => x.slice(1)),
+                tags: (raw.match(/#([^\s]+)/g) || []).map(x => x.slice(1)),
+                due: sp.due || n.due_date || null,
                 from: n.title || '메모',
             });
         });
