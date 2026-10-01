@@ -2674,22 +2674,54 @@ class BhasApp {
             this._showUpdateBar();
         } catch (_e) { /* 못 물어봐도 그냥 둔다 */ }
     }
+    //  맥 알림 — 오른쪽 위에서 밀려 나왔다가 접히고, 알림 센터에 남는다
+    notify({ id, kind, title, sub, icon = 'ph-bell', col = '#0a84ff', actions = [], sticky = false }) {
+        let box = document.getElementById('noti-stack');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'noti-stack'; box.className = 'nstack';
+            document.body.appendChild(box);
+        }
+        if (id && box.querySelector(`[data-n="${id}"]`)) return;
+        const esc = s2 => this._vesc(s2);
+        const el = document.createElement('div');
+        el.className = 'ntoast'; if (id) el.dataset.n = id;
+        el.innerHTML = `<span class="nt-ic" style="background:${col}"><i class="ph ${icon}"></i></span>
+            <div class="nt-tx">
+                <div class="nt-k">${esc(kind || '알림')}</div>
+                <div class="nt-ti">${esc(title || '')}</div>
+                ${sub ? `<div class="nt-sb">${esc(sub)}</div>` : ''}
+                ${actions.length ? `<div class="nt-ac">${actions.map((a, i) =>
+                    `<button class="${i === 0 ? 'pri' : ''}" data-i="${i}">${esc(a.t)}</button>`).join('')}</div>` : ''}
+            </div>
+            <button class="nt-x" title="닫기">✕</button>`;
+        const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 180); };
+        el.querySelector('.nt-x').onclick = (e) => { e.stopPropagation(); close(); };
+        actions.forEach((a, i) => {
+            const b = el.querySelector(`.nt-ac button[data-i="${i}"]`);
+            if (b) b.onclick = (e) => { e.stopPropagation(); close(); a.run && a.run(); };
+        });
+        box.appendChild(el);
+        if (!sticky) setTimeout(close, 6000);
+        return el;
+    }
     //  쓰던 중에 화면이 갑자기 바뀌면 안 된다. 알리기만 하고, 누를 때 바뀐다.
     _showUpdateBar() {
-        if (document.getElementById('upd-bar')) return;
         if (this._updSnoozeUntil && Date.now() < this._updSnoozeUntil) return;
-        const el = document.createElement('div');
-        el.id = 'upd-bar'; el.className = 'updbar';
-        el.innerHTML = `<i class="ph ph-arrow-circle-down"></i>
-            <span><b>새 버전이 나왔습니다</b><em>지금 쓰던 건 그대로 둬도 됩니다. 눌러야 바뀝니다.</em></span>
-            <button onclick="app.applyUpdate()">업데이트</button>
-            <button class="x" onclick="app.snoozeUpdate()">나중에</button>`;
-        document.body.appendChild(el);
+        this._updReady = true;                      // 알림 센터에도 남는다
+        this.notify({
+            id: 'upd', kind: '업데이트', icon: 'ph-arrow-circle-down', col: '#0a84ff', sticky: true,
+            title: '새 버전이 나왔습니다',
+            sub: '지금 쓰던 건 그대로 둬도 됩니다. 눌러야 바뀝니다.',
+            actions: [{ t: '업데이트', run: () => this.applyUpdate() },
+                      { t: '나중에', run: () => this.snoozeUpdate() }],
+        });
+        this.requestRender();                        // 종 아이콘 숫자 갱신
     }
     applyUpdate() { location.reload(true); }
     snoozeUpdate() {
         this._updSnoozeUntil = Date.now() + 30 * 60 * 1000;   // 30분 뒤 다시 묻는다
-        document.getElementById('upd-bar')?.remove();
+        document.querySelector('#noti-stack [data-n="upd"]')?.remove();
     }
     // 지금 보고 있는 판이 어느 것인지 — 주소가 여럿일 때 헷갈리지 않게 화면에 박아둔다
     _buildTag() {
@@ -3156,6 +3188,9 @@ class BhasApp {
         const today = new Date().toISOString().slice(0, 10);
         const nameOf = id => (mockData.companies || []).find(c => c.id === id)?.name || '';
         const out = [];
+        // 0) 새 버전 — 누를 때까지 남는다
+        if (this._updReady) out.push({ id: 'upd:' + __BUILD__, kind: '업데이트', icon: 'ph-arrow-circle-down',
+            col: '#0a84ff', title: '새 버전이 나왔습니다', sub: '눌러서 새로 받기', when: '', view: '__update' });
         // 1) 나에게 배정된 할일
         (mockData.products || []).forEach(p => (p.todos || []).forEach(t => {
             if (t.completed) return;
@@ -3234,13 +3269,14 @@ class BhasApp {
         setTimeout(() => this.requestRender(), 200);
     }
     openNotif(id, view) {
+        if (view === '__update') { this.applyUpdate(); return; }
         const read = this._readSet(); read.add(id); this._saveRead(read);
         this.closeNotifCenter();
         if (view) this.macOpen(view);
     }
     readAllNotifs() {
         const read = this._readSet();
-        this._notifs().forEach(n => read.add(n.id));
+        this._notifs().forEach(n => { if (n.view !== '__update') read.add(n.id); });
         this._saveRead(read);
         this.closeNotifCenter();
     }

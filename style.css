@@ -3262,16 +3262,7 @@ body:not(.light) .mac-deskboard .glass{
 @media (max-width:760px){ .appwrap{grid-template-columns:1fr} .appside{display:none} }
 /* 자료실 미리보기 칸이 너무 일찍 접히던 것 완화 */
 
-/* 새 판 알림 막대 */
-.updbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9000;
-  display:flex;align-items:center;gap:11px;padding:11px 14px 11px 13px;border-radius:14px;
-  max-width:min(520px,92vw);
-  background:rgba(32,32,36,.94);color:#f4f4f6;font-size:13px;
-  backdrop-filter:blur(28px);border:.5px solid rgba(255,255,255,.18);
-  box-shadow:0 14px 40px rgba(0,0,0,.45);animation:stmIn .16s cubic-bezier(.2,.9,.3,1.05)}
-.updbar button{border:0;border-radius:8px;background:var(--primary);color:#fff;font-family:inherit;
-  font-size:12.5px;font-weight:700;padding:5px 12px;cursor:pointer}
-.updbar button.x{background:rgba(255,255,255,.16)}
+/* (옛 하단 막대 .updbar 는 맥식 알림으로 바뀌었다 — 아래 .ntoast) */
 
 /* ═══════ 기본 화면(사이드바)도 맥 결로 ═══════ */
 /* KPI 타일 · 프로젝트 카드 — 두꺼운 그림자와 큰 모서리를 걷어낸다 */
@@ -4222,3 +4213,35 @@ body.pgripping *{cursor:col-resize !important}
 .updbar>span em{font-style:normal;font-size:11px;opacity:.72;line-height:1.4}
 .updbar button{flex:0 0 auto}
 @media (max-width:620px){ .updbar>span em{display:none} }
+
+/* ══ 맥 알림 — 오른쪽 위에서 밀려 나온다 ═══════════════════ */
+.nstack{position:fixed;top:34px;right:14px;z-index:9500;display:flex;flex-direction:column;
+  gap:9px;align-items:flex-end;pointer-events:none}
+.ntoast{pointer-events:auto;display:flex;gap:10px;width:min(330px,88vw);padding:11px 12px;
+  border-radius:15px;background:rgba(246,246,248,.82);border:.5px solid rgba(255,255,255,.6);
+  backdrop-filter:blur(26px) saturate(1.7);
+  box-shadow:0 10px 34px rgba(0,0,0,.18),0 1px 2px rgba(0,0,0,.08);
+  animation:ntIn .22s cubic-bezier(.2,.9,.3,1.05)}
+.ntoast.out{animation:ntOut .18s ease forwards}
+@keyframes ntIn{from{transform:translateX(26px) scale(.97);opacity:0}to{transform:none;opacity:1}}
+@keyframes ntOut{to{transform:translateX(26px) scale(.97);opacity:0}}
+.ntoast .nt-ic{width:30px;height:30px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;
+  color:#fff;font-size:16px}
+.ntoast .nt-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.ntoast .nt-k{font-size:10.5px;font-weight:800;color:#8a8f98;letter-spacing:.01em}
+.ntoast .nt-ti{font-size:13px;font-weight:700;color:#1c1c1e;line-height:1.35}
+.ntoast .nt-sb{font-size:11.5px;color:#6b7076;line-height:1.45;margin-top:1px}
+.ntoast .nt-ac{display:flex;gap:6px;margin-top:8px}
+.ntoast .nt-ac button{border:0;border-radius:7px;font-family:inherit;font-size:11.5px;font-weight:700;
+  padding:5px 11px;cursor:default;background:rgba(0,0,0,.07);color:#1c1c1e}
+.ntoast .nt-ac button.pri{background:#0a84ff;color:#fff}
+.ntoast .nt-ac button:hover{filter:brightness(1.06)}
+.ntoast .nt-x{border:0;background:transparent;color:#9aa0a8;font-size:11px;cursor:default;
+  padding:0 1px;align-self:flex-start;line-height:1}
+.ntoast .nt-x:hover{color:#1c1c1e}
+body:not(.light) .ntoast{background:rgba(44,44,48,.82);border-color:rgba(255,255,255,.12)}
+body:not(.light) .ntoast .nt-ti{color:#f2f2f5}
+body:not(.light) .ntoast .nt-sb{color:#a9aeb6}
+body:not(.light) .ntoast .nt-ac button{background:rgba(255,255,255,.14);color:#f2f2f5}
+body:not(.light) .ntoast .nt-ac button.pri{background:#0a84ff;color:#fff}
+@media (max-width:620px){ .nstack{left:12px;right:12px;align-items:stretch} .ntoast{width:auto} }
