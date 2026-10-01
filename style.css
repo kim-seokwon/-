@@ -4156,3 +4156,18 @@ body.pgripping *{cursor:col-resize !important}
 .dt-x:hover{color:#ff453a}
 .sn-list{max-height:260px}
 .sn-m span em{display:block;font-style:normal;font-size:10.5px;color:var(--text-muted);margin-top:1px}
+
+/* 표 머리글 — 더 또렷하게, 누르면 줄 세우기 */
+.it-tbl th{color:var(--text-main) !important;font-weight:800 !important;font-size:11.5px !important;
+  background:rgba(127,127,127,.09);cursor:default;user-select:none;
+  border-bottom:1px solid var(--card-border) !important}
+.it-tbl th[onclick]:hover{background:rgba(127,127,127,.18)}
+.it-tbl th.srt{color:#0a84ff !important;background:rgba(10,132,255,.1)}
+.it-tbl th i{font-size:10px;margin-left:3px;vertical-align:-1px}
+/* 상세 칸 접기 단추 */
+.dt-h{display:flex;align-items:flex-start;gap:8px}
+.dt-ht{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.dt-close{border:0;background:transparent;color:var(--text-muted);font-size:15px;cursor:default;
+  padding:2px 3px;border-radius:6px;flex:0 0 auto}
+.dt-close:hover{background:rgba(127,127,127,.18);color:inherit}
+.macwin .dt-close{box-shadow:none !important;border:0 !important;background:transparent !important}

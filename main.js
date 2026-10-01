@@ -3497,13 +3497,15 @@ class BhasApp {
         const esc = s => this._vesc(s);
         const f = (k, v) => v || v === 0 ? `<div class="dt-f"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>` : '';
         const wrap = (title, sub, body, acts) => `<aside class="appdet">
-            <div class="dt-h"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>
+            <div class="dt-h"><div class="dt-ht"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>
+                <button class="dt-close" title="접기" onclick="app.closeDetail('${view}')"><i class="ph ph-sidebar-simple"></i></button></div>
             <div class="dt-b">${body}</div>${acts ? `<div class="dt-a">${acts}</div>` : ''}</aside>`;
-        const empty = (msg) => `<aside class="appdet"><div class="dt-none">${esc(msg)}</div></aside>`;
+        //  고른 게 없으면 칸을 비워 두지 않고 아예 접는다 — 자리만 먹는다
+        const empty = () => '';
 
         if (view === 'tech_packs') {
             const t = (this._techPacks || []).find(x => String(x.id) === String(this.tpSel));
-            if (!t) return empty('작업지시서를 고르면 여기에 뜹니다');
+            if (!t) return empty();
             const it = (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
             const sea = it ? this._seasons().find(p => String(p.id) === String(it.product_id)) : null;
             let thumb = ''; try { thumb = garmentPreviewSVG(t.config, false); } catch (_e) {}
@@ -3519,7 +3521,7 @@ class BhasApp {
         }
         if (view === 'items') {
             const it = (this.pItems || []).find(x => String(x.id) === String(this.itemSel));
-            if (!it) return empty('제품을 고르면 여기에 뜹니다');
+            if (!it) return empty();
             const season = this._seasons().find(p => String(p.id) === String(it.product_id));
             const vendor = (this.vendors || []).find(v => String(v.id) === String(it.vendor_id));
             const tp = (this._techPacks || []).find(t => String(t.id) === String(it.tech_pack_id));
@@ -3561,7 +3563,7 @@ class BhasApp {
         }
         if (view === 'orders') {
             const o = (this.orders || []).find(x => String(x.order_id) === String(this.orderSel));
-            if (!o) return empty('주문을 고르면 여기에 뜹니다');
+            if (!o) return empty();
             const items = o.items || [];
             const cs = (this.csList || []).filter(t => String(t.order_no) === String(o.order_id));
             return wrap(o.receiver_name || o.buyer_name || '주문', o.order_id, `
@@ -3580,7 +3582,7 @@ class BhasApp {
         }
         if (view === 'cs') {
             const t = (this.csList || []).find(x => String(x.id) === String(this.csSel));
-            if (!t) return empty('CS 건을 고르면 여기에 뜹니다');
+            if (!t) return empty();
             return wrap(t.customer_name || '고객', `${t.kind} · ${t.status}`, `
                 ${f('주문번호', t.order_no)}
                 ${f('상품', t.product_name)}
@@ -3596,7 +3598,7 @@ class BhasApp {
         if (view === 'inventory') {
             const data = this.inventory || { items: [], listings: [], ledger: [] };
             const it = (data.items || []).find(x => String(x.id) === String(this.invSel));
-            if (!it) return empty('품목을 고르면 여기에 뜹니다');
+            if (!it) return empty();
             const map = (data.listings || []).find(l => l.channel === 'cafe24' && l.inventory_item_id === it.id);
             const RL = { initial: '초기', restock: '입고', cafe24_order: '카페24판매', manual: '수동', adjust: '보정', return: '반품' };
             const log = (data.ledger || []).filter(l => l.inventory_item_id === it.id).slice(0, 25);
@@ -11001,6 +11003,13 @@ class BhasApp {
     }
 
     selItem(id) { if (String(this.itemSel) === String(id)) return; this.itemSel = id; this.requestRender(); }
+    //  상세 칸 접기 — 고른 걸 놓으면 칸이 사라진다
+    closeDetail(view) {
+        ({ items: () => this.itemSel = null, cs: () => this.csSel = null,
+           inventory: () => this.invSel = null, tech_packs: () => this.tpSel = null,
+           orders: () => this.orderSel = null })[view]?.();
+        this.requestRender();
+    }
     //  칸 안의 입력칸·선택칸을 누른 것은 '줄 고르기' 가 아니다.
     //  이걸 안 가리면 드롭다운을 여는 순간 다시 그려서 0.2초 만에 닫힌다.
     rowPick(ev, id, what) {
@@ -11021,6 +11030,11 @@ class BhasApp {
     }
     setItemSeason(v) { this.itemSeason = v; this.requestRender(); }
     setItemStatus(v) { this.itemStatus = v; this.requestRender(); }
+    sortItems(k) {
+        const cur = this.itemSort || { k: '', dir: 1 };
+        this.itemSort = cur.k === k ? (cur.dir > 0 ? { k, dir: -1 } : { k: '', dir: 1 }) : { k, dir: 1 };
+        this.requestRender();
+    }
     itemFind(v) { this.itemQ = v; clearTimeout(this._itemQT); this._itemQT = setTimeout(() => this.requestRender(), 200); }
 
     // ── 연동 ────────────────────────────────────────────────
@@ -11233,6 +11247,26 @@ class BhasApp {
         if (stKey !== 'ALL') rows = rows.filter(i => (i.status || '') === stKey);
         if (q) rows = rows.filter(i => [i.name, i.pattern_no, i.memo].some(v => String(v || '').toLowerCase().includes(q)));
 
+        //  줄 세우기 — 머리글을 누르면 그 칸 기준. 한 번 더 누르면 거꾸로.
+        const srt = this.itemSort || { k: '', dir: 1 };
+        if (srt.k) {
+            const nameOfB = id => (brands.find(b => b.id === id) || {}).name || '';
+            const nameOfV = id => (vendors.find(v => v.id === id) || {}).name || '';
+            const nameOfS = id => (seasons.find(p => String(p.id) === String(id)) || {}).name || '';
+            const val = (i) => ({
+                checked: i.checked ? 1 : 0, brand_id: nameOfB(i.brand_id), name: i.name || '',
+                sale: (i.sale_names || [])[0] || '', pattern_no: i.pattern_no || '',
+                status: this.ITEM_STATUSES.indexOf(i.status) + 1 || 99, memo: i.memo || '',
+                trims: i.trims ? 1 : 0, vendor_id: nameOfV(i.vendor_id), product_id: nameOfS(i.product_id),
+                ship_date: i.ship_date || '', open_date: i.open_date || '',
+            })[srt.k];
+            rows = [...rows].sort((a, b) => {
+                const A = val(a), B = val(b);
+                if (typeof A === 'number' && typeof B === 'number') return (A - B) * srt.dir;
+                return String(A).localeCompare(String(B), 'ko') * srt.dir;
+            });
+        }
+
         const opt = (v, t, cur) => `<option value="${esc(String(v))}"${String(cur || '') === String(v) ? ' selected' : ''}>${esc(t)}</option>`;
         const txt = (it, f, ph, cls) => `<input class="it-in ${cls || ''}" value="${esc(it[f] || '')}" placeholder="${esc(ph || '')}"
             onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','${f}',this.value)">`;
@@ -11297,8 +11331,12 @@ class BhasApp {
             <div class="it-pills">${pill('ALL', '전체', all.length)}${this.ITEM_STATUSES.map(s => pill(s, s, cnt(s))).join('')}</div>
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>
-                    <th class="it-c">체크</th><th>브랜드</th><th>이름</th><th>판매명</th><th>패턴명</th><th>제작현황</th><th>메모</th>
-                    <th class="it-c">부자재</th><th>공장</th><th>시즌</th><th>출고예정일</th><th>오픈일</th><th>연동</th>
+                    ${[['checked', '체크', 'it-c'], ['brand_id', '브랜드'], ['name', '이름'], ['sale', '판매명'],
+                       ['pattern_no', '패턴명'], ['status', '제작현황'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
+                       ['vendor_id', '공장'], ['product_id', '시즌'], ['ship_date', '출고예정일'], ['open_date', '오픈일']]
+                      .map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}" onclick="app.sortItems('${k}')"
+                        title="눌러서 줄 세우기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}</th>`).join('')}
+                    <th>연동</th>
                 </tr></thead>
                 <tbody>${rows.length ? rows.map(tr).join('')
                     : `<tr><td colspan="13" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}</tbody>
