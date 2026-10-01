@@ -10150,8 +10150,9 @@ class BhasApp {
     //   한 줄 = 제품 하나. 그 줄이 시즌·공장·작업지시서·샘플·견적을 다 물고 있다.
     //   (예전 '프로젝트'는 이제 '시즌'이다 — products 테이블 그대로, 이름만 바꿨다)
     // ============================================================
-    ITEM_STATUSES = ['요청하기', '샘플 중', '원단·부자재', '메인투입', '보류', '완료'];
-    ITEM_SC = { '요청하기': '#8e8e93', '샘플 중': '#0a84ff', '원단·부자재': '#bf5af2', '메인투입': '#ff9f0a', '보류': '#ff453a', '완료': '#30d158' };
+    ITEM_STATUSES = ['시작전', '요청하기', '그레이딩', '샘플 중', '원단/부자재 발주', '메인투입', '보류', '출고완료'];
+    ITEM_SC = { '시작전': '#8e8e93', '요청하기': '#5e5ce6', '그레이딩': '#64d2ff', '샘플 중': '#0a84ff',
+        '원단/부자재 발주': '#bf5af2', '메인투입': '#ff9f0a', '보류': '#ff453a', '출고완료': '#30d158' };
 
     async loadItems() {
         this._itemsLoading = true;
@@ -10287,12 +10288,12 @@ class BhasApp {
     //  열 이름이 조금 달라도 뜻이 같으면 알아서 맞춘다. 없는 시즌·공장·브랜드는 만들어 붙인다.
     NOTION_MAP = {
         brand:   ['브랜드', 'brand'],
-        name:    ['이름', '제품명', '품명', 'name', 'title', '제품'],
+        name:    ['이름', '제품명', '품명', 'name', 'title'],
         pattern: ['패턴명', '패턴', '스타일', 'pattern', 'style'],
         status:  ['제작현황', '상태', '진행', 'status'],
         memo:    ['메모', '비고', 'memo', 'note', 'notes'],
         trims:   ['부자재', 'trims'],
-        checked: ['체크', 'check', 'done'],
+        checked: ['체크박스', '체크', 'check', 'done'],
         vendor:  ['공장', '생산처', '거래처', 'vendor', 'factory'],
         season:  ['시즌', '프로젝트', 'season', 'project'],
         ship:    ['출고예정일', '출고일', '출고', 'ship'],
@@ -10450,7 +10451,8 @@ class BhasApp {
                 <td>${txt(it, 'pattern_no', '패턴명')}</td>
                 <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
                         onchange="app.setItem('${it.id}','status',this.value,1)">
-                    ${this.ITEM_STATUSES.map(s => opt(s, s, it.status)).join('')}</select></td>
+                    ${(this.ITEM_STATUSES.includes(it.status) || !it.status ? this.ITEM_STATUSES : [it.status, ...this.ITEM_STATUSES])
+                        .map(s => opt(s, s, it.status)).join('')}</select></td>
                 <td>${txt(it, 'memo', '메모')}</td>
                 <td class="it-c">${chk(it, 'trims')}</td>
                 <td>${pick(it, 'vendor_id', vendors.map(v => ({ v: v.id, t: v.name })), '공장')}</td>

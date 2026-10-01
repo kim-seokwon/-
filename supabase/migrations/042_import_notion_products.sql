@@ -1,0 +1,131 @@
+-- ============================================
+-- 노션 '제품리스트2' + '제품리스트' → product_items
+-- 출처: ~/Downloads/..._Export-8585a931-...zip (2026-09-29 내보내기)
+-- Supabase SQL Editor 에서 041_product_items.sql 다음에 실행.
+-- 같은 이름의 제품이 이미 있으면 건너뛴다 — 여러 번 돌려도 안전하다.
+--
+-- 노션에 '시즌' 열이 없어서 시즌은 비워 둔다. 화면에서 골라 붙이면 된다.
+-- ============================================
+
+-- 1) 노션에 있던 공장을 거래처로 (없을 때만)
+INSERT INTO vendors (name, category)
+SELECT v.name, '봉제' FROM (VALUES
+  ('광명'),
+  ('영진 다이마루'),
+  ('영진사')) AS v(name)
+WHERE NOT EXISTS (SELECT 1 FROM vendors x WHERE x.name = v.name);
+
+-- 2) 제품 줄
+INSERT INTO product_items
+  (name, pattern_no, status, memo, trims, checked, brand_id, vendor_id, ship_date, open_date)
+SELECT s.name, s.pattern_no, s.status, s.memo, s.trims, s.checked,
+       (SELECT id FROM brands  b WHERE b.name = s.brand  LIMIT 1),
+       (SELECT id FROM vendors v WHERE v.name = s.vendor LIMIT 1),
+       s.ship_date, s.open_date
+FROM (VALUES
+  ('HUG ME SETUP (양기모셋업)',NULL,'출고완료',NULL,false,false,'하이헤이호','광명','2025-11-28'::date,'2025-12-04'::date),
+  ('Holiday ST-T shirt(폴라티)',NULL,'출고완료',NULL,false,false,'하이헤이호','광명','2025-11-28'::date,'2025-12-04'::date),
+  ('TEDDY BOUCLE CARDIGAN(브이가디건)',NULL,'출고완료',NULL,false,false,'하이헤이호','광명','2025-11-28'::date,'2025-12-04'::date),
+  ('HOLIDAY STRIPE PANTS (홀리데이팬츠)',NULL,'출고완료',NULL,false,false,'하이헤이호','광명','2025-11-28'::date,'2025-12-04'::date),
+  ('BOUCLE HOODIE (hhh후드)',NULL,'출고완료',NULL,false,false,'하이헤이호','광명','2025-11-28'::date,'2025-12-04'::date),
+  ('FLEECE HOOD ZIP-UP SET (후리스셋)',NULL,'출고완료',NULL,false,false,'하이헤이호','광명','2025-11-28'::date,'2025-12-04'::date),
+  ('HHH CAMP CAP',NULL,'출고완료',NULL,false,false,'하이헤이호','광명','2025-11-28'::date,'2025-12-04'::date),
+  ('✔️배색티','H261TS003','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('✔️브이뒷절개','브이 뒷절개 맨투맨','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('✔️토-기본부츠컷','토비 기본 부츠컷','출고완료',NULL,true,false,'토비','광명',NULL::date,NULL::date),
+  ('✔️토-일자바지','토비일자바지','출고완료',NULL,true,false,'토비','광명',NULL::date,NULL::date),
+  ('✔️토-기본가디건','T26CD','출고완료',NULL,true,false,'토비','광명',NULL::date,NULL::date),
+  ('✔️오버롤','헤링본멜빵','출고완료','2/4출고예정',true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('✔️ST바막','H261O001 ST바람막이','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('보류)mtm setup','L261TS004','보류',NULL,false,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('커브팬츠','H261PT002','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('스트라이프 데님','H261TPT001','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('코지가디건','코코베베가디건','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('✔️강아지티','H261TS003','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('부츠컷레이어드','H261PT003','출고완료','그린/메란지',true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('배색티','H261TS001','출고완료',NULL,true,false,'토비','광명',NULL::date,NULL::date),
+  ('✔️삥줄바람막이','L261JP001','출고완료','2/4 자수들어감',true,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('✔️모자리벳바지','슬라비데님팬츠','출고완료',NULL,true,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('✔️로고볼캡',NULL,'출고완료',NULL,true,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('✔️기본셔츠','L261BL001','출고완료','2/4 자수들어감',true,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('기본티','H261TS005토비','출고완료',NULL,true,false,'토비','광명',NULL::date,NULL::date),
+  ('기본쭉티','H261TS005','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('고쟁이',NULL,'출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('나시',NULL,'출고완료','메인',true,false,'토비','영진 다이마루',NULL::date,NULL::date),
+  ('랍빠 모달티','H261TS003 강아지티','보류','재샘',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('나시 블라우스','H262BL002','출고완료','3.12메인요청',true,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('나시/긴바지 세트','H262BL003 수','출고완료','3.12메인요청',true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('나시 린넨반바지슈트','H2620P001','요청하기','원단바꿔서 재샘보기',false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('린넨 단추 슈트','T262PT004','출고완료','3.12 반바지로 수정요청(영진사로택배)',false,false,'토비','영진사',NULL::date,NULL::date),
+  ('고방 조거팬츠','홀리데이팬츠','출고완료','3.12 메인',true,false,'토비','광명',NULL::date,NULL::date),
+  ('텐더ST썸머슈트',NULL,'보류','패턴요청함',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('반바지 워싱데님','샌드팬츠','보류',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('모달부츠컷',NULL,'출고완료','3.12 메인',true,false,'토비','광명',NULL::date,NULL::date),
+  ('모달절개 반팔티',NULL,'출고완료','📍그레이딩요청해야함',true,false,'토비','광명',NULL::date,NULL::date),
+  ('나그랑 모달쫄티','📍패턴요청 H261TS007변형하여 L','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('바이커팬츠',NULL,'보류','컬러 골지로',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('과일반팔 반바지셋업',NULL,'출고완료','티셔츠원단 확인, 바지 샘플요청함',true,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('깅엄원피스',NULL,'출고완료','블랙 바지 샘플 보고 아더컬러 결정',true,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('썸머가디건',NULL,'출고완료','3.23라운드로 변경하여 샘플 요청',false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('단추나시반바지',NULL,'보류',NULL,false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('기본 린넨셔츠',NULL,'샘플 중','5.13 재샘',false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('롤업데님반바지',NULL,'출고완료',NULL,true,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('배색모달티',NULL,'보류',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('조거팬츠',NULL,'보류','오픈 여부 의논 필',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('논페이드 데님',NULL,'출고완료',NULL,false,false,'로하이스튜디오','영진사',NULL::date,NULL::date),
+  ('논페이드 셔츠',NULL,'출고완료','주머니 내리고, 지니포인트, 현샘플2',false,false,'로하이스튜디오','영진사',NULL::date,NULL::date),
+  ('바람막이',NULL,'출고완료',NULL,false,false,'로하이스튜디오','영진사',NULL::date,NULL::date),
+  ('기본로고티',NULL,'출고완료',NULL,false,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('일자바스락바지',NULL,'보류',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('캡모자',NULL,'출고완료',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('화섬바지',NULL,'출고완료',NULL,false,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('깅엄일자바지 (원피스동일)',NULL,'출고완료',NULL,true,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('배색나시','25마룬나시','출고완료',NULL,true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('보트넥티',NULL,'메인투입','5.8 재샘 요청함',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('바스락바지',NULL,'출고완료','21일 패턴나옴',false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('단가라바지','모닝골덴하의','출고완료',NULL,true,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('피그먼트티셔츠',NULL,'보류',NULL,false,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('워싱데님',NULL,'보류','5.12 워싱 다시 감',false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('깅엄 반바지',NULL,'보류',NULL,false,false,'토비','광명',NULL::date,NULL::date),
+  ('쫄 끈나시',NULL,'샘플 중','5.12 패턴수정요청',false,false,'토비','광명',NULL::date,NULL::date),
+  ('아일렛 티셔츠',NULL,'보류',NULL,false,false,'토비','광명',NULL::date,NULL::date),
+  ('롱치마',NULL,'출고완료','5.8 패턴 수정 후 그레이딩 요청',false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('안경티',NULL,'출고완료','크림/그레이/ 미션20스판',true,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('고등어/조개티','데이랍빠티(네크립으로)','출고완료','샘플감에 나염 쳐보기',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('카라상하세트 삥줄',NULL,'보류',NULL,false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('쭈리카고팬츠',NULL,'출고완료',NULL,true,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('뒷절개스판티',NULL,'메인투입','컬러/디테일 고르기',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('어깨 밴드 티셔츠',NULL,'요청하기',NULL,false,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('st부츠컷',NULL,'출고완료',NULL,true,false,'토비','광명','2026-05-29'::date,NULL::date),
+  ('끈나시','H261TS024','원단/부자재 발주','아이엠30/가디건세트나시로 샘중',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('로고기본티',NULL,'메인투입','나염 배색',false,false,'로하이스튜디오','광명',NULL::date,NULL::date),
+  ('린넨슈트',NULL,'보류','허리선2cm 기장5cm 올림',false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('나그랑 기본티셔츠',NULL,'출고완료',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('가디건+나시셋업',NULL,'보류','원단 바꿔야함',false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('일자바지+주머니',NULL,'보류',NULL,false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('셔츠셋업',NULL,'메인투입',NULL,false,false,'토비','광명',NULL::date,NULL::date),
+  ('차르르셔츠',NULL,'메인투입',NULL,false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('화섬 반바지 스티치',NULL,'샘플 중',NULL,false,false,'로하이스튜디오','영진사',NULL::date,NULL::date),
+  ('니트비니',NULL,'보류',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('워싱진',NULL,'샘플 중',NULL,false,false,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('쫄티','H261TS001스판','메인투입',NULL,false,true,'하이헤이호','광명',NULL::date,NULL::date),
+  ('나그랑 배색 맨투맨',NULL,'메인투입',NULL,false,true,'하이헤이호','광명',NULL::date,NULL::date),
+  ('털조끼',NULL,'메인투입',NULL,false,true,'하이헤이호','영진사',NULL::date,NULL::date),
+  ('쭈리셋업',NULL,'메인투입',NULL,false,true,'하이헤이호','광명',NULL::date,NULL::date),
+  ('부츠컷','H261PT003','요청하기',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('ST 일자바지',NULL,'보류',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('이진이슈트',NULL,'보류',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('골덴 데님(워싱)',NULL,'시작전',NULL,false,false,NULL,'광명',NULL::date,NULL::date),
+  ('러브후디셋업 나그랑?',NULL,'시작전',NULL,false,false,NULL,'광명',NULL::date,NULL::date),
+  ('빵아플리케 맨투맨',NULL,'시작전',NULL,false,false,NULL,'광명',NULL::date,NULL::date),
+  ('나그랑셋업(러브후디)',NULL,'메인투입',NULL,false,false,'하이헤이호','광명',NULL::date,NULL::date),
+  ('기본셔츠',NULL,'메인투입','업무상태: 시작 전 · 결제 완료',false,false,'로하이스튜디오',NULL,NULL::date,NULL::date),
+  ('삥줄바람막이',NULL,'메인투입','업무상태: 시작 전 · 결제 완료',false,false,'로하이스튜디오',NULL,NULL::date,NULL::date),
+  ('로고볼캡',NULL,'원단/부자재 발주','업무상태: 시작 전',false,false,'로하이스튜디오',NULL,NULL::date,NULL::date),
+  ('✔️배색반팔티',NULL,'메인투입','업무상태: 시작 전',false,false,'하이헤이호',NULL,NULL::date,NULL::date),
+  ('레이어드나시',NULL,'샘플 중','업무상태: 시작 전',false,false,'토비',NULL,NULL::date,NULL::date),
+  ('로하이기본티',NULL,'시작전','업무상태: 시작 전',false,false,'로하이스튜디오',NULL,NULL::date,NULL::date)
+) AS s(name, pattern_no, status, memo, trims, checked, brand, vendor, ship_date, open_date)
+WHERE NOT EXISTS (SELECT 1 FROM product_items p WHERE p.name = s.name);
+
+SELECT count(*) || '개 제품이 제품리스트에 있습니다' AS status FROM product_items;

@@ -3610,7 +3610,7 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   padding:4px 3px;border-radius:5px;outline:none;font-family:inherit;max-width:104px;cursor:default}
 .it-sel:hover{border-color:var(--card-border)}
 .it-sel option{background:#1c1c1e;color:#fff}
-.it-sel.it-st{font-weight:700;border-radius:999px;padding:3px 8px;border-width:1px}
+.it-sel.it-st{font-weight:700;border-radius:999px;padding:3px 8px;border-width:1px;max-width:138px}
 .it-season{max-width:180px;border-color:var(--card-border);background:rgba(127,127,127,.1)}
 .it-ck{width:15px;height:15px;accent-color:#0a84ff;cursor:default}
 .it-lk{white-space:nowrap;width:1%}
