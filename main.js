@@ -6935,6 +6935,7 @@ class BhasApp {
                     <button onclick="app.deleteNote()" title="삭제"><i class="ph ph-trash"></i></button>
                     <span class="nt-scope">${sel.scope === 'private' ? '개인' : (sel.scope === 'project' ? '시즌' : '공용')}</span>
                     <button class="${this.noteProps ? 'on' : ''}" onclick="app.toggleNoteProps()" title="속성 펼치기"><i class="ph ph-sliders-horizontal"></i></button>
+                    <button class="nt-help" onclick="app.showHelp()" title="빠른 단축키"><i class="ph ph-question"></i></button>
                 </div>
                 <div class="nt-page">
                     <div class="nt-when">${esc(longWhen(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
@@ -6955,7 +6956,7 @@ class BhasApp {
                     })()}
                     ${this.notePreview
                         ? `<div class="nt-view" ondblclick="app.toggleNotePreview()">${this._noteBodyHTML(sel)}</div>`
-                        : `<textarea id="note-body" class="nt-body" placeholder="내용을 적어주세요 · [ ] 로 할 일, @이름 담당자, #말머리 꼬리표"
+                        : `<textarea id="note-body" class="nt-body" placeholder="내용을 적어주세요"
                               oninput="app.noteTyping(event)" onkeydown="app.noteKey(event)"
                               onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`}
                 </div>` : `<div class="nt-none big">메모를 선택하세요</div>`}
@@ -12066,6 +12067,38 @@ class BhasApp {
             if (parsed && typeof parsed === 'object') return parsed;
         } catch (e) { /* 본문이 JSON 이 아니면 아래 기본 메시지 */ }
         return { ok: false, error: error.message || '요청에 실패했습니다.' };
+    }
+
+    //  빠른 단축키 — 화면에 설명을 늘어놓는 대신 ? 안에 모아 둔다
+    HELP_KEYS = [
+        { g: '어디서든', rows: [
+            ['⌘ K', '모두 찾기 — 제품·시즌·주문·CS·메모·자료·화면'],
+            ['⌘ ⇧ R', '새로 받기 (바뀐 게 안 보일 때)'],
+            ['esc', '열린 창 닫기'],
+        ] },
+        { g: '메모 쓸 때', rows: [
+            ['[ ]', '할 일 — 미리알림에 저절로 올라간다'],
+            ['[x]', '끝낸 할 일'],
+            ['@이름', '담당자 — 그 사람 미리알림에 뜬다'],
+            ['#꼬리표', '말머리 — 같은 꼬리표끼리 모인다'],
+            ['⏎', '제목 칸에서 누르면 본문으로'],
+        ] },
+        { g: '표에서', rows: [
+            ['칸 누르기', '그 자리에서 고치고 바로 저장'],
+            ['줄 누르기', '오른쪽 칸에 자세히'],
+            ['우클릭', '폴더 속성 · 접근 권한'],
+        ] },
+    ];
+    showHelp() {
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const esc = s => this._vesc(s);
+        c.innerHTML = `<div class="modal-content vmodal hk" style="width:94%;max-width:420px">
+            <div class="hk-top"><b>빠른 단축키</b>
+                <button class="fi-x" onclick="app.closeGlobalModal()">×</button></div>
+            ${this.HELP_KEYS.map(s2 => `<div class="hk-g">${esc(s2.g)}</div>
+                ${s2.rows.map(([k, t]) => `<div class="hk-r"><kbd>${esc(k)}</kbd><span>${esc(t)}</span></div>`).join('')}`).join('')}
+        </div>`;
+        c.style.display = 'flex';
     }
 
     //  본인 비밀번호 바꾸기 — 로그인한 사람 스스로. 관리자 손이 필요 없다.

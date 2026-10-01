@@ -3685,6 +3685,11 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   color:inherit !important;padding:6px 9px !important;box-shadow:none !important}
 .macwin .login-input:focus,.macwin input:focus,.macwin select:focus,.macwin textarea:focus{
   border-color:var(--primary) !important;background:rgba(10,132,255,.06) !important;outline:none !important}
+/* 메모·제품리스트처럼 '종이' 로 보여야 하는 칸은 회색 바탕을 씌우지 않는다 */
+.macwin .nt-body,.macwin .nt-title,.macwin .nt-body:focus,.macwin .nt-title:focus,
+.macwin .nt-find input,.macwin .mp-find input,.macwin .fd-find input,.macwin .spot-f input{
+  background:transparent !important;border:0 !important;padding:0 !important;box-shadow:none !important}
+.macwin .nt-body{min-height:340px}
 /* 제품리스트 표의 칸은 자기 모양을 지킨다 */
 .macwin .it-in,.macwin .it-sel{background:transparent !important;border-color:transparent !important;
   padding:2px 4px !important;border-radius:5px !important}
@@ -3966,3 +3971,16 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .fi-note{font-size:11px;color:var(--text-muted);line-height:1.6;margin:10px 0 0}
 .fi-act{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
 .fi .pa-list{max-height:190px;overflow:auto;margin-top:6px}
+
+
+/* 빠른 단축키 창 */
+.hk .hk-top{display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;
+  border-bottom:.5px solid var(--card-border);margin-bottom:4px}
+.hk .hk-top b{font-size:14.5px;font-weight:800}
+.hk-g{font-size:11px;font-weight:800;color:var(--text-muted);margin:14px 0 4px}
+.hk-r{display:flex;align-items:center;gap:10px;padding:4px 0;font-size:12.5px}
+.hk-r kbd{font-family:inherit;font-size:11px;font-weight:700;color:inherit;white-space:nowrap;
+  background:rgba(127,127,127,.16);border-radius:6px;padding:3px 8px;min-width:54px;text-align:center;
+  flex:0 0 auto}
+.hk-r span{color:var(--text-muted);min-width:0}
+.nt-help{margin-left:2px}
