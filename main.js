@@ -6507,6 +6507,8 @@ class BhasApp {
     }
     _noteScopeOf(folderKey) {
         if (folderKey === 'private') return { scope: 'private', owner: this._me(), folder: '개인', product_id: null };
+        if ((folderKey || '').startsWith('pf:'))
+            return { scope: 'private', owner: this._me(), folder: folderKey.slice(3), product_id: null };
         if ((folderKey || '').startsWith('p:')) {
             const pid = folderKey.slice(2);
             const pr = (mockData.products || []).find(x => x.id === pid);
@@ -6628,10 +6630,74 @@ class BhasApp {
         try { await this.supabase.from('notes').update({ scope: next, owner: n.owner || null }).eq('id', n.id); }
         catch (e) { this.showToast('바꾸기 실패: ' + (e.message || e)); }
     }
-    async addNoteFolder() {
-        const v = await this.showPrompt('새 폴더 이름'); if (!v || !v.trim()) return;
-        this.noteFolder = 'f:' + v.trim();
-        await this.addNote(v.trim());
+    //  개인 폴더 — 나만 보는 것이라 권한을 물을 게 없다
+    async addPrivateFolder() {
+        const v = await this.showPrompt('새 개인 폴더 이름', '', '개인 폴더 만들기');
+        const name = (v || '').trim(); if (!name) return;
+        this.noteFolder = 'pf:' + name;
+        await this.addNote(name);
+    }
+    //  워크스페이스 폴더 — 만들 때 '누가 볼 수 있나' 부터 정한다
+    addNoteFolder() {
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const esc = s2 => this._vesc(s2);
+        const isMaster = this.currentUser?.role === 'MASTER';
+        const accs = (mockData.companies || []).filter(a => a.username);
+        c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:410px">
+            <div class="hk-top"><b>새 폴더</b><button class="fi-x" onclick="app.closeGlobalModal()">×</button></div>
+            <div class="fi-r" style="margin-top:12px"><span>이름</span>
+                <input id="nfn" class="nw-f" placeholder="예: 팝업 준비" autocomplete="off"></div>
+            <div class="fi-sec">누가 볼 수 있나</div>
+            ${isMaster ? `
+            <label class="pa-opt"><input type="radio" name="nfa" value="all" checked>
+                <span><b>모두</b><em>워크스페이스의 모든 계정</em></span></label>
+            <label class="pa-opt"><input type="radio" name="nfa" value="members">
+                <span><b>지정한 사람만</b><em>아래에서 고른 계정만 이 폴더를 본다</em></span></label>
+            <div class="pa-list" id="nfl">
+                ${accs.map(a => `<label class="pa-m"><input type="checkbox" value="${esc(a.username)}" ${a.username === this._me() ? 'checked' : ''}>
+                    <span class="mrow-face" style="width:24px;height:24px;font-size:11px">${esc((a.name || '?')[0])}</span>
+                    <span>${esc(a.name)}<em>${esc(a.username)} · ${a.role === 'MASTER' ? '마스터' : (a.role === 'STAFF' ? '직원' : '파트너')}</em></span></label>`).join('')}
+            </div>
+            <p class="fi-note">나중에 폴더 우클릭 → 폴더 정보에서 바꿀 수 있습니다. 마스터는 늘 전부 봅니다.</p>
+            ` : `<p class="fi-note">만든 폴더는 워크스페이스 모두가 봅니다. 범위를 좁히려면 마스터에게 말씀하세요.</p>`}
+            <div class="fi-act">
+                <button class="mbtn" onclick="app.closeGlobalModal()">취소</button>
+                <button class="mbtn pri" id="nfok">만들기</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        const nm = c.querySelector('#nfn');
+        if (isMaster) {
+            const sync = () => {
+                const v = c.querySelector('input[name=nfa]:checked')?.value;
+                const l = c.querySelector('#nfl');
+                l.style.opacity = v === 'members' ? '1' : '.4';
+                l.style.pointerEvents = v === 'members' ? 'auto' : 'none';
+            };
+            c.querySelectorAll('input[name=nfa]').forEach(r => r.onchange = sync);
+            sync();
+        }
+        const go = c.querySelector('#nfok');
+        nm.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); go.click(); } };
+        setTimeout(() => nm.focus(), 40);
+        go.onclick = async () => {
+            const name = nm.value.trim();
+            if (!name) { nm.focus(); return; }
+            go.disabled = true; go.textContent = '만드는 중...';
+            if (isMaster) {
+                const access = c.querySelector('input[name=nfa]:checked')?.value || 'all';
+                const members = [...c.querySelectorAll('#nfl input:checked')].map(x => x.value);
+                if (access === 'members') {
+                    const row = { name, access, members };
+                    const { error } = await this.supabase.from('note_folders').upsert(row, { onConflict: 'name' });
+                    if (error) { go.disabled = false; go.textContent = '만들기'; this.showToast('권한 저장 실패: ' + error.message); return; }
+                    this.noteFolders = [...(this.noteFolders || []).filter(x => x.name !== name), row];
+                }
+            }
+            this.closeGlobalModal();
+            this.noteFolder = 'f:' + name;
+            await this.addNote(name);
+        };
     }
     async renameNoteFolder(oldName) {
         const v = await this.showPrompt('폴더 이름', oldName); if (v === null || !v.trim() || v.trim() === oldName) return;
@@ -6643,6 +6709,7 @@ class BhasApp {
         catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
     }
     selectNote(id) { this.saveNote(); this.noteSel = id; this.notePreview = true; this.requestRender(); }
+    togglePrivFolders() { this.notePrivOpen = this.notePrivOpen === false; this.requestRender(); }
     toggleNoteSeasons() { this.noteSeaOpen = !this.noteSeaOpen; this.requestRender(); }
     setNoteSea(v) { this.noteSea = v; this.noteSel = null; this.requestRender(); }
     setNoteFolder(f) { this.saveNote(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
@@ -7199,6 +7266,7 @@ class BhasApp {
         const inFolder = (n) => {
             if (cur === 'all') return true;
             if (cur === 'private') return n.scope === 'private' && n.owner === me;
+            if (cur.startsWith('pf:')) return n.scope === 'private' && n.owner === me && (n.folder || '개인') === cur.slice(3);
             if (cur === 'shared') return n.scope === 'shared';
             if (cur.startsWith('p:')) return n.product_id === cur.slice(2);
             if (cur.startsWith('f:')) return (n.folder || '') === cur.slice(2);
@@ -7247,10 +7315,18 @@ class BhasApp {
             oncontextmenu="app.folderMenu(event,'${key}')">
             <i class="ph ${icon}" style="color:${color || '#e0a800'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
         const otherFolders = [...new Set(all.filter(n => n.scope === 'shared').map(n => n.folder || '공용'))];
+        //  개인 메모도 폴더로 나눈다 — '개인' 은 기본 칸이라 목록에서 뺀다
+        const privFolders = [...new Set(all.filter(n => n.scope === 'private' && n.owner === me)
+            .map(n => n.folder || '개인'))].filter(f => f !== '개인');
         return `
         <div class="nt">
             <aside class="nt-side">
+                <div class="nt-shead tog${this.notePrivOpen !== false ? ' on' : ''}" onclick="app.togglePrivFolders()">
+                    <i class="ph ph-caret-right"></i>개인
+                    <button class="nt-add" title="새 개인 폴더" onclick="event.stopPropagation();app.addPrivateFolder()">＋</button></div>
                 ${fold('private', 'ph-note', '개인 메모', cnt(n => n.scope === 'private' && n.owner === me))}
+                ${this.notePrivOpen === false ? '' : privFolders.map(f =>
+                    fold('pf:' + f, 'ph-folder-simple', f, cnt(n => n.scope === 'private' && n.owner === me && (n.folder || '개인') === f), '#ffb340')).join('')}
                 <div class="nt-shead">워크스페이스
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-tray', '모든 메모', all.length, '#8e8e93')}
@@ -7268,7 +7344,7 @@ class BhasApp {
             ${this._noteProductsHTML()}
             <section class="nt-list">
                 <div class="nt-lbar">
-                    <div><b>${esc(cur === 'private' ? '개인 메모' : (cur === 'all' ? '모든 메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2))))}</b>
+                    <div><b>${esc(cur === 'private' ? '개인 메모' : (cur.startsWith('pf:') ? cur.slice(3) : (cur === 'all' ? '모든 메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2)))))}</b>
                         <span>${list.length}개의 메모</span></div>
                     <select class="nt-sea" onchange="app.setNoteSea(this.value)" title="시즌으로 거르기">
                         <option value="ALL"${seaF === 'ALL' ? ' selected' : ''}>모든 시즌</option>

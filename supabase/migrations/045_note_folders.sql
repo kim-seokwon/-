@@ -15,15 +15,18 @@ CREATE TABLE IF NOT EXISTS note_folders (
 ALTER TABLE note_folders ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS nf_select ON note_folders;
 DROP POLICY IF EXISTS nf_write  ON note_folders;
--- 어떤 폴더가 있고 누가 볼 수 있는지는 로그인한 사람 모두 읽는다(화면에 자물쇠를 그려야 한다)
-CREATE POLICY nf_select ON note_folders FOR SELECT TO authenticated USING (true);
+-- 잠긴 폴더는 권한 없는 계정에겐 **있는지조차 안 보인다**(이름도 흘리지 않는다)
+CREATE POLICY nf_select ON note_folders FOR SELECT TO authenticated
+  USING (get_user_role() = 'MASTER' OR access = 'all' OR current_username() = ANY(members));
 -- 정하는 건 마스터만
 CREATE POLICY nf_write ON note_folders FOR ALL TO authenticated
   USING (get_user_role() = 'MASTER') WITH CHECK (get_user_role() = 'MASTER');
 
 -- 폴더 권한 확인 — 정해진 게 없으면 열려 있다
+-- SECURITY DEFINER 여야 한다 — 폴더 행 자체를 가렸기 때문에,
+-- 그냥 두면 이 함수도 그 행을 못 봐서 '잠긴 폴더가 없다' 고 판단해 버린다.
 CREATE OR REPLACE FUNCTION can_see_folder(p_folder TEXT)
-RETURNS boolean LANGUAGE sql STABLE SET search_path TO 'public' AS $$
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $$
   select case
     when p_folder is null then true
     when get_user_role() = 'MASTER' then true
