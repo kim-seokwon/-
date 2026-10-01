@@ -7914,19 +7914,37 @@ class BhasApp {
         let m;
         if ((m = t.match(/\b(\d{4})-(\d{2})-(\d{2})\b/)))
             return { at: m.index, len: m[0].length, date: m[0] };
-        if ((m = t.match(/(그저께|그제|어제|오늘|내일|모레|글피)/))) {
-            const k = { '그저께': -2, '그제': -2, '어제': -1, '오늘': 0, '내일': 1, '모레': 2, '글피': 3 }[m[1]];
+        //  긴 말부터 본다 — '내일모레' 에서 '내일' 을 집으면 하루가 어긋난다
+        if ((m = t.match(/(내일\s*모레|낼\s*모레|그저께|그제|어제|오늘|내일|낼|모레|모래|글피|다음\s*날|담날|익일|명일)/))) {
+            const w = m[1].replace(/\s+/g, '');
+            const k = { '내일모레': 2, '낼모레': 2, '그저께': -2, '그제': -2, '어제': -1, '오늘': 0,
+                        '내일': 1, '낼': 1, '모레': 2, '모래': 2, '글피': 3,
+                        '다음날': 1, '담날': 1, '익일': 1, '명일': 1 }[w];
             return { at: m.index, len: m[0].length, date: this._plusDays(k) };
         }
         if ((m = t.match(/(이번\s*주|다음\s*주|담\s*주)\s*([일월화수목금토])요?일?/)))
             return { at: m.index, len: m[0].length, date: this._nextDow(this.DOW_KO[m[2]], !/이번/.test(m[1])) };
+        if ((m = t.match(/(다음\s*주|담\s*주)(?!\s*[일월화수목금토])/)))
+            return { at: m.index, len: m[0].length, date: this._nextDow(1, true) };     // 그냥 '다음주' 면 다음주 월요일
+        if ((m = t.match(/(이번\s*)?주말/)))
+            return { at: m.index, len: m[0].length, date: this._nextDow(6, false) };    // 돌아오는 토요일
+        if ((m = t.match(/(이번\s*달\s*말|이달\s*말|월말|이번\s*달까지)/))) {
+            const d = new Date(); d.setMonth(d.getMonth() + 1, 0);
+            return { at: m.index, len: m[0].length, date: this._ymd(d) };
+        }
+        if ((m = t.match(/(다음\s*달|담\s*달)\s*(\d{1,2})\s*일/))) {
+            const d = new Date(); d.setMonth(d.getMonth() + 1, Number(m[2]));
+            return { at: m.index, len: m[0].length, date: this._ymd(d) };
+        }
+        if ((m = t.match(/(\d{1,2})\s*주\s*(뒤|후)/)))
+            return { at: m.index, len: m[0].length, date: this._plusDays(Number(m[1]) * 7) };
         if ((m = t.match(/(\d{1,2})\s*일\s*(뒤|후)/)))
             return { at: m.index, len: m[0].length, date: this._plusDays(Number(m[1])) };
         if ((m = t.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/))) {
             const y = new Date().getFullYear();
             return { at: m.index, len: m[0].length, date: `${y}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}` };
         }
-        if ((m = t.match(/(?:^|\s)(\d{1,2})\/(\d{1,2})(?=\s|$)/))) {
+        if ((m = t.match(/(?:^|\s)(\d{1,2})\/(\d{1,2})(?=\s|$|까지|쯤|에)/))) {
             const y = new Date().getFullYear();
             const off = m[0].length - (m[1].length + m[2].length + 1);
             return { at: m.index + off, len: m[0].length - off, date: `${y}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}` };
@@ -8034,6 +8052,99 @@ class BhasApp {
         });
     }
     linkFindClose() { setTimeout(() => document.getElementById('np-link-hits')?.classList.remove('on'), 150); }
+
+    // ── 메모 여러 개 고르기 — 끌어서 훑고, 한번에 옮기거나 지운다 ──
+    _picked() { if (!(this.noteMulti instanceof Set)) this.noteMulti = new Set(); return this.noteMulti; }
+    clearNotePick() { this.noteMulti = new Set(); this.requestRender(); }
+    //  목록에서 마우스를 끌면 지나간 메모가 다 골라진다
+    nbBandStart(ev) {
+        if (ev.button !== 0) return;
+        const box = ev.currentTarget;
+        const startRow = ev.target.closest('.nt-row');
+        const picked = this._picked();
+        //  이미 고른 것을 끌면 '폴더로 옮기기' 다 — 훑기로 가로채지 않는다
+        if (startRow && picked.has(startRow.dataset.id)) return;
+        const rows = [...box.querySelectorAll('.nt-row')];
+        const base = (ev.shiftKey || ev.metaKey || ev.ctrlKey) ? new Set(picked) : new Set();
+        const x0 = ev.clientX, y0 = ev.clientY;
+        let band = null, moved = false;
+        const move = (e) => {
+            if (!moved && Math.abs(e.clientY - y0) + Math.abs(e.clientX - x0) < 6) return;
+            if (!moved) {
+                moved = true;
+                rows.forEach(r => { r.draggable = false; });
+                band = document.createElement('div'); band.className = 'nt-band';
+                document.body.appendChild(band);
+            }
+            const l = Math.min(x0, e.clientX), t = Math.min(y0, e.clientY);
+            const w = Math.abs(e.clientX - x0), h = Math.abs(e.clientY - y0);
+            band.style.cssText = `left:${l}px;top:${t}px;width:${w}px;height:${h}px`;
+            const sel = new Set(base);
+            rows.forEach(r => {
+                const b = r.getBoundingClientRect();
+                if (b.bottom > t && b.top < t + h) sel.add(r.dataset.id);
+            });
+            this.noteMulti = sel;
+            rows.forEach(r => r.classList.toggle('pick', sel.has(r.dataset.id)));
+            const n = document.querySelector('.nt-bulk b');
+            if (n) n.textContent = `${sel.size}개 고름`;
+        };
+        const up = () => {
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+            if (band) band.remove();
+            rows.forEach(r => { r.draggable = true; });
+            if (moved) { this._bandJust = Date.now(); this.requestRender(); }
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+    }
+    //  ⌘ 누르고 누르면 하나씩, Shift 면 사이를 다, 그냥 누르면 그 메모를 연다
+    noteClick(ev, id) {
+        if (this._bandJust && Date.now() - this._bandJust < 250) return;   // 방금 훑었으면 클릭은 무시
+        const picked = this._picked();
+        if (ev.metaKey || ev.ctrlKey) {
+            picked.has(id) ? picked.delete(id) : picked.add(id);
+            this.requestRender(); return;
+        }
+        if (ev.shiftKey) {
+            const ids = [...document.querySelectorAll('.nt-row')].map(r => r.dataset.id);
+            const from = ids.indexOf(String(this.noteSel ?? this._noteShown));
+            const to = ids.indexOf(String(id));
+            if (from >= 0 && to >= 0) {
+                for (let i = Math.min(from, to); i <= Math.max(from, to); i++) picked.add(ids[i]);
+                this.requestRender(); return;
+            }
+        }
+        this.noteMulti = new Set();
+        this.selectNote(id);
+    }
+    async bulkDeleteNotes() {
+        const ids = [...this._picked()]; if (!ids.length) return;
+        if (!await this.showConfirm(`메모 ${ids.length}개를 지울까요? 되돌릴 수 없습니다.`, '삭제')) return;
+        try {
+            const { error } = await this.supabase.from('notes').delete().in('id', ids);
+            if (error) throw error;
+            this.noteList = (this.noteList || []).filter(n => !ids.includes(String(n.id)));
+            if (ids.includes(String(this.noteSel))) { this.noteSel = null; this._nbDrop(); }
+            this.noteMulti = new Set();
+            this.requestRender();
+            this.showToast(`메모 ${ids.length}개를 지웠습니다`);
+        } catch (e) { this.showToast('지우지 못했습니다: ' + (e.message || e)); }
+    }
+    async bulkMoveNotes() {
+        const ids = [...this._picked()]; if (!ids.length) return;
+        const me = this._me();
+        const shared = [...new Set((this.noteList || []).filter(n => n.scope === 'shared').map(n => n.folder || '공용'))];
+        const priv = [...new Set((this.noteList || []).filter(n => n.scope === 'private' && n.owner === me).map(n => n.folder || '개인'))];
+        const opts = [...shared.map(f => ['f:' + f, f]), ...priv.map(f => ['pf:' + f, f + ' (개인)'])];
+        if (!opts.length) { this.showToast('옮길 폴더가 없습니다'); return; }
+        this.ctxMenu(window.event || { preventDefault() {}, stopPropagation() {}, clientX: 200, clientY: 200 },
+            opts.map(([k, label]) => ({ t: label, icon: 'ph-folder-simple', run: async () => {
+                for (const id of ids) await this.moveNoteTo(id, k);
+                this.noteMulti = new Set(); this.requestRender();
+            } })));
+    }
     // ── 메모를 끌어다 폴더에 넣기 ─────────────────────────────
     nbDragStart(ev, id) {
         this._nbDragId = id;
@@ -8050,7 +8161,10 @@ class BhasApp {
         const id = this._nbDragId || (ev.dataTransfer && ev.dataTransfer.getData('text/plain'));
         this._nbDragId = null;
         if (!id || key === 'all') return;
-        await this.moveNoteTo(id, key);
+        const picked = this._picked();
+        const ids = picked.has(String(id)) ? [...picked] : [id];      // 고른 게 있으면 통째로
+        for (const x of ids) await this.moveNoteTo(x, key);
+        if (ids.length > 1) { this.noteMulti = new Set(); this.requestRender(); }
     }
     async moveNoteTo(id, key) {
         const n = (this.noteList || []).find(x => String(x.id) === String(id)); if (!n) return;
@@ -8221,6 +8335,7 @@ class BhasApp {
         const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' }) : '';
         const longWhen = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
         let items = '', last = null;
+        const pick = this._picked();
         list.forEach(n => {
             const b = bucket(n.updated_at);
             if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
@@ -8230,9 +8345,10 @@ class BhasApp {
                 .replace(/^\s*\[( |x|X)?\]\s?/gm, (_m, c) => (String(c || '').toLowerCase() === 'x' ? '☑ ' : '☐ '))
                 .replace(/\s+/g, ' ').trim().slice(0, 30);
             const td = this._noteTodos(n);
-            items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}" oncontextmenu="app.noteMenu(event,'${n.id}')"
-                    draggable="true" ondragstart="app.nbDragStart(event,'${n.id}')" title="끌어서 폴더로 옮길 수 있습니다"
-                    onclick="app.selectNote('${n.id}')">
+            items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}${pick.has(String(n.id)) ? ' pick' : ''}"
+                    data-id="${n.id}" oncontextmenu="app.noteMenu(event,'${n.id}')"
+                    draggable="true" ondragstart="app.nbDragStart(event,'${n.id}')" title="끌어서 훑으면 여러 개를 고를 수 있습니다"
+                    onclick="app.noteClick(event,'${n.id}')">
                 <b>${this._donut(td)}${esc(n.title || '새 메모')}</b>
                 <div class="nt-sub"><span class="nt-d">${esc(when(n.updated_at))}</span>
                     <span class="nt-p">${esc(prev) || '추가 텍스트 없음'}</span></div>
@@ -8282,7 +8398,11 @@ class BhasApp {
                     </select>
                     <button class="nt-new" onclick="app.addNote()" title="새 메모"><i class="ph ph-note-pencil"></i></button>
                 </div>
-                <div class="nt-rows">${items}</div>
+                ${pick.size > 1 ? `<div class="nt-bulk"><b>${pick.size}개 고름</b>
+                    <button onclick="app.bulkMoveNotes()"><i class="ph ph-folder-simple"></i>폴더 옮기기</button>
+                    <button class="danger" onclick="app.bulkDeleteNotes()"><i class="ph ph-trash"></i>삭제</button>
+                    <button class="plain" onclick="app.clearNotePick()">해제</button></div>` : ''}
+                <div class="nt-rows" onmousedown="app.nbBandStart(event)">${items}</div>
             </section>
             <section class="nt-doc">
                 ${sel ? `

@@ -4407,3 +4407,18 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .nt-dn{width:13px;height:13px;flex:0 0 auto;margin-right:6px;vertical-align:-1.5px;display:inline-block}
 .nt-row b{display:flex;align-items:center;min-width:0}
 .nt-row b .nt-dn{margin-top:0}
+
+/* 메모 여러 개 고르기 — 끌어서 훑기 */
+.nt-band{position:fixed;z-index:9999;pointer-events:none;border:1px solid var(--primary);
+  background:rgba(10,132,255,.12);border-radius:3px}
+.nt-row.pick{background:rgba(10,132,255,.14) !important;box-shadow:inset 2px 0 0 var(--primary)}
+.nt-rows{user-select:none}
+.nt-bulk{display:flex;align-items:center;gap:7px;padding:7px 12px;
+  border-bottom:1px solid var(--pane-line);background:rgba(10,132,255,.07)}
+.nt-bulk b{font-size:.8rem;font-weight:700;color:var(--primary);margin-right:auto}
+.nt-bulk button{display:inline-flex;align-items:center;gap:4px;font-size:.76rem;font-weight:600;
+  border:1px solid var(--card-border);background:var(--card-bg,#fff);color:inherit;
+  border-radius:7px;padding:3px 9px;cursor:pointer}
+.nt-bulk button:hover{border-color:var(--primary);color:var(--primary)}
+.nt-bulk button.danger:hover{border-color:#ef4444;color:#ef4444}
+.nt-bulk button.plain{border-color:transparent;opacity:.65}
