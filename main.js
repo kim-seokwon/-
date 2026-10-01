@@ -591,7 +591,7 @@ class BhasApp {
                         this.showToast(`시즌 삭제 실패: ${rpcErr.message}`);
                         return;
                     }
-                    this.showToast('시즌가 삭제되었습니다.');
+                    this.showToast('시즌이 삭제되었습니다.');
                     await this.loadInitialData();
                     if (this.activeProjectId === String(id)) {
                         this.setState({ currentView: 'dashboard', activeProjectId: null });
@@ -1612,7 +1612,7 @@ class BhasApp {
                 await this.loadInitialData();
                 modal.style.display = 'none';
                 this.requestRender();
-                this.showToast('새 시즌가 등록되었습니다.');
+                this.showToast('새 시즌이 등록되었습니다.');
             } catch (error) {
                 let errorMsg = error.message || '알 수 없는 오류';
                 if (error.code === '42501') errorMsg = '데이터베이스 권한(RLS)이 없습니다.';
@@ -3053,6 +3053,16 @@ class BhasApp {
         this.closeLauncher();
         if (this.macMode) this.macOpen(view); else this.switchView(view);
     }
+    //  모든 화면이 같은 머리를 쓴다 — 제목 · 한 줄 설명 · 오른쪽 단추 (제품리스트와 같은 결)
+    _mpTop(title, sub, right) {
+        return `<div class="mp-top"><div class="mp-tl"><b>${this._vesc(title)}</b>${sub ? `<span>${this._vesc(sub)}</span>` : ''}</div>
+            ${right ? `<div class="mp-sp">${right}</div>` : ''}</div>`;
+    }
+    _mpPage(title, sub, right, body) {
+        return `<div class="mp">${this._mpTop(title, sub, right)}<div class="mp-body">${body}</div></div>`;
+    }
+    _mpNone(msg) { return `<div class="mnone">${this._vesc(msg)}</div>`; }
+
     _appShell(view, inner) {
         const side = this._appTabBar(view);
         if (!side) return inner;
@@ -3384,43 +3394,35 @@ class BhasApp {
                 </div>
             `;
 
-            return this._appShell('dashboard', `
-                <div class="dashboard-sections">
+            const canAdd = this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF';
+            return this._appShell('dashboard', `<div class="mp">
+                ${this._mpTop('시즌', `진행 ${activeProducts.length} · 예정 ${scheduledProducts.length} · 완료 ${completedProducts.length}`,
+                    `${canAdd ? `<button id="add-project-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 시즌</button>` : ''}`)}
+                <div class="mp-body">
                     ${kpiStrip}
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-rocket-launch"></i> 진행 중인 시즌</h2>
-                        ${this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF' ? `<button id="add-project-btn" class="btn-primary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.9rem;"><i class="ph ph-plus"></i> 새 시즌</button>` : ''}
-                    </div>
-                    ${renderSection(activeProducts, isTable, '진행 중인 시즌가 없습니다.')}
+                    <div class="mp-sec">진행 중</div>
+                    ${renderSection(activeProducts, isTable, '진행 중인 시즌이 없습니다.')}
 
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; border-top: 1px solid var(--card-border); padding-top: 2rem;">
-                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-calendar-blank"></i> 예정 시즌</h2>
-                        <button class="toggle-btn ${this.scheduledExpanded === false ? 'collapsed' : ''}" id="toggle-scheduled-btn" title="토글">
-                            <i class="ph ph-caret-down" style="font-size: 1.2rem;"></i>
-                        </button>
+                    <div class="mp-sec" style="display:flex;align-items:center;justify-content:space-between">예정
+                        <button class="toggle-btn ${this.scheduledExpanded === false ? 'collapsed' : ''}" id="toggle-scheduled-btn" title="접기/펴기"><i class="ph ph-caret-down"></i></button>
                     </div>
                     <div class="collapsible-content ${this.scheduledExpanded === false ? 'collapsed' : ''}" id="scheduled-section">
-                        ${renderSection(scheduledProducts, isTable, '예정된 시즌가 없습니다.')}
+                        ${renderSection(scheduledProducts, isTable, '예정된 시즌이 없습니다.')}
                     </div>
 
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; border-top: 1px solid var(--card-border); padding-top: 2rem;">
-                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-check-circle"></i> 완료된 시즌</h2>
-                        <button class="toggle-btn ${!this.completedExpanded ? 'collapsed' : ''}" id="toggle-completed-btn" title="토글">
-                            <i class="ph ph-caret-down" style="font-size: 1.2rem;"></i>
-                        </button>
+                    <div class="mp-sec" style="display:flex;align-items:center;justify-content:space-between">완료
+                        <button class="toggle-btn ${!this.completedExpanded ? 'collapsed' : ''}" id="toggle-completed-btn" title="접기/펴기"><i class="ph ph-caret-down"></i></button>
                     </div>
                     <div class="collapsible-content ${!this.completedExpanded ? 'collapsed' : ''}" id="completed-section">
-                        ${renderSection(completedProducts, isTable, '완료된 시즌가 없습니다.')}
+                        ${renderSection(completedProducts, isTable, '완료된 시즌이 없습니다.')}
                     </div>
 
-                    <div class="mobile-logout-area" style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--card-border); text-align: center;">
-                        <button id="mobile-logout-btn" style="padding: 12px 2rem; border-radius: 12px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: #ef4444; font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.2)'" onmouseout="this.style.background='rgba(239,68,68,0.1)'">
-                            <i class="ph ph-sign-out" style="font-size: 1.1rem;"></i> 로그아웃
-                        </button>
-                        <div style="margin-top: 1rem; font-size: 0.7rem; color: var(--text-muted);">${this.currentUser.name} (${this.currentUser.role})</div>
+                    <div class="mobile-logout-area" style="margin-top:28px;padding-top:16px;border-top:.5px solid var(--card-border);text-align:center">
+                        <button id="mobile-logout-btn" class="mbtn danger"><i class="ph ph-sign-out"></i> 로그아웃</button>
+                        <div style="margin-top:8px;font-size:11px;color:var(--text-muted)">${this.currentUser.name} (${this.currentUser.role})</div>
                     </div>
                 </div>
-            `);
+            </div>`);
         } else if (this.currentView === 'all_todos') {
             const allTodos = mockData.products.flatMap(p => {
                 const projectCompany = mockData.companies.find(c => c.id === p.company_id);
@@ -4009,7 +4011,7 @@ class BhasApp {
                         <span class="tl-legend-item" style="color:#ef4444;"><i class="ph ph-warning-circle"></i> 지연 ${overdue}건</span>
                         <span class="tl-legend-item" style="color:#f59e0b;"><i class="ph ph-clock-countdown"></i> 7일내 마감 ${soon}건</span>
                     </div>
-                    ${rows || '<p style="color: var(--text-muted); padding: 2rem 0;">표시할 시즌가 없습니다.</p>'}
+                    ${rows || '<p style="color: var(--text-muted); padding: 2rem 0;">표시할 시즌이 없습니다.</p>'}
                 </div>
             `;
         } else if (this.currentView === 'items') {
@@ -4555,26 +4557,16 @@ class BhasApp {
             </table>` : `<div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:0.85rem">${mtxYear}년 매출 데이터가 없습니다.</div>`}
         </div>`;
 
-        return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
-            <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
-                <div>
-                    <h1 style="margin:0;font-size:1.45rem">${bf === 'ALL'
-                        ? '<i class="ph ph-chart-line-up"></i> 매출 현황'
-                        : `<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${colorOf(bf)};margin-right:9px"></span>${this._vesc(bf)}`}</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${bf === 'ALL'
-                        ? `<b style="color:var(--primary)">전체 브랜드 통합</b> · ${periodLabel} 기준`
-                        : `브랜드 상세 · ${periodLabel} 기준`}</p>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        return `<div class="mp">
+            ${this._mpTop(bf === 'ALL' ? '정산' : bf, bf === 'ALL' ? `전체 브랜드 통합 · ${periodLabel} 기준` : `브랜드 상세 · ${periodLabel} 기준`, `
                     <select onchange="app.setSalesYear(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         ${yearsAvail.map(y => `<option value="${y}" ${y === selY ? 'selected' : ''}>${y}년</option>`).join('')}
                     </select>
                     <select onchange="app.setSalesMonth(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         <option value="ALL" ${yearMode ? 'selected' : ''}>전체(연간)</option>
                         ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => { const has = validM.includes(m); return `<option value="${m}" ${(!yearMode && cmo === m) ? 'selected' : ''} ${has ? '' : 'disabled'}>${m}월${has ? '' : ' (없음)'}</option>`; }).join('')}
-                    </select>
-                </div>
-            </div>
+                    </select>`)}
+            <div class="mp-body">
             <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
                 ${this._brandRail([{ value: 'ALL', label: '전체 통합', active: bf === 'ALL', onclick: "app.setSalesBrand('ALL')" }].concat(brands.map(b => ({ value: b.name, label: this._vesc(b.name), active: bf === b.name, color: colorOf(b.name), onclick: `app.setSalesBrand('${this._vesc(b.name).replace(/'/g, "\\'")}')` }))))}
                 <div class="analysis-content" style="flex:1;min-width:0">
@@ -4593,7 +4585,7 @@ class BhasApp {
                     <p style="margin:1rem 2px 0;font-size:0.74rem;color:var(--text-muted)">* 판매 브랜드 = 몰 주문 결제금액 · 컨설팅 = ${consultingFromQuote ? '견적 총액(세금계산서 미발행)' : '발행 세금계산서'} · 취소·반품·교환은 집계에서 제외</p>
                 </div>
             </div>
-        </div>`;
+        </div></div>`;
     }
 
     // ============================================================
@@ -4766,25 +4758,19 @@ class BhasApp {
                 ${!rep || !(rep.top && rep.top.length) ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : rep.top.map((t, i) => { const last = t.last ? new Date(t.last).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '—'; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"><b style="color:${i < 3 ? '#4338ca' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vesc(t.nm || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.n}회</span></span><span style="text-align:right;white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${won(t.spend || 0)}원</b><div style="font-size:0.66rem;color:var(--text-muted)">마지막 ${last}</div></span></div>`; }).join('')}
             </div>
         </div>` : '';
-        return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
-            <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
-                <div>
-                    <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chart-donut" style="color:#6366f1"></i> 고객 분석</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${bf ? `<b style="color:var(--primary)">${this._vesc(bf)}</b> · ${range.label} · 주문 ${orderCnt.toLocaleString()}건` : '브랜드를 선택하세요'} <span style="color:var(--text-muted)">· 브랜드마다 고객이 달라 통합하지 않습니다</span></p>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        return `<div class="mp">
+            ${this._mpTop('고객 분석', bf ? `${this._vesc(bf)} · ${range.label} · 주문 ${orderCnt.toLocaleString()}건 — 브랜드마다 고객이 달라 통합하지 않습니다` : '브랜드를 선택하세요', `
                     <select onchange="app.setAnalysisPeriod(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         ${periods.map(([v, l]) => `<option value="${v}" ${curP === v ? 'selected' : ''}>${l}</option>`).join('')}
-                    </select>
-                </div>
-            </div>
+                    </select>`)}
+            <div class="mp-body">
             <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
                 ${names.length ? this._brandRail(names.map(n => ({ value: n, label: this._vesc(n), active: bf === n, onclick: `app.setAnalysisBrand('${this._vesc(n).replace(/'/g, "\\'")}')` }))) : `<div class="analysis-brandbar" style="width:154px;flex-shrink:0"><div style="font-size:0.8rem;color:var(--text-muted);padding:6px 4px">브랜드 없음</div></div>`}
                 <div class="analysis-content" style="flex:1;min-width:0">
                     ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
                 </div>
             </div>
-        </div>`;
+        </div></div>`;
     }
 
     // ============================================================
@@ -5019,14 +5005,13 @@ class BhasApp {
                 </div>
             </div>`;
         }).join('');
-        return `<div style="max-width:1100px;margin:0 auto">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;flex-wrap:wrap;gap:8px">
-                <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-instagram-logo"></i> SNS 운영현황</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별 팔로워 추이 · 주간 게시물 · 댓글/좋아요</p></div>
-            </div>
+        return `<div class="mp">
+            ${this._mpTop('SNS 운영현황', '브랜드별 팔로워 추이 · 주간 게시물 · 댓글/좋아요')}
+            <div class="mp-body">
             ${this._adsBlock()}
             ${accounts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.3rem">${cards}</div>` : `<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted)">등록된 인스타 계정이 없습니다.</div>`}
             <p style="margin:1.1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 팔로워·게시물·댓글·좋아요는 메타 API로 매일 자동수집됩니다. 주간 증감은 2주치가 쌓이면 표시돼요. (스토리는 API로 소급 불가라 보류)</p>
-        </div>`;
+        </div></div>`;
     }
 
     // 인스타 피드 톤앤매너 미리보기 — 실제 인스타 프로필 화면 그대로.
@@ -7219,11 +7204,9 @@ class BhasApp {
             </div>
         </div>`;
 
-        return `<div class="fade-in" style="padding:1.5rem;max-width:900px;margin:0 auto">
-            <div style="margin-bottom:1.1rem">
-                <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-arrows-counter-clockwise" style="color:#6366f1"></i> CS · 교환/반품</h1>
-                <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">이번 달 <b>${thisMonth.length}</b>건 · 진행 중 <b style="color:#f59e0b">${openCnt}</b>건 · 전체 ${all.length}건</p>
-            </div>
+        return `<div class="mp">
+            ${this._mpTop('CS · 교환/반품', `이번 달 ${thisMonth.length}건 · 진행 중 ${openCnt}건 · 전체 ${all.length}건`)}
+            <div class="mp-body">
             <div class="glass" style="padding:1rem 1.1rem;border-radius:16px;margin-bottom:1.1rem">
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                     <input id="cs-name" placeholder="고객 이름" style="flex:1;min-width:120px;padding:10px 12px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.9rem">
@@ -7241,7 +7224,7 @@ class BhasApp {
             </div>
             ${list.length ? list.slice(0, 300).map(row).join('') : '<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);text-align:center">해당하는 건이 없습니다</div>'}
             ${list.length > 300 ? `<div style="text-align:center;color:var(--text-muted);font-size:0.78rem;padding:0.6rem">최근 300건만 표시 (전체 ${list.length}건)</div>` : ''}
-        </div>`;
+        </div></div>`;
     }
 
     // ── 법인카드 지출 ─────────────────────────────────────────
@@ -7300,11 +7283,9 @@ class BhasApp {
         list.forEach(e => { const k = e.company || '미지정'; byCo[k] = (byCo[k] || 0) + Number(e.amount || 0); });
         const sel = this.expCompany || '하이헤이호';
 
-        return `<div class="fade-in" style="padding:1.5rem;max-width:900px;margin:0 auto">
-            <div style="margin-bottom:1.1rem">
-                <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-credit-card" style="color:#6366f1"></i> 법인카드 지출</h1>
-                <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${esc(month)} 합계 <b>${won(total)}원</b> · ${list.length}건</p>
-            </div>
+        return `<div class="mp">
+            ${this._mpTop('지출', `${esc(month)} 합계 ${won(total)}원 · ${list.length}건`)}
+            <div class="mp-body">
             <div class="glass" style="padding:1rem 1.1rem;border-radius:16px;margin-bottom:1.1rem">
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                     <input id="exp-vendor" placeholder="사용처 (예: 119퀵화물)" style="flex:1.4;min-width:140px;padding:10px 12px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.9rem">
@@ -7336,7 +7317,7 @@ class BhasApp {
                 </div>
                 <button onclick="app.toggleExpenseDone('${e.id}')" title="${e.done ? '처리됨' : '미처리'}" style="border:0;background:transparent;cursor:pointer;font-size:1.15rem;color:${e.done ? '#16a34a' : 'var(--text-muted)'}"><i class="ph ${e.done ? 'ph-check-circle' : 'ph-circle'}"></i></button>
             </div>`).join('') : '<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);text-align:center">이 달 기록이 없습니다</div>'}
-        </div>`;
+        </div></div>`;
     }
     async loadFeedback() {
         this._fbLoading = true;
@@ -7381,14 +7362,12 @@ class BhasApp {
                 : `<button onclick="app.resolveFeedback('${f.id}',true)" class="btn-primary" style="font-size:0.74rem;padding:6px 13px;border-radius:9px"><i class="ph ph-check"></i> 해결 처리</button>`}
             </div>
         </div>`;
-        return `<div class="fade-in" style="padding:1.5rem;max-width:820px;margin:0 auto">
-            <div style="margin-bottom:1.3rem">
-                <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-chat-dots" style="color:#6366f1"></i> 불편사항</h1>
-                <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">직원 접수 ${list.length}건 · 미처리 <b style="color:#ef4444">${open.length}</b>건</p>
-            </div>
+        return `<div class="mp">
+            ${this._mpTop('불편사항', `직원 접수 ${list.length}건 · 미처리 ${open.length}건`)}
+            <div class="mp-body">
             ${open.length ? open.map(card).join('') : '<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);text-align:center">미처리 불편사항이 없습니다 👍</div>'}
             ${done.length ? `<div style="font-size:0.8rem;color:var(--text-muted);font-weight:700;margin:1.6rem 2px 0.7rem">해결됨 (${done.length})</div>${done.map(card).join('')}` : ''}
-        </div>`;
+        </div></div>`;
     }
 
     // ============================================================
@@ -7581,7 +7560,7 @@ class BhasApp {
         else if (filter === 'done') rows = all.filter(o => o.status === 'done');
 
         const ls = (this.inventory && this.inventory.lastSync) || null;
-        const tab = (id, label, n) => `<button class="oms-tab ${filter === id ? 'active' : ''}" data-f="${id}" style="padding:7px 14px;border-radius:20px;font-size:0.85rem;cursor:pointer;border:1px solid var(--card-border);background:${filter === id ? 'var(--primary)' : 'rgba(var(--tint),0.05)'};color:${filter === id ? '#fff' : 'var(--text-muted)'}">${label} ${n}</button>`;
+        const tab = (id, label, n) => `<button class="oms-tab ${filter === id ? 'on active' : ''}" data-f="${id}">${label} ${n}</button>`;
 
         const body = rows.map(o => {
             const items = o.items || [];
@@ -7607,18 +7586,15 @@ class BhasApp {
         }).join('') || `<tr><td colspan="9" style="padding:2rem;text-align:center;color:var(--text-muted)">주문이 없습니다. 카페24 동기화가 돌면 여기로 모입니다.</td></tr>`;
 
         return `
-        <div class="glass" style="padding:2rem;border-radius:20px">
-            <div class="mobile-responsive-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;gap:1rem;flex-wrap:wrap">
-                <h2 style="display:flex;align-items:center;gap:8px;font-size:1.5rem;margin:0"><i class="ph ph-shopping-bag-open"></i> 주문/배송</h2>
-                <div style="display:flex;gap:10px;flex-wrap:wrap">
-                    <button class="btn-secondary" id="oms-sync-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-arrows-clockwise"></i> 카페24 주문 수집</button>
-                    <button class="btn-secondary" id="oms-export-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-download-simple"></i> 송장양식 다운로드</button>
-                    <button class="btn-primary" id="oms-epost-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem;background:#e11d48"><i class="ph ph-package"></i> 우체국 발번+송장등록</button>
-                    <button class="btn-secondary" id="oms-upload-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem"><i class="ph ph-upload-simple"></i> 송장번호 업로드</button>
-                    <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">
-                </div>
-            </div>
-            <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
+        <div class="mp">
+            ${this._mpTop('주문 · 배송', `배송대상 ${counts.target} · 배송중 ${counts.shipping} · 완료 ${counts.done}`, `
+                <button class="mbtn" id="oms-sync-btn"><i class="ph ph-arrows-clockwise"></i> 주문 수집</button>
+                <button class="mbtn" id="oms-export-btn"><i class="ph ph-download-simple"></i> 송장양식</button>
+                <button class="mbtn pri" id="oms-epost-btn"><i class="ph ph-package"></i> 우체국 발번+등록</button>
+                <button class="mbtn" id="oms-upload-btn"><i class="ph ph-upload-simple"></i> 송장 업로드</button>
+                <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">`)}
+            <div class="mp-body">
+            <div class="mp-seg" style="margin-bottom:12px">
                 ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('all', '전체', counts.all)}
             </div>
             <div class="table-container" style="overflow-x:auto">
@@ -7636,7 +7612,7 @@ class BhasApp {
                 <b style="color:#fb7185">■ 자동(권장):</b> 주문 체크(또는 배송대상 전체) → <b>우체국 발번+송장등록</b> 한 번이면 → 우체국 계약택배 발번(운송장번호) → 카페24 등 채널에 배송중+송장 자동 입력까지 끝.<br>
                 <b style="color:#94a3b8">■ 수동(택배사 직접):</b> ① 송장양식 다운로드 → 택배사 프로그램 출력 → ② 송장번호 업로드(CSV) → ③ 카페24 자동 등록 ${ls && ls.result === 'dry_run' ? '<span style="color:#f59e0b">(현재 dry-run)</span>' : ''}
             </div>
-        </div>`;
+        </div></div>`;
     }
 
     bindOrdersEvents() {
@@ -7918,14 +7894,13 @@ class BhasApp {
     setInvBrand(v) { this.setState({ invSelectedBrand: v }); }
     renderInventory() {
         const tab = this.inventoryTab || 'finished';
-        const tabButton = (id, icon, label) => `<button class="inventory-tab ${tab === id ? 'active' : ''}" data-inventory-tab="${id}"><i class="ph ${icon}"></i> ${label}</button>`;
-        return `<div class="inventory-shell">
-            <div class="inventory-tabs" role="tablist" aria-label="재고 종류">
-                ${tabButton('finished', 'ph-package', '완제품')}
-                ${tabButton('materials', 'ph-swatches', '원·부자재')}
-            </div>
-            ${tab === 'materials' ? this.renderMaterialInventory() : this.renderFinishedGoodsInventory()}
-        </div>`;
+        return tab === 'materials' ? this.renderMaterialInventory() : this.renderFinishedGoodsInventory();
+    }
+    //  완제품 ↔ 원·부자재 — 머리막대 안의 분절 컨트롤
+    _invTabs() {
+        const tab = this.inventoryTab || 'finished';
+        const b = (id, label) => `<button class="${tab === id ? 'on' : ''}" data-inventory-tab="${id}">${label}</button>`;
+        return `<div class="mp-seg">${b('finished', '완제품')}${b('materials', '원·부자재')}</div>`;
     }
 
     renderFinishedGoodsInventory() {
@@ -8010,17 +7985,15 @@ class BhasApp {
         </div>`;
 
         return `
-        <div class="glass" style="padding:2rem; border-radius:20px;">
+        <div class="mp">
+            ${this._mpTop('재고', '완제품 · 옵션별 현재고', `
+                ${this._invTabs()}
+                ${syncBadge}
+                <button class="mbtn" id="inv-cafe24-pull-btn"><i class="ph ph-download-simple"></i> 재고 불러오기</button>
+                <button class="mbtn" id="inv-cafe24-btn"><i class="ph ph-plug-charging"></i> 카페24 설정</button>
+                <button class="mbtn pri" id="inv-add-btn"><i class="ph ph-plus"></i> 품목 추가</button>`)}
+            <div class="mp-body">
             ${reorderCard}
-            <div class="mobile-responsive-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; gap:1rem; flex-wrap:wrap">
-                <h2 style="display:flex; align-items:center; gap:8px; font-size:1.5rem; margin:0"><i class="ph ph-package"></i> 재고 관리</h2>
-                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-                    ${syncBadge}
-                    <button class="btn-secondary" id="inv-cafe24-pull-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-download-simple"></i> 카페24 재고 불러오기</button>
-                    <button class="btn-secondary" id="inv-cafe24-btn" style="padding:8px 14px;border-radius:10px;font-size:0.85rem"><i class="ph ph-plug-charging"></i> 카페24 설정</button>
-                    <button class="btn-primary" id="inv-add-btn" style="padding:8px 16px;border-radius:10px;font-size:0.9rem">+ 품목 추가</button>
-                </div>
-            </div>
 
             <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
                 ${this._brandRail([{ value: 'all', label: '전체', active: (this.invSelectedBrand || 'all') === 'all', onclick: "app.setInvBrand('all')" }].concat((mockData.brands || []).map(b => ({ value: b.id, label: this._vesc(b.name), active: this.invSelectedBrand === b.id, color: b.brand_color || '#6366f1', onclick: `app.setInvBrand('${b.id}')` }))))}
@@ -8053,7 +8026,7 @@ class BhasApp {
                     </div>
                 </div>
             </div>
-        </div>`;
+        </div></div>`;
     }
 
     renderMaterialInventory() {
@@ -8109,11 +8082,11 @@ class BhasApp {
             </tr>`;
         }).join('') || `<tr><td colspan="5" style="padding:1.4rem;text-align:center;color:var(--text-muted)">변동 내역이 없습니다.</td></tr>`;
 
-        return `<div class="glass" style="padding:2rem;border-radius:20px">
-            <div class="mobile-responsive-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:1.2rem">
-                <div><h2 style="display:flex;align-items:center;gap:8px;font-size:1.45rem;margin:0"><i class="ph ph-swatches"></i> 원·부자재 재고</h2><p style="margin:5px 0 0;color:var(--text-muted);font-size:.78rem">원단·부자재·포장자재의 입고와 생산 사용량을 원장으로 관리합니다.</p></div>
-                <button id="mat-add" class="btn-primary" style="padding:9px 16px;border-radius:10px"><i class="ph ph-plus"></i> 품목 추가</button>
-            </div>
+        return `<div class="mp">
+            ${this._mpTop('재고', '원단·부자재·포장자재의 입고와 사용을 원장으로', `
+                ${this._invTabs()}
+                <button id="mat-add" class="mbtn pri"><i class="ph ph-plus"></i> 품목 추가</button>`)}
+            <div class="mp-body">
             <div class="material-kpis">
                 <div class="material-kpi"><span>등록 품목</span><strong>${data.items.length}개</strong></div>
                 <div class="material-kpi"><span>재발주 필요</span><strong style="color:${lowItems.length ? '#ef4444' : '#22c55e'}">${lowItems.length}개</strong></div>
@@ -8136,7 +8109,7 @@ class BhasApp {
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem"><h3 style="margin:0;font-size:1.02rem"><i class="ph ph-clock-counter-clockwise"></i> 입·출고 내역 ${this.materialLedgerItemId ? '(필터됨)' : ''}</h3>${this.materialLedgerItemId ? '<button id="mat-log-clear" class="btn-secondary" style="padding:5px 11px;border-radius:8px;font-size:.78rem">전체 보기</button>' : ''}</div>
                 <div class="table-container" style="overflow:auto;max-height:330px"><table class="mtbl" style="width:100%;border-collapse:collapse;min-width:600px"><thead><tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:.76rem;text-align:left"><th>일자</th><th>품목</th><th style="text-align:center">구분</th><th style="text-align:right">증감</th><th>참조·비고</th></tr></thead><tbody>${ledgerRows}</tbody></table></div>
             </div>
-        </div>`;
+        </div></div>`;
     }
 
     bindMaterialEvents() {
@@ -9499,18 +9472,14 @@ class BhasApp {
         }).join('');
 
         return `
-        <div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
-                <div>
-                    <h1 style="margin:0;font-size:1.4rem"><i class="ph ph-map-pin-line"></i> 생산 현황</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">생산처 ${vendors.length} · 진행중 물품 ${active.length}</p>
-                </div>
-                <button id="vendor-add-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 생산처 등록</button>
-            </div>
+        <div class="mp">
+            ${this._mpTop('생산현황', `생산처 ${vendors.length} · 진행중 물품 ${active.length}`,
+                `<button id="vendor-add-btn" class="mbtn pri"><i class="ph ph-plus"></i> 생산처 등록</button>`)}
+            <div class="mp-body">
             <div id="vendor-map" style="height:380px;border-radius:16px;overflow:hidden;margin-bottom:1rem;background:rgba(148,163,184,0.1);z-index:0"></div>
             ${scheduleStrip}
             ${vendors.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">${cards}</div>` : `<div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted)">등록된 생산처가 없습니다. 우측 상단 [생산처 등록]으로 시작하세요.</div>`}
-        </div>`;
+        </div></div>`;
     }
 
     bindVendorsEvents() {
@@ -10313,6 +10282,140 @@ class BhasApp {
         this.showToast(`생산현황에 올렸습니다 — ${row.title}`);
     }
 
+    // ── 노션에서 옮겨오기 ─────────────────────────────────
+    //  노션 데이터베이스 → ··· → Export → CSV 를 받아 그대로 떨어뜨리면 된다.
+    //  열 이름이 조금 달라도 뜻이 같으면 알아서 맞춘다. 없는 시즌·공장·브랜드는 만들어 붙인다.
+    NOTION_MAP = {
+        brand:   ['브랜드', 'brand'],
+        name:    ['이름', '제품명', '품명', 'name', 'title', '제품'],
+        pattern: ['패턴명', '패턴', '스타일', 'pattern', 'style'],
+        status:  ['제작현황', '상태', '진행', 'status'],
+        memo:    ['메모', '비고', 'memo', 'note', 'notes'],
+        trims:   ['부자재', 'trims'],
+        checked: ['체크', 'check', 'done'],
+        vendor:  ['공장', '생산처', '거래처', 'vendor', 'factory'],
+        season:  ['시즌', '프로젝트', 'season', 'project'],
+        ship:    ['출고예정일', '출고일', '출고', 'ship'],
+        open:    ['오픈일', '오픈', 'open', '발매일'],
+    };
+    pickNotionCSV() {
+        const el = document.createElement('input');
+        el.type = 'file'; el.accept = '.csv,text/csv';
+        el.onchange = () => { const f = el.files && el.files[0]; if (f) this.importNotionCSV(f); };
+        el.click();
+    }
+    //  따옴표 안의 쉼표·줄바꿈까지 제대로 끊는다 (노션 CSV 는 메모에 줄바꿈이 흔하다)
+    _csvRows(text) {
+        const rows = []; let row = [], cell = '', q = false;
+        const t = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+        for (let i = 0; i < t.length; i++) {
+            const c = t[i];
+            if (q) {
+                if (c === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+                else cell += c;
+            } else if (c === '"') q = true;
+            else if (c === ',') { row.push(cell); cell = ''; }
+            else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+            else cell += c;
+        }
+        if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+        return rows.filter(r => r.some(v => String(v).trim() !== ''));
+    }
+    _notionDate(v) {
+        const t = String(v || '').trim(); if (!t) return null;
+        const m = t.match(/(\d{4})[-./\s년]+(\d{1,2})[-./\s월]+(\d{1,2})/);
+        if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+        const d = new Date(t); return isNaN(d) ? null : d.toISOString().slice(0, 10);
+    }
+    _notionBool(v) { return /^(y|yes|true|o|v|예|완료|체크|done|✓|☑|1)$/i.test(String(v || '').trim()); }
+
+    async importNotionCSV(file) {
+        let rows;
+        try { rows = this._csvRows(await file.text()); }
+        catch (e) { this.showToast('CSV 를 읽지 못했습니다'); return; }
+        if (rows.length < 2) { this.showToast('내용이 없는 CSV 입니다'); return; }
+
+        const head = rows[0].map(h => String(h).trim());
+        const col = {};
+        Object.entries(this.NOTION_MAP).forEach(([k, names]) => {
+            const i = head.findIndex(h => names.some(n => h.toLowerCase().replace(/\s/g, '') === n.toLowerCase()));
+            const j = i < 0 ? head.findIndex(h => names.some(n => h.toLowerCase().includes(n.toLowerCase()))) : i;
+            if (j >= 0) col[k] = j;
+        });
+        if (col.name === undefined) {
+            this.showToast(`'이름' 열을 못 찾았습니다. 찾은 열: ${head.join(' / ')}`);
+            return;
+        }
+        const body = rows.slice(1);
+        if (!confirm(`${body.length}줄을 제품리스트로 가져옵니다.\n없는 시즌·공장·브랜드는 이름 그대로 새로 만듭니다.`)) return;
+
+        const get = (r, k) => col[k] === undefined ? '' : String(r[col[k]] ?? '').trim();
+        const brands = mockData.brands || [];
+        const seasons = this._seasons();
+        const vendors = this.vendors || [];
+        const byName = (list, n) => list.find(x => String(x.name || '').trim() === n);
+        let made = { season: 0, vendor: 0 }, fail = 0;
+        const out = [];
+
+        for (const r of body) {
+            const name = get(r, 'name'); if (!name) continue;
+            const row = { name, created_by: this._actor() };
+
+            const bn = get(r, 'brand');
+            const b = bn ? byName(brands, bn) : null;
+            if (b) row.brand_id = b.id;
+
+            const sn = get(r, 'season');
+            if (sn) {
+                let sea = byName(seasons, sn);
+                if (!sea) {
+                    const { data, error } = await this.supabase.from('products')
+                        .insert([{ name: sn, brand_id: row.brand_id || null }]).select().single();
+                    if (!error && data) { sea = data; seasons.push(data); mockData.products.push(data); made.season++; }
+                }
+                if (sea) { row.product_id = sea.id; if (!row.brand_id && sea.brand_id) row.brand_id = sea.brand_id; }
+            }
+
+            const vn = get(r, 'vendor');
+            if (vn) {
+                let ven = byName(vendors, vn);
+                if (!ven) {
+                    const { data, error } = await this.supabase.from('vendors')
+                        .insert([{ name: vn, category: '봉제' }]).select().single();
+                    if (!error && data) { ven = { ...data, jobs: [] }; vendors.push(ven); made.vendor++; }
+                }
+                if (ven) row.vendor_id = ven.id;
+            }
+
+            const st = get(r, 'status');
+            row.status = this.ITEM_STATUSES.find(x => x === st)
+                || this.ITEM_STATUSES.find(x => st && x.replace(/[^가-힣]/g, '').includes(st.replace(/[^가-힣]/g, '')))
+                || (st || '요청하기');
+            row.pattern_no = get(r, 'pattern') || null;
+            row.memo = get(r, 'memo') || null;
+            row.trims = this._notionBool(get(r, 'trims'));
+            row.checked = this._notionBool(get(r, 'checked'));
+            row.ship_date = this._notionDate(get(r, 'ship'));
+            row.open_date = this._notionDate(get(r, 'open'));
+            out.push(row);
+        }
+
+        // 한 번에 100줄씩
+        const made2 = [];
+        for (let i = 0; i < out.length; i += 100) {
+            const { data, error } = await this.supabase.from('product_items').insert(out.slice(i, i + 100)).select();
+            if (error) { fail += Math.min(100, out.length - i); continue; }
+            made2.push(...(data || []));
+        }
+        this.pItems = [...made2, ...(this.pItems || [])];
+        this._vendorsLoaded = false; this.loadVendors();
+        this.requestRender();
+        this.showToast(`제품 ${made2.length}줄 가져옴` +
+            (made.season ? ` · 시즌 ${made.season}개 새로 만듦` : '') +
+            (made.vendor ? ` · 공장 ${made.vendor}곳 새로 만듦` : '') +
+            (fail ? ` · ${fail}줄 실패` : ''));
+    }
+
     renderItems() {
         if (!this._itemsLoaded) return this._loadingSkeleton('제품리스트');
         const esc = s => this._vesc(s);
@@ -10369,14 +10472,15 @@ class BhasApp {
         const pill = (k, label, n) => `<button class="it-pill${stKey === k ? ' on' : ''}" onclick="app.setItemStatus('${k}')"
             ${k !== 'ALL' ? `style="--pc:${this.ITEM_SC[k] || '#8e8e93'}"` : ''}>${esc(label)}<em>${n}</em></button>`;
 
-        return `<div class="m3-doc it-wrap">
-            <div class="it-top">
-                <div class="it-tl"><b>제품리스트</b><span>${rows.length}/${all.length}</span></div>
+        return `<div class="mp it-wrap">
+            <div class="mp-top">
+                <div class="mp-tl"><b>제품리스트</b><span>${rows.length}/${all.length}</span></div>
                 <select class="it-sel it-season" onchange="app.setItemSeason(this.value)">
                     ${opt('ALL', '시즌 전체', sKey)}${seasons.map(s => opt(s.id, s.name, sKey)).join('')}${opt('NONE', '시즌 없음', sKey)}
                 </select>
                 <div class="it-find"><i class="ph ph-magnifying-glass"></i>
                     <input value="${esc(this.itemQ || '')}" placeholder="이름·패턴·메모" oninput="app.itemFind(this.value)"></div>
+                <button class="mbtn" onclick="app.pickNotionCSV()" title="노션 데이터베이스 → ··· → Export → CSV"><i class="ph ph-download-simple"></i> 노션 CSV</button>
                 <button class="it-add" onclick="app.addItem()"><i class="ph ph-plus"></i> 제품 추가</button>
             </div>
             <div class="it-pills">${pill('ALL', '전체', all.length)}${this.ITEM_STATUSES.map(s => pill(s, s, cnt(s))).join('')}</div>
@@ -10416,18 +10520,14 @@ class BhasApp {
                 </div>
             </div>`;
         };
-        return `<div class="fade-in" style="padding:1.5rem;max-width:1120px;margin:0 auto">
-            <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:1.3rem">
-                <div>
-                    <h1 style="margin:0;font-size:1.45rem"><i class="ph ph-clipboard-text" style="color:#6366f1"></i> 작업지시서</h1>
-                    <p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">저장한 작업지시서 ${list.length}건 · 열어서 수정 · 다운로드(⌘P로 PDF) · 인쇄 · 생산현황 물품에 연결</p>
-                </div>
-                <button onclick="app.newTechPack()" class="btn-primary" style="padding:9px 16px;border-radius:10px;font-weight:700"><i class="ph ph-plus"></i> 새 작업지시서</button>
-            </div>
+        return `<div class="mp">
+            ${this._mpTop('작업지시서', `${list.length}건 · 열어서 수정 · ⌘P로 PDF · 제품리스트와 연동`,
+                `<button onclick="app.newTechPack()" class="mbtn pri"><i class="ph ph-plus"></i> 새 작업지시서</button>`)}
+            <div class="mp-body">
             ${!this._techPacksLoaded ? '<div class="glass" style="padding:3rem;border-radius:18px;text-align:center;color:var(--text-muted)">불러오는 중...</div>'
                 : (list.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1.1rem">${list.map(card).join('')}</div>`
                     : '<div class="glass" style="padding:2.5rem;border-radius:18px;text-align:center;color:var(--text-muted)">저장된 작업지시서가 없어요. <b>샘플</b> 탭에서 만들고 저장하거나 위 <b>새 작업지시서</b>로 시작하세요.</div>')}
-        </div>`;
+        </div></div>`;
     }
 
     _qcFromConfig(cfg, job) {
@@ -10508,11 +10608,10 @@ class BhasApp {
         const epColor = ep?.ok ? '#22c55e' : (ep?.error ? '#ef4444' : '#f59e0b');
         const epText = ep?.ok ? `계약 연결 정상${ep.postNm ? ` · ${this._vesc(ep.postNm)}` : ''}` : (ep?.error ? `연결 오류 · ${this._vesc(ep.error)}` : '실제 계약 API 확인 필요');
         return `
-        <div class="fade-in" style="padding:1.5rem;max-width:1080px;margin:0 auto">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
-                <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-plugs-connected"></i> 채널 연동</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">브랜드별로 판매 채널을 연동하세요</p></div>
-                <button id="integ-addbrand-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 브랜드 추가</button>
-            </div>
+        <div class="mp">
+            ${this._mpTop('채널 연동', '브랜드별로 판매 채널을 연동하세요',
+                `<button id="integ-addbrand-btn" class="mbtn pri"><i class="ph ph-plus"></i> 브랜드 추가</button>`)}
+            <div class="mp-body">
             <div class="glass" style="padding:1rem 1.2rem;border-radius:14px;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
                 <div><div style="font-size:0.9rem;font-weight:700"><i class="ph ph-package" style="color:#e11d48"></i> 우체국 계약택배</div><div style="font-size:0.78rem;color:${epColor};margin-top:3px">● ${epText}</div></div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap"><button id="integ-epost-test" class="btn-secondary" style="padding:8px 14px;border-radius:9px" ${ep?.loading ? 'disabled' : ''}><i class="ph ph-plugs-connected"></i> ${ep?.loading ? '확인 중...' : '연결 테스트'}</button><button id="integ-epost-safe-test" class="btn-primary" style="padding:8px 14px;border-radius:9px" ${ep?.safeLoading ? 'disabled' : ''}><i class="ph ph-shield-check"></i> ${ep?.safeLoading ? '테스트 중...' : '안전 테스트 발번'}</button></div>
@@ -10527,7 +10626,7 @@ class BhasApp {
                 </table>
             </div>
             <p style="margin:1rem 0 0;color:var(--text-muted);font-size:0.8rem"><i class="ph ph-shield-check"></i> + 연동에서 채널별 필수 정보만 입력하세요. 비밀번호와 API 키는 화면에 다시 노출되지 않습니다.</p>
-        </div>`;
+        </div></div>`;
     }
 
     bindIntegrationsEvents() {
@@ -10692,11 +10791,10 @@ class BhasApp {
                 <td style="padding:10px;text-align:center"><button class="q-print" data-id="${q.id}" title="인쇄" style="background:none;border:none;color:var(--text-muted);cursor:pointer"><i class="ph ph-printer"></i></button></td>
             </tr>`).join('') || `<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">견적서가 없습니다. [새 견적]으로 시작하세요.</td></tr>`;
         return `
-        <div class="fade-in" style="padding:1.5rem;max-width:1000px;margin:0 auto">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;gap:10px;flex-wrap:wrap">
-                <div><h1 style="margin:0;font-size:1.4rem"><i class="ph ph-receipt"></i> 견적서</h1><p style="margin:4px 0 0;color:var(--text-muted);font-size:0.85rem">${qs.length}건 · 엑셀 대체</p></div>
-                <button id="q-new-btn" class="btn-primary" style="padding:10px 18px;border-radius:10px"><i class="ph ph-plus"></i> 새 견적</button>
-            </div>
+        <div class="mp">
+            ${this._mpTop('견적서', `${qs.length}건 · 엑셀 대체`,
+                `<button id="q-new-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 견적</button>`)}
+            <div class="mp-body">
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
                 <table class="mtbl" style="width:100%;border-collapse:collapse;min-width:620px">
                     <thead><tr style="color:var(--text-muted);font-size:0.8rem;text-align:left">
@@ -10704,7 +10802,7 @@ class BhasApp {
                     </tr></thead><tbody>${rows}</tbody>
                 </table>
             </div>
-        </div>`;
+        </div></div>`;
     }
     bindQuotesEvents() {
         const n = document.getElementById('q-new-btn'); if (n) n.onclick = () => this.showQuoteModal();
@@ -11360,7 +11458,7 @@ class BhasApp {
                 let errMsg = '등록 실패';
                 if (insertError.code === '42501') errMsg = '권한 부족: 데이터베이스에 쓸 권한이 없습니다.';
                 else if (insertError.code === '22P02') errMsg = '데이터 형식 오류: 유효한 ID가 아닙니다.';
-                else if (insertError.message && insertError.message.includes('foreign key')) errMsg = '선택한 시즌가 존재하지 않습니다. 페이지를 새로고침 후 다시 시도해주세요.';
+                else if (insertError.message && insertError.message.includes('foreign key')) errMsg = '선택한 시즌이 존재하지 않습니다. 페이지를 새로고침 후 다시 시도해주세요.';
                 else errMsg = '등록 실패: ' + insertError.message;
                 this.showToast(errMsg);
                 return false;

@@ -3570,11 +3570,6 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 
 /* ── 제품리스트 — 맥 '넘버스' 결의 표. 칸을 바로 고친다 ───────────────── */
 .it-wrap{height:100%;min-height:0}
-.it-top{display:flex;align-items:center;gap:8px;padding:10px 14px;flex:0 0 auto;
-  border-bottom:.5px solid var(--card-border)}
-.it-tl{display:flex;align-items:baseline;gap:7px;margin-right:4px}
-.it-tl b{font-size:15px;font-weight:800}
-.it-tl span{font-size:11.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
 .it-find{display:flex;align-items:center;gap:6px;margin-left:auto;background:rgba(127,127,127,.14);
   border-radius:7px;padding:4px 9px;min-width:150px}
 .it-find i{font-size:13px;color:var(--text-muted)}
@@ -3625,6 +3620,152 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .it-ib.on{color:#0a84ff}
 .it-ib.del:hover{color:#ff453a;background:rgba(255,69,58,.14)}
 @media (max-width:900px){
-  .it-top{flex-wrap:wrap}
+  .it-wrap .mp-top{flex-wrap:wrap}
   .it-find{margin-left:0;order:3;min-width:0;flex:1}
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   맥 통일 — 창 안의 모든 화면을 제품리스트와 같은 결로.
+   옛 화면은 class 는 그대로 두고 생김새만 갈아끼운다(선택자가 JS 에 물려 있어서).
+   줄 안의 inline style 이 자리값을 잡고 있어 !important 로 덮는다.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── 페이지 틀 ── */
+.mp{display:flex;flex-direction:column;height:100%;min-height:0}
+.mp-top{display:flex;align-items:center;gap:8px;padding:10px 14px;flex:0 0 auto;flex-wrap:wrap;
+  border-bottom:.5px solid var(--card-border)}
+.mp-tl{display:flex;align-items:baseline;gap:7px;min-width:0}
+.mp-tl b{font-size:15px;font-weight:800;white-space:nowrap}
+.mp-tl span{font-size:11.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mp-sp{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mp-body{flex:1;min-height:0;overflow:auto;padding:14px}
+.mp-sec{font-size:11.5px;font-weight:800;color:var(--text-muted);margin:16px 2px 7px;letter-spacing:.01em}
+.mp-sec:first-child{margin-top:2px}
+.mp-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+.mp-find{display:flex;align-items:center;gap:6px;background:rgba(127,127,127,.14);border-radius:7px;
+  padding:4px 9px;min-width:140px}
+.mp-find i{font-size:13px;color:var(--text-muted)}
+.mp-find input{border:0;background:transparent;color:inherit;font-size:12.5px;outline:none;width:100%}
+/* 분절 컨트롤 — 맥의 탭 전환 */
+.mp-seg{display:inline-flex;background:rgba(127,127,127,.14);border-radius:8px;padding:2px;gap:2px}
+.mp-seg button{border:0;background:transparent;color:var(--text-muted);font-family:inherit;font-size:12px;
+  font-weight:700;padding:3px 11px;border-radius:6px;cursor:default;white-space:nowrap}
+.mp-seg button.on{background:var(--card-bg);color:inherit;box-shadow:0 .5px 2px rgba(0,0,0,.14)}
+
+/* ── 창 안에서는 옛 틀을 쓰지 않는다 ── */
+.macwin .fade-in{padding:14px !important;max-width:none !important;margin:0 !important}
+.macwin .glass{background:var(--card-bg) !important;border:.5px solid var(--card-border) !important;
+  border-radius:10px !important;box-shadow:none !important;backdrop-filter:none !important}
+.macwin .glass:hover{border-color:var(--card-border) !important;transform:none !important}
+.macwin h1{font-size:15px !important;font-weight:800 !important;margin:0 !important;letter-spacing:-.01em}
+.macwin h1 i{font-size:15px !important;color:var(--text-muted) !important}
+.macwin h2{font-size:12.5px !important;font-weight:800 !important;color:var(--text-muted) !important}
+.macwin h2 i{font-size:13px !important}
+.macwin h3{font-size:13px !important;font-weight:700 !important}
+.macwin p{font-size:11.5px !important}
+
+/* 버튼 — 다 맥 버튼으로 */
+.macwin .btn-primary,.macwin .btn-danger,.macwin .btn-ghost{
+  font-family:inherit !important;font-size:12px !important;font-weight:600 !important;
+  padding:4px 11px !important;border-radius:7px !important;cursor:pointer;white-space:nowrap;
+  box-shadow:0 .5px 1px rgba(0,0,0,.08) !important;border:.5px solid var(--card-border) !important;
+  background:var(--card-bg) !important;color:inherit !important;letter-spacing:0 !important;
+  height:auto !important;min-width:0 !important;text-transform:none !important}
+.macwin .btn-primary{background:var(--primary) !important;border-color:var(--primary) !important;color:#fff !important}
+.macwin .btn-primary:hover{filter:brightness(1.08)}
+.macwin .btn-danger{color:#ef4444 !important}
+.macwin .btn-danger:hover{background:rgba(239,68,68,.12) !important}
+.macwin .btn-primary i,.macwin .btn-danger i{font-size:12px !important}
+
+/* 입력칸 */
+.macwin .login-input,.macwin input[type=text],.macwin input[type=number],.macwin input[type=date],
+.macwin input[type=search],.macwin select,.macwin textarea{
+  font-family:inherit !important;font-size:12.5px !important;border-radius:7px !important;
+  border:.5px solid var(--card-border) !important;background:rgba(127,127,127,.08) !important;
+  color:inherit !important;padding:6px 9px !important;box-shadow:none !important}
+.macwin .login-input:focus,.macwin input:focus,.macwin select:focus,.macwin textarea:focus{
+  border-color:var(--primary) !important;background:rgba(10,132,255,.06) !important;outline:none !important}
+/* 제품리스트 표의 칸은 자기 모양을 지킨다 */
+.macwin .it-in,.macwin .it-sel{background:transparent !important;border-color:transparent !important;
+  padding:2px 4px !important;border-radius:5px !important}
+.macwin .it-in:hover,.macwin .it-sel:hover{border-color:var(--card-border) !important}
+.macwin .it-in:focus{border-color:#0a84ff !important;background:rgba(10,132,255,.07) !important}
+.macwin .it-sel.it-st{padding:3px 8px !important;border-radius:999px !important}
+.macwin .it-ck,.macwin input[type=checkbox],.macwin input[type=radio]{
+  padding:0 !important;background:none !important;border:0 !important;accent-color:#0a84ff}
+
+/* 수치 타일 — 크고 둥근 카드를 납작하게 */
+.macwin .kpi-strip,.macwin .stat-grid{gap:10px !important}
+.macwin .kpi-card,.macwin .stat-card{border-radius:10px !important;box-shadow:none !important;
+  background:var(--card-bg) !important;border:.5px solid var(--card-border) !important;
+  padding:11px 13px !important;transform:none !important}
+.macwin .kpi-card:hover,.macwin .stat-card:hover{border-color:var(--card-border) !important;transform:none !important}
+.macwin .kpi-ico{width:28px !important;height:28px !important;border-radius:8px !important;font-size:14px !important}
+.macwin .kpi-num,.macwin .stat-value{font-size:19px !important;font-weight:800 !important;
+  font-variant-numeric:tabular-nums}
+.macwin .kpi-label,.macwin .stat-label{font-size:11px !important;color:var(--text-muted) !important}
+
+/* 카드 — 시즌·거래처 등 */
+.macwin .project-card{border-radius:10px !important;box-shadow:none !important;padding:13px 14px !important;
+  background:var(--card-bg) !important;border:.5px solid var(--card-border) !important}
+.macwin .project-card:hover{transform:none !important;border-color:var(--primary) !important}
+.macwin .progress-container{margin:10px 0 8px !important}
+.macwin .progress-bar{height:4px !important;border-radius:99px !important;background:rgba(127,127,127,.18) !important}
+.macwin .progress-fill{border-radius:99px !important}
+.macwin .card-footer{font-size:11.5px !important;color:var(--text-muted) !important;
+  padding-top:9px !important;margin-top:9px !important;border-top:.5px solid var(--card-border) !important}
+
+/* 표 — 안 쪽에 아무 표나 와도 맥식으로 */
+.macwin table{border-collapse:collapse;font-size:12.5px}
+.macwin thead th{font-size:11px !important;font-weight:700 !important;color:var(--text-muted) !important;
+  padding:7px 9px !important;border-bottom:.5px solid var(--card-border) !important;white-space:nowrap}
+.macwin tbody td{padding:7px 9px !important;border-bottom:.5px solid var(--card-border) !important;
+  font-size:12.5px !important}
+.macwin tbody tr:hover{background:rgba(127,127,127,.07)}
+.macwin tbody tr:last-child td{border-bottom:0 !important}
+
+/* 빈 화면 안내 */
+.macwin .glass[style*="text-align:center"],.macwin .glass[style*="text-align: center"]{
+  padding:28px 14px !important;color:var(--text-muted) !important;font-size:12.5px !important}
+
+/* 창 안의 분절 컨트롤 안에 있는 옛 버튼도 같은 모양으로 */
+.macwin .mp-seg button{border:0 !important;background:transparent !important;box-shadow:none !important;
+  color:var(--text-muted) !important;font-size:12px !important;font-weight:700 !important;
+  padding:3px 11px !important;border-radius:6px !important}
+.macwin .mp-seg button.on{background:var(--card-bg) !important;color:inherit !important;
+  box-shadow:0 .5px 2px rgba(0,0,0,.14) !important}
+.macwin .toggle-btn{border:0 !important;background:transparent !important;color:var(--text-muted) !important;
+  font-size:13px !important;padding:2px 5px !important;cursor:default}
+.macwin .toggle-btn.collapsed i{transform:rotate(-90deg)}
+
+/* 뜨는 창(모달)도 맥 결로 — 창 밖이라 따로 잡는다 */
+.modal-content,.vmodal{border-radius:12px !important;box-shadow:0 18px 50px rgba(0,0,0,.34) !important;
+  background:var(--card-bg) !important;border:.5px solid var(--card-border) !important;
+  backdrop-filter:none !important;padding:18px 20px !important}
+.modal-content h2,.vmodal h2{font-size:14.5px !important;font-weight:800 !important;margin:0 0 14px !important}
+.modal-content .login-input,.vmodal .login-input,.modal-content input,.modal-content select,
+.modal-content textarea,.vmodal input,.vmodal select,.vmodal textarea{
+  font-family:inherit !important;font-size:12.5px !important;border-radius:7px !important;
+  border:.5px solid var(--card-border) !important;background:rgba(127,127,127,.08) !important;
+  color:inherit !important;padding:7px 9px !important;box-shadow:none !important}
+.modal-content input[type=checkbox],.vmodal input[type=checkbox]{padding:0 !important;background:none !important;border:0 !important}
+.modal-content .btn-primary,.modal-content .btn-danger,.modal-content .btn-secondary,
+.vmodal .btn-primary,.vmodal .btn-danger,.vmodal .btn-secondary{
+  font-size:12px !important;font-weight:600 !important;padding:5px 13px !important;border-radius:7px !important;
+  border:.5px solid var(--card-border) !important;background:var(--card-bg) !important;color:inherit !important;
+  box-shadow:none !important;height:auto !important}
+.modal-content .btn-primary,.vmodal .btn-primary{background:var(--primary) !important;
+  border-color:var(--primary) !important;color:#fff !important}
+.modal-content .btn-danger,.vmodal .btn-danger{color:#ef4444 !important}
+
+/* 자재 수치 타일 */
+.macwin .material-kpis{display:grid !important;gap:10px !important;
+  grid-template-columns:repeat(auto-fill,minmax(150px,1fr)) !important;margin-bottom:14px !important}
+.macwin .material-kpi{border:.5px solid var(--card-border) !important;border-radius:10px !important;
+  background:var(--card-bg) !important;padding:10px 12px !important;box-shadow:none !important;
+  display:flex !important;flex-direction:column !important;gap:3px !important}
+.macwin .material-kpi span{font-size:11px !important;color:var(--text-muted) !important}
+.macwin .material-kpi strong{font-size:17px !important;font-weight:800 !important;font-variant-numeric:tabular-nums}
+/* 브랜드 레일 */
+.macwin .analysis-brandbar{width:138px !important;flex-shrink:0}
+.macwin .analysis-layout{gap:14px !important}
