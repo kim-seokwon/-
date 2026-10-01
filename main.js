@@ -28,6 +28,7 @@ class BhasApp {
     constructor() {
         this.currentUser = null;
         this.appContainer = document.getElementById('app');
+        try { this.docCats = JSON.parse(localStorage.getItem('bhas_doccats') || '[]'); } catch (_e) { this.docCats = []; }
         if (localStorage.getItem('bhas_theme') !== 'dark') document.body.classList.add('light'); // 기본 라이트(토스st)
         this.currentView = 'login'; // 'login', 'dashboard', 'detail'
         this.activeProjectId = null;
@@ -2980,17 +2981,20 @@ class BhasApp {
                 ${depth ? `<i class="ph-fill ph-circle" style="font-size:7px;color:${color || '#8e8e93'}"></i>`
                         : `<i class="ph ph-squares-four" style="color:#0a84ff"></i>`}
                 <span>${esc(label)}</span><em>${count}</em></div>`;
-        const sec = (name, key, inner) => {
+        const sec = (name, key, inner, add) => {
             const open = (this.itemNavOpen || {})[key] !== false;
             return `<div class="m3-h tog${open ? ' on' : ''}" onclick="app.toggleItemNav('${key}')">
-                <i class="ph ph-caret-right"></i>${esc(name)}</div>${open ? inner : ''}`;
+                <i class="ph ph-caret-right"></i>${esc(name)}
+                ${add ? `<button class="nav-add" title="${esc(add.t)}" onclick="event.stopPropagation();${add.run}">＋</button>` : ''}
+            </div>${open ? inner : ''}`;
         };
         return `<div class="m3-h">보기</div>
             ${row(curS === 'ALL' && curB === 'ALL', '전체', items.length, "app.itemNavPick('all')")}
             ${sec('시즌별', 'sea', sea.map(p => row(String(curS) === String(p.id), p.name,
                 n(i => String(i.product_id) === String(p.id)), `app.itemNavPick('sea','${p.id}')`, 1,
                 (brands.find(b => b.id === p.brand_id) || {}).brand_color)).join('')
-                + (n(i => !i.product_id) ? row(curS === 'NONE', '시즌 없음', n(i => !i.product_id), "app.itemNavPick('sea','NONE')", 1) : ''))}
+                + (n(i => !i.product_id) ? row(curS === 'NONE', '시즌 없음', n(i => !i.product_id), "app.itemNavPick('sea','NONE')", 1) : ''),
+                { t: '새 시즌', run: 'app.showProjectModal()' })}
             ${sec('브랜드별', 'brd', brands.map(b => row(String(curB) === String(b.id), b.name,
                 n(i => String(i.brand_id) === String(b.id)), `app.itemNavPick('brd','${b.id}')`, 1, b.brand_color)).join('')
                 + (n(i => !i.brand_id) ? row(curB === 'NONE', '브랜드 없음', n(i => !i.brand_id), "app.itemNavPick('brd','NONE')", 1) : ''))}`;
@@ -4143,7 +4147,9 @@ class BhasApp {
             // ── 자료실 = 파인더 ────────────────────────────────────────
             //  왼쪽 즐겨찾기(분류·시즌) · 위 도구막대(보기 전환·검색) ·
             //  가운데 아이콘 격자 또는 목록 · 아래 경로막대(개수). 맥 파인더 그대로.
-            const categories = ['작업지시서', '견적서', '회의록', '참고이미지', '기타자료', '세금계산서'];
+            const BASE_CATS = ['작업지시서', '견적서', '회의록', '참고이미지', '기타자료', '세금계산서'];
+            //  내가 더한 분류까지 합친다
+            const categories = [...new Set([...BASE_CATS, ...(this.docCats || [])])];
             const filteredProjectIds = products.map(p => p.id);
             let aggregatedDocs = (mockData.globalDocuments || []).filter(d => filteredProjectIds.includes(d.productId));
             products.forEach(p => {
@@ -4211,11 +4217,13 @@ class BhasApp {
                 ${pid ? `<button class="fd-tw${open ? ' on' : ''}" onclick="event.stopPropagation();app.toggleDocSeason('${pid}')"><i class="ph ph-caret-right"></i></button>` : ''}
                 <i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
             //  접히는 구역 머리
-            const sec = (name, inner, defOpen) => {
+            const sec = (name, inner, defOpen, add) => {
                 const v = (this.docOpenSec || {})[name];
                 const open = v === undefined ? defOpen !== false : v;
                 return `<div class="fd-sh tog${open ? ' on' : ''}" onclick="app.toggleDocSec('${name}')">
-                    <i class="ph ph-caret-right"></i>${esc(name)}</div>${open ? inner : ''}`;
+                    <i class="ph ph-caret-right"></i>${esc(name)}
+                    ${add ? `<button class="nav-add" title="${esc(add.t)}" onclick="event.stopPropagation();${add.run}">＋</button>` : ''}
+                </div>${open ? inner : ''}`;
             };
             const grid = docs.map(d => {
                 const k = kindOf(d);
@@ -4250,7 +4258,8 @@ class BhasApp {
                     <div class="fd-sh">즐겨찾기</div>
                     ${side('전체', '모든 자료', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#0a84ff')}
                     ${sec('분류', categories.map(c =>
-                        side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join(''), true)}
+                        side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join(''), true,
+                        { t: '새 분류', run: 'app.addDocCategory()' })}
                     ${sec('시즌', products.length ? products.map(p => {
                         const n = aggregatedDocs.filter(d => d.productId === p.id).length;
                         const col = ((mockData.brands || []).find(b => b.id === p.brand_id) || {}).brand_color || '#5ac8fa';
@@ -4260,7 +4269,8 @@ class BhasApp {
                             return side('p:' + p.id + '/' + c, c, 'ph-folder-simple', kn, '#8e8e93', 1);
                         }).join('');
                         return side('p:' + p.id, p.name, 'ph-folder-simple', n, col, 0, p.id, open) + kids;
-                    }).join('') : '<div class="fd-none sm">시즌 없음</div>', false)}
+                    }).join('') : '<div class="fd-none sm">시즌 없음</div>', false,
+                        { t: '새 시즌', run: 'app.showProjectModal()' })}
                 </aside>
                 <section class="fd-main">
                     <div class="fd-bar">
@@ -4290,8 +4300,15 @@ class BhasApp {
                         if (!d) return `<div class="m3-none mid">고른 자료가 없습니다</div>`;
                         const k = kindOf(d);
                         return `
-                        <div class="fd-pv">${isImg(d.url) ? `<img src="${esc(d.url)}" alt="">`
-                            : `<i class="ph ${k.i}" style="color:${k.c}"></i>`}</div>
+                        <div class="fd-pv">${(() => {
+                            //  아이콘을 또 크게 띄우느니 내용을 보여준다 — 작업지시서는 도식화
+                            if (String(d.id).startsWith('tp:')) {
+                                const t = (this._techPacks || []).find(x => 'tp:' + x.id === d.id);
+                                try { const svg = t && garmentPreviewSVG(t.config, false); if (svg) return `<div class="fd-pvsvg">${svg}</div>`; } catch (_e) {}
+                            }
+                            return null;
+                        })() || (isImg(d.url) ? `<img src="${esc(d.url)}" alt="">`
+                            : `<i class="ph ${k.i}" style="color:${k.c}"></i>`)}</div>
                         <div class="fd-pn">${esc(d.name)}</div>
                         <div class="fd-pk">${esc(k.t)}</div>
                         <div class="fd-pm">
@@ -8240,6 +8257,17 @@ class BhasApp {
     }
     setCSFilter(f) { this.csFilter = f; this.requestRender(); }
     setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.requestRender(); }
+    //  새 분류 — 이름을 만들어 두고, 그 분류로 자료를 올리면 자리를 잡는다
+    async addDocCategory() {
+        const v = await this.showPrompt('새 분류 이름', '', '자료 분류 만들기');
+        const name = (v || '').trim(); if (!name) return;
+        this.docCats = [...new Set([...(this.docCats || []), name])];
+        try { localStorage.setItem('bhas_doccats', JSON.stringify(this.docCats)); } catch (_e) {}
+        this.selectedDocCategory = name;
+        this.docOpenSec = { ...(this.docOpenSec || {}), '분류': true };
+        this.requestRender();
+        this.showToast(`'${name}' 분류를 만들었습니다 — 자료를 올리면 자리를 잡습니다`);
+    }
     toggleDocSec(name) {
         this.docOpenSec = this.docOpenSec || {};
         const cur = this.docOpenSec[name] === undefined ? (name !== '시즌') : this.docOpenSec[name];

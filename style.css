@@ -4308,3 +4308,29 @@ body:not(.light) .ntoast .nt-ac button.pri{background:#0a84ff;color:#fff}
 .due-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .due-tag{font-size:10px;font-weight:800;border-radius:99px;padding:1px 7px;white-space:nowrap;flex:0 0 auto}
 .due-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 구역 머리의 ＋ */
+.nav-add{margin-left:auto;border:0;background:transparent;color:var(--text-muted);
+  font-size:13px;line-height:1;cursor:default;padding:0 2px;border-radius:5px;opacity:0}
+.m3-h:hover .nav-add,.fd-sh:hover .nav-add{opacity:1}
+.nav-add:hover{background:rgba(127,127,127,.22);color:inherit}
+.macwin .nav-add{box-shadow:none !important;border:0 !important;background:transparent !important}
+.macwin .nav-add:hover{background:rgba(127,127,127,.22) !important}
+
+/* ── 칸 경계선 — 너무 옅어 어디서 나뉘는지 안 보였다 ─────────── */
+body.light{ --pane-line: #dfe3e8; }
+body:not(.light){ --pane-line: rgba(255,255,255,.16); }
+.appside,.fd-side,.m3-side,.nt-side{border-right:1px solid var(--pane-line) !important}
+.appdet,.fd-prev,.m3-doc,.nt-doc{border-left:1px solid var(--pane-line) !important}
+.m3-list,.nt-list{border-right:1px solid var(--pane-line) !important}
+/* 칸 안의 머리막대·바닥막대도 같은 세기로 */
+.mp-top,.it-pills,.nw-bar,.sum-bar,.fd-bar,.fd-path,.nt-lbar,.m3-lbar,.dt-h,.dt-a{
+  border-color:var(--pane-line) !important}
+.it-tbl th{border-bottom-color:var(--pane-line) !important}
+/* 끌어서 조절하는 자리는 선 위에 겹친다 */
+.pgrip::after{background:transparent}
+.pgrip:hover::after,.pgrip.on::after{background:#0a84ff}
+
+/* 자료실 미리보기 — 아이콘 대신 내용 */
+.fd-pvsvg{width:100%;max-height:150px;display:grid;place-items:center;overflow:hidden}
+.fd-pvsvg svg{max-width:100%;max-height:150px}
+.fd-pv{height:auto;min-height:120px}
