@@ -3015,6 +3015,181 @@ class BhasApp {
         { g: '관리', items: [['settings', '설정', 'ph-gear-six'], ['user_management', '계정', 'ph-users-three'],
             ['brand_management', '브랜드', 'ph-shield-check'], ['feedback', '불편사항', 'ph-chat-dots']] },
     ];
+    // ============================================================
+    //  모두 찾기 — 어디서든 ⌘K. 한 칸에서 전부 뒤진다.
+    //   제품 · 시즌 · 주문 · CS · 메모 · 미리알림 · 자료 · 공장 · 고객사 · 화면
+    // ============================================================
+    openFind(preset) {
+        if (document.getElementById('spot')) { this.closeFind(); return; }
+        const el = document.createElement('div');
+        el.id = 'spot'; el.className = 'spot';
+        el.innerHTML = `<div class="spot-box">
+            <div class="spot-f"><i class="ph ph-magnifying-glass"></i>
+                <input id="spot-q" placeholder="무엇이든 찾기 — 제품 · 시즌 · 주문 · CS · 메모 · 자료" autocomplete="off"
+                    autocapitalize="off" autocorrect="off" spellcheck="false">
+                <kbd>esc</kbd></div>
+            <div class="spot-body" id="spot-body"></div>
+        </div>`;
+        document.body.appendChild(el);
+        //  찾는 동안 자료가 없으면 못 찾는다 — 한 번씩 받아둔다
+        this._findWarm();
+        const q = el.querySelector('#spot-q');
+        q.value = preset || '';
+        this._drawFind(q.value);
+        q.oninput = () => { clearTimeout(this._spotT); this._spotT = setTimeout(() => this._drawFind(q.value), 110); };
+        q.onkeydown = (e) => {
+            const items = [...el.querySelectorAll('.spot-i')];
+            const cur = items.findIndex(x => x.classList.contains('on'));
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!items.length) return;
+                const n = e.key === 'ArrowDown' ? Math.min(cur + 1, items.length - 1) : Math.max(cur - 1, 0);
+                items.forEach(x => x.classList.remove('on'));
+                items[n].classList.add('on');
+                items[n].scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                (items[cur < 0 ? 0 : cur] || {}).click?.();
+            }
+        };
+        el.onmousedown = (e) => { if (!e.target.closest('.spot-box')) this.closeFind(); };
+        this._spotKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); this.closeFind(); } };
+        document.addEventListener('keydown', this._spotKey, true);
+        setTimeout(() => { q.focus(); q.select(); }, 30);
+    }
+    closeFind() {
+        document.removeEventListener('keydown', this._spotKey || (() => {}), true);
+        document.getElementById('spot')?.remove();
+    }
+    _findWarm() {
+        const w = (f, loaded, loading) => { if (!this[loaded] && !this[loading]) this[f](); };
+        w('loadItems', '_itemsLoaded', '_itemsLoading');
+        w('loadOrders', '_ordersLoaded', '_ordersLoading');
+        w('loadCS', '_csLoaded', '_csLoading');
+        w('loadNotes', '_noteLoaded', '_noteLoading');
+        w('loadReminders', '_remLoaded', '_remLoading');
+        w('loadVendors', '_vendorsLoaded', '_vendorsLoading');
+        w('loadQuotes', '_quotesLoaded', '_quotesLoading');
+        this.ensureTechPacks();
+    }
+    //  한 줄이 뭘 뜻하는지 · 누르면 어디로 가는지
+    _findAll(q) {
+        const k = (q || '').trim().toLowerCase();
+        if (!k) return [];
+        const hit = (...vals) => vals.some(v => String(v == null ? '' : v).toLowerCase().includes(k));
+        const out = [];
+        const add = (kind, icon, color, title, sub, go) => out.push({ kind, icon, color, title, sub, go });
+        const seasonName = id => (this._seasons().find(p => String(p.id) === String(id)) || {}).name || '';
+
+        (this.pItems || []).forEach(i => {
+            if (hit(i.name, i.pattern_no, i.memo, i.status)) {
+                add('제품', 'ph-t-shirt', '#0a84ff', i.name || '이름 없는 제품',
+                    [this._brandNameById(i.brand_id), seasonName(i.product_id), i.status].filter(x => x && x !== '-').join(' · '),
+                    `app.findGo('items','${i.id}')`);
+            }
+        });
+        this._seasons().forEach(p => {
+            if (hit(p.name)) add('시즌', 'ph-folder', '#5ac8fa', p.name,
+                `제품 ${(this.pItems || []).filter(i => String(i.product_id) === String(p.id)).length}개`,
+                `app.findGo('season','${p.id}')`);
+        });
+        (this.orders || []).forEach(o => {
+            if (hit(o.order_id, o.receiver_name, o.buyer_name, (o.items || []).map(x => x.product_name).join(' '))) {
+                add('주문', 'ph-shopping-bag-open', '#30d158', o.receiver_name || o.buyer_name || o.order_id,
+                    [o.order_id, o.order_date].filter(Boolean).join(' · '), `app.findGo('orders','${o.order_id}')`);
+            }
+        });
+        (this.csList || []).forEach(t => {
+            if (hit(t.customer_name, t.order_no, t.product_name, t.memo)) {
+                add('CS', 'ph-arrows-counter-clockwise', '#ff9f0a', `${t.customer_name || ''} · ${t.kind || ''}`,
+                    [t.product_name, t.status].filter(Boolean).join(' · '), `app.findGo('cs','${t.id}')`);
+            }
+        });
+        (this.noteList || []).forEach(n => {
+            if (hit(n.title, n.body)) add('메모', 'ph-note', '#e0a800', n.title || '새 메모',
+                (this._noteText(n) || '').replace(/\s+/g, ' ').trim().slice(0, 40), `app.findGo('notes','${n.id}')`);
+        });
+        (this.reminders || []).forEach(r => {
+            if (hit(r.title, r.memo)) add('미리알림', 'ph-list-checks', '#ff453a', r.title,
+                [r.list_name, r.due_date].filter(Boolean).join(' · '), `app.findGo('reminders','${r.id}')`);
+        });
+        (this._techPacks || []).forEach(t => {
+            if (hit(t.style_name, t.style_no)) add('작업지시서', 'ph-clipboard-text', '#5e5ce6',
+                t.style_name || '무제', t.style_no || '', `app.findGo('tech_packs','${t.id}')`);
+        });
+        (this.quotes || []).forEach(x => {
+            if (hit(x.quote_no, x.client_name)) add('견적', 'ph-receipt', '#30d158',
+                x.client_name || '견적서', [x.quote_no, x.quote_date].filter(Boolean).join(' · '),
+                `app.findGo('quotes','${x.id}')`);
+        });
+        (this.vendors || []).forEach(v => {
+            if (hit(v.name, v.address, v.phone)) add('거래처', 'ph-factory', '#a2845e', v.name,
+                [v.category, v.address].filter(Boolean).join(' · '), `app.findGo('vendors','${v.id}')`);
+        });
+        (this.clients || []).forEach(c => {
+            if (hit(c.name, c.contact, c.tel)) add('고객사', 'ph-address-book', '#bf5af2', c.name,
+                [c.contact, c.tel].filter(Boolean).join(' · '), `app.findGo('clients','${c.id}')`);
+        });
+        (mockData.globalDocuments || []).forEach(d => {
+            if (hit(d.name)) add('자료', 'ph-file', '#8e8e93', d.name, d.category || '',
+                `app.findGo('documents','${d.id}')`);
+        });
+        //  화면 이름도 — '재고' 라고 치면 재고 화면이 뜬다
+        this.LAUNCH.forEach(sec => sec.items.forEach(([id, label, icon]) => {
+            if (hit(label)) add('화면', icon, '#8e8e93', label, sec.g, `app.findGo('view','${id}')`);
+        }));
+        return out;
+    }
+    _drawFind(q) {
+        const body = document.getElementById('spot-body'); if (!body) return;
+        const esc = s => this._vesc(s);
+        const k = (q || '').trim();
+        if (!k) {
+            body.innerHTML = `<div class="spot-hint">제품 이름 · 패턴명 · 주문번호 · 고객 이름 · 메모 내용 · 화면 이름<br>
+                <kbd>↑</kbd><kbd>↓</kbd> 고르고 <kbd>⏎</kbd> 로 엽니다</div>`;
+            return;
+        }
+        const all = this._findAll(k);
+        if (!all.length) { body.innerHTML = `<div class="spot-hint">'${esc(k)}' 로 찾은 게 없습니다</div>`; return; }
+        const order = ['제품', '시즌', '주문', 'CS', '메모', '미리알림', '작업지시서', '견적', '거래처', '고객사', '자료', '화면'];
+        const by = {};
+        all.forEach(r => (by[r.kind] = by[r.kind] || []).push(r));
+        let html = '', n = 0;
+        order.filter(g => by[g]).forEach(g => {
+            html += `<div class="spot-g">${esc(g)} <em>${by[g].length}</em></div>`;
+            by[g].slice(0, 8).forEach(r => {
+                html += `<button class="spot-i${n === 0 ? ' on' : ''}" onclick="${r.go}">
+                    <span class="spot-ic"><i class="ph ${r.icon}" style="color:${r.color}"></i></span>
+                    <span class="spot-t"><b>${esc(r.title)}</b>${r.sub ? `<em>${esc(r.sub)}</em>` : ''}</span>
+                </button>`;
+                n++;
+            });
+            if (by[g].length > 8) html += `<div class="spot-more">외 ${by[g].length - 8}건</div>`;
+        });
+        body.innerHTML = html;
+    }
+    //  찾은 줄을 누르면 그 화면을 열고 그 줄을 골라 놓는다
+    findGo(what, id) {
+        this.closeFind();
+        const open = (v) => { if (this.macMode) this.macOpen(v); else this.switchView(v); };
+        if (what === 'view') { open(id); return; }
+        if (what === 'season') { this.openSeasonItems(id); return; }
+        const pick = {
+            items: () => { this.itemSel = id; this.itemSeason = 'ALL'; this.itemStatus = 'ALL'; this.itemQ = ''; open('items'); },
+            orders: () => { this.orderSel = id; open('orders'); },
+            cs: () => { this.csSel = id; this.csFilter = '전체'; this.csQuery = ''; open('cs'); },
+            notes: () => { this.noteSel = id; this.noteFolder = 'all'; this.noteSea = 'ALL'; open('notes'); },
+            reminders: () => open('reminders'),
+            tech_packs: () => { this.tpSel = id; open('tech_packs'); },
+            quotes: () => { open('quotes'); setTimeout(() => this.showQuoteModal(id), 350); },
+            vendors: () => open('vendors'),
+            clients: () => open('quotes'),
+            documents: () => { this.docSel = id; open('documents'); },
+        };
+        (pick[what] || (() => open('home')))();
+        this.requestRender();
+    }
+
     openLauncher() {
         if (document.getElementById('launcher')) { this.closeLauncher(); return; }
         const el = document.createElement('div');
@@ -6011,6 +6186,7 @@ class BhasApp {
                 <b>2179</b>
                 <span>${esc(this.currentUser?.name || '')}</span>
                 <span class="mac-mb-right">
+                    <button class="mac-find" onclick="app.openFind()" title="모두 찾기 (⌘K)"><i class="ph ph-magnifying-glass"></i></button>
                     <span class="mac-ver" title="지금 보고 있는 판">${esc(this._buildTag())}</span>
                     ${(() => { const n = this.unreadCount(); return `<button class="mac-bell${n ? ' has' : ''}"
                         onclick="app.openNotifCenter()" title="알림 센터${n ? ` · 안 읽음 ${n}` : ''}">
@@ -6019,6 +6195,11 @@ class BhasApp {
                 </span>
             </div>
             <div id="mac-snap-hint" class="mac-snap-hint"></div>
+            <div class="desk-find" onclick="app.openFind()">
+                <i class="ph ph-magnifying-glass"></i>
+                <span>무엇이든 찾기 — 제품 · 시즌 · 주문 · CS · 메모 · 자료</span>
+                <kbd>⌘K</kbd>
+            </div>
             <div class="mac-deskboard">${deskboard}</div>
             ${winsHtml}
             <nav class="mac-dock lg">${dock}<span class="mdsep"></span>${tools}${mins ? '<span class="mdsep"></span>' + mins : ''}</nav>
@@ -6040,6 +6221,7 @@ class BhasApp {
         views.forEach(v => {
             this.currentView = v;
             try { this.bindDashboardEvents(); } catch (_e) {}
+            this._bindFindKey();
             const fn = per[v];
             if (fn && typeof this[fn] === 'function') { try { this[fn](); } catch (_e) {} }
         });
@@ -11041,6 +11223,21 @@ class BhasApp {
         } catch (e) { this.showToast('발행 오류: ' + (e.message || e)); }
     }
 
+    //  ⌘K · ⌘F 는 어디서든 먹는다. 한 번만 단다.
+    _bindFindKey() {
+        if (this._findKeyBound) return;
+        this._findKeyBound = true;
+        document.addEventListener('keydown', (e) => {
+            if (!(e.metaKey || e.ctrlKey)) return;
+            const k = (e.key || '').toLowerCase();
+            if (k !== 'k' && k !== 'f') return;
+            if (!this.currentUser) return;
+            e.preventDefault();
+            //  글 쓰던 중이면 쓰던 말을 그대로 들고 간다
+            const sel = String(window.getSelection?.() || '').trim();
+            this.openFind(sel.length && sel.length < 40 ? sel : '');
+        }, true);
+    }
     bindDashboardEvents() {
         this.bindGlobalSearch();
         const collapseBtn = document.getElementById('sidebar-collapse-btn');

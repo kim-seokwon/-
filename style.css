@@ -3889,3 +3889,56 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .dt-thumb{background:rgba(127,127,127,.07);border-radius:9px;padding:10px;margin-bottom:12px;
   display:grid;place-items:center;max-height:150px;overflow:hidden}
 .dt-thumb svg{max-width:100%;max-height:130px}
+
+/* ══ 모두 찾기 — 어디서든 ⌘K ══════════════════════════════ */
+.spot{position:fixed;inset:0;z-index:9000;display:flex;justify-content:center;
+  align-items:flex-start;padding-top:12vh;background:rgba(0,0,0,.22);backdrop-filter:blur(3px)}
+.spot-box{width:min(620px,92vw);max-height:70vh;display:flex;flex-direction:column;
+  background:var(--card-bg);border:.5px solid var(--card-border);border-radius:14px;
+  box-shadow:0 24px 70px rgba(0,0,0,.4);overflow:hidden}
+.spot-f{display:flex;align-items:center;gap:10px;padding:13px 16px;flex:0 0 auto;
+  border-bottom:.5px solid var(--card-border)}
+.spot-f>i{font-size:18px;color:var(--text-muted)}
+.spot-f input{flex:1;min-width:0;border:0;background:transparent;color:inherit;outline:none;
+  font-family:inherit;font-size:16px}
+.spot-f kbd,.spot-hint kbd{font-family:inherit;font-size:10px;font-weight:700;color:var(--text-muted);
+  background:rgba(127,127,127,.16);border-radius:5px;padding:2px 6px;margin:0 2px}
+.spot-body{flex:1;min-height:0;overflow:auto;padding:6px 0 10px}
+.spot-hint{padding:26px 18px;text-align:center;color:var(--text-muted);font-size:12.5px;line-height:1.9}
+.spot-g{font-size:11px;font-weight:800;color:var(--text-muted);padding:10px 16px 4px;
+  display:flex;align-items:center;gap:6px}
+.spot-g em{font-style:normal;font-weight:600;opacity:.6}
+.spot-i{display:flex;align-items:center;gap:11px;width:100%;border:0;background:transparent;
+  color:inherit;font-family:inherit;text-align:left;padding:7px 16px;cursor:default}
+.spot-i:hover,.spot-i.on{background:rgba(10,132,255,.16)}
+.spot-ic{width:26px;height:26px;border-radius:7px;flex:0 0 auto;display:grid;place-items:center;
+  background:rgba(127,127,127,.12);font-size:14px}
+.spot-t{min-width:0;display:flex;flex-direction:column;gap:1px}
+.spot-t b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spot-t em{font-style:normal;font-size:11px;color:var(--text-muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spot-more{font-size:11px;color:var(--text-muted);padding:3px 16px 6px}
+
+/* 바탕화면 한가운데 큼직한 검색칸 */
+.desk-find{position:absolute;top:46px;left:50%;transform:translateX(-50%);z-index:3;
+  display:flex;align-items:center;gap:10px;width:min(520px,72vw);cursor:default;
+  padding:11px 16px;border-radius:12px;background:rgba(255,255,255,.62);
+  border:.5px solid rgba(255,255,255,.7);backdrop-filter:blur(18px) saturate(1.7);
+  box-shadow:0 6px 24px rgba(0,0,0,.14)}
+.desk-find:hover{background:rgba(255,255,255,.76)}
+.desk-find>i{font-size:17px;color:#6b7280}
+.desk-find>span{flex:1;min-width:0;font-size:13.5px;color:#6b7280;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.desk-find kbd{font-family:inherit;font-size:10.5px;font-weight:700;color:#6b7280;
+  background:rgba(0,0,0,.07);border-radius:5px;padding:2px 7px}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .desk-find{background:rgba(40,40,44,.6);border-color:rgba(255,255,255,.12)}
+  :root:not([data-theme="light"]) .desk-find>i,
+  :root:not([data-theme="light"]) .desk-find>span,
+  :root:not([data-theme="light"]) .desk-find kbd{color:#c9cdd4}
+}
+.mac-deskboard{padding-top:66px}
+.mac-find{border:0;background:transparent;color:inherit;cursor:default;font-size:13px;
+  padding:2px 6px;border-radius:6px;opacity:.8}
+.mac-find:hover{background:rgba(127,127,127,.2);opacity:1}
+@media (max-width:620px){ .desk-find{width:86vw} .desk-find kbd{display:none} }
