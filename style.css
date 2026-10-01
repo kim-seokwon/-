@@ -3801,8 +3801,7 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .fd-tw i{font-size:10px;transition:transform .12s ease}
 .fd-tw.on i{transform:rotate(90deg)}
 .fd-tw:hover{background:rgba(127,127,127,.22)}
-.fd-tw.sp{visibility:hidden}
-.fd-s.d1{padding-left:30px}
+.fd-s.d1{padding-left:26px}
 .fd-s.d1 i{font-size:13px}
 .fd-s.d1 span{font-size:12px}
 .macwin .fd-tw{box-shadow:none !important;border:0 !important;background:transparent !important}
@@ -3831,3 +3830,62 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   outline:none;cursor:default;margin-left:auto}
 .macwin .nt-sea{padding:3px 6px !important;font-size:11.5px !important}
 .nt-sea option{background:#1c1c1e;color:#fff}
+
+/* ── 3단 구조 공용 — 가운데 칸은 표다 ─────────────────────── */
+/* 표 안의 작은 꼬리표 (유형·분류) */
+.it-tag{font-size:10.5px;font-weight:800;border-radius:99px;padding:2px 8px;white-space:nowrap;
+  color:var(--c,#8e8e93);background:color-mix(in srgb,var(--c,#8e8e93) 16%,transparent)}
+.it-tbl td.nw,.it-tbl th.nw{white-space:nowrap}
+.it-tbl td.bd{font-weight:700}
+.it-tbl .mu{color:var(--text-muted)}
+.it-more{padding:10px;text-align:center;color:var(--text-muted);font-size:11.5px}
+/* 머리막대 아래 한 줄짜리 입력 바 (접수·추가) */
+.nw-bar{display:flex;align-items:center;gap:6px;padding:8px 14px;flex:0 0 auto;flex-wrap:wrap;
+  border-bottom:.5px solid var(--card-border)}
+.nw-f{border:.5px solid var(--card-border);background:rgba(127,127,127,.08);color:inherit;
+  font-family:inherit;font-size:12.5px;padding:5px 9px;border-radius:7px;outline:none;min-width:0}
+.nw-f:focus{border-color:var(--primary);background:rgba(10,132,255,.06)}
+.macwin .nw-f{padding:5px 9px !important;font-size:12.5px !important}
+/* 숫자 칸 · 합계 줄 · 요약 띠 */
+.it-tbl th.num,.it-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.it-tbl tfoot td{padding:7px 6px;border-top:.5px solid var(--card-border);font-weight:800;
+  font-variant-numeric:tabular-nums;color:var(--text-muted);position:sticky;bottom:0;
+  background:var(--card-bg)}
+.sum-bar{display:flex;gap:16px;flex-wrap:wrap;padding:8px 14px;flex:0 0 auto;
+  border-bottom:.5px solid var(--card-border)}
+.sum-b{font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums;display:flex;
+  align-items:baseline;gap:6px}
+.sum-b em{font-style:normal;font-size:11px;font-weight:600;color:var(--text-muted)}
+
+/* 재고 — 상세칸의 현재고 조절 · 경고 띠 */
+.dt-stock{display:flex;align-items:center;gap:9px;padding:10px 0 12px;flex-wrap:wrap}
+.dt-stock b{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;min-width:48px;text-align:center}
+.dt-stock .mbtn{width:28px;padding:0;height:24px;font-size:14px;line-height:1}
+.dt-stock em{font-style:normal;font-size:11px;font-weight:700;color:#ff453a}
+.warn-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 14px;flex:0 0 auto;
+  font-size:11.5px;background:rgba(255,69,58,.08);border-bottom:.5px solid var(--card-border)}
+.warn-bar>i{color:#ff453a;font-size:14px}
+.warn-bar>b{color:#ff453a;font-weight:800;white-space:nowrap}
+.warn-bar span{display:inline-flex;align-items:baseline;gap:5px;white-space:nowrap}
+.warn-bar span em{font-style:normal;color:var(--text-muted)}
+.warn-bar .mu{color:var(--text-muted)}
+.it-tbl td.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--text-muted)}
+.it-tbl td.mu,.it-tbl .mu{color:var(--text-muted)}
+.pill-sp{flex:1}
+.sync-b{font-size:11px;color:var(--text-muted)}
+.sync-b .glass{background:none !important;border:0 !important;padding:0 !important}
+
+/* 작업지시서 — 파인더 아이콘 보기 결 */
+.fd-grid.tp{grid-template-columns:repeat(auto-fill,minmax(146px,1fr));gap:10px}
+.fd-th.tp{width:100%;height:92px;display:grid;place-items:center;font-size:34px;
+  background:rgba(127,127,127,.07);border-radius:8px;overflow:hidden;padding:6px;box-sizing:border-box}
+.fd-th.tp svg{max-width:100%;max-height:100%}
+.fd-it.tp{padding:8px 7px 9px;align-items:stretch}
+.fd-it.tp .fd-nm{margin-top:7px}
+.fd-it.on{background:rgba(10,132,255,.16)}
+.fd-badge.tp{position:absolute;right:9px;top:9px;background:#0a84ff;color:#fff;border-radius:99px;
+  width:17px;height:17px;display:grid;place-items:center;font-size:10px;font-style:normal;
+  box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.dt-thumb{background:rgba(127,127,127,.07);border-radius:9px;padding:10px;margin-bottom:12px;
+  display:grid;place-items:center;max-height:150px;overflow:hidden}
+.dt-thumb svg{max-width:100%;max-height:130px}

@@ -3078,6 +3078,22 @@ class BhasApp {
             <div class="dt-b">${body}</div>${acts ? `<div class="dt-a">${acts}</div>` : ''}</aside>`;
         const empty = (msg) => `<aside class="appdet"><div class="dt-none">${esc(msg)}</div></aside>`;
 
+        if (view === 'tech_packs') {
+            const t = (this._techPacks || []).find(x => String(x.id) === String(this.tpSel));
+            if (!t) return empty('작업지시서를 고르면 여기에 뜹니다');
+            const it = (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
+            const sea = it ? this._seasons().find(p => String(p.id) === String(it.product_id)) : null;
+            let thumb = ''; try { thumb = garmentPreviewSVG(t.config, false); } catch (_e) {}
+            return wrap(t.style_name || '무제', t.style_no || '', `
+                ${thumb ? `<div class="dt-thumb">${thumb}</div>` : ''}
+                ${f('만든 날', (t.created_at || '').slice(0, 10))}
+                ${f('제품', it ? it.name : '')}
+                ${f('시즌', sea ? sea.name : '')}
+            `, `<button class="mbtn pri" onclick="app.openTechPack('${t.id}')">열기</button>
+                <button class="mbtn" onclick="app.downloadTechPack('${t.id}')">다운로드</button>
+                <button class="mbtn" onclick="app.printTechPack('${t.id}')">인쇄</button>
+                <button class="mbtn danger" onclick="app.deleteTechPack('${t.id}','${esc(t.style_name || '')}')">삭제</button>`);
+        }
         if (view === 'items') {
             const it = (this.pItems || []).find(x => String(x.id) === String(this.itemSel));
             if (!it) return empty('제품을 고르면 여기에 뜹니다');
@@ -3145,17 +3161,32 @@ class BhasApp {
                 <button class="mbtn" onclick="app.editCSMemo('${t.id}')">메모</button>`);
         }
         if (view === 'inventory') {
-            const inv = (this.inventory && this.inventory.items) || this.invItems || [];
-            const it = inv.find(x => String(x.id) === String(this.invSel));
+            const data = this.inventory || { items: [], listings: [], ledger: [] };
+            const it = (data.items || []).find(x => String(x.id) === String(this.invSel));
             if (!it) return empty('품목을 고르면 여기에 뜹니다');
-            return wrap(it.name || it.product_name || '품목', it.sku || it.option_name || '', `
-                ${f('현재고', it.qty ?? it.stock)}
-                ${f('안전재고', it.safe_qty)}
-                ${f('옵션', it.option_name)}
-                ${f('SKU', it.sku)}
-                ${f('바코드', it.barcode)}
-                ${f('마지막 갱신', (it.updated_at || '').slice(0, 10))}
-            `, '');
+            const map = (data.listings || []).find(l => l.channel === 'cafe24' && l.inventory_item_id === it.id);
+            const RL = { initial: '초기', restock: '입고', cafe24_order: '카페24판매', manual: '수동', adjust: '보정', return: '반품' };
+            const log = (data.ledger || []).filter(l => l.inventory_item_id === it.id).slice(0, 25);
+            const low = it.on_hand <= it.safety_stock;
+            return wrap(it.name || '품목', [it.sku, it.option_name].filter(Boolean).join(' · '), `
+                <div class="dt-stock">
+                    <button class="mbtn inv-dec" data-id="${it.id}">−</button>
+                    <b style="${low ? 'color:#ff453a' : ''}">${it.on_hand}</b>
+                    <button class="mbtn inv-inc" data-id="${it.id}">＋</button>
+                    ${low ? '<em>안전재고 이하</em>' : ''}
+                </div>
+                ${f('안전재고', it.safety_stock)}
+                ${f('브랜드', this._brandNameById(it.brand_id))}
+                ${f('카페24', map && map.channel_variant_code
+                    ? `${map.channel_product_no || ''}/${map.channel_variant_code}` + (map.allocated > 0 ? ` · 배정 ${map.allocated}` : '')
+                    : '미매핑')}
+                <div class="dt-sec">변동 내역 ${log.length ? log.length : ''}</div>
+                ${log.length ? log.map(l => `<div class="dt-li">
+                    <span>${esc((l.created_at || '').slice(5, 10))} ${esc(RL[l.reason] || l.reason || '')}</span>
+                    <b style="color:${l.delta >= 0 ? '#30d158' : '#ff453a'}">${l.delta >= 0 ? '+' : ''}${l.delta}</b></div>`).join('')
+                  : '<div class="dt-li"><span>기록 없음</span><b></b></div>'}
+            `, `<button class="mbtn pri inv-adjust" data-id="${it.id}">조정</button>
+                <button class="mbtn inv-map" data-id="${it.id}">매핑</button>`);
         }
         return '';
     }
@@ -3458,7 +3489,7 @@ class BhasApp {
             //  pid 를 주면 왼쪽에 펼침 삼각형이 붙는다(대분류). depth 1 은 그 아래 중분류.
             const side = (key, label, icon, n, color, depth, pid, open) => `<div class="fd-s${cur === key ? ' on' : ''}${depth ? ' d1' : ''}"
                 onclick="app.setDocCategory('${key}')" oncontextmenu="app.docFolderMenu(event,'${key}')">
-                ${pid ? `<button class="fd-tw${open ? ' on' : ''}" onclick="event.stopPropagation();app.toggleDocSeason('${pid}')"><i class="ph ph-caret-right"></i></button>` : (depth ? '' : '<span class="fd-tw sp"></span>')}
+                ${pid ? `<button class="fd-tw${open ? ' on' : ''}" onclick="event.stopPropagation();app.toggleDocSeason('${pid}')"><i class="ph ph-caret-right"></i></button>` : ''}
                 <i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
             //  접히는 구역 머리
             const sec = (name, inner, defOpen) => {
@@ -7049,6 +7080,13 @@ class BhasApp {
             this.requestRender();
         } catch (e) { this.showToast('변경 실패: ' + (e.message || e)); }
     }
+    async setCSMemo(id, memo) {
+        const t = (this.csList || []).find(x => String(x.id) === String(id)); if (!t) return;
+        const v = (memo || '').trim() || null;
+        const old = t.memo; t.memo = v;
+        const { error } = await this.supabase.from('cs_tickets').update({ memo: v }).eq('id', id);
+        if (error) { t.memo = old; this.showToast('저장 실패: ' + error.message); this.requestRender(); }
+    }
     async editCSMemo(id) {
         const t = (this.csList || []).find(x => x.id === id); if (!t) return;
         const memo = window.prompt('메모', t.memo || ''); if (memo === null) return;
@@ -7118,48 +7156,52 @@ class BhasApp {
         const stColor = s => s === '완료' ? '#16a34a' : s === '수거완료' ? '#0ea5e9' : '#f59e0b';
         const tab = (id, label, n) => `<button onclick="app.setCSFilter('${id}')" style="padding:7px 15px;border-radius:999px;border:1px solid ${filter === id ? 'var(--primary)' : 'var(--card-border)'};background:${filter === id ? 'rgba(99,102,241,0.12)' : 'transparent'};color:${filter === id ? 'var(--primary)' : 'var(--text-main)'};font-size:0.82rem;font-weight:700;cursor:pointer">${label}${n != null ? ` <span style="opacity:0.7">${n}</span>` : ''}</button>`;
 
-        const row = t => `<div class="glass csrow${String(this.csSel) === String(t.id) ? ' on' : ''}"
-            onclick="app.selectCS('${t.id}')" style="padding:0.9rem 1.1rem;border-radius:14px;margin-bottom:0.6rem;${t.status === '완료' ? 'opacity:0.72' : ''}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
-                    <span style="font-size:0.7rem;font-weight:800;color:#fff;background:${kindColor(t.kind)};padding:2px 9px;border-radius:20px">${esc(t.kind)}</span>
-                    <b style="font-size:0.92rem">${esc(t.customer_name)}</b>
-                    ${t.purchase_from ? `<span style="font-size:0.7rem;color:var(--text-muted)">${esc(t.purchase_from)}</span>` : ''}
-                    ${t.order_no ? `<span style="font-size:0.7rem;color:var(--text-muted)">· ${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨"></i>' : ''}</span>` : ''}
-                </div>
-                <span style="font-size:0.72rem;color:var(--text-muted);white-space:nowrap">${esc(t.occurred_on || '')}</span>
-            </div>
-            ${t.product_name ? `<div style="font-size:0.82rem;color:var(--text-muted);margin-top:5px">${esc(t.product_name)}${t.exchange_product ? ` → <b style="color:var(--text-main)">${esc(t.exchange_product)}</b>` : ''}</div>` : ''}
-            ${t.memo ? `<div style="font-size:0.82rem;margin-top:5px;white-space:pre-wrap">${esc(t.memo)}</div>` : ''}
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
-                <div style="display:flex;gap:5px;flex-wrap:wrap">
-                    ${this.CS_STATUSES.map(s => `<button onclick="app.setCSStatus('${t.id}','${s}')" style="font-size:0.72rem;padding:4px 10px;border-radius:8px;cursor:pointer;border:1px solid ${t.status === s ? stColor(s) : 'var(--card-border)'};background:${t.status === s ? stColor(s) : 'transparent'};color:${t.status === s ? '#fff' : 'var(--text-muted)'};font-weight:${t.status === s ? '700' : '500'}">${s}</button>`).join('')}
-                </div>
-                <button onclick="app.editCSMemo('${t.id}')" style="font-size:0.72rem;padding:4px 10px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer"><i class="ph ph-note-pencil"></i> 메모</button>
-            </div>
-        </div>`;
+        const stOf = t => this.CS_STATUSES.includes(t.status) ? this.CS_STATUSES : [t.status, ...this.CS_STATUSES];
+        const row = t => {
+            const sc = stColor(t.status), kc = kindColor(t.kind);
+            return `<tr class="it-row${String(this.csSel) === String(t.id) ? ' on' : ''}" data-id="${t.id}"
+                onclick="app.selectCS('${t.id}')"${t.status === '완료' ? ' style="opacity:.62"' : ''}>
+                <td class="nw">${esc((t.occurred_on || '').slice(2))}</td>
+                <td><span class="it-tag" style="--c:${kc}">${esc(t.kind)}</span></td>
+                <td class="bd">${esc(t.customer_name || '')}</td>
+                <td>${esc(t.purchase_from || '')}</td>
+                <td class="nw">${t.order_no ? `${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨" style="color:#0a84ff"></i>' : ''}` : ''}</td>
+                <td>${esc(t.product_name || '')}${t.exchange_product ? ` <span class="mu">→</span> ${esc(t.exchange_product)}` : ''}</td>
+                <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
+                        onclick="event.stopPropagation()" onchange="app.setCSStatus('${t.id}',this.value)">
+                    ${stOf(t).map(x => `<option value="${esc(x)}"${t.status === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></td>
+                <td><input class="it-in" value="${esc(t.memo || '')}" placeholder="메모"
+                        onclick="event.stopPropagation()" onchange="app.setCSMemo('${t.id}',this.value)"></td>
+            </tr>`;
+        };
+        const cnt = k => all.filter(t => t.kind === k).length;
+        const pill = (k, label, n) => `<button class="it-pill${filter === k ? ' on' : ''}" onclick="app.setCSFilter('${k}')"
+            ${k === '교환' ? 'style="--pc:#6366f1"' : (k === '반품' ? 'style="--pc:#ef4444"' : '')}>${esc(label)}<em>${n}</em></button>`;
 
         return `<div class="mp">
-            ${this._mpTop('CS · 교환/반품', `이번 달 ${thisMonth.length}건 · 진행 중 ${openCnt}건 · 전체 ${all.length}건`)}
-            <div class="mp-body">
-            <div class="glass" style="padding:1rem 1.1rem;border-radius:16px;margin-bottom:1.1rem">
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                    <input id="cs-name" placeholder="고객 이름" style="flex:1;min-width:120px;padding:10px 12px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.9rem">
-                    <input id="cs-order" placeholder="주문번호 (입력하면 상품·구매처 자동)" style="flex:1.6;min-width:170px;padding:10px 12px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.9rem">
-                    <button onclick="app.addCS('교환')" class="btn-primary" style="padding:10px 16px;border-radius:10px;font-weight:700">교환 접수</button>
-                    <button onclick="app.addCS('반품')" style="padding:10px 16px;border-radius:10px;font-weight:700;border:1px solid #ef4444;background:transparent;color:#ef4444;cursor:pointer">반품 접수</button>
-                </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-                    ${['오배송', '불량', '수선', '기타'].map(k => `<button onclick="app.addCS('${k}')" style="font-size:0.75rem;padding:5px 11px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer">+ ${k}</button>`).join('')}
-                </div>
+            ${this._mpTop('CS · 교환/반품', `이번 달 ${thisMonth.length}건 · 진행 중 ${openCnt}건 · 전체 ${all.length}건`, `
+                <div class="mp-find"><i class="ph ph-magnifying-glass"></i>
+                    <input value="${esc(q)}" placeholder="이름·주문번호·상품"
+                        oninput="app.csQuery=this.value;clearTimeout(app._csT);app._csT=setTimeout(()=>app.requestRender(),250)"></div>`)}
+            <div class="it-pills">
+                ${pill('진행중', '진행 중', openCnt)}${pill('전체', '전체', all.length)}${pill('교환', '교환', cnt('교환'))}${pill('반품', '반품', cnt('반품'))}
             </div>
-            <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:0.9rem">
-                ${tab('진행중', '진행 중', openCnt)}${tab('전체', '전체', all.length)}${tab('교환', '교환')}${tab('반품', '반품')}
-                <input value="${esc(q)}" oninput="app.csQuery=this.value;clearTimeout(app._csT);app._csT=setTimeout(()=>app.requestRender(),250)" placeholder="이름·주문번호 검색" style="margin-left:auto;padding:8px 12px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.84rem;min-width:160px">
+            <div class="nw-bar">
+                <input id="cs-name" class="nw-f" placeholder="고객 이름" style="max-width:130px">
+                <input id="cs-order" class="nw-f" placeholder="주문번호 — 넣으면 상품·구매처가 따라온다" style="flex:1">
+                <button class="mbtn pri" onclick="app.addCS('교환')">교환 접수</button>
+                <button class="mbtn" style="color:#ef4444" onclick="app.addCS('반품')">반품 접수</button>
+                ${['오배송', '불량', '수선', '기타'].map(k => `<button class="mbtn" onclick="app.addCS('${k}')">+ ${k}</button>`).join('')}
             </div>
-            ${list.length ? list.slice(0, 300).map(row).join('') : '<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);text-align:center">해당하는 건이 없습니다</div>'}
-            ${list.length > 300 ? `<div style="text-align:center;color:var(--text-muted);font-size:0.78rem;padding:0.6rem">최근 300건만 표시 (전체 ${list.length}건)</div>` : ''}
-        </div></div>`;
+            <div class="it-scroll">
+                <table class="it-tbl"><thead><tr>
+                    <th>접수일</th><th>유형</th><th>고객</th><th>구매처</th><th>주문번호</th><th>상품</th><th>상태</th><th>메모</th>
+                </tr></thead>
+                <tbody>${list.length ? list.slice(0, 300).map(row).join('')
+                    : `<tr><td colspan="8" class="it-none">해당하는 건이 없습니다</td></tr>`}</tbody></table>
+                ${list.length > 300 ? `<div class="it-more">최근 300건만 보입니다 · 전체 ${list.length}건</div>` : ''}
+            </div>
+        </div>`;
     }
 
     // ── 법인카드 지출 ─────────────────────────────────────────
@@ -7195,6 +7237,13 @@ class BhasApp {
             this.showToast('지출이 기록됐습니다');
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
+    async setExpField(id, field, value) {
+        const e = (this.expList || []).find(x => String(x.id) === String(id)); if (!e) return;
+        const v = (value || '').trim() || null;
+        const old = e[field]; e[field] = v;
+        const { error } = await this.supabase.from('expenses').update({ [field]: v }).eq('id', id);
+        if (error) { e[field] = old; this.showToast('저장 실패: ' + error.message); this.requestRender(); }
+    }
     async toggleExpenseDone(id) {
         const e0 = (this.expList || []).find(x => x.id === id); if (!e0) return;
         try {
@@ -7218,41 +7267,45 @@ class BhasApp {
         list.forEach(e => { const k = e.company || '미지정'; byCo[k] = (byCo[k] || 0) + Number(e.amount || 0); });
         const sel = this.expCompany || '하이헤이호';
 
+        const esc2 = esc;
+        const row = e => `<tr class="it-row" data-id="${e.id}">
+            <td class="nw">${esc(e.spent_on || '')}</td>
+            <td class="bd">${esc(e.vendor || '')}</td>
+            <td>${esc(e.company || '')}</td>
+            <td><input class="it-in" value="${esc(e.memo || '')}" placeholder="메모"
+                    onchange="app.setExpField('${e.id}','memo',this.value)"></td>
+            <td class="num">${won(e.amount)}</td>
+            <td class="it-c"><button class="it-ib${e.done ? ' on' : ''}" title="${e.done ? '처리됨' : '미처리'}"
+                onclick="app.toggleExpenseDone('${e.id}')"><i class="ph ${e.done ? 'ph-check-circle' : 'ph-circle'}"></i></button></td>
+        </tr>`;
+        const coBits = Object.entries(byCo).sort((a, b) => b[1] - a[1])
+            .map(([k, v]) => `<span class="sum-b"><em>${esc(k)}</em>${won(v)}원</span>`).join('');
+
         return `<div class="mp">
-            ${this._mpTop('지출', `${esc(month)} 합계 ${won(total)}원 · ${list.length}건`)}
-            <div class="mp-body">
-            <div class="glass" style="padding:1rem 1.1rem;border-radius:16px;margin-bottom:1.1rem">
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                    <input id="exp-vendor" placeholder="사용처 (예: 119퀵화물)" style="flex:1.4;min-width:140px;padding:10px 12px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.9rem">
-                    <input id="exp-amount" inputmode="numeric" placeholder="금액" style="flex:0.8;min-width:100px;padding:10px 12px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.9rem">
-                    <input id="exp-date" type="date" value="${new Date().toISOString().slice(0, 10)}" style="padding:10px 12px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.86rem">
-                    <button onclick="app.addExpense()" class="btn-primary" style="padding:10px 18px;border-radius:10px;font-weight:700">기록</button>
-                </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-                    ${this.EXP_COMPANIES.map(c => `<button onclick="app.setExpCompany('${c}')" style="font-size:0.76rem;padding:5px 12px;border-radius:8px;cursor:pointer;border:1px solid ${sel === c ? 'var(--primary)' : 'var(--card-border)'};background:${sel === c ? 'rgba(99,102,241,0.12)' : 'transparent'};color:${sel === c ? 'var(--primary)' : 'var(--text-muted)'};font-weight:${sel === c ? '700' : '500'}">${c}</button>`).join('')}
-                </div>
+            ${this._mpTop('지출', `${esc(month)} 합계 ${won(total)}원 · ${list.length}건`, `
+                <select class="it-sel it-season" onchange="app.setExpMonth(this.value)">
+                    ${months.slice(0, 24).map(m => `<option value="${m}"${m === month ? ' selected' : ''}>${m}</option>`).join('')}
+                </select>`)}
+            <div class="nw-bar">
+                <input id="exp-vendor" class="nw-f" placeholder="사용처 (예: 119퀵화물)" style="flex:1.4;min-width:130px">
+                <input id="exp-amount" class="nw-f" inputmode="numeric" placeholder="금액" style="width:96px">
+                <input id="exp-date" class="nw-f" type="date" value="${new Date().toISOString().slice(0, 10)}">
+                <select class="it-sel" onchange="app.setExpCompany(this.value)" style="max-width:120px">
+                    ${this.EXP_COMPANIES.map(c => `<option value="${esc(c)}"${sel === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+                </select>
+                <button class="mbtn pri" onclick="app.addExpense()">기록</button>
             </div>
-            <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:0.8rem">
-                ${months.slice(0, 12).map(m => `<button onclick="app.setExpMonth('${m}')" style="padding:6px 13px;border-radius:999px;cursor:pointer;border:1px solid ${m === month ? 'var(--primary)' : 'var(--card-border)'};background:${m === month ? 'rgba(99,102,241,0.12)' : 'transparent'};color:${m === month ? 'var(--primary)' : 'var(--text-muted)'};font-size:0.8rem;font-weight:700">${m.slice(2)}</button>`).join('')}
+            ${coBits ? `<div class="sum-bar">${coBits}</div>` : ''}
+            <div class="it-scroll">
+                <table class="it-tbl"><thead><tr>
+                    <th>지출일</th><th>사용처</th><th>회사</th><th>메모</th><th class="num">금액</th><th class="it-c">처리</th>
+                </tr></thead>
+                <tbody>${list.length ? list.map(row).join('')
+                    : `<tr><td colspan="6" class="it-none">이 달 기록이 없습니다</td></tr>`}</tbody>
+                ${list.length ? `<tfoot><tr><td colspan="4">합계</td><td class="num">${won(total)}</td><td></td></tr></tfoot>` : ''}
+                </table>
             </div>
-            ${Object.keys(byCo).length ? `<div class="glass" style="padding:0.9rem 1.1rem;border-radius:14px;margin-bottom:1rem;display:flex;gap:18px;flex-wrap:wrap">
-                ${Object.entries(byCo).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div><div style="font-size:0.72rem;color:var(--text-muted)">${esc(k)}</div><div style="font-size:0.95rem;font-weight:800">${won(v)}원</div></div>`).join('')}
-            </div>` : ''}
-            ${list.length ? list.map(e => `<div class="glass" style="padding:0.75rem 1.05rem;border-radius:12px;margin-bottom:0.5rem;display:flex;align-items:center;gap:12px;${e.done ? '' : 'border-left:3px solid #f59e0b'}">
-                <div style="flex:1;min-width:0">
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                        <b style="font-size:0.9rem">${esc(e.vendor)}</b>
-                        <span style="font-size:0.7rem;color:var(--text-muted)">${esc(e.company || '미지정')}</span>
-                    </div>
-                    ${e.memo ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:3px">${esc(e.memo)}</div>` : ''}
-                </div>
-                <div style="text-align:right;white-space:nowrap">
-                    <div style="font-size:0.95rem;font-weight:800">${won(e.amount)}원</div>
-                    <div style="font-size:0.7rem;color:var(--text-muted)">${esc(e.spent_on || '')}</div>
-                </div>
-                <button onclick="app.toggleExpenseDone('${e.id}')" title="${e.done ? '처리됨' : '미처리'}" style="border:0;background:transparent;cursor:pointer;font-size:1.15rem;color:${e.done ? '#16a34a' : 'var(--text-muted)'}"><i class="ph ${e.done ? 'ph-check-circle' : 'ph-circle'}"></i></button>
-            </div>`).join('') : '<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);text-align:center">이 달 기록이 없습니다</div>'}
-        </div></div>`;
+        </div>`;
     }
     async loadFeedback() {
         this._fbLoading = true;
@@ -7856,48 +7909,19 @@ class BhasApp {
         const rows = items.map(i => {
             const map = listingOf(i.id);
             const low = i.on_hand <= i.safety_stock;
-            return `
-              <tr class="inv-row" style="border-bottom:1px solid var(--card-border)">
-                <td style="padding:12px; font-family:monospace; color:var(--text-muted)">${i.sku || '-'}</td>
-                <td style="padding:12px; font-weight:600">${i.name || '-'}</td>
-                <td style="padding:12px; color:var(--text-muted)">${i.option_name || '-'}</td>
-                <td style="padding:12px; color:var(--text-muted)">${this._brandNameById(i.brand_id)}</td>
-                <td style="padding:12px; text-align:center">
-                    <div style="display:inline-flex; align-items:center; gap:6px">
-                        <button class="inv-dec" data-id="${i.id}" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--card-border);background:rgba(var(--tint),0.05);color:white;cursor:pointer">−</button>
-                        <span style="min-width:42px; display:inline-block; font-weight:700; font-size:1.05rem; color:${low ? '#ef4444' : 'white'}">${i.on_hand}</span>
-                        <button class="inv-inc" data-id="${i.id}" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--card-border);background:rgba(var(--tint),0.05);color:white;cursor:pointer">+</button>
-                    </div>
-                    ${low ? '<div style="font-size:0.7rem;color:#ef4444;margin-top:2px">안전재고 이하</div>' : ''}
-                </td>
-                <td style="padding:12px; text-align:center; color:var(--text-muted)">${i.safety_stock}</td>
-                <td style="padding:12px; text-align:center">
-                    ${map && map.channel_variant_code
-                        ? `<span style="color:#22c55e;font-size:0.8rem"><i class="ph ph-check-circle"></i> ${map.channel_product_no || ''}/${map.channel_variant_code}</span>${map.allocated > 0 ? `<div style="font-size:0.72rem;color:#6366f1;margin-top:2px">배정 ${map.allocated}${map.sold ? ` · 판매 ${map.sold}` : ''}</div>` : '<div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px">전량 배분</div>'}`
-                        : `<span style="color:var(--text-muted);font-size:0.8rem">미매핑</span>`}
-                </td>
-                <td style="padding:12px; text-align:right; white-space:nowrap">
-                    <button class="inv-adjust btn-secondary" data-id="${i.id}" style="padding:5px 10px;border-radius:8px;font-size:0.78rem">조정</button>
-                    <button class="inv-map btn-secondary" data-id="${i.id}" style="padding:5px 10px;border-radius:8px;font-size:0.78rem">매핑</button>
-                    <button class="inv-log btn-secondary" data-id="${i.id}" style="padding:5px 10px;border-radius:8px;font-size:0.78rem">내역</button>
-                </td>
-              </tr>`;
-        }).join('');
-
-        const ledgerItems = this.invLedgerItemId
-            ? inv.ledger.filter(l => l.inventory_item_id === this.invLedgerItemId)
-            : inv.ledger;
-        const reasonLabel = { initial: '초기', restock: '입고', cafe24_order: '카페24판매', manual: '수동', adjust: '보정', return: '반품' };
-        const ledgerRows = ledgerItems.slice(0, 60).map(l => {
-            const it = inv.items.find(x => x.id === l.inventory_item_id);
-            return `<tr style="border-bottom:1px solid var(--card-border)">
-                <td style="padding:8px;color:var(--text-muted);font-size:0.8rem">${new Date(l.created_at).toLocaleString('ko-KR')}</td>
-                <td style="padding:8px;font-size:0.85rem">${it ? it.name : '?'}</td>
-                <td style="padding:8px;text-align:center"><span style="font-size:0.72rem;padding:2px 8px;border-radius:10px;background:rgba(var(--tint),0.08)">${reasonLabel[l.reason] || l.reason}</span></td>
-                <td style="padding:8px;text-align:right;font-weight:700;color:${l.delta >= 0 ? '#22c55e' : '#ef4444'}">${l.delta >= 0 ? '+' : ''}${l.delta}</td>
-                <td style="padding:8px;color:var(--text-muted);font-size:0.8rem">${l.note || l.ref || ''}</td>
+            return `<tr class="it-row inv-row${String(this.invSel) === String(i.id) ? ' on' : ''}" data-id="${i.id}"
+                onclick="app.selectInv('${i.id}')">
+                <td class="mono">${this._vesc(i.sku || '')}</td>
+                <td class="bd">${this._vesc(i.name || '')}</td>
+                <td>${this._vesc(i.option_name || '')}</td>
+                <td>${this._vesc(this._brandNameById(i.brand_id))}</td>
+                <td class="num"><b style="${low ? 'color:#ff453a' : ''}">${i.on_hand}</b></td>
+                <td class="num mu">${i.safety_stock}</td>
+                <td class="it-c">${map && map.channel_variant_code
+                    ? `<span class="it-tag" style="--c:#30d158">연결됨</span>`
+                    : `<span class="it-tag" style="--c:#8e8e93">미매핑</span>`}</td>
             </tr>`;
-        }).join('') || `<tr><td colspan="5" style="padding:1.5rem;text-align:center;color:var(--text-muted)">변동 내역이 없습니다.</td></tr>`;
+        }).join('');
 
         // 품절 예측 · 재발주 (최근 30일 판매속도 × 현재고 × 리드타임)
         const LEAD_DAYS = 14;
@@ -7905,63 +7929,40 @@ class BhasApp {
         const nameQty = {};
         (this.orders || []).forEach(o => { if (!o.order_date) return; if ((now - new Date(o.order_date).getTime()) / 864e5 > WIN) return; (o.items || []).forEach(it => { const n = (it.product_name || '').trim(); if (n) nameQty[n] = (nameQty[n] || 0) + (Number(it.quantity) || 1); }); });
         const velOf = (item) => { const nm = (item.name || '').trim(); if (!nm) return 0; let q = nameQty[nm] || 0; if (!q) for (const k in nameQty) { if (k.includes(nm) || nm.includes(k)) q += nameQty[k]; } return q / WIN; };
-        const reorderRows = (inv.items || []).map(i => { const v = velOf(i); const days = v > 0 ? Math.floor(i.on_hand / v) : null; return { i, v, days }; })
+        const reorder = (inv.items || []).map(i => { const v = velOf(i); const days = v > 0 ? Math.floor(i.on_hand / v) : null; return { i, v, days }; })
             .filter(r => (r.days !== null && r.days <= LEAD_DAYS) || r.i.on_hand <= r.i.safety_stock)
             .sort((a, b) => (a.days ?? 999) - (b.days ?? 999));
-        const reorderCard = `<div class="glass" style="padding:1.3rem 1.5rem;border-radius:16px;margin-bottom:1.5rem;border:1px solid ${reorderRows.length ? 'rgba(239,68,68,0.3)' : 'var(--card-border)'}">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.9rem;gap:8px;flex-wrap:wrap">
-                <h3 style="margin:0;font-size:1.05rem;display:flex;align-items:center;gap:6px"><i class="ph ph-warning-diamond" style="color:#ef4444"></i> 품절 예측 · 재발주 알림</h3>
-                <span style="font-size:0.74rem;color:var(--text-muted)">리드타임 ${LEAD_DAYS}일 · 최근 30일 판매속도 기준</span>
-            </div>
-            ${reorderRows.length ? `<div style="display:flex;flex-direction:column;gap:8px">${reorderRows.slice(0, 8).map(({ i, v, days }) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;background:rgba(239,68,68,0.06)">
-                <div><span style="font-weight:700">${this._vesc(i.name || i.sku || '-')}</span> <span style="font-size:0.75rem;color:var(--text-muted)">재고 ${i.on_hand}${v > 0 ? ` · 일평균 ${v.toFixed(1)}개` : ''}</span></div>
-                <div>${days !== null ? `<span style="font-weight:800;color:${days <= 7 ? '#ef4444' : '#f59e0b'}">${days}일 후 품절</span>` : `<span style="color:#f59e0b;font-weight:700">안전재고 이하</span>`}</div>
-            </div>`).join('')}</div>` : '<div style="color:var(--text-muted);font-size:0.85rem;padding:0.3rem 0">✅ 재발주 필요 품목 없음<br><span style="font-size:0.76rem">* SKU 등록 + 카페24 재고동기화하면 판매속도 기반 "N일 후 품절" 예측이 자동으로 떠요.</span></div>'}
-        </div>`;
+
+        const brandPill = (v, label, color) => `<button class="it-pill${(this.invSelectedBrand || 'all') === v ? ' on' : ''}"
+            onclick="app.setInvBrand('${v}')"${color ? ` style="--pc:${color}"` : ''}>${this._vesc(label)}</button>`;
 
         return `
         <div class="mp">
-            ${this._mpTop('재고', '완제품 · 옵션별 현재고', `
+            ${this._mpTop('재고', `완제품 ${items.length}품목`, `
                 ${this._invTabs()}
-                ${syncBadge}
                 <button class="mbtn" id="inv-cafe24-pull-btn"><i class="ph ph-download-simple"></i> 재고 불러오기</button>
                 <button class="mbtn" id="inv-cafe24-btn"><i class="ph ph-plug-charging"></i> 카페24 설정</button>
                 <button class="mbtn pri" id="inv-add-btn"><i class="ph ph-plus"></i> 품목 추가</button>`)}
-            <div class="mp-body">
-            ${reorderCard}
-
-            <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
-                ${this._brandRail([{ value: 'all', label: '전체', active: (this.invSelectedBrand || 'all') === 'all', onclick: "app.setInvBrand('all')" }].concat((mockData.brands || []).map(b => ({ value: b.id, label: this._vesc(b.name), active: this.invSelectedBrand === b.id, color: b.brand_color || '#6366f1', onclick: `app.setInvBrand('${b.id}')` }))))}
-                <div class="analysis-content" style="flex:1;min-width:0">
-                    <div class="table-container" style="overflow-x:auto">
-                        <table class="mtbl" style="width:100%; border-collapse:collapse; min-width:780px">
-                            <thead><tr style=" color:var(--text-muted); font-size:0.82rem; text-align:left">
-                                <th>SKU</th><th>품목명</th><th>옵션</th>
-                                <th>브랜드</th><th style="text-align:center">현재고</th>
-                                <th style="text-align:center">안전재고</th><th style="text-align:center">카페24</th>
-                                <th style="text-align:right">작업</th>
-                            </tr></thead>
-                            <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:var(--text-muted)">등록된 품목이 없습니다. "+ 품목 추가"로 시작하세요.</td></tr>`}</tbody>
-                        </table>
-                    </div>
-
-                    <div style="margin-top:2rem">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
-                            <h3 style="margin:0;font-size:1.05rem;display:flex;align-items:center;gap:6px"><i class="ph ph-clock-counter-clockwise"></i> 재고 변동 내역 ${this.invLedgerItemId ? '(필터됨)' : ''}</h3>
-                            ${this.invLedgerItemId ? `<button class="btn-secondary" id="inv-log-clear" style="padding:5px 12px;border-radius:8px;font-size:0.8rem">전체 보기</button>` : ''}
-                        </div>
-                        <div class="table-container" style="overflow-x:auto; max-height:320px; overflow-y:auto">
-                            <table class="mtbl" style="width:100%; border-collapse:collapse; min-width:560px">
-                                <thead><tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:0.78rem;text-align:left">
-                                    <th>시각</th><th>품목</th><th style="text-align:center">사유</th><th style="text-align:right">증감</th><th>비고</th>
-                                </tr></thead>
-                                <tbody>${ledgerRows}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+            <div class="it-pills">
+                ${brandPill('all', '전체')}
+                ${(mockData.brands || []).map(b => brandPill(b.id, b.name, b.brand_color || '#0a84ff')).join('')}
+                <span class="pill-sp"></span>
+                <span class="sync-b">${syncBadge}</span>
             </div>
-        </div></div>`;
+            ${reorder.length ? `<div class="warn-bar"><i class="ph ph-warning-diamond"></i>
+                <b>재발주 ${reorder.length}품목</b>
+                ${reorder.slice(0, 4).map(({ i, days }) => `<span>${this._vesc(i.name || i.sku || '-')}<em>${days !== null ? `${days}일 후 품절` : '안전재고 이하'}</em></span>`).join('')}
+                ${reorder.length > 4 ? `<span class="mu">외 ${reorder.length - 4}</span>` : ''}
+            </div>` : ''}
+            <div class="it-scroll">
+                <table class="it-tbl"><thead><tr>
+                    <th>SKU</th><th>품목명</th><th>옵션</th><th>브랜드</th>
+                    <th class="num">현재고</th><th class="num">안전재고</th><th class="it-c">카페24</th>
+                </tr></thead>
+                <tbody>${rows || `<tr><td colspan="7" class="it-none">등록된 품목이 없습니다 — 위 [품목 추가]로 시작하세요</td></tr>`}</tbody>
+                </table>
+            </div>
+        </div>`;
     }
 
     renderMaterialInventory() {
@@ -10147,6 +10148,7 @@ class BhasApp {
     }
 
     selItem(id) { this.itemSel = id; this.requestRender(); }
+    selectTechPack(id) { this.tpSel = id; this.requestRender(); }
     setSeasonView(v) { this.seasonView = v; this.requestRender(); }
     seasonFind(v) { this.seasonQ = v; clearTimeout(this._seaQT); this._seaQT = setTimeout(() => this.requestRender(), 200); }
     //  시즌 카드 → 그 시즌만 걸러진 제품리스트
@@ -10441,32 +10443,29 @@ class BhasApp {
         const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '';
         //  제품리스트에서 만든 지시서는 그 제품 이름을 달고 다닌다
         const itemOf = t => (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
-        const card = t => {
+        const tile = t => {
             let thumb = '';
             try { thumb = garmentPreviewSVG(t.config, false); } catch (_e) { thumb = ''; }
-            return `<div class="glass" style="padding:1rem 1.1rem;border-radius:16px;display:flex;flex-direction:column;gap:0.7rem">
-                <div style="height:120px;display:flex;align-items:center;justify-content:center;background:rgba(148,163,184,0.06);border-radius:12px;overflow:hidden">${thumb ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:6px">${thumb}</div>` : '<i class="ph ph-image" style="font-size:2rem;color:var(--text-muted)"></i>'}</div>
-                <div>
-                    <div style="font-size:0.95rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.style_name || '무제')}</div>
-                    <div style="font-size:0.72rem;color:var(--text-muted)">${t.style_no ? esc(t.style_no) + ' · ' : ''}${when(t.created_at)}</div>
-                    ${itemOf(t) ? `<div style="font-size:0.72rem;color:#0a84ff;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><i class="ph ph-t-shirt"></i> ${esc(itemOf(t).name || '제품')}</div>` : ''}
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-                    <button onclick="app.openTechPack('${t.id}')" class="btn-primary" style="padding:7px 0;border-radius:9px;font-size:0.8rem"><i class="ph ph-pencil-simple"></i> 열기</button>
-                    <button onclick="app.downloadTechPack('${t.id}')" style="padding:7px 0;border-radius:9px;font-size:0.8rem;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);cursor:pointer;font-weight:700"><i class="ph ph-download-simple"></i> 다운로드</button>
-                    <button onclick="app.printTechPack('${t.id}')" style="padding:7px 0;border-radius:9px;font-size:0.8rem;border:1px solid var(--card-border);background:transparent;color:var(--text-main);cursor:pointer"><i class="ph ph-printer"></i> 인쇄</button>
-                    <button onclick="app.deleteTechPack('${t.id}','${esc(t.style_name || '').replace(/'/g, "\\'")}')" style="padding:7px 0;border-radius:9px;font-size:0.8rem;border:1px solid var(--card-border);background:transparent;color:#ef4444;cursor:pointer"><i class="ph ph-trash"></i> 삭제</button>
-                </div>
-            </div>`;
+            const it = itemOf(t);
+            return `<button class="fd-it tp${String(this.tpSel) === String(t.id) ? ' on' : ''}"
+                    onclick="app.selectTechPack('${t.id}')" ondblclick="app.openTechPack('${t.id}')"
+                    title="${esc(t.style_name || '무제')}">
+                <span class="fd-th tp">${thumb || '<i class="ph ph-clipboard-text" style="color:#5e5ce6"></i>'}</span>
+                <span class="fd-nm">${esc(t.style_name || '무제')}</span>
+                <span class="fd-sub">${t.style_no ? esc(t.style_no) : when(t.created_at)}</span>
+                ${it ? `<em class="fd-badge tp"><i class="ph ph-t-shirt"></i></em>` : ''}
+            </button>`;
         };
         return `<div class="mp">
-            ${this._mpTop('작업지시서', `${list.length}건 · 열어서 수정 · ⌘P로 PDF · 제품리스트와 연동`,
+            ${this._mpTop('작업지시서', `${list.length}건 · 두 번 누르면 열린다 · ⌘P로 PDF`,
                 `<button onclick="app.newTechPack()" class="mbtn pri"><i class="ph ph-plus"></i> 새 작업지시서</button>`)}
-            <div class="mp-body">
-            ${!this._techPacksLoaded ? '<div class="glass" style="padding:3rem;border-radius:18px;text-align:center;color:var(--text-muted)">불러오는 중...</div>'
-                : (list.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1.1rem">${list.map(card).join('')}</div>`
-                    : '<div class="glass" style="padding:2.5rem;border-radius:18px;text-align:center;color:var(--text-muted)">저장된 작업지시서가 없어요. <b>샘플</b> 탭에서 만들고 저장하거나 위 <b>새 작업지시서</b>로 시작하세요.</div>')}
-        </div></div>`;
+            <div class="fd-body">
+                ${!this._techPacksLoaded ? this._loadingSkeleton('작업지시서')
+                    : (list.length ? `<div class="fd-grid tp">${list.map(tile).join('')}</div>`
+                        : `<div class="fd-none">저장된 작업지시서가 없습니다 — <b>샘플·디자인</b>에서 만들어 저장하거나 위 [새 작업지시서]로 시작하세요</div>`)}
+            </div>
+            <div class="fd-path"><i class="ph ph-clipboard-text"></i><span>작업지시서 ${list.length}건</span></div>
+        </div>`;
     }
 
     _qcFromConfig(cfg, job) {
@@ -10717,31 +10716,29 @@ class BhasApp {
     renderQuotes() {
         if (!this._quotesLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">견적을 불러오는 중...</div>`;
         const qs = this.quotes || [];
-        const rows = qs.map(q => `
-            <tr class="q-row" data-id="${q.id}" style="border-bottom:1px solid var(--card-border);cursor:pointer">
-                <td style="padding:10px;font-size:0.82rem;color:var(--text-muted)">${q.quote_date || '-'}</td>
-                <td style="padding:10px;font-weight:600">${this._vesc(q.client_name)}${(() => {
-                    const it = (this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id));
-                    return it ? `<div style="font-size:0.7rem;font-weight:600;color:#0a84ff"><i class="ph ph-t-shirt"></i> ${this._vesc(it.name || '제품')}</div>` : '';
-                })()}</td>
-                <td style="padding:10px;font-size:0.85rem;color:var(--text-muted)">${(q.items || []).length}개 품목</td>
-                <td style="padding:10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">${this._won(q.total_amount)}원</td>
-                <td style="padding:10px;text-align:center;white-space:nowrap"><span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${q.status === 'confirmed' ? 'rgba(34,197,94,0.18)' : (q.status === 'sent' ? 'rgba(59,130,246,0.18)' : 'rgba(245,158,11,0.18)')};color:${q.status === 'confirmed' ? '#22c55e' : (q.status === 'sent' ? '#60a5fa' : '#f59e0b')}">${this._quoteStatusLabel(q.status)}</span>${q.tax_status === 'issued' ? ' <span style="font-size:0.66rem;padding:2px 7px;border-radius:8px;background:rgba(34,197,94,0.18);color:#22c55e">계산서✓</span>' : ''}</td>
-                <td style="padding:10px;text-align:center"><button class="q-print" data-id="${q.id}" title="인쇄" style="background:none;border:none;color:var(--text-muted);cursor:pointer"><i class="ph ph-printer"></i></button></td>
-            </tr>`).join('') || `<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">견적서가 없습니다. [새 견적]으로 시작하세요.</td></tr>`;
+        const stc = st => st === 'confirmed' ? '#30d158' : (st === 'sent' ? '#0a84ff' : '#ff9f0a');
+        const rows = qs.map(q => {
+            const it = (this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id));
+            return `<tr class="it-row q-row" data-id="${q.id}">
+                <td class="nw">${this._vesc(q.quote_date || '')}</td>
+                <td class="bd">${this._vesc(q.client_name || '')}</td>
+                <td>${it ? `<span class="it-tag" style="--c:#0a84ff">${this._vesc(it.name || '제품')}</span>` : ''}</td>
+                <td>${(q.items || []).length}개 품목</td>
+                <td class="num">${this._won(q.total_amount)}</td>
+                <td><span class="it-tag" style="--c:${stc(q.status)}">${this._quoteStatusLabel(q.status)}</span>${q.tax_status === 'issued' ? ' <span class="it-tag" style="--c:#30d158">계산서</span>' : ''}</td>
+                <td class="it-c"><button class="it-ib q-print" data-id="${q.id}" title="인쇄"><i class="ph ph-printer"></i></button></td>
+            </tr>`;
+        }).join('') || `<tr><td colspan="7" class="it-none">견적서가 없습니다 — 위 [새 견적]으로 시작하세요</td></tr>`;
         return `
         <div class="mp">
             ${this._mpTop('견적서', `${qs.length}건 · 엑셀 대체`,
                 `<button id="q-new-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 견적</button>`)}
-            <div class="mp-body">
-            <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
-                <table class="mtbl" style="width:100%;border-collapse:collapse;min-width:620px">
-                    <thead><tr style="color:var(--text-muted);font-size:0.8rem;text-align:left">
-                        <th>견적일</th><th>고객사</th><th>품목</th><th style="text-align:right">합계</th><th style="text-align:center">상태</th><th style="text-align:center">인쇄</th>
-                    </tr></thead><tbody>${rows}</tbody>
-                </table>
+            <div class="it-scroll">
+                <table class="it-tbl"><thead><tr>
+                    <th>견적일</th><th>고객사</th><th>제품</th><th>품목</th><th class="num">합계</th><th>상태</th><th class="it-c">인쇄</th>
+                </tr></thead><tbody>${rows}</tbody></table>
             </div>
-        </div></div>`;
+        </div>`;
     }
     bindQuotesEvents() {
         const n = document.getElementById('q-new-btn'); if (n) n.onclick = () => this.showQuoteModal();
