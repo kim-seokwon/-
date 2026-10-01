@@ -3264,7 +3264,8 @@ body:not(.light) .mac-deskboard .glass{
 
 /* 새 판 알림 막대 */
 .updbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9000;
-  display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;
+  display:flex;align-items:center;gap:11px;padding:11px 14px 11px 13px;border-radius:14px;
+  max-width:min(520px,92vw);
   background:rgba(32,32,36,.94);color:#f4f4f6;font-size:13px;
   backdrop-filter:blur(28px);border:.5px solid rgba(255,255,255,.18);
   box-shadow:0 14px 40px rgba(0,0,0,.45);animation:stmIn .16s cubic-bezier(.2,.9,.3,1.05)}
@@ -4195,3 +4196,29 @@ body.pgripping *{cursor:col-resize !important}
 .ip-doc{padding:14px 16px 24px;font-size:13.5px;line-height:1.75}
 .ip-doc .nb-img{max-width:100%;border-radius:9px;margin:6px 0}
 @media (max-width:980px){ .npv.wide{width:92%} }
+
+/* 제품리스트 오른쪽 칸의 제품 메모 */
+.dt-sec{display:flex;align-items:center;gap:6px}
+.dt-tools{margin-left:auto;display:flex;align-items:center;gap:1px}
+.dt-tools button{border:0;background:transparent;color:var(--text-muted);font-size:13px;
+  cursor:default;padding:2px 5px;border-radius:6px}
+.dt-tools button:hover{background:rgba(127,127,127,.16);color:inherit}
+.dt-tools button.on{background:rgba(10,132,255,.16);color:#0a84ff}
+.dt-tools em{font-style:normal;font-size:10px;color:var(--text-muted);margin-left:3px}
+.dt-ta{width:100%;box-sizing:border-box;min-height:150px;border:.5px solid var(--card-border);
+  border-radius:8px;background:transparent;outline:none;resize:vertical;font-family:inherit;
+  font-size:12.5px;line-height:1.7;color:inherit;padding:9px 10px}
+.dt-ta:focus{border-color:#0a84ff}
+.macwin .dt-ta{background:transparent !important;padding:9px 10px !important;font-size:12.5px !important}
+.dt-doc{font-size:12.5px;line-height:1.7;padding:2px 0 6px}
+.dt-doc .nb-img{max-width:100%;border-radius:8px;margin:5px 0}
+.dt-none.sm{padding:8px 0;text-align:left;font-size:11.5px}
+.macwin .dt-tools button{box-shadow:none !important;border:0 !important;background:transparent !important}
+.macwin .dt-tools button.on{background:rgba(10,132,255,.16) !important}
+
+.updbar>i{font-size:20px;color:#0a84ff;flex:0 0 auto}
+.updbar>span{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.updbar>span b{font-size:13px;font-weight:700}
+.updbar>span em{font-style:normal;font-size:11px;opacity:.72;line-height:1.4}
+.updbar button{flex:0 0 auto}
+@media (max-width:620px){ .updbar>span em{display:none} }

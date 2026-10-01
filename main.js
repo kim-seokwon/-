@@ -62,7 +62,11 @@ class BhasApp {
             this.init();
             // 옛 화면을 붙들고 있는지 — 켤 때 한 번, 그 뒤 30분마다
             setTimeout(() => this.checkNewBuild(), 4000);
-            setInterval(() => this.checkNewBuild(), 30 * 60 * 1000);
+            setInterval(() => this.checkNewBuild(), 3 * 60 * 1000);
+            //  다른 일 하다 돌아왔을 때 바로 알려준다
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) this.checkNewBuild();
+            });
             window.addEventListener('focus', () => {
                 if (Date.now() - (this._lastBuildCheck || 0) < 5 * 60 * 1000) return;
                 this._lastBuildCheck = Date.now(); this.checkNewBuild();
@@ -2670,14 +2674,22 @@ class BhasApp {
             this._showUpdateBar();
         } catch (_e) { /* 못 물어봐도 그냥 둔다 */ }
     }
+    //  쓰던 중에 화면이 갑자기 바뀌면 안 된다. 알리기만 하고, 누를 때 바뀐다.
     _showUpdateBar() {
         if (document.getElementById('upd-bar')) return;
+        if (this._updSnoozeUntil && Date.now() < this._updSnoozeUntil) return;
         const el = document.createElement('div');
         el.id = 'upd-bar'; el.className = 'updbar';
-        el.innerHTML = `<span>새 판이 나왔습니다</span>
-            <button onclick="location.reload(true)">새로 받기</button>
-            <button class="x" onclick="this.parentNode.remove()">나중에</button>`;
+        el.innerHTML = `<i class="ph ph-arrow-circle-down"></i>
+            <span><b>새 버전이 나왔습니다</b><em>지금 쓰던 건 그대로 둬도 됩니다. 눌러야 바뀝니다.</em></span>
+            <button onclick="app.applyUpdate()">업데이트</button>
+            <button class="x" onclick="app.snoozeUpdate()">나중에</button>`;
         document.body.appendChild(el);
+    }
+    applyUpdate() { location.reload(true); }
+    snoozeUpdate() {
+        this._updSnoozeUntil = Date.now() + 30 * 60 * 1000;   // 30분 뒤 다시 묻는다
+        document.getElementById('upd-bar')?.remove();
     }
     // 지금 보고 있는 판이 어느 것인지 — 주소가 여럿일 때 헷갈리지 않게 화면에 박아둔다
     _buildTag() {
@@ -3555,7 +3567,22 @@ class BhasApp {
                 ${link('견적', !!qt, qt ? (qt.quote_no || qt.client_name || '열기') : '', `app.itemOpenQuote('${it.id}')`, `app.itemNewQuote('${it.id}')`)}
                 <div class="dt-li"><span>생산 투입</span><b>${jobs.length ? jobs.length + '건' : '없음'}</b></div>
                 ${jobs.map(j => `<div class="dt-li"><span>${esc(j.vname || '')} · ${esc(j.stage || '')}</span><b>${esc(j.due_date || '')}</b></div>`).join('')}
-                ${it.memo ? `<div class="dt-sec">메모</div><div class="dt-memo">${esc(it.memo)}</div>` : ''}
+                ${it.memo ? `<div class="dt-sec">한 줄 메모</div><div class="dt-memo">${esc(it.memo)}</div>` : ''}
+                <div class="dt-sec">제품 메모
+                    <span class="dt-tools">
+                        <button onclick="app.itemNoteInsert('todo')" title="할 일 [ ]"><i class="ph ph-check-square"></i></button>
+                        <button onclick="app.pickItemPhoto('${it.id}')" title="사진 넣기"><i class="ph ph-image"></i></button>
+                        <button class="${this.ipPreview ? 'on' : ''}" onclick="app.toggleItemPreview()"
+                            title="${this.ipPreview ? '고치기' : '보기'}"><i class="ph ${this.ipPreview ? 'ph-pencil-simple' : 'ph-eye'}"></i></button>
+                        <em id="ip-sv-d"></em>
+                    </span></div>
+                ${(() => {
+                    const note = this._itemNoteOf(it.id);
+                    return this.ipPreview
+                        ? `<div class="dt-doc nb">${note ? this._noteBodyHTML(note) : '<div class="dt-none sm">아직 적은 게 없습니다</div>'}</div>`
+                        : `<textarea id="item-note-d" class="dt-ta" placeholder="여기에 적으세요 · [ ] 로 할 일"
+                            oninput="app.itemNoteTyping()" onblur="app.saveItemNote('${it.id}')">${esc(note ? this._noteText(note) : '')}</textarea>`;
+                })()}
             `, `${tp ? `<button class="mbtn pri" onclick="app.openTechPack('${tp.id}')">작업지시서 열기</button>`
                      : `<button class="mbtn pri" onclick="app.itemNewTechPack('${it.id}')">작업지시서 만들기</button>`}
                 <button class="mbtn" onclick="app.itemToVendor('${it.id}')">생산 투입</button>
@@ -6979,11 +7006,14 @@ class BhasApp {
     toggleItemPreview() { this.ipPreview = !this.ipPreview; this.requestRender(); }
     itemNoteTyping() {
         clearTimeout(this._ipT);
-        const sv = document.getElementById('ip-sv'); if (sv) sv.textContent = '쓰는 중…';
-        this._ipT = setTimeout(() => this.saveItemNote(this.npItem), 900);
+        const sv = document.getElementById('ip-sv') || document.getElementById('ip-sv-d');
+        if (sv) sv.textContent = '쓰는 중…';
+        const who = document.getElementById('item-note') ? this.npItem : this.itemSel;
+        this._ipT = setTimeout(() => this.saveItemNote(who), 900);
     }
+    _ipTa() { return document.getElementById('item-note') || document.getElementById('item-note-d'); }
     itemNoteInsert(kind) {
-        const ta = document.getElementById('item-note'); if (!ta) return;
+        const ta = this._ipTa(); if (!ta) return;
         const ins = kind === 'todo' ? '[ ] ' : '';
         const p = ta.selectionStart;
         const pre = (p === 0 || ta.value[p - 1] === '\n') ? '' : '\n';
@@ -6994,11 +7024,11 @@ class BhasApp {
     }
     async saveItemNote(id, textOverride) {
         const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return null;
-        const ta = document.getElementById('item-note');
+        const ta = this._ipTa();
         const text = textOverride != null ? textOverride : (ta ? ta.value : null);
         if (text == null) return this._itemNoteOf(id);
         let n = this._itemNoteOf(id);
-        const sv = document.getElementById('ip-sv');
+        const sv = document.getElementById('ip-sv') || document.getElementById('ip-sv-d');
         if (n) {
             const body = this._joinNote(this._noteMeta(n), text);
             if (body === n.body) { if (sv) sv.textContent = ''; return n; }
@@ -7006,7 +7036,8 @@ class BhasApp {
             const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
             if (sv) sv.textContent = error ? '저장 못 함' : '저장됨';
             if (error) this.showToast('저장 실패: ' + error.message);
-            setTimeout(() => { const s2 = document.getElementById('ip-sv'); if (s2) s2.textContent = ''; }, 1400);
+            setTimeout(() => { const s2 = document.getElementById('ip-sv') || document.getElementById('ip-sv-d');
+                if (s2) s2.textContent = ''; }, 1400);
             return n;
         }
         if (!text.trim()) return null;
@@ -7026,11 +7057,11 @@ class BhasApp {
     //  사진은 그 제품 메모에 붙인다
     async pickItemPhoto(id) {
         let n = this._itemNoteOf(id);
-        if (!n) n = await this.saveItemNote(id, (document.getElementById('item-note') || {}).value || ' ');
+        if (!n) n = await this.saveItemNote(id, (this._ipTa() || {}).value || ' ');
         if (!n) { this.showToast('먼저 한 글자라도 적어주세요'); return; }
         this.noteSel = n.id; this._noteShown = n.id;
-        const ta = document.getElementById('item-note');
-        this._notePhotoAt = ta ? ta.selectionStart : null;
+        const ta2 = this._ipTa();
+        this._notePhotoAt = ta2 ? ta2.selectionStart : null;
         this._itemPhotoFor = id;
         this.pickNotePhoto();
     }
@@ -7121,7 +7152,7 @@ class BhasApp {
             const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
             if (error) throw error;
             //  제품 페이지에서 넣은 사진은 그쪽 글칸에 꽂는다
-            const ipTa = document.getElementById('item-note');
+            const ipTa = this._ipTa();
             if (this._itemPhotoFor && ipTa) {
                 const at2 = Math.min(this._notePhotoAt ?? ipTa.value.length, ipTa.value.length);
                 const b2 = ipTa.value.slice(0, at2), a2 = ipTa.value.slice(at2);
