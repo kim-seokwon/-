@@ -7141,6 +7141,15 @@ class BhasApp {
     togglePrivFolders() { this.notePrivOpen = this.notePrivOpen === false; this.requestRender(); }
     toggleNoteSeasons() { this.noteSeaOpen = !this.noteSeaOpen; this.requestRender(); }
     setNoteSea(v) { this.noteSea = v; this.noteSel = null; this.requestRender(); }
+    //  폴더가 브랜드면 그 브랜드 시즌만 보여준다 — 브랜드와 시즌은 늘 붙어 다닌다.
+    //  브랜드를 아직 안 정한 시즌은 어디서나 보인다(다 정해지면 저절로 사라진다).
+    _seasonsFor(folderKey) {
+        const all = this._seasons();
+        const name = String(folderKey || '').replace(/^(f:|pf:)/, '');
+        const b = (mockData.brands || []).find(x => x.name === name);
+        if (!b) return all;
+        return all.filter(p => !p.brand_id || String(p.brand_id) === String(b.id));
+    }
     setNoteFolder(f) { this.saveNote(); this._nbDrop(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
     async deleteNote() {
         const n = this._curNote(); if (!n) return;
@@ -7221,7 +7230,7 @@ class BhasApp {
         const meta = this._noteMeta(n);
         const st = this.NOTE_STATUS.find(x => x.k === (meta.status || '없음')) || this.NOTE_STATUS[0];
         const accs = (mockData.companies || []).filter(c => c.username);
-        const projs = (mockData.products || []);
+        const projs = this._seasonsFor(n.scope === 'shared' ? (n.folder || '공용') : '');
         const who = accs.find(c => c.name === meta.who);
         const links = (meta.links || []).map(id => (this.noteList || []).find(x => String(x.id) === String(id))).filter(Boolean);
         const row = (icon, label, body) => `<div class="np-r"><span class="np-k"><i class="ph ${icon}"></i>${esc(label)}</span>
@@ -8300,7 +8309,7 @@ class BhasApp {
         const all = this.noteList || [];
         const me = this._me();
         const cur = this.noteFolder || 'private';
-        const projects = (mockData.products || []);
+        const projects = this._seasonsFor(this.noteFolder || 'public');
         const inFolder = (n) => {
             if (n.item_id) return false;   // 제품 기록장은 제품 페이지에서 본다
             if (cur === 'all') return true;
@@ -8359,7 +8368,10 @@ class BhasApp {
             ondragover="app.nbDragOver(event,'${key}')" ondragleave="app.nbDragOut(event)" ondrop="app.nbDrop(event,'${key}')"
             oncontextmenu="app.folderMenu(event,'${key}')">
             <i class="ph ${icon}" style="color:${color || '#e0a800'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
-        const otherFolders = [...new Set(all.filter(n => n.scope === 'shared').map(n => n.folder || '공용'))];
+        //  브랜드 폴더 + 공용은 메모가 없어도 늘 자리를 지킨다
+        const brandNames = (mockData.brands || []).filter(b => b.status !== 'closed').map(b => b.name);
+        const otherFolders = [...new Set([...brandNames, '공용',
+            ...all.filter(n => n.scope === 'shared').map(n => n.folder || '공용')])];
         //  개인 메모도 폴더로 나눈다 — '개인' 은 기본 칸이라 목록에서 뺀다
         const privFolders = [...new Set(all.filter(n => n.scope === 'private' && n.owner === me)
             .map(n => n.folder || '개인'))].filter(f => f !== '개인');
@@ -8378,8 +8390,10 @@ class BhasApp {
                 ${otherFolders.map(f => {
                     const fx = (this.noteFolders || []).find(x => x.name === f);
                     const locked = fx && fx.access === 'members';
-                    return fold('f:' + f, locked ? 'ph-folder-simple-lock' : 'ph-folder-simple', f,
-                        cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800');
+                    const br = (mockData.brands || []).find(b => b.name === f);
+                    return fold('f:' + f, locked ? 'ph-folder-simple-lock' : (br ? 'ph-tag' : 'ph-folder-simple'), f,
+                        cnt(n => (n.folder || '공용') === f && n.scope === 'shared'),
+                        br ? (br.brand_color || '#0a84ff') : '#8e8e93');
                 }).join('')}
                 <button class="nt-prod${this.noteProd ? ' on' : ''}" onclick="app.toggleNoteProducts()"
                     title="제품을 보면서 쓰기">
