@@ -3984,3 +3984,32 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   flex:0 0 auto}
 .hk-r span{color:var(--text-muted);min-width:0}
 .nt-help{margin-left:2px}
+
+/* 메모 속 사진 — 마우스 올리면 ✕ */
+.nb-ph{position:relative;display:inline-block;max-width:100%}
+.nb-ph-x{position:absolute;top:7px;right:7px;width:22px;height:22px;border:0;border-radius:50%;
+  background:rgba(0,0,0,.55);color:#fff;font-size:11px;line-height:1;cursor:default;
+  display:none;place-items:center;backdrop-filter:blur(6px)}
+.nb-ph:hover .nb-ph-x{display:grid}
+.nb-ph-x:hover{background:#ff453a}
+.macwin .nb-ph-x{padding:0 !important;box-shadow:none !important;border:0 !important}
+
+/* 시즌 폴더 — 마우스 올리면 ⓘ 속성, 담당자만이면 자물쇠 */
+.fd-wrap{position:relative;display:block}
+.fd-i{position:absolute;top:6px;right:6px;width:22px;height:22px;border:0;border-radius:50%;
+  background:rgba(127,127,127,.2);color:var(--text-muted);font-size:12px;cursor:default;
+  display:none;place-items:center;padding:0}
+.fd-wrap:hover .fd-i{display:grid}
+.fd-i:hover{background:#0a84ff;color:#fff}
+.fd-i.row{position:static;display:inline-grid;width:20px;height:20px;font-size:11px;
+  vertical-align:middle;margin-left:6px;background:transparent}
+.fd-r.se:hover .fd-i.row{background:rgba(127,127,127,.2)}
+.fd-lock{position:absolute;left:50%;margin-left:-30px;top:6px;font-style:normal;font-size:10px;
+  color:#fff;background:#8e8e93;border-radius:99px;width:17px;height:17px;display:grid;
+  place-items:center;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.macwin .fd-i{padding:0 !important;box-shadow:none !important;border:0 !important}
+
+/* 가운데 뜨는 입력 창 */
+.pr .pr-msg{font-size:12.5px;color:var(--text-muted);line-height:1.6;margin:10px 0 8px}
+.pr #pr-in{width:100%;box-sizing:border-box}
+.pr textarea#pr-in{resize:vertical;line-height:1.6}

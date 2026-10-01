@@ -458,6 +458,39 @@ class BhasApp {
         container.style.display = 'flex';
     }
 
+    //  가운데 뜨는 입력 창 — 브라우저 기본 prompt 는 창 밖(주소창 아래)에 떠서 쓰기 불편하다
+    showPrompt(message, value = '', title = '입력') {
+        return new Promise((resolve) => {
+            const c = document.getElementById('global-modal-container');
+            const esc = x => this._vesc(x == null ? '' : String(x));
+            const multi = String(message).includes('\n');
+            c.innerHTML = `<div class="modal-content vmodal pr" style="width:94%;max-width:400px">
+                <div class="hk-top"><b>${esc(title)}</b>
+                    <button class="fi-x" id="pr-x">×</button></div>
+                <div class="pr-msg">${esc(message).replace(/\n/g, '<br>')}</div>
+                ${multi ? `<textarea id="pr-in" class="nw-f" rows="3"></textarea>`
+                        : `<input id="pr-in" class="nw-f" type="text">`}
+                <div class="fi-act">
+                    <button class="mbtn" id="pr-no">취소</button>
+                    <button class="mbtn pri" id="pr-ok">확인</button>
+                </div>
+            </div>`;
+            c.style.display = 'flex';
+            const el = c.querySelector('#pr-in');
+            el.value = value == null ? '' : String(value);
+            const done = (v) => { c.style.display = 'none'; c.innerHTML = ''; resolve(v); };
+            c.querySelector('#pr-ok').onclick = () => done(el.value);
+            c.querySelector('#pr-no').onclick = () => done(null);
+            c.querySelector('#pr-x').onclick = () => done(null);
+            c.onclick = (e) => { if (e.target === c) done(null); };
+            el.onkeydown = (e) => {
+                if (e.key === 'Enter' && !multi) { e.preventDefault(); done(el.value); }
+                if (e.key === 'Escape') { e.preventDefault(); done(null); }
+            };
+            setTimeout(() => { el.focus(); el.select?.(); }, 40);
+        });
+    }
+
     showConfirm(message, title = '확인 알림') {
         return new Promise((resolve) => {
             const container = document.getElementById('global-modal-container');
@@ -2958,7 +2991,7 @@ class BhasApp {
     }
     async renameProject(id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
-        const v = window.prompt('시즌 이름', p.name || ''); if (v === null || !v.trim()) return;
+        const v = await this.showPrompt('시즌 이름', p.name || ''); if (v === null || !v.trim()) return;
         p.name = v.trim(); this.requestRender();
         try {
             const { error } = await this.supabase.from('products').update({ name: p.name }).eq('id', id);
@@ -2971,7 +3004,7 @@ class BhasApp {
         if (!brands.length) { this.showToast('브랜드가 없습니다'); return; }
         const cur = brands.findIndex(b => b.id === p.brand_id);
         const msg = brands.map((b, i) => `${i + 1}. ${b.name}`).join('\n');
-        const v = window.prompt(`옮길 브랜드 번호\n${msg}`, String(cur >= 0 ? cur + 1 : 1));
+        const v = await this.showPrompt(`옮길 브랜드 번호\n${msg}`, String(cur >= 0 ? cur + 1 : 1));
         const i = Number(v) - 1;
         if (!brands[i]) return;
         p.brand_id = brands[i].id; this.requestRender();
@@ -2982,7 +3015,7 @@ class BhasApp {
     }
     async setProjectDue(id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
-        const v = window.prompt('마감일 (YYYY-MM-DD, 비우면 없앰)', p.due_date || '');
+        const v = await this.showPrompt('마감일 (YYYY-MM-DD, 비우면 없앰)', p.due_date || '');
         if (v === null) return;
         const due = v.trim() || null;
         if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) { this.showToast('날짜는 2026-10-05 처럼 적어주세요'); return; }
@@ -3529,12 +3562,16 @@ class BhasApp {
 
             const tile = p => {
                 const b = brandOf(p), col = (b && b.brand_color) || '#0a84ff', n = itemsOf(p);
-                return `<button class="fd-it" onclick="app.openSeasonItems('${p.id}')"
-                    oncontextmenu="app.projectMenu(event,'${p.id}')" title="${esc(p.name)}">
-                    <span class="fd-th"><i class="ph-fill ph-folder" style="color:${col}"></i>${n ? `<em class="fd-badge">${n}</em>` : ''}</span>
-                    <span class="fd-nm">${esc(p.name)}</span>
-                    <span class="fd-sub">${b ? esc(b.name) : '브랜드 없음'}</span>
-                </button>`;
+                const lock = (p.access === 'members');
+                return `<span class="fd-wrap">
+                    <button class="fd-it" onclick="app.openSeasonItems('${p.id}')"
+                        oncontextmenu="app.projectMenu(event,'${p.id}')" title="${esc(p.name)}">
+                        <span class="fd-th"><i class="ph-fill ph-folder" style="color:${col}"></i>${n ? `<em class="fd-badge">${n}</em>` : ''}${lock ? `<em class="fd-lock" title="담당자만"><i class="ph-fill ph-lock-simple"></i></em>` : ''}</span>
+                        <span class="fd-nm">${esc(p.name)}</span>
+                        <span class="fd-sub">${b ? esc(b.name) : '브랜드 없음'}</span>
+                    </button>
+                    <button class="fd-i" title="속성 · 접근 권한" onclick="app.folderInfo('${p.id}')"><i class="ph ph-info"></i></button>
+                </span>`;
             };
             const row = p => {
                 const b = brandOf(p), col = (b && b.brand_color) || '#0a84ff';
@@ -3544,7 +3581,9 @@ class BhasApp {
                     <span>${b ? esc(b.name) : '—'}</span>
                     <span style="text-align:right">${itemsOf(p) || '—'}</span>
                     <span>${esc(dueOf(p) || '—')}</span>
-                    <span>${esc(stageOf(p))}</span>
+                    <span>${esc(stageOf(p))}${p.access === 'members' ? ' <i class="ph-fill ph-lock-simple" title="담당자만"></i>' : ''}
+                        <button class="fd-i row" title="속성 · 접근 권한"
+                            onclick="event.stopPropagation();app.folderInfo('${p.id}')"><i class="ph ph-info"></i></button></span>
                 </div>`;
             };
             const group = (label, list) => {
@@ -5317,21 +5356,21 @@ class BhasApp {
         this._renderFeedGrid();
     }
 
-    igSetHandle(accountId) {
+    async igSetHandle(accountId) {
         const a = (this.igAccounts || []).find(x => x.id === accountId); if (!a) return;
-        const v = window.prompt('인스타 핸들(@아이디)을 입력하세요', a.username || '');
+        const v = await this.showPrompt('인스타 핸들(@아이디)을 입력하세요', a.username || '');
         if (v === null) return;
         this.supabase.from('ig_accounts').update({ username: v.trim().replace(/^@/, '') || null, updated_at: new Date().toISOString() }).eq('id', accountId)
             .then(({ error }) => { if (error) this.showToast('저장 실패: ' + error.message); else { this._igLoaded = false; this.loadIG(); } });
     }
 
-    igAddSnapshot(accountId) {
+    async igAddSnapshot(accountId) {
         const ymd = new Date().toISOString().slice(0, 10);
-        const dateStr = window.prompt('기록 날짜 (YYYY-MM-DD)', ymd); if (dateStr === null) return;
+        const dateStr = await this.showPrompt('기록 날짜 (YYYY-MM-DD)', ymd); if (dateStr === null) return;
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) { this.showToast('날짜 형식은 YYYY-MM-DD 예: ' + ymd); return; }
-        const f = window.prompt('현재 팔로워 수', ''); if (f === null) return;
-        const p = window.prompt('직전 기록 이후 올린 게시물 수', '0'); if (p === null) return;
-        const s = window.prompt('직전 기록 이후 올린 스토리 수', '0'); if (s === null) return;
+        const f = await this.showPrompt('현재 팔로워 수', ''); if (f === null) return;
+        const p = await this.showPrompt('직전 기록 이후 올린 게시물 수', '0'); if (p === null) return;
+        const s = await this.showPrompt('직전 기록 이후 올린 스토리 수', '0'); if (s === null) return;
         const row = {
             account_id: accountId,
             snap_date: dateStr.trim(),
@@ -6437,7 +6476,7 @@ class BhasApp {
     }
     async renameNote(id) {
         const n = (this.noteList || []).find(x => String(x.id) === String(id)); if (!n) return;
-        const v = window.prompt('메모 이름', n.title || ''); if (v === null) return;
+        const v = await this.showPrompt('메모 이름', n.title || ''); if (v === null) return;
         n.title = v.trim(); this.requestRender();
         try { await this.supabase.from('notes').update({ title: n.title }).eq('id', n.id); }
         catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
@@ -6457,7 +6496,7 @@ class BhasApp {
     async moveNote(id) {
         const n = (this.noteList || []).find(x => String(x.id) === String(id)); if (!n) return;
         const folders = [...new Set((this.noteList || []).map(x => x.folder || '메모'))];
-        const v = window.prompt(`옮길 폴더 이름\n(있는 폴더: ${folders.join(', ')})`, n.folder || '메모');
+        const v = await this.showPrompt(`옮길 폴더 이름\n(있는 폴더: ${folders.join(', ')})`, n.folder || '메모');
         if (v === null || !v.trim()) return;
         n.folder = v.trim(); this.requestRender();
         try { await this.supabase.from('notes').update({ folder: n.folder }).eq('id', n.id); }
@@ -6472,12 +6511,12 @@ class BhasApp {
         catch (e) { this.showToast('바꾸기 실패: ' + (e.message || e)); }
     }
     async addNoteFolder() {
-        const v = window.prompt('새 폴더 이름'); if (!v || !v.trim()) return;
+        const v = await this.showPrompt('새 폴더 이름'); if (!v || !v.trim()) return;
         this.noteFolder = 'f:' + v.trim();
         await this.addNote(v.trim());
     }
     async renameNoteFolder(oldName) {
-        const v = window.prompt('폴더 이름', oldName); if (v === null || !v.trim() || v.trim() === oldName) return;
+        const v = await this.showPrompt('폴더 이름', oldName); if (v === null || !v.trim() || v.trim() === oldName) return;
         const hit = (this.noteList || []).filter(n => (n.folder || '') === oldName);
         hit.forEach(n => { n.folder = v.trim(); });
         if (this.noteFolder === 'f:' + oldName) this.noteFolder = 'f:' + v.trim();
@@ -6491,7 +6530,7 @@ class BhasApp {
     setNoteFolder(f) { this.saveNote(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
     async deleteNote() {
         const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
-        if (!window.confirm(`"${n.title || '제목 없음'}" 메모를 삭제할까요?`)) return;
+        if (!await this.showConfirm(`"${n.title || '제목 없음'}" 메모를 삭제할까요?`, '삭제')) return;
         try {
             const { error } = await this.supabase.from('notes').delete().eq('id', n.id);
             if (error) throw error;
@@ -6623,8 +6662,17 @@ class BhasApp {
     }
     // ── 메모 사진 첨부 ────────────────────────────────────────
     //  스토리지(bhas 버킷)에 올리고 본문에 ![](주소) 로 끼워 넣는다. 보기 상태에서 사진으로 뜬다.
+    //  지금 화면에 떠 있는 메모 (고르지 않았어도 첫 메모가 떠 있다)
+    _curNote() {
+        return (this.noteList || []).find(x => x.id === this.noteSel)
+            || (this.noteList || []).find(x => x.id === this._noteShown)
+            || null;
+    }
     pickNotePhoto() {
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) { this.showToast('메모를 먼저 고르세요'); return; }
+        const n = this._curNote(); if (!n) { this.showToast('메모가 없습니다. 먼저 하나 만드세요.'); return; }
+        //  고르기 창이 뜨면 커서 자리를 잃는다 — 지금 자리를 적어 둔다
+        const ta = document.getElementById('note-body');
+        this._notePhotoAt = ta ? ta.selectionStart : null;
         let el = document.getElementById('note-photo-input');
         if (!el) {
             el = document.createElement('input');
@@ -6638,7 +6686,7 @@ class BhasApp {
         el.click();
     }
     async attachNotePhoto(file) {
-        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        const n = this._curNote(); if (!n) return;
         this.showToast('사진 올리는 중…');
         try {
             const blob = await this.resizeImage(file);
@@ -6649,14 +6697,29 @@ class BhasApp {
             if (upErr) throw upErr;
             const { data } = this.supabase.storage.from('bhas').getPublicUrl(path);
             const url = data.publicUrl;
-            const text = this._noteText(n);
-            const add = (text && !text.endsWith('\n') ? '\n' : '') + `![사진](${url})\n`;
-            n.body = this._joinNote(this._noteMeta(n), text + add);
+            const ta = document.getElementById('note-body');
+            //  글을 쓰던 중이면 화면의 글을 믿는다(아직 저장 안 된 글자가 있을 수 있다)
+            const text = ta ? ta.value : this._noteText(n);
+            let at = this._notePhotoAt;
+            if (at == null || at > text.length) at = text.length;
+            const before = text.slice(0, at), after = text.slice(at);
+            const pre = (before && !before.endsWith('\n')) ? '\n' : '';
+            const post = (after && !after.startsWith('\n')) ? '\n' : '';
+            const mark = `![사진](${url})`;
+            const next = before + pre + mark + post + after;
+            this._notePhotoAt = at + pre.length + mark.length + post.length;   // 여러 장이면 뒤로 이어 붙는다
+
+            n.body = this._joinNote(this._noteMeta(n), next);
             n.updated_at = new Date().toISOString();
             const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
             if (error) throw error;
-            this.notePreview = true; this.requestRender();
-            this.showToast('사진을 넣었습니다');
+            //  보기 모드로 튕기지 않는다 — 쓰던 자리에 그대로 있게
+            if (ta) {
+                ta.value = next;
+                ta.focus();
+                ta.setSelectionRange(this._notePhotoAt, this._notePhotoAt);
+            } else { this.requestRender(); }
+            this.showToast('커서 자리에 사진을 넣었습니다');
         } catch (e) { this.showToast('사진 올리기 실패: ' + (e.message || e)); }
     }
     linkNote(id) {
@@ -6749,13 +6812,34 @@ class BhasApp {
                     <span>${body}</span></div>`;
             }
             const img = line.match(/^!\[[^\]]*\]\((.+?)\)\s*$/);
-            if (img) return `<img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">`;
+            if (img) return `<span class="nb-ph">
+                <img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
+                <button class="nb-ph-x" title="사진 지우기" onclick="event.stopPropagation();app.removeNotePhoto(${i})"><i class="ph ph-x"></i></button>
+            </span>`;
             if (!line.trim()) return '<div class="nb-sp"></div>';
             const body = esc(line).replace(/@([^\s]+)/g, '<b class="nb-at">@$1</b>')
                                   .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
             return `<div class="nb-l">${body}</div>`;
         }).join('');
     }
+    //  사진 지우기 — 그 줄만 들어낸다
+    async removeNotePhoto(lineNo) {
+        const n = this._curNote(); if (!n) return;
+        const lines = this._noteText(n).split('\n');
+        const line = lines[lineNo] || '';
+        if (!/^!\[[^\]]*\]\(.+?\)\s*$/.test(line)) return;
+        const ok = await this.showConfirm('이 사진을 지울까요?', '사진 삭제');
+        if (!ok) return;
+        lines.splice(lineNo, 1);
+        const next = lines.join('\n');
+        n.body = this._joinNote(this._noteMeta(n), next);
+        n.updated_at = new Date().toISOString();
+        const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
+        if (error) { this.showToast('지우지 못했습니다: ' + error.message); return; }
+        this.requestRender();
+        this.showToast('사진을 지웠습니다');
+    }
+
     // ── @ 자동완성 ────────────────────────────────────────────
     //  본문에서 @ 를 치면 계정 목록이 뜬다. ↑↓ 로 고르고 Enter·Tab 으로 넣는다.
     _atPool() {
@@ -6800,6 +6884,26 @@ class BhasApp {
     }
     noteKey(ev) {
         if (!this._atHits) {
+            //  백스페이스 한 번에 사진 하나 — ![사진](주소) 를 글자 단위로 지우게 두면 괴롭다
+            if (ev.key === 'Backspace') {
+                const ta = ev.target;
+                if (ta.selectionStart === ta.selectionEnd) {
+                    const upto = ta.value.slice(0, ta.selectionStart);
+                    const m = upto.match(/!\[[^\]]*\]\([^)]*\)\n?$/);
+                    if (m) {
+                        ev.preventDefault();
+                        const from = ta.selectionStart - m[0].length;
+                        this.showConfirm('이 사진을 지울까요?', '사진 삭제').then(ok => {
+                            if (!ok) { ta.focus(); ta.setSelectionRange(ta.selectionStart, ta.selectionStart); return; }
+                            ta.value = ta.value.slice(0, from) + ta.value.slice(ta.selectionStart);
+                            ta.focus(); ta.setSelectionRange(from, from);
+                            this.saveNote();
+                            this.showToast('사진을 지웠습니다');
+                        });
+                        return;
+                    }
+                }
+            }
             // 할 일 줄에서 Enter 를 치면 다음 줄도 할 일로 시작한다(노션처럼)
             if (ev.key === 'Enter') {
                 const ta = ev.target;
@@ -6856,6 +6960,7 @@ class BhasApp {
         if (seaF === 'NONE') list = list.filter(n => !n.product_id);
         else if (seaF !== 'ALL') list = list.filter(n => String(n.product_id) === String(seaF));
         const sel = list.find(n => n.id === this.noteSel) || list[0];
+        this._noteShown = sel ? sel.id : null;   // 지금 화면에 떠 있는 메모
         const cnt = (fn) => all.filter(fn).length;
         // 맥 메모의 날짜 묶음: 오늘 · 어제 · 이전 7일 · 이전 30일 · 월 · 연도
         const bucket = (t) => {
@@ -7191,17 +7296,17 @@ class BhasApp {
     async delRemItem(src, id) {
         try {
             if (src === 'rem') {
-                if (!confirm('이 미리알림을 지울까요?')) return;
+                if (!await this.showConfirm('이 미리알림을 지울까요?', '삭제')) return;
                 const { error } = await this.supabase.from('reminders').delete().eq('id', id);
                 if (error) throw error;
                 this.remList = (this.remList || []).filter(x => String(x.id) !== String(id));
             } else if (src === 'todo') {
-                if (!confirm('이 할일을 지울까요?')) return;
+                if (!await this.showConfirm('이 할일을 지울까요?', '삭제')) return;
                 const { error } = await this.supabase.from('todos').delete().eq('id', id);
                 if (error) throw error;
                 (mockData.products || []).forEach(p => { if (p.todos) p.todos = p.todos.filter(t => String(t.id) !== String(id)); });
             } else {
-                if (!confirm('메모에서 이 줄을 지울까요?')) return;
+                if (!await this.showConfirm('메모에서 이 줄을 지울까요?', '삭제')) return;
                 const [nid, line] = String(id).split('#');
                 await this._replaceNoteLine(nid, Number(line), null);
             }
@@ -7220,7 +7325,7 @@ class BhasApp {
     }
     // 나의 목록에 새 분류 만들기 — 그 목록의 첫 줄을 하나 넣어 자리를 만든다
     async addRemList() {
-        const name = window.prompt('새 목록 이름'); if (!name || !name.trim()) return;
+        const name = await this.showPrompt('새 목록 이름'); if (!name || !name.trim()) return;
         const list_name = name.trim();
         try {
             const { data, error } = await this.supabase.from('reminders')
@@ -7251,7 +7356,7 @@ class BhasApp {
     async clearDoneReminders() {
         const ids = (this.remList || []).filter(r => r.done).map(r => r.id);
         if (!ids.length) { this.showToast('지울 완료 항목이 없습니다.'); return; }
-        if (!confirm(`완료된 미리알림 ${ids.length}건을 지울까요?`)) return;
+        if (!await this.showConfirm(`완료된 미리알림 ${ids.length}건을 지울까요?`, '삭제')) return;
         try {
             const { error } = await this.supabase.from('reminders').delete().in('id', ids);
             if (error) throw error;
@@ -7389,7 +7494,7 @@ class BhasApp {
     }
     async editCSMemo(id) {
         const t = (this.csList || []).find(x => x.id === id); if (!t) return;
-        const memo = window.prompt('메모', t.memo || ''); if (memo === null) return;
+        const memo = await this.showPrompt('메모', t.memo || ''); if (memo === null) return;
         try {
             const { error } = await this.supabase.from('cs_tickets').update({ memo: memo || null }).eq('id', id);
             if (error) throw error;
@@ -7429,7 +7534,7 @@ class BhasApp {
         ]);
     }
     async renameDoc(id, old) {
-        const v = window.prompt('자료 이름', old || ''); if (v === null || !v.trim()) return;
+        const v = await this.showPrompt('자료 이름', old || ''); if (v === null || !v.trim()) return;
         try {
             const { error } = await this.supabase.from('documents').update({ name: v.trim() }).eq('id', id);
             if (error) throw error;
@@ -8117,7 +8222,7 @@ class BhasApp {
     }
 
     async pullCafe24Inventory() {
-        if (!confirm('카페24 수량을 총재고 기준으로 가져옵니다.\n매핑된 품목의 브하스 재고가 카페24 수량으로 보정됩니다.')) return;
+        if (!await this.showConfirm('카페24 수량을 총재고 기준으로 가져옵니다.\n매핑된 품목의 브하스 재고가 카페24 수량으로 보정됩니다.', '확인')) return;
         this.showToast('카페24 재고를 확인 중...');
         try {
             const { data, error } = await this.supabase.functions.invoke('cafe24-sync', { body: { mode: 'inventory-pull' } });
@@ -8910,7 +9015,7 @@ class BhasApp {
     }
 
     async createCard(status) {
-        const title = (window.prompt && window.prompt('카드 제목')) || '';
+        const title = (await this.showPrompt('카드 제목')) || '';
         if (!title.trim()) return;
         const { error } = await this.supabase.from('board_cards')
             .insert([{ title: title.trim(), status, sort_order: (this.cards || []).length, created_by: this._actor() }]);
@@ -9143,7 +9248,7 @@ class BhasApp {
     }
     async quickAddFromCalendar() {
         const day = this.calDay || new Date().toISOString().slice(0, 10);
-        const title = window.prompt(`${day} 에 추가할 내용`); if (!title || !title.trim()) return;
+        const title = await this.showPrompt(`${day} 에 추가할 내용`); if (!title || !title.trim()) return;
         try {
             const { data, error } = await this.supabase.from('reminders')
                 .insert([{ title: title.trim(), due_date: day, list_name: '미리 알림', created_by: this.currentUser?.name || null }])
@@ -9871,8 +9976,8 @@ class BhasApp {
     setNewsTab(k) { this.newsTab = k; this.newsSel = null; this.requestRender(); }
     selectNews(id) { this.newsSel = id; this.requestRender(); }
     async addCompetitor() {
-        const handle = window.prompt('인스타 핸들 (@ 없이)'); if (!handle || !handle.trim()) return;
-        const name = window.prompt('보여줄 이름', handle.trim()) || handle.trim();
+        const handle = await this.showPrompt('인스타 핸들 (@ 없이)'); if (!handle || !handle.trim()) return;
+        const name = await this.showPrompt('보여줄 이름', handle.trim()) || handle.trim();
         try {
             const { data, error } = await this.supabase.from('competitors')
                 .insert([{ handle: handle.trim().replace(/^@/, ''), name: name.trim() }]).select('*').single();
@@ -9893,13 +9998,13 @@ class BhasApp {
     }
     async renameCompetitor(id) {
         const c = (this.competitors || []).find(x => x.id === id); if (!c) return;
-        const v = window.prompt('이름', c.name); if (v === null || !v.trim()) return;
+        const v = await this.showPrompt('이름', c.name); if (v === null || !v.trim()) return;
         c.name = v.trim(); this.requestRender();
         try { await this.supabase.from('competitors').update({ name: c.name }).eq('id', id); }
         catch (e) { this.showToast('실패: ' + (e.message || e)); }
     }
     async delCompetitor(id) {
-        if (!confirm('이 경쟁사를 뺄까요? 쌓인 지표도 같이 지워집니다.')) return;
+        if (!await this.showConfirm('이 경쟁사를 뺄까요? 쌓인 지표도 같이 지워집니다.', '삭제')) return;
         try {
             const { error } = await this.supabase.from('competitors').delete().eq('id', id);
             if (error) throw error;
@@ -9997,7 +10102,7 @@ class BhasApp {
     }
     async renameVendor(id) {
         const v = (this.vendors || []).find(x => x.id === id); if (!v) return;
-        const nv = window.prompt('상호', v.name || ''); if (nv === null || !nv.trim()) return;
+        const nv = await this.showPrompt('상호', v.name || ''); if (nv === null || !nv.trim()) return;
         v.name = nv.trim(); this.requestRender();
         try {
             const { error } = await this.supabase.from('vendors').update({ name: v.name }).eq('id', id);
@@ -10076,7 +10181,7 @@ class BhasApp {
     }
 
     async deleteVendor(id) {
-        if (!confirm('이 생산처와 물품 현황을 모두 삭제할까요?')) return;
+        if (!await this.showConfirm('이 생산처와 물품 현황을 모두 삭제할까요?', '삭제')) return;
         const { error } = await this.supabase.from('vendors').delete().eq('id', id);
         if (error) { this.showToast('삭제 실패: ' + error.message); return; }
         this.closeGlobalModal();
@@ -10381,7 +10486,7 @@ class BhasApp {
         } catch (e) { this.showToast('다운로드 실패: ' + (e.message || e)); }
     }
     async deleteTechPack(id, name) {
-        if (!confirm(`작업지시서 "${name || ''}" 를 삭제할까요? 되돌릴 수 없어요.`)) return;
+        if (!await this.showConfirm(`작업지시서 "${name || ''}" 를 삭제할까요? 되돌릴 수 없어요.`, '삭제')) return;
         try {
             const { error } = await this.supabase.from('tech_packs').delete().eq('id', id);
             if (error) throw error;
@@ -10448,7 +10553,7 @@ class BhasApp {
 
     async delItem(id) {
         const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
-        if (!confirm(`'${it.name || '이름 없는 제품'}' 을 제품리스트에서 지웁니다.`)) return;
+        if (!await this.showConfirm(`'${it.name || '이름 없는 제품'}' 을 제품리스트에서 지웁니다.`, '삭제')) return;
         const { error } = await this.supabase.from('product_items').delete().eq('id', id);
         if (error) { this.showToast('삭제 실패: ' + error.message); return; }
         this.pItems = (this.pItems || []).filter(x => String(x.id) !== String(id));
@@ -10596,7 +10701,7 @@ class BhasApp {
             return;
         }
         const body = rows.slice(1);
-        if (!confirm(`${body.length}줄을 제품리스트로 가져옵니다.\n없는 시즌·공장·브랜드는 이름 그대로 새로 만듭니다.`)) return;
+        if (!await this.showConfirm(`${body.length}줄을 제품리스트로 가져옵니다.\n없는 시즌·공장·브랜드는 이름 그대로 새로 만듭니다.`, '확인')) return;
 
         const get = (r, k) => col[k] === undefined ? '' : String(r[col[k]] ?? '').trim();
         const brands = mockData.brands || [];
@@ -11204,7 +11309,7 @@ class BhasApp {
         this.showToast('견적서 저장됨');
     }
     async deleteQuote(id) {
-        if (!confirm('이 견적서를 삭제할까요?')) return;
+        if (!await this.showConfirm('이 견적서를 삭제할까요?', '삭제')) return;
         const { error } = await this.supabase.from('quotes').delete().eq('id', id);
         if (error) { this.showToast('삭제 실패: ' + error.message); return; }
         this.closeGlobalModal(); this._quotesLoaded = false; await this.loadQuotes();
@@ -12161,14 +12266,14 @@ class BhasApp {
     // 비밀번호 변경 — 서버(admin-users)에서 auth.admin.updateUserById 로 처리.
     // 로그인 계정이 아직 없는 프로필(예전 방식으로 만들어진 행)이면 그 자리에서 연결해준다.
     async changeAccountPassword(companyId, username) {
-        const pw = prompt(`${username} 계정의 새 비밀번호 (영문·숫자 포함 10자 이상)`);
+        const pw = await this.showPrompt(`${username} 계정의 새 비밀번호 (영문·숫자 포함 10자 이상)`);
         if (pw === null) return;
         if (!this._isStrongPassword(pw.trim())) { this.showToast('비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.'); return; }
         this.showToast('비밀번호 변경 중...');
         const call = (action) => this._invokeFn('admin-users', { action, company_id: companyId, password: pw.trim() });
         let res = await call('set-password');
         if (!res.ok && /로그인 계정이 없습니다/.test(res.error || '')) {
-            if (!confirm(`${username} 은(는) 아직 로그인 계정이 없습니다. 지금 만들까요?`)) return;
+            if (!await this.showConfirm(`${username} 은(는) 아직 로그인 계정이 없습니다. 지금 만들까요?`, '확인')) return;
             res = await call('link-auth');
         }
         this.showToast(res.ok ? `완료 — ${res.email} 로 새 비밀번호 사용` : (res.error || '비밀번호 변경에 실패했습니다.'));
@@ -12176,7 +12281,7 @@ class BhasApp {
 
     // 계정 삭제 — companies 행과 auth 사용자를 같이 지운다(둘 중 하나만 남으면 유령 계정이 됨)
     async deleteAccount(companyId, name) {
-        if (!confirm(`'${name}' 계정을 삭제할까요?\n로그인 계정도 같이 삭제됩니다. (사진·문서는 남고 작성자 표시만 사라집니다)`)) return;
+        if (!await this.showConfirm(`'${name}' 계정을 삭제할까요?\n로그인 계정도 같이 삭제됩니다. (사진·문서는 남고 작성자 표시만 사라집니다)`, '삭제')) return;
         const res = await this._invokeFn('admin-users', { action: 'delete', company_id: companyId });
         if (!res.ok) { this.showToast(res.error || '삭제에 실패했습니다.'); return; }
         this.showToast('계정을 삭제했습니다.');
