@@ -3567,3 +3567,64 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .vtl-h{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;padding:12px 18px 2px}
 .vtl-h i{font-size:16px;color:var(--text-muted)}
 .vtl-h em{font-style:normal;font-size:11.5px;font-weight:500;color:var(--text-muted)}
+
+/* ── 제품리스트 — 맥 '넘버스' 결의 표. 칸을 바로 고친다 ───────────────── */
+.it-wrap{height:100%;min-height:0}
+.it-top{display:flex;align-items:center;gap:8px;padding:10px 14px;flex:0 0 auto;
+  border-bottom:.5px solid var(--card-border)}
+.it-tl{display:flex;align-items:baseline;gap:7px;margin-right:4px}
+.it-tl b{font-size:15px;font-weight:800}
+.it-tl span{font-size:11.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.it-find{display:flex;align-items:center;gap:6px;margin-left:auto;background:rgba(127,127,127,.14);
+  border-radius:7px;padding:4px 9px;min-width:150px}
+.it-find i{font-size:13px;color:var(--text-muted)}
+.it-find input{border:0;background:transparent;color:inherit;font-size:12.5px;outline:none;width:100%}
+.it-add{border:0;background:#0a84ff;color:#fff;font-size:12.5px;font-weight:700;border-radius:7px;
+  padding:6px 11px;cursor:default;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.it-add:hover{background:#0b74e0}
+.it-pills{display:flex;gap:6px;padding:9px 14px;flex-wrap:wrap;flex:0 0 auto;
+  border-bottom:.5px solid var(--card-border)}
+.it-pill{border:.5px solid var(--card-border);background:transparent;color:var(--text-muted);
+  font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;cursor:default;
+  display:flex;align-items:center;gap:5px}
+.it-pill em{font-style:normal;font-variant-numeric:tabular-nums;opacity:.65}
+.it-pill:hover{background:rgba(127,127,127,.12)}
+.it-pill.on{color:#fff;background:var(--pc,#0a84ff);border-color:transparent}
+.it-pill.on em{opacity:.8}
+.it-scroll{flex:1;min-height:0;overflow:auto}
+.it-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.it-tbl th{position:sticky;top:0;z-index:2;text-align:left;font-weight:700;font-size:11px;
+  color:var(--text-muted);padding:7px 8px;white-space:nowrap;
+  background:var(--card-bg,rgba(30,34,44,.92));backdrop-filter:blur(14px);
+  border-bottom:.5px solid var(--card-border)}
+.it-tbl td{padding:2px 4px;border-bottom:.5px solid var(--card-border);vertical-align:middle}
+.it-tbl th.it-c,.it-tbl td.it-c{text-align:center;width:38px}
+.it-tbl tbody tr:hover{background:rgba(127,127,127,.07)}
+.it-tbl tbody tr.on{background:rgba(10,132,255,.14)}
+.it-none{padding:34px 12px;text-align:center;color:var(--text-muted);font-size:12.5px}
+.it-in{width:100%;min-width:54px;border:.5px solid transparent;background:transparent;color:inherit;
+  font-size:12.5px;padding:4px 6px;border-radius:5px;outline:none;font-family:inherit}
+.it-in:hover{border-color:var(--card-border)}
+.it-in:focus{border-color:#0a84ff;background:rgba(10,132,255,.07)}
+.it-in.it-name{font-weight:700;min-width:104px}
+.it-in.it-dt{min-width:102px;font-size:11.5px;font-variant-numeric:tabular-nums}
+.it-in.it-dt::-webkit-calendar-picker-indicator{opacity:.35}
+.it-in.it-dt.empty:not(:hover):not(:focus){color:transparent}
+.it-in.it-dt.empty:not(:hover):not(:focus)::-webkit-calendar-picker-indicator{opacity:0}
+.it-sel{border:.5px solid transparent;background:transparent;color:inherit;font-size:12px;
+  padding:4px 3px;border-radius:5px;outline:none;font-family:inherit;max-width:104px;cursor:default}
+.it-sel:hover{border-color:var(--card-border)}
+.it-sel option{background:#1c1c1e;color:#fff}
+.it-sel.it-st{font-weight:700;border-radius:999px;padding:3px 8px;border-width:1px}
+.it-season{max-width:180px;border-color:var(--card-border);background:rgba(127,127,127,.1)}
+.it-ck{width:15px;height:15px;accent-color:#0a84ff;cursor:default}
+.it-lk{white-space:nowrap;width:1%}
+.it-ib{border:0;background:transparent;color:var(--text-muted);font-size:14px;cursor:default;
+  padding:4px 5px;border-radius:6px;line-height:1}
+.it-ib:hover{background:rgba(127,127,127,.16);color:inherit}
+.it-ib.on{color:#0a84ff}
+.it-ib.del:hover{color:#ff453a;background:rgba(255,69,58,.14)}
+@media (max-width:900px){
+  .it-top{flex-wrap:wrap}
+  .it-find{margin-left:0;order:3;min-width:0;flex:1}
+}

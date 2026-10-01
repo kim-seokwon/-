@@ -295,7 +295,7 @@ class BhasApp {
         return { level: 'normal', days, label: `D-${days}` };
     }
 
-    // 프로젝트 진행률(%) — renderSubView의 isStageCompleted 로직과 동일
+    // 시즌 진행률(%) — renderSubView의 isStageCompleted 로직과 동일
     computeProgress(p) {
         const sd = p.stages_data || {};
         const done = STAGES.filter(s => {
@@ -312,14 +312,14 @@ class BhasApp {
         return this.currentUser ? (this.currentUser.company_id || this.currentUser.id) : null;
     }
 
-    // 프로젝트별 브랜드명
+    // 시즌별 브랜드명
     _brandName(p) {
         const brand = (mockData.brands || []).find(b => b.id === p.brand_id);
         const company = (mockData.companies || []).find(c => c.id === p.company_id);
         return brand ? brand.name : (company ? company.name : '');
     }
 
-    // 권한 반영된 가시 프로젝트 목록 (CLIENT는 본인 회사만)
+    // 권한 반영된 가시 시즌 목록 (CLIENT는 본인 회사만)
     _visibleProducts() {
         const list = mockData.products || [];
         if (this.currentUser && this.currentUser.role === 'CLIENT') {
@@ -391,7 +391,7 @@ class BhasApp {
         return { activeCount: active.length, avgProgress, delayed, dueThisWeek, openTodos };
     }
 
-    // 통합 검색 — 프로젝트/할일/문서/메모/브랜드 가로질러 매칭
+    // 통합 검색 — 시즌/할일/문서/메모/브랜드 가로질러 매칭
     runGlobalSearch(query) {
         const q = (query || '').trim().toLowerCase();
         if (!q) return [];
@@ -399,7 +399,7 @@ class BhasApp {
         this._visibleProducts().forEach(p => {
             const bName = this._brandName(p);
             if ((p.name || '').toLowerCase().includes(q) || (bName || '').toLowerCase().includes(q)) {
-                results.push({ kind: '프로젝트', icon: 'ph-folder', title: p.name, sub: bName, product_id: p.id });
+                results.push({ kind: '시즌', icon: 'ph-folder', title: p.name, sub: bName, product_id: p.id });
             }
             (p.todos || []).forEach(t => {
                 if ((t.text || '').toLowerCase().includes(q)) {
@@ -536,7 +536,7 @@ class BhasApp {
             const hasMemos = project?.memos && project.memos.length > 0;
 
             if (hasPhotos || hasDocs || hasMemos) {
-                confirmMsg = `[주의] 이 프로젝트에는 업로드된 사진, 문서 또는 메모가 포함되어 있습니다.\n삭제 시 연동된 모든 데이터가 함께 영구히 삭제됩니다.\n\n정말 삭제하시겠습니까?`;
+                confirmMsg = `[주의] 이 시즌에는 업로드된 사진, 문서 또는 메모가 포함되어 있습니다.\n삭제 시 연동된 모든 데이터가 함께 영구히 삭제됩니다.\n\n정말 삭제하시겠습니까?`;
             }
         }
         if (type === 'brand') {
@@ -544,7 +544,7 @@ class BhasApp {
             const brandProjects = mockData.products.filter(p => p.brand_id === id);
             const brandUsers = mockData.companies.filter(c => c.brand_id === id);
             confirmMsg = `[경고] 브랜드 "${brand?.name || ''}" 삭제 시 다음 데이터가 모두 영구 삭제됩니다:\n\n` +
-                `  - 소속 프로젝트: ${brandProjects.length}개 (사진, 문서, 메모 포함)\n` +
+                `  - 소속 시즌: ${brandProjects.length}개 (사진, 문서, 메모 포함)\n` +
                 `  - 소속 계정: ${brandUsers.length}개\n\n` +
                 `이 작업은 절대 복구할 수 없습니다.\n정말 삭제하시겠습니까?`;
         }
@@ -584,14 +584,14 @@ class BhasApp {
                     return;
                 }
 
-                // 프로젝트 삭제: DB 서버에서 연쇄 삭제 (RLS 우회)
+                // 시즌 삭제: DB 서버에서 연쇄 삭제 (RLS 우회)
                 if (type === 'project') {
                     const { error: rpcErr } = await this.supabase.rpc('delete_project_cascade', { project_uuid: id });
                     if (rpcErr) {
-                        this.showToast(`프로젝트 삭제 실패: ${rpcErr.message}`);
+                        this.showToast(`시즌 삭제 실패: ${rpcErr.message}`);
                         return;
                     }
-                    this.showToast('프로젝트가 삭제되었습니다.');
+                    this.showToast('시즌가 삭제되었습니다.');
                     await this.loadInitialData();
                     if (this.activeProjectId === String(id)) {
                         this.setState({ currentView: 'dashboard', activeProjectId: null });
@@ -614,7 +614,7 @@ class BhasApp {
                 if (error) {
                     let userMsg = error.message || '권한이 없거나 서버 오류입니다.';
                     if (error.message && error.message.includes('foreign key')) {
-                        userMsg = '연결된 데이터(프로젝트/계정 등)가 있어 삭제할 수 없습니다. 연결 데이터를 먼저 제거해주세요.';
+                        userMsg = '연결된 데이터(시즌/계정 등)가 있어 삭제할 수 없습니다. 연결 데이터를 먼저 제거해주세요.';
                     }
                     this.showToast(`삭제 실패: ${userMsg}`);
                     return;
@@ -810,7 +810,7 @@ class BhasApp {
 
     async loadInitialData() {
         try {
-            // 프로젝트 데이터 로드
+            // 시즌 데이터 로드
             let query = this.supabase
                 .from('products')
                 .select('*')
@@ -1036,7 +1036,7 @@ class BhasApp {
         const perms = mockData.permissions[role] || [];
         
         const menuItems = [
-            { id: 'dashboard', label: '프로젝트', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
+            { id: 'dashboard', label: '시즌', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'tech_packs', label: '작업지시서', icon: '<i class="ph ph-clipboard-text"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
@@ -1258,7 +1258,7 @@ class BhasApp {
                                 <button class="breadcrumb-back-btn btn-secondary" style="padding: 6px 12px; border-radius: 8px; font-size: 0.85rem;"><i class="ph ph-arrow-left"></i> 뒤로</button>
                             </div>
                         ` : ''}
-                        <!-- '뒤로'는 하위 화면(프로젝트 상세·할일 전체)에서만. 홈·매출·주문 같은 최상위 메뉴엔 갈 곳이 없어 안 띄운다 -->
+                        <!-- '뒤로'는 하위 화면(시즌 상세·할일 전체)에서만. 홈·매출·주문 같은 최상위 메뉴엔 갈 곳이 없어 안 띄운다 -->
                         <div class="header-top-row">
                             <div class="header-title-section" style="display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;">
                                 ${(role === 'MASTER' || role === 'STAFF') && this.currentView === 'dashboard' ? `
@@ -1430,11 +1430,11 @@ class BhasApp {
                 <div class="search-panel glass">
                     <div class="search-input-row">
                         <i class="ph ph-magnifying-glass"></i>
-                        <input id="global-search-input" type="text" placeholder="프로젝트 · 할일 · 문서 · 메모 검색..." autocomplete="off" />
+                        <input id="global-search-input" type="text" placeholder="시즌 · 할일 · 문서 · 메모 검색..." autocomplete="off" />
                         <button id="close-search-btn" title="닫기 (Esc)"><i class="ph ph-x"></i></button>
                     </div>
                     <div id="global-search-results" class="search-results">
-                        <div class="search-hint"><i class="ph ph-keyboard"></i> 검색어를 입력하세요. 결과를 클릭하면 해당 프로젝트로 이동합니다.</div>
+                        <div class="search-hint"><i class="ph ph-keyboard"></i> 검색어를 입력하세요. 결과를 클릭하면 해당 시즌로 이동합니다.</div>
                     </div>
                 </div>
             </div>
@@ -1525,9 +1525,9 @@ class BhasApp {
         modal.style.display = 'flex';
         modal.innerHTML = `
             <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
-                <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-plus-circle"></i> 새 프로젝트 등록</h2>
+                <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-plus-circle"></i> 새 시즌 등록</h2>
                 <div class="login-field">
-                    <label>프로젝트명</label>
+                    <label>시즌명</label>
                     <input type="text" id="modal-p-name" class="login-input" placeholder="예: 구스다운 패딩">
                 </div>
                 <div class="login-field" style="${this.currentUser.role === 'CLIENT' ? 'display: none;' : ''}">
@@ -1605,21 +1605,21 @@ class BhasApp {
                         product_id: newId,
                         stage_id: 'consulting',
                         status: '등록',
-                        note: '프로젝트 생성: ' + name
+                        note: '시즌 생성: ' + name
                     }]);
                 } catch (hError) {}
 
                 await this.loadInitialData();
                 modal.style.display = 'none';
                 this.requestRender();
-                this.showToast('새 프로젝트가 등록되었습니다.');
+                this.showToast('새 시즌가 등록되었습니다.');
             } catch (error) {
                 let errorMsg = error.message || '알 수 없는 오류';
                 if (error.code === '42501') errorMsg = '데이터베이스 권한(RLS)이 없습니다.';
                 if (error.code === '22P02') errorMsg = '데이터 형식(UUID 등)이 맞지 않습니다.';
                 if (error.code === '42703') errorMsg = `데이터베이스 컬럼 오류: ${error.details || '필드가 존재하지 않습니다.'}`;
                 
-                await this.showConfirm(`프로젝트 등록 중 오류가 발생했습니다.\n\n오류 코드: ${error.code || 'N/A'}\n메시지: ${errorMsg}`, '등록 실패');
+                await this.showConfirm(`시즌 등록 중 오류가 발생했습니다.\n\n오류 코드: ${error.code || 'N/A'}\n메시지: ${errorMsg}`, '등록 실패');
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.innerText = originalBtnText;
@@ -1634,9 +1634,9 @@ class BhasApp {
             <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
                 <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-list-plus"></i> ${isRequest ? '새 업무 요청 바로 등록' : '새 할 일 바로 등록'}</h2>
                 <div class="login-field">
-                    <label>프로젝트 선택</label>
+                    <label>시즌 선택</label>
                     <select id="quick-todo-pid" class="login-input" style="background: rgba(0,0,0,0.8); color: white;">
-                        <option value="">프로젝트 선택</option>
+                        <option value="">시즌 선택</option>
                         ${mockData.products.filter(p => this.currentUser.role !== 'CLIENT' || p.company_id === this.currentUser.company_id).map(p => `
                             <option value="${p.id}" ${this.activeProjectId === String(p.id) ? 'selected' : ''}>${p.name}</option>
                         `).join('')}
@@ -1682,7 +1682,7 @@ class BhasApp {
             const assigneeSelect = document.getElementById('quick-todo-assignee');
             const assigneeId = assigneeSelect ? assigneeSelect.value : null;
 
-            if (!pid || !text) { this.showToast('프로젝트와 내용을 입력해주세요.'); return; }
+            if (!pid || !text) { this.showToast('시즌와 내용을 입력해주세요.'); return; }
 
             saveBtn.disabled = true;
             try {
@@ -1707,9 +1707,9 @@ class BhasApp {
             <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
                 <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-file-plus"></i> 새 문서 바로 등록</h2>
                 <div class="login-field">
-                    <label>프로젝트 선택</label>
+                    <label>시즌 선택</label>
                     <select id="quick-doc-pid" class="login-input" style="background: rgba(0,0,0,0.8); color: white;">
-                        <option value="">프로젝트 선택</option>
+                        <option value="">시즌 선택</option>
                         ${mockData.products.filter(p => this.currentUser.role !== 'CLIENT' || p.company_id === this.currentUser.company_id).map(p => `
                             <option value="${p.id}">${p.name}</option>
                         `).join('')}
@@ -1962,7 +1962,7 @@ class BhasApp {
                 <div style="flex: 1; overflow-y: auto;">
                     <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-note-pencil"></i> 할 일 기록</h2>
                     <div style="margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-muted); padding-bottom: 1rem; border-bottom: 1px dashed rgba(var(--tint),0.1);">
-                        <div style="margin-bottom: 5px;"><strong>프로젝트:</strong> ${project.name}</div>
+                        <div style="margin-bottom: 5px;"><strong>시즌:</strong> ${project.name}</div>
                         <div style="margin-bottom: 5px;"><strong>할 일:</strong> <span style="color: white;">${todo.text}</span></div>
                         <div style="margin-bottom: 5px;"><strong>마감일:</strong> ${todo.due_date ? this.formatDateToUI(todo.due_date) : '일정'}</div>
                     </div>
@@ -2396,7 +2396,7 @@ class BhasApp {
             </div>`;
         }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem;padding:10px 0">주문 없음</div>';
 
-        // ── 모든 일정 한 벌 — 미리알림·할일·메모 체크·생산 작업·프로젝트 마감 ──
+        // ── 모든 일정 한 벌 — 미리알림·할일·메모 체크·생산 작업·시즌 마감 ──
         const allDue = this._allDated();
         // ── 이번달 캘린더 ──
         const yy = today.getFullYear(), moIdx = today.getMonth();
@@ -2585,7 +2585,7 @@ class BhasApp {
             </div>
 
             <!-- ═══ 블록 2: 미리알림 · 통합 캘린더 ═══ -->
-            ${sectionHead('ph-list-checks', '미리알림 · 통합 캘린더', '미리알림 · 할일 · 메모 체크 · 생산 작업 · 프로젝트 마감을 한데')}
+            ${sectionHead('ph-list-checks', '미리알림 · 통합 캘린더', '미리알림 · 할일 · 메모 체크 · 생산 작업 · 시즌 마감을 한데')}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem">
                 ${panel('미리알림', remList,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('reminders')">미리알림 →</span>`)}
@@ -2727,8 +2727,8 @@ class BhasApp {
             { k: 'sales', t: '정산' }, { k: 'expenses', t: '지출' },
         ] },
         // 만드는 쪽 — 견적 내고, 샘플 뜨고, 작업지시서 쓰고, 생산처가 만든다
-        { head: 'dashboard', label: '생산', tabs: [
-            { k: 'dashboard', t: '프로젝트' }, { k: 'vendors', t: '생산현황' },
+        { head: 'items', label: '생산', tabs: [
+            { k: 'items', t: '제품리스트' }, { k: 'dashboard', t: '시즌' }, { k: 'vendors', t: '생산현황' },
             { k: 'tech_packs', t: '작업지시서' }, { k: 'sample_maker', t: '샘플·디자인' },
             { k: 'quotes', t: '견적' },
         ] },
@@ -2738,7 +2738,7 @@ class BhasApp {
     APP_ICONS = {
         orders: 'ph-shopping-bag-open', cs: 'ph-arrows-counter-clockwise', inventory: 'ph-package',
         sales: 'ph-chart-line-up', expenses: 'ph-credit-card',
-        dashboard: 'ph-chart-bar', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
+        items: 'ph-t-shirt', dashboard: 'ph-calendar-blank', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
         sample_maker: 'ph-scissors', quotes: 'ph-receipt',
     };
     _appTabBar(view) {
@@ -2778,11 +2778,11 @@ class BhasApp {
         if (!tl) return '';
         return `<div class="vtl">
             <div class="vtl-h"><i class="ph ph-chart-bar-horizontal"></i> 공정 타임라인
-                <em>프로젝트별 단계와 마감</em></div>
+                <em>시즌별 단계와 마감</em></div>
             ${tl}
         </div>`;
     }
-    // 프로젝트 카드 우클릭 — 이름·브랜드(분류)·마감을 그 자리에서 고친다
+    // 시즌 카드 우클릭 — 이름·브랜드(분류)·마감을 그 자리에서 고친다
     projectMenu(ev, id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
         this.ctxMenu(ev, [
@@ -2795,14 +2795,14 @@ class BhasApp {
             { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.handleDelete(ev, 'product', id) },
         ]);
     }
-    // 내가 이 프로젝트를 볼 수 있나 (화면에서 거르는 용도 — 진짜 차단은 040 SQL 이 한다)
+    // 내가 이 시즌를 볼 수 있나 (화면에서 거르는 용도 — 진짜 차단은 040 SQL 이 한다)
     _canSeeProject(p) {
         if (!p) return true;
         if (this.currentUser?.role === 'MASTER') return true;
         if ((p.access || 'all') === 'all') return true;
         return (p.members || []).includes(this._me());
     }
-    // 프로젝트 담당자·권한 고치기
+    // 시즌 담당자·권한 고치기
     projectAccess(id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
         const esc = s => this._vesc(s);
@@ -2813,7 +2813,7 @@ class BhasApp {
         <div class="glass modal-content fade-in" style="width:92%;max-width:420px;padding:1.6rem;border-radius:18px">
             <h2 style="margin:0 0 .3rem;font-size:1.1rem">${esc(p.name)} · 접근 권한</h2>
             <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:1.1rem">
-                누가 이 프로젝트의 메모·할일·미리알림을 볼 수 있는지 정합니다.
+                누가 이 시즌의 메모·할일·미리알림을 볼 수 있는지 정합니다.
             </div>
             <label class="pa-opt"><input type="radio" name="pa" value="all" ${(p.access || 'all') === 'all' ? 'checked' : ''}>
                 <span><b>전체 권한</b><em>브랜드에 접근할 수 있는 사람 모두</em></span></label>
@@ -2853,7 +2853,7 @@ class BhasApp {
     }
     async renameProject(id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
-        const v = window.prompt('프로젝트 이름', p.name || ''); if (v === null || !v.trim()) return;
+        const v = window.prompt('시즌 이름', p.name || ''); if (v === null || !v.trim()) return;
         p.name = v.trim(); this.requestRender();
         try {
             const { error } = await this.supabase.from('products').update({ name: p.name }).eq('id', id);
@@ -2991,7 +2991,7 @@ class BhasApp {
             ['inventory', '재고', 'ph-package'], ['sales', '정산', 'ph-chart-line-up'],
             ['expenses', '지출', 'ph-credit-card'], ['analysis', '분석', 'ph-chart-donut'],
             ['integrations', '연동', 'ph-plugs-connected']] },
-        { g: '생산', items: [['dashboard', '프로젝트', 'ph-chart-bar'], ['vendors', '생산현황', 'ph-factory'],
+        { g: '생산', items: [['items', '제품리스트', 'ph-t-shirt'], ['dashboard', '시즌', 'ph-calendar-blank'], ['vendors', '생산현황', 'ph-factory'],
             ['tech_packs', '작업지시서', 'ph-clipboard-text'], ['sample_maker', '샘플·디자인', 'ph-scissors'],
             ['quotes', '견적', 'ph-receipt']] },
         { g: '업무', items: [['news', '뉴스', 'ph-newspaper'], ['notes', '메모', 'ph-note'], ['reminders', '미리알림', 'ph-list-checks'],
@@ -3068,6 +3068,38 @@ class BhasApp {
             <div class="dt-b">${body}</div>${acts ? `<div class="dt-a">${acts}</div>` : ''}</aside>`;
         const empty = (msg) => `<aside class="appdet"><div class="dt-none">${esc(msg)}</div></aside>`;
 
+        if (view === 'items') {
+            const it = (this.pItems || []).find(x => String(x.id) === String(this.itemSel));
+            if (!it) return empty('제품을 고르면 여기에 뜹니다');
+            const season = this._seasons().find(p => String(p.id) === String(it.product_id));
+            const vendor = (this.vendors || []).find(v => String(v.id) === String(it.vendor_id));
+            const tp = (this._techPacks || []).find(t => String(t.id) === String(it.tech_pack_id));
+            const qt = (this.quotes || []).find(q => String(q.id) === String(it.quote_id));
+            const jobs = (this.vendors || []).flatMap(v => (v.jobs || []).map(j => ({ ...j, vname: v.name })))
+                .filter(j => String(j.item_id) === String(it.id));
+            const link = (label, has, text, onHas, onNone) => `<div class="dt-li">
+                <span>${esc(label)}</span>
+                ${has ? `<b class="pa-ok" style="cursor:pointer" onclick="${onHas}">${esc(text)}</b>`
+                      : `<b style="cursor:pointer;color:#0a84ff" onclick="${onNone}">만들기</b>`}</div>`;
+            return wrap(it.name || '이름 없는 제품',
+                [((mockData.brands || []).find(b2 => b2.id === it.brand_id) || {}).name, it.pattern_no].filter(Boolean).join(' · '), `
+                ${f('제작현황', it.status)}
+                ${f('시즌', season ? season.name : '')}
+                ${f('공장', vendor ? vendor.name : '')}
+                ${f('출고예정일', it.ship_date)}
+                ${f('오픈일', it.open_date)}
+                ${f('부자재', it.trims ? '준비됨' : '아직')}
+                <div class="dt-sec">연동</div>
+                ${link('작업지시서·샘플', !!tp, tp ? (tp.style_name || '열기') : '', `app.openTechPack('${tp ? tp.id : ''}')`, `app.itemNewTechPack('${it.id}')`)}
+                ${link('견적', !!qt, qt ? (qt.quote_no || qt.client_name || '열기') : '', `app.itemOpenQuote('${it.id}')`, `app.itemNewQuote('${it.id}')`)}
+                <div class="dt-li"><span>생산 투입</span><b>${jobs.length ? jobs.length + '건' : '없음'}</b></div>
+                ${jobs.map(j => `<div class="dt-li"><span>${esc(j.vname || '')} · ${esc(j.stage || '')}</span><b>${esc(j.due_date || '')}</b></div>`).join('')}
+                ${it.memo ? `<div class="dt-sec">메모</div><div class="dt-memo">${esc(it.memo)}</div>` : ''}
+            `, `${tp ? `<button class="mbtn pri" onclick="app.openTechPack('${tp.id}')">작업지시서 열기</button>`
+                     : `<button class="mbtn pri" onclick="app.itemNewTechPack('${it.id}')">작업지시서 만들기</button>`}
+                <button class="mbtn" onclick="app.itemToVendor('${it.id}')">생산 투입</button>
+                <button class="mbtn" onclick="app.delItem('${it.id}')">삭제</button>`);
+        }
         if (view === 'orders') {
             const o = (this.orders || []).find(x => String(x.order_id) === String(this.orderSel));
             if (!o) return empty('주문을 고르면 여기에 뜹니다');
@@ -3150,7 +3182,7 @@ class BhasApp {
             const isActive = (p) => {
                 const stage = p.currentStage || 'consulting';
                 if (stage === 'shipping') return false; 
-                // 신규 프로젝트도 '진행 중'으로 표시하여 즉각적인 연동 확인이 가능하도록 수정
+                // 신규 시즌도 '진행 중'으로 표시하여 즉각적인 연동 확인이 가능하도록 수정
                 return true; 
             };
             
@@ -3192,8 +3224,10 @@ class BhasApp {
                         </div>
                         <div class="card-footer" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                             <div style="display: flex; align-items: center; gap: 4px;"><i class="ph ph-clock"></i> 마감: ${this.formatDateToUI(product.deadline)}</div>
-                            <div style="display: flex; gap: 6px;">
-                                ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="프로젝트 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <span onclick="event.stopPropagation();app.openSeasonItems('${product.id}')" title="이 시즌의 제품리스트"
+                                    style="display:flex;align-items:center;gap:3px;font-size:0.72rem;font-weight:700;color:#0a84ff;background:rgba(10,132,255,0.12);padding:2px 7px;border-radius:7px;cursor:pointer"><i class="ph ph-t-shirt"></i> 제품 ${(this.pItems || []).filter(i => String(i.product_id) === String(product.id)).length}</span>
+                                ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="시즌 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                             </div>
                         </div>
                     </div>
@@ -3273,7 +3307,7 @@ class BhasApp {
                             <table class="mtbl" style="width: 100%; border-collapse: collapse; text-align: left;">
                                 <thead>
                                     <tr style="background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--card-border);">
-                                        <th style="color: var(--text-muted); font-weight: 500">프로젝트 명</th>
+                                        <th style="color: var(--text-muted); font-weight: 500">시즌 명</th>
                                         <th style="color: var(--text-muted); font-weight: 500">마감일</th>
                                         <th style="color: var(--text-muted); font-weight: 500">진행 상황</th>
                                         <th style="text-align: center; color: var(--text-muted); font-weight: 500">액션</th>
@@ -3304,7 +3338,7 @@ class BhasApp {
                                                 </td>
                                                 <td style="text-align: center">
                                                     <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                                        ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="프로젝트 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
+                                                        ${this.canDelete(product) ? `<button class="btn-danger" onclick="app.handleDelete(event, 'project', '${product.id}')" title="시즌 삭제" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -3329,7 +3363,7 @@ class BhasApp {
                 <div class="kpi-strip">
                     <div class="glass kpi-card">
                         <span class="kpi-ico"><i class="ph ph-rocket-launch"></i></span>
-                        <div class="kpi-body"><span class="kpi-num">${kpi.activeCount}</span><span class="kpi-label">진행 프로젝트</span></div>
+                        <div class="kpi-body"><span class="kpi-num">${kpi.activeCount}</span><span class="kpi-label">진행 시즌</span></div>
                     </div>
                     <div class="glass kpi-card">
                         <span class="kpi-ico"><i class="ph ph-chart-line-up"></i></span>
@@ -3337,7 +3371,7 @@ class BhasApp {
                     </div>
                     <div class="glass kpi-card ${kpi.delayed > 0 ? 'kpi-danger' : ''}">
                         <span class="kpi-ico"><i class="ph ph-warning-circle"></i></span>
-                        <div class="kpi-body"><span class="kpi-num">${kpi.delayed}</span><span class="kpi-label">지연 프로젝트</span></div>
+                        <div class="kpi-body"><span class="kpi-num">${kpi.delayed}</span><span class="kpi-label">지연 시즌</span></div>
                     </div>
                     <div class="glass kpi-card ${kpi.dueThisWeek > 0 ? 'kpi-warn' : ''}">
                         <span class="kpi-ico"><i class="ph ph-clock-countdown"></i></span>
@@ -3354,29 +3388,29 @@ class BhasApp {
                 <div class="dashboard-sections">
                     ${kpiStrip}
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-rocket-launch"></i> 진행 중인 프로젝트</h2>
-                        ${this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF' ? `<button id="add-project-btn" class="btn-primary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.9rem;"><i class="ph ph-plus"></i> 새 프로젝트</button>` : ''}
+                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-rocket-launch"></i> 진행 중인 시즌</h2>
+                        ${this.currentUser.role === 'MASTER' || this.currentUser.role === 'STAFF' ? `<button id="add-project-btn" class="btn-primary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.9rem;"><i class="ph ph-plus"></i> 새 시즌</button>` : ''}
                     </div>
-                    ${renderSection(activeProducts, isTable, '진행 중인 프로젝트가 없습니다.')}
+                    ${renderSection(activeProducts, isTable, '진행 중인 시즌가 없습니다.')}
 
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; border-top: 1px solid var(--card-border); padding-top: 2rem;">
-                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-calendar-blank"></i> 예정 프로젝트</h2>
+                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-calendar-blank"></i> 예정 시즌</h2>
                         <button class="toggle-btn ${this.scheduledExpanded === false ? 'collapsed' : ''}" id="toggle-scheduled-btn" title="토글">
                             <i class="ph ph-caret-down" style="font-size: 1.2rem;"></i>
                         </button>
                     </div>
                     <div class="collapsible-content ${this.scheduledExpanded === false ? 'collapsed' : ''}" id="scheduled-section">
-                        ${renderSection(scheduledProducts, isTable, '예정된 프로젝트가 없습니다.')}
+                        ${renderSection(scheduledProducts, isTable, '예정된 시즌가 없습니다.')}
                     </div>
 
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; border-top: 1px solid var(--card-border); padding-top: 2rem;">
-                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-check-circle"></i> 완료된 프로젝트</h2>
+                        <h2 style="font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"><i class="ph ph-check-circle"></i> 완료된 시즌</h2>
                         <button class="toggle-btn ${!this.completedExpanded ? 'collapsed' : ''}" id="toggle-completed-btn" title="토글">
                             <i class="ph ph-caret-down" style="font-size: 1.2rem;"></i>
                         </button>
                     </div>
                     <div class="collapsible-content ${!this.completedExpanded ? 'collapsed' : ''}" id="completed-section">
-                        ${renderSection(completedProducts, isTable, '완료된 프로젝트가 없습니다.')}
+                        ${renderSection(completedProducts, isTable, '완료된 시즌가 없습니다.')}
                     </div>
 
                     <div class="mobile-logout-area" style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--card-border); text-align: center;">
@@ -3510,7 +3544,7 @@ class BhasApp {
             `;
         } else if (this.currentView === 'documents') {
             // ── 자료실 = 파인더 ────────────────────────────────────────
-            //  왼쪽 즐겨찾기(분류·프로젝트) · 위 도구막대(보기 전환·검색) ·
+            //  왼쪽 즐겨찾기(분류·시즌) · 위 도구막대(보기 전환·검색) ·
             //  가운데 아이콘 격자 또는 목록 · 아래 경로막대(개수). 맥 파인더 그대로.
             const categories = ['작업지시서', '회의록', '참고이미지', '기타자료', '세금계산서'];
             const filteredProjectIds = products.map(p => p.id);
@@ -3586,10 +3620,10 @@ class BhasApp {
                     ${side('전체', '모든 자료', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#0a84ff')}
                     <div class="fd-sh">분류</div>
                     ${categories.map(c => side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join('')}
-                    <div class="fd-sh">프로젝트</div>
+                    <div class="fd-sh">시즌</div>
                     ${products.length ? products.map(p => side('p:' + p.id, p.name, 'ph-folder-simple',
                         aggregatedDocs.filter(d => d.productId === p.id).length, '#5ac8fa')).join('')
-                      : '<div class="fd-none sm">프로젝트 없음</div>'}
+                      : '<div class="fd-none sm">시즌 없음</div>'}
                 </aside>
                 <section class="fd-main">
                     <div class="fd-bar">
@@ -3605,7 +3639,7 @@ class BhasApp {
                     <div class="fd-body">
                         ${docs.length
                             ? (view === 'grid' ? `<div class="fd-grid">${grid}</div>`
-                               : `<div class="fd-list"><div class="fd-r head"><span>이름</span><span>날짜</span><span>종류</span><span>프로젝트</span></div>${rows}</div>`)
+                               : `<div class="fd-list"><div class="fd-r head"><span>이름</span><span>날짜</span><span>종류</span><span>시즌</span></div>${rows}</div>`)
                             : `<div class="fd-none">${q ? '찾는 자료가 없습니다' : '이 위치에 자료가 없습니다'}</div>`}
                     </div>
                     <div class="fd-path">
@@ -3627,7 +3661,7 @@ class BhasApp {
                             <div><span>종류</span><b>${esc(k.t)}</b></div>
                             <div><span>날짜</span><b>${esc(d.date || '-')}</b></div>
                             <div><span>분류</span><b>${esc(d.category || '-')}</b></div>
-                            <div><span>프로젝트</span><b>${esc(nameOfP(d.productId) || '-')}</b></div>
+                            <div><span>시즌</span><b>${esc(nameOfP(d.productId) || '-')}</b></div>
                         </div>
                         <div class="fd-pb">
                             <button class="mbtn pri" onclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')">열기</button>
@@ -3874,7 +3908,7 @@ class BhasApp {
                     <span class="mrow-sq" style="background:${esc(b.brand_color || '#3b82f6')}"></span>
                     <div class="mrow-main">
                         <div class="mrow-t">${esc(b.name)}</div>
-                        <div class="mrow-s">프로젝트 ${projectCount}개 · 소속 계정 ${userCount}명</div>
+                        <div class="mrow-s">시즌 ${projectCount}개 · 소속 계정 ${userCount}명</div>
                     </div>
                     <div class="mrow-r">
                         <span class="mpill ${isClosed ? 'gray' : 'green'}">${isClosed ? '종료' : '진행 중'}</span>
@@ -3899,7 +3933,7 @@ class BhasApp {
                 </div>` : ''}
             </div>`;
         } else if (this.currentView === 'timeline') {
-            // 생산 타임라인: 프로젝트별 8단계 공정을 마감순으로 한눈에
+            // 생산 타임라인: 시즌별 8단계 공정을 마감순으로 한눈에
             const stageState = (p, s) => {
                 const sd = (p.stages_data && (p.stages_data[s.id] || p.stages_data[s.docType])) || null;
                 const docMatch = p.documents && p.documents.some(d => d.type === s.docType || d.type === s.id);
@@ -3975,9 +4009,11 @@ class BhasApp {
                         <span class="tl-legend-item" style="color:#ef4444;"><i class="ph ph-warning-circle"></i> 지연 ${overdue}건</span>
                         <span class="tl-legend-item" style="color:#f59e0b;"><i class="ph ph-clock-countdown"></i> 7일내 마감 ${soon}건</span>
                     </div>
-                    ${rows || '<p style="color: var(--text-muted); padding: 2rem 0;">표시할 프로젝트가 없습니다.</p>'}
+                    ${rows || '<p style="color: var(--text-muted); padding: 2rem 0;">표시할 시즌가 없습니다.</p>'}
                 </div>
             `;
+        } else if (this.currentView === 'items') {
+            return this._appShell('items', this.renderItems());
         } else if (this.currentView === 'tech_packs') {
             return this._appShell('tech_packs', this.renderTechPacks());
         } else if (this.currentView === 'sample_maker') {
@@ -4931,7 +4967,7 @@ class BhasApp {
             for (let i = snaps.length - 1; i >= 1 && dailyRows.length < 30; i--) {
                 const cu = snaps[i], pv = snaps[i - 1];
                 const d = (a, b) => (a != null && b != null) ? Number(a) - Number(b) : null;
-                // 수집이 빠진 구간(예: 2026-09-03~14 프로젝트 차단)은 며칠치가 한 줄에 합쳐진다.
+                // 수집이 빠진 구간(예: 2026-09-03~14 시즌 차단)은 며칠치가 한 줄에 합쳐진다.
                 // 그걸 하루치처럼 보여주면 수치를 오해하므로 며칠분인지 같이 표시한다.
                 const gap = Math.round((new Date(cu.snap_date) - new Date(pv.snap_date)) / 86400000);
                 dailyRows.push({ date: cu.snap_date, gap, from: pv.snap_date, f: d(cu.followers, pv.followers), c: d(cu.comments_total, pv.comments_total), l: d(cu.likes_total, pv.likes_total) });
@@ -5195,6 +5231,13 @@ class BhasApp {
         if (v === 'reminders' && !this._remLoaded && !this._remLoading) this.loadReminders();
         if ((v === 'expenses' || v === 'sales') && !this._expLoaded && !this._expLoading) this.loadExpenses();
         if (v === 'tech_packs') this.ensureTechPacks();
+        if ((v === 'tech_packs' || v === 'vendors' || v === 'dashboard') && !this._itemsLoaded && !this._itemsLoading) this.loadItems();
+        if (v === 'items') {
+            if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
+            if (!this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+            if (!this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
+            this.ensureTechPacks();
+        }
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         // 브랜드 상세는 상품·옵션·재구매·반품 카드용으로 그 브랜드+기간 주문만 따로 받아온다
@@ -5215,6 +5258,7 @@ class BhasApp {
         if (v === 'vendors' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'sns' && !this._igLoaded && !this._igLoading) this.loadIG();
         if ((v === 'quotes' || v === 'vendors') && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
+        if (v === 'quotes' && !this._itemsLoaded && !this._itemsLoading) this.loadItems();
         if (v === 'home') {
             if (!this._ordersLoaded && !this._ordersLoading) this.loadOrders();
             if (!this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
@@ -5795,7 +5839,7 @@ class BhasApp {
         { id: '__menu', label: '전체 메뉴', launcher: true, icon: 'apps' },
         { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
         { id: 'orders', label: '판매', icon: 'sales' },
-        { id: 'vendors', label: '생산', icon: 'prod' },
+        { id: 'items', label: '생산', icon: 'prod' },
         { id: 'sns', label: 'SNS', icon: 'mkt' },
         { id: 'news', label: '뉴스', icon: 'news' },
         { id: 'documents', label: '자료실', icon: 'finder' },
@@ -5837,7 +5881,7 @@ class BhasApp {
         if (m) return m.label;
         return ({ settings: '설정', contacts: '연락처', cs: 'CS', expenses: '지출', inventory: '재고', news: '뉴스',
                   sales: '정산', sample_maker: '샘플·디자인',
-                  dashboard: '프로젝트', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
+                  vendors: '생산현황', dashboard: '시즌', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
                   integrations: '연동', user_management: '계정', brand_management: '브랜드',
                   feedback: '불편사항', pages: '페이지', kanban: '보드', table: '표',
                   all_todos: '할일', timeline: '타임라인', sample_maker: '샘플' })[view] || view;
@@ -6080,7 +6124,7 @@ class BhasApp {
     toggleMacMode() { this.macMode = true; this.macShowDesktop(); }
 
     // ── 메모 (맥 '메모' 앱 형태) ─────────────────────────────
-    //  프로젝트 댓글(memos)·노션 노트를 한 곳에서. 폴더 = 맥 메모의 폴더, 프로젝트에 붙이면 그 프로젝트의 기록이 된다.
+    //  시즌 댓글(memos)·노션 노트를 한 곳에서. 폴더 = 맥 메모의 폴더, 시즌에 붙이면 그 시즌의 기록이 된다.
     // 받아오는 동안 보여줄 뼈대 — 빈 화면보다 덜 답답하다
     _loadingSkeleton(what) {
         const bar = (w) => `<div class="skel" style="width:${w}"></div>`;
@@ -6107,7 +6151,7 @@ class BhasApp {
         if ((folderKey || '').startsWith('p:')) {
             const pid = folderKey.slice(2);
             const pr = (mockData.products || []).find(x => x.id === pid);
-            return { scope: 'project', owner: null, folder: pr ? pr.name : '프로젝트', product_id: pid, brand_id: pr?.brand_id || null };
+            return { scope: 'project', owner: null, folder: pr ? pr.name : '시즌', product_id: pid, brand_id: pr?.brand_id || null };
         }
         return { scope: 'shared', owner: null, folder: '공용', product_id: null };
     }
@@ -6248,7 +6292,7 @@ class BhasApp {
         } catch (e) { this.showToast('삭제 실패(개인 메모 또는 마스터만 가능): ' + (e.message || e)); }
     }
     // ── 메모 속성 (노션식) ────────────────────────────────────
-    //  상태 · 날짜 · 담당자 · 프로젝트 · 연결된 메모 · 고정하기.
+    //  상태 · 날짜 · 담당자 · 시즌 · 연결된 메모 · 고정하기.
     //  notes 테이블에 컬럼을 더 만들지 않고 본문 첫 줄의 숨은 표시에 담는다
     //  (스키마를 못 건드리는 상황에서도 오늘 바로 쓰려고). 화면엔 안 보인다.
     NOTE_META_RE = /^<!--p (.*?)-->\n?/;
@@ -6315,7 +6359,7 @@ class BhasApp {
                     <option value="">비어 있음</option>
                     ${accs.map(c => `<option value="${esc(c.name)}"${c.name === meta.who ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}
                 </select></span>`)}
-            ${row('ph-folder-simple', '프로젝트', `
+            ${row('ph-folder-simple', '시즌', `
                 <select class="np-sel" onchange="app.setNoteProp('proj',this.value)">
                     <option value="">비어 있음</option>
                     ${projs.map(pr => `<option value="${pr.id}"${String(meta.proj) === String(pr.id) ? ' selected' : ''}>${esc(pr.name)}</option>`).join('')}
@@ -6334,7 +6378,7 @@ class BhasApp {
                     <option value="private"${n.scope === 'private' ? ' selected' : ''}>비공개</option>
                 </select>
                 <span class="np-hint">${n.scope === 'private'
-                    ? '만든 사람과 이 프로젝트 담당자만' : '폴더·프로젝트 권한이 있는 사람 모두'}</span>`)}
+                    ? '만든 사람과 이 시즌 담당자만' : '폴더·시즌 권한이 있는 사람 모두'}</span>`)}
             ${row('ph-push-pin', '고정하기', `
                 <button class="np-ck${n.pinned ? ' on' : ''}" onclick="app.toggleNotePin()"></button>`)}
         </div>`;
@@ -6435,7 +6479,7 @@ class BhasApp {
                 done: !!t.completed, color: '#0a84ff', kind: 'todo', view: 'reminders',
             }));
             if (p.due_date) out.push({
-                date: p.due_date, title: p.name, sub: '프로젝트 마감',
+                date: p.due_date, title: p.name, sub: '시즌 마감',
                 done: (p.currentStage || '') === 'shipping', color: '#bf5af2', kind: 'proj', view: 'dashboard',
             });
         });
@@ -6624,10 +6668,10 @@ class BhasApp {
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-folder-simple', '메모', all.length)}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
-                <div class="nt-shead">프로젝트
-                    <button class="nt-add" title="새 프로젝트" onclick="app.newProjectFromNotes()">＋</button></div>
+                <div class="nt-shead">시즌
+                    <button class="nt-add" title="새 시즌" onclick="app.newProjectFromNotes()">＋</button></div>
                 ${projects.length ? projects.map(pr => fold('p:' + pr.id, 'ph-folder-simple', pr.name, cnt(n => n.product_id === pr.id), '#e0a800')).join('')
-                  : '<div class="nt-none sm">프로젝트 없음</div>'}
+                  : '<div class="nt-none sm">시즌 없음</div>'}
             </aside>
             <section class="nt-list">
                 <div class="nt-lbar">
@@ -6650,7 +6694,7 @@ class BhasApp {
                     <button class="${this.notePreview ? 'on' : ''}" onclick="app.toggleNotePreview()" title="보기/고치기">
                         <i class="ph ${this.notePreview ? 'ph-pencil-simple' : 'ph-eye'}"></i></button>
                     <button onclick="app.deleteNote()" title="삭제"><i class="ph ph-trash"></i></button>
-                    <span class="nt-scope">${sel.scope === 'private' ? '개인' : (sel.scope === 'project' ? '프로젝트' : '공용')}</span>
+                    <span class="nt-scope">${sel.scope === 'private' ? '개인' : (sel.scope === 'project' ? '시즌' : '공용')}</span>
                     <button class="${this.noteProps !== false ? 'on' : ''}" onclick="app.toggleNoteProps()" title="속성"><i class="ph ph-sliders-horizontal"></i></button>
                 </div>
                 <div class="nt-page">
@@ -6729,12 +6773,12 @@ class BhasApp {
         // 미리알림 + 기존 할일을 한 줄 모양으로 합친다
         const rems = (this.remList || []).map(r => ({
             src: 'rem', id: r.id, title: r.title, memo: r.memo, due: r.due_date,
-            done: !!r.done, list: (this.remGroup || 'list') === 'project' ? '프로젝트 없음' : (r.list_name || '미리 알림'),
+            done: !!r.done, list: (this.remGroup || 'list') === 'project' ? '시즌 없음' : (r.list_name || '미리 알림'),
         }));
         const byProj = (this.remGroup || 'list') === 'project';
         const todos = (mockData.products || []).flatMap(p => (p.todos || []).map(t => ({
             src: 'todo', id: t.id, title: t.text, due: t.due_date, done: !!t.completed,
-            list: byProj ? (p.name || '프로젝트 없음') : '할일',
+            list: byProj ? (p.name || '시즌 없음') : '할일',
             project: p.name, assignee: t.assignee, createdBy: t.created_by,
         })));
         // 메모 본문의 [ ] 도 할 일이다 — 대시보드 안의 할 일을 한 군데로 모은다
@@ -6746,7 +6790,7 @@ class BhasApp {
         const noteTodos = this._allNoteTodos().map(t => ({
             src: 'note', id: t.id, noteId: t.noteId, line: t.line, title: t.title,
             due: t.due, done: t.done,
-            list: byProj ? (projOfNote(t.noteId) || '프로젝트 없음') : '메모', from: t.from,
+            list: byProj ? (projOfNote(t.noteId) || '시즌 없음') : '메모', from: t.from,
             assignee: (mockData.companies || []).find(c => c.name === t.at[0])?.id || null,
             atName: t.at[0] || null, tags: t.tags,
         }));
@@ -6814,9 +6858,9 @@ class BhasApp {
                 </div>
                 <div class="rm-seg">
                     <button class="${(this.remGroup || 'list') === 'list' ? 'on' : ''}" onclick="app.setRemGroup('list')">목록별</button>
-                    <button class="${this.remGroup === 'project' ? 'on' : ''}" onclick="app.setRemGroup('project')">프로젝트별</button>
+                    <button class="${this.remGroup === 'project' ? 'on' : ''}" onclick="app.setRemGroup('project')">시즌별</button>
                 </div>
-                <div class="rm-lhead">${(this.remGroup || 'list') === 'project' ? '프로젝트' : '나의 목록'}
+                <div class="rm-lhead">${(this.remGroup || 'list') === 'project' ? '시즌' : '나의 목록'}
                     ${(this.remGroup || 'list') === 'list' ? `<button class="rm-plus" title="목록 추가" onclick="app.addRemList()">＋</button>` : ''}</div>
                 ${listNames.map((l, i) => `<div class="rm-l${cur === 'l:' + l ? ' on' : ''}" onclick="app.setRemList('l:${esc(l)}')">
                     <span class="rm-lic" style="background:${colorOf(l, i)}"><i class="ph ph-list-bullets"></i></span>
@@ -8761,7 +8805,7 @@ class BhasApp {
         { k: 'todo', t: '할일',        c: '#0a84ff' },
         { k: 'note', t: '메모 체크',   c: '#30d158' },
         { k: 'job',  t: '생산 작업',   c: '#6366f1' },
-        { k: 'proj', t: '프로젝트 마감', c: '#bf5af2' },
+        { k: 'proj', t: '시즌 마감', c: '#bf5af2' },
     ];
     _calOn(k) { const off = this.calOff || {}; return !off[k]; }
     toggleCalSrc(k) { this.calOff = { ...(this.calOff || {}) }; this.calOff[k] = this._calOn(k); this.requestRender(); }
@@ -9310,7 +9354,7 @@ class BhasApp {
         const openBtn = document.getElementById('open-search-btn');
         const mobileBtn = document.getElementById('mobile-search-btn');
         const closeBtn = document.getElementById('close-search-btn');
-        const hint = '<div class="search-hint"><i class="ph ph-keyboard"></i> 검색어를 입력하세요. 결과 클릭 시 해당 프로젝트로 이동합니다.</div>';
+        const hint = '<div class="search-hint"><i class="ph ph-keyboard"></i> 검색어를 입력하세요. 결과 클릭 시 해당 시즌로 이동합니다.</div>';
 
         const open = () => {
             overlay.style.display = 'flex';
@@ -9325,7 +9369,7 @@ class BhasApp {
         if (closeBtn) closeBtn.onclick = close;
         overlay.onclick = (e) => { if (e.target === overlay) close(); };
 
-        const kindColor = { '프로젝트': '#3b82f6', '할일': '#22c55e', '문서': '#f59e0b', '메모': '#a855f7' };
+        const kindColor = { '시즌': '#3b82f6', '할일': '#22c55e', '문서': '#f59e0b', '메모': '#a855f7' };
         const renderResults = (q) => {
             if (!q.trim()) { resultsEl.innerHTML = hint; return; }
             const items = this.runGlobalSearch(q);
@@ -9430,7 +9474,7 @@ class BhasApp {
                 return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid rgba(148,163,184,0.12)">
                     <button class="vjob-toggle" data-id="${j.id}" title="완료 토글" style="flex:0 0 auto;width:18px;height:18px;border-radius:5px;border:2px solid ${done?'#10b981':'rgba(148,163,184,0.5)'};background:${done?'#10b981':'transparent'};cursor:pointer;color:#fff;font-size:0.7rem;line-height:1;padding:0">${done?'✓':''}</button>
                     <div style="flex:1;min-width:0">
-                        <div style="font-size:0.88rem;font-weight:600;${done?'text-decoration:line-through;color:var(--text-muted)':''}">${this._vesc(j.title)}${j.qty?` <span style="color:var(--text-muted);font-weight:400">·${j.qty}장</span>`:''}${j.qc_status==='passed'?' <span style="font-size:0.66rem;font-weight:700;color:#10b981;background:rgba(16,185,129,0.12);padding:1px 6px;border-radius:6px">검수완료</span>':''}${j.quick_status?.ok===true?' <span style="font-size:0.66rem;font-weight:700;color:#191600;background:#FEE500;padding:1px 6px;border-radius:6px">퀵예약</span>':''}${!j.tech_pack_id?' <span style="font-size:0.66rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);padding:1px 6px;border-radius:6px">지시서 미연결</span>':''}</div>
+                        <div style="font-size:0.88rem;font-weight:600;${done?'text-decoration:line-through;color:var(--text-muted)':''}">${this._vesc(j.title)}${j.qty?` <span style="color:var(--text-muted);font-weight:400">·${j.qty}장</span>`:''}${j.qc_status==='passed'?' <span style="font-size:0.66rem;font-weight:700;color:#10b981;background:rgba(16,185,129,0.12);padding:1px 6px;border-radius:6px">검수완료</span>':''}${j.quick_status?.ok===true?' <span style="font-size:0.66rem;font-weight:700;color:#191600;background:#FEE500;padding:1px 6px;border-radius:6px">퀵예약</span>':''}${!j.tech_pack_id?' <span style="font-size:0.66rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);padding:1px 6px;border-radius:6px">지시서 미연결</span>':''}${j.item_id?' <span style="font-size:0.66rem;font-weight:700;color:#0a84ff;background:rgba(10,132,255,0.12);padding:1px 6px;border-radius:6px">제품리스트</span>':''}</div>
                         <div style="font-size:0.75rem;color:var(--text-muted)">${this._vesc(j.stage)}${ddText?' · '+ddText:''}</div>
                     </div>
                     ${done?'':`<button class="vjob-qc" data-id="${j.id}" title="출고 검수 · 카카오퀵" style="flex:0 0 auto;background:none;border:none;color:${j.qc_status==='passed'?'#10b981':'var(--primary)'};cursor:pointer;padding:2px 4px;font-size:1.05rem"><i class="ph ph-clipboard-text"></i></button>`}
@@ -9721,7 +9765,7 @@ class BhasApp {
             </section>
         </div>`;
     }
-    // 메모 사이드바의 프로젝트 ＋ — 기존 프로젝트 만들기 창을 그대로 띄운다
+    // 메모 사이드바의 시즌 ＋ — 기존 시즌 만들기 창을 그대로 띄운다
     newProjectFromNotes() { this.showProjectModal(); }
     setContactCat(c) { this.contactCat = c; this.contactSel = null; this.requestRender(); }
     selectContact(id) { this.contactSel = id; this.requestRender(); }
@@ -10064,7 +10108,7 @@ class BhasApp {
     async ensureTechPacks(force) {
         if (this._techPacksLoaded && !force) return;
         try {
-            const { data } = await this.supabase.from('tech_packs').select('id, style_name, style_no, config, created_at').order('created_at', { ascending: false });
+            const { data } = await this.supabase.from('tech_packs').select('id, style_name, style_no, config, created_at, item_id').order('created_at', { ascending: false });
             this._techPacks = data || [];
         } catch (e) { this._techPacks = this._techPacks || []; }
         this._techPacksLoaded = true;
@@ -10132,10 +10176,228 @@ class BhasApp {
             await this.ensureTechPacks(true);
         } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
     }
+    // ============================================================
+    //  제품리스트 — 생산의 중심 표
+    //   한 줄 = 제품 하나. 그 줄이 시즌·공장·작업지시서·샘플·견적을 다 물고 있다.
+    //   (예전 '프로젝트'는 이제 '시즌'이다 — products 테이블 그대로, 이름만 바꿨다)
+    // ============================================================
+    ITEM_STATUSES = ['요청하기', '샘플 중', '원단·부자재', '메인투입', '보류', '완료'];
+    ITEM_SC = { '요청하기': '#8e8e93', '샘플 중': '#0a84ff', '원단·부자재': '#bf5af2', '메인투입': '#ff9f0a', '보류': '#ff453a', '완료': '#30d158' };
+
+    async loadItems() {
+        this._itemsLoading = true;
+        try {
+            const { data, error } = await this.supabase.from('product_items').select('*')
+                .order('sort', { ascending: true }).order('created_at', { ascending: false });
+            if (error) throw error;
+            this.pItems = data || [];
+        } catch (e) {
+            this.showToast('제품리스트를 불러오지 못했습니다. (041_product_items.sql 설치 필요)');
+            this.pItems = [];
+        }
+        this._itemsLoaded = true; this._itemsLoading = false;
+        this.requestRender();
+    }
+
+    _seasons() { return (mockData.products || []).filter(p => this._canSeeProject(p)); }
+
+    // 표의 칸을 고치면 바로 저장한다. redraw=1 은 색·집계가 바뀌는 칸(상태·체크·날짜·고르기)만.
+    async setItem(id, field, value, redraw) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        const v = (value === '' ? null : value);
+        const old = it[field]; it[field] = v;
+        const { error } = await this.supabase.from('product_items').update({ [field]: v }).eq('id', id);
+        if (error) { it[field] = old; this.showToast('저장 실패: ' + error.message); this.requestRender(); return; }
+        // 시즌을 고르면 그 시즌의 브랜드를 따라간다 (비어 있을 때만)
+        if (field === 'product_id' && v && !it.brand_id) {
+            const s = this._seasons().find(p => String(p.id) === String(v));
+            if (s && s.brand_id) { it.brand_id = s.brand_id; await this.supabase.from('product_items').update({ brand_id: s.brand_id }).eq('id', id); }
+        }
+        if (redraw) this.requestRender();
+    }
+
+    async addItem() {
+        const row = { name: '', status: '요청하기', created_by: this._actor() };
+        if (this.itemSeason && this.itemSeason !== 'ALL') {
+            row.product_id = this.itemSeason;
+            const s = this._seasons().find(p => String(p.id) === String(this.itemSeason));
+            if (s && s.brand_id) row.brand_id = s.brand_id;
+        }
+        const { data, error } = await this.supabase.from('product_items').insert([row]).select().single();
+        if (error) { this.showToast('추가 실패: ' + error.message); return; }
+        this.pItems = [data, ...(this.pItems || [])];
+        this.itemSel = data.id;
+        this.requestRender();
+        setTimeout(() => { const el = this.appContainer.querySelector(`.it-row[data-id="${data.id}"] .it-name`); if (el) el.focus(); }, 60);
+    }
+
+    async delItem(id) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        if (!confirm(`'${it.name || '이름 없는 제품'}' 을 제품리스트에서 지웁니다.`)) return;
+        const { error } = await this.supabase.from('product_items').delete().eq('id', id);
+        if (error) { this.showToast('삭제 실패: ' + error.message); return; }
+        this.pItems = (this.pItems || []).filter(x => String(x.id) !== String(id));
+        if (String(this.itemSel) === String(id)) this.itemSel = null;
+        this.requestRender();
+    }
+
+    selItem(id) { this.itemSel = id; this.requestRender(); }
+    //  시즌 카드 → 그 시즌만 걸러진 제품리스트
+    openSeasonItems(pid) {
+        this.itemSeason = pid; this.itemStatus = 'ALL'; this.itemQ = '';
+        const w = (this.wins || []).find(x => this._groupOf(x.view) === this._groupOf('items'));
+        if (this.macMode && w) { w.view = 'items'; w.min = false; this.macFocus(w.id); this.requestRender(); return; }
+        this.switchView('items');
+    }
+    setItemSeason(v) { this.itemSeason = v; this.requestRender(); }
+    setItemStatus(v) { this.itemStatus = v; this.requestRender(); }
+    itemFind(v) { this.itemQ = v; clearTimeout(this._itemQT); this._itemQT = setTimeout(() => this.requestRender(), 200); }
+
+    // ── 연동 ────────────────────────────────────────────────
+    //  작업지시서·샘플디자인은 한 몸(tech_packs.config)이다. 제품 줄에서 만들면 양쪽에 이름이 박힌다.
+    async itemNewTechPack(id) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        const cfg = defaultSampleConfig();
+        cfg.styleName = it.name || '무제';
+        cfg.styleNo = it.pattern_no || '';
+        const { data, error } = await this.supabase.from('tech_packs')
+            .insert([{ style_name: cfg.styleName, style_no: cfg.styleNo || null, config: cfg, item_id: it.id }]).select().single();
+        if (error) { this.showToast('작업지시서 만들기 실패 (013·041 SQL 필요): ' + error.message); return; }
+        await this.setItem(id, 'tech_pack_id', data.id);
+        await this.ensureTechPacks(true);
+        this.sampleConfig = JSON.parse(JSON.stringify(cfg));
+        this._editingTechPackId = data.id;
+        this.showToast(`'${cfg.styleName}' 작업지시서를 만들었습니다 — 샘플·디자인에서 이어서 그리세요`);
+        this.switchView('sample_maker');
+    }
+
+    async itemLinkTechPack(id, tpId) {
+        await this.setItem(id, 'tech_pack_id', tpId, 1);
+        if (tpId) await this.supabase.from('tech_packs').update({ item_id: id }).eq('id', tpId);
+    }
+
+    async itemNewQuote(id) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        const s = this._seasons().find(p => String(p.id) === String(it.product_id));
+        const row = {
+            client_name: ((mockData.brands || []).find(b => b.id === it.brand_id) || {}).name || (s && s.name) || '미정',
+            items: [{ name: it.name || '', spec: it.pattern_no || '', qty: 0, price: 0, amount: 0 }],
+            quote_date: new Date().toISOString().slice(0, 10),
+            status: 'draft', item_id: it.id,
+            memo: s ? `시즌: ${s.name}` : null,
+        };
+        const { data, error } = await this.supabase.from('quotes').insert([row]).select().single();
+        if (error) { this.showToast('견적 만들기 실패 (008·041 SQL 필요): ' + error.message); return; }
+        await this.setItem(id, 'quote_id', data.id, 1);
+        this._quotesLoaded = false; await this.loadQuotes();
+        this.showQuoteModal(data.id);
+    }
+    itemOpenQuote(id) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id));
+        if (it && it.quote_id) this.showQuoteModal(it.quote_id);
+    }
+
+    //  생산 투입 — 공장과 작업지시서가 정해져 있어야 넣는다(생산현황 규칙과 같다)
+    async itemToVendor(id) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        if (!it.vendor_id) { this.showToast('먼저 표에서 공장을 고르세요'); return; }
+        if (!it.tech_pack_id) { this.showToast('작업지시서를 먼저 만들어야 생산에 투입됩니다'); return; }
+        const row = {
+            vendor_id: it.vendor_id, title: it.name || '무제', stage: '진행중',
+            due_date: it.ship_date || null, tech_pack_id: it.tech_pack_id, item_id: it.id,
+        };
+        const { error } = await this.supabase.from('vendor_jobs').insert([row]);
+        if (error) { this.showToast('투입 실패: ' + error.message); return; }
+        if ((it.status || '') !== '메인투입') await this.setItem(id, 'status', '메인투입');
+        await this.loadVendors();
+        this.showToast(`생산현황에 올렸습니다 — ${row.title}`);
+    }
+
+    renderItems() {
+        if (!this._itemsLoaded) return this._loadingSkeleton('제품리스트');
+        const esc = s => this._vesc(s);
+        const seasons = this._seasons();
+        const brands = mockData.brands || [];
+        const vendors = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+        const packs = this._techPacks || [];
+        const all = this.pItems || [];
+
+        const sKey = this.itemSeason || 'ALL', stKey = this.itemStatus || 'ALL';
+        const q = (this.itemQ || '').trim().toLowerCase();
+        let rows = all;
+        if (sKey !== 'ALL') rows = rows.filter(i => sKey === 'NONE' ? !i.product_id : String(i.product_id) === String(sKey));
+        if (stKey !== 'ALL') rows = rows.filter(i => (i.status || '') === stKey);
+        if (q) rows = rows.filter(i => [i.name, i.pattern_no, i.memo].some(v => String(v || '').toLowerCase().includes(q)));
+
+        const opt = (v, t, cur) => `<option value="${esc(String(v))}"${String(cur || '') === String(v) ? ' selected' : ''}>${esc(t)}</option>`;
+        const txt = (it, f, ph, cls) => `<input class="it-in ${cls || ''}" value="${esc(it[f] || '')}" placeholder="${esc(ph || '')}"
+            onchange="app.setItem('${it.id}','${f}',this.value)">`;
+        const dat = (it, f) => `<input class="it-in it-dt${it[f] ? '' : ' empty'}" type="date" value="${it[f] || ''}" onchange="app.setItem('${it.id}','${f}',this.value,1)">`;
+        const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''} onchange="app.setItem('${it.id}','${f}',this.checked,1)">`;
+        const pick = (it, f, list, ph) => `<select class="it-sel" onchange="app.setItem('${it.id}','${f}',this.value,1)">
+            ${opt('', ph, it[f] ? 'x' : '')}${list.map(o => opt(o.v, o.t, it[f])).join('')}</select>`;
+
+        const tr = it => {
+            const sc = this.ITEM_SC[it.status] || '#8e8e93';
+            const tp = packs.find(p => String(p.id) === String(it.tech_pack_id));
+            return `<tr class="it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}" onclick="app.selItem('${it.id}')">
+                <td class="it-c">${chk(it, 'checked')}</td>
+                <td>${pick(it, 'brand_id', brands.map(b => ({ v: b.id, t: b.name })), '브랜드')}</td>
+                <td>${txt(it, 'name', '제품 이름', 'it-name')}</td>
+                <td>${txt(it, 'pattern_no', '패턴명')}</td>
+                <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
+                        onchange="app.setItem('${it.id}','status',this.value,1)">
+                    ${this.ITEM_STATUSES.map(s => opt(s, s, it.status)).join('')}</select></td>
+                <td>${txt(it, 'memo', '메모')}</td>
+                <td class="it-c">${chk(it, 'trims')}</td>
+                <td>${pick(it, 'vendor_id', vendors.map(v => ({ v: v.id, t: v.name })), '공장')}</td>
+                <td>${pick(it, 'product_id', seasons.map(s => ({ v: s.id, t: s.name })), '시즌')}</td>
+                <td>${dat(it, 'ship_date')}</td>
+                <td>${dat(it, 'open_date')}</td>
+                <td class="it-lk">
+                    ${tp ? `<button class="it-ib on" title="작업지시서: ${esc(tp.style_name || '')}" onclick="event.stopPropagation();app.openTechPack('${tp.id}')"><i class="ph ph-clipboard-text"></i></button>`
+                         : `<button class="it-ib" title="작업지시서 만들기" onclick="event.stopPropagation();app.itemNewTechPack('${it.id}')"><i class="ph ph-clipboard-text"></i></button>`}
+                    ${it.quote_id ? `<button class="it-ib on" title="견적 보기" onclick="event.stopPropagation();app.itemOpenQuote('${it.id}')"><i class="ph ph-receipt"></i></button>`
+                         : `<button class="it-ib" title="견적 만들기" onclick="event.stopPropagation();app.itemNewQuote('${it.id}')"><i class="ph ph-receipt"></i></button>`}
+                    <button class="it-ib" title="생산 투입" onclick="event.stopPropagation();app.itemToVendor('${it.id}')"><i class="ph ph-factory"></i></button>
+                    <button class="it-ib del" title="삭제" onclick="event.stopPropagation();app.delItem('${it.id}')"><i class="ph ph-trash"></i></button>
+                </td>
+            </tr>`;
+        };
+
+        const cnt = s => all.filter(i => (i.status || '') === s).length;
+        const pill = (k, label, n) => `<button class="it-pill${stKey === k ? ' on' : ''}" onclick="app.setItemStatus('${k}')"
+            ${k !== 'ALL' ? `style="--pc:${this.ITEM_SC[k] || '#8e8e93'}"` : ''}>${esc(label)}<em>${n}</em></button>`;
+
+        return `<div class="m3-doc it-wrap">
+            <div class="it-top">
+                <div class="it-tl"><b>제품리스트</b><span>${rows.length}/${all.length}</span></div>
+                <select class="it-sel it-season" onchange="app.setItemSeason(this.value)">
+                    ${opt('ALL', '시즌 전체', sKey)}${seasons.map(s => opt(s.id, s.name, sKey)).join('')}${opt('NONE', '시즌 없음', sKey)}
+                </select>
+                <div class="it-find"><i class="ph ph-magnifying-glass"></i>
+                    <input value="${esc(this.itemQ || '')}" placeholder="이름·패턴·메모" oninput="app.itemFind(this.value)"></div>
+                <button class="it-add" onclick="app.addItem()"><i class="ph ph-plus"></i> 제품 추가</button>
+            </div>
+            <div class="it-pills">${pill('ALL', '전체', all.length)}${this.ITEM_STATUSES.map(s => pill(s, s, cnt(s))).join('')}</div>
+            <div class="it-scroll">
+                <table class="it-tbl"><thead><tr>
+                    <th class="it-c">체크</th><th>브랜드</th><th>이름</th><th>패턴명</th><th>제작현황</th><th>메모</th>
+                    <th class="it-c">부자재</th><th>공장</th><th>시즌</th><th>출고예정일</th><th>오픈일</th><th>연동</th>
+                </tr></thead>
+                <tbody>${rows.length ? rows.map(tr).join('')
+                    : `<tr><td colspan="12" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}</tbody>
+                </table>
+            </div>
+        </div>`;
+    }
+
     renderTechPacks() {
         const list = this._techPacks || [];
         const esc = s => this._vesc(s);
         const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '';
+        //  제품리스트에서 만든 지시서는 그 제품 이름을 달고 다닌다
+        const itemOf = t => (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
         const card = t => {
             let thumb = '';
             try { thumb = garmentPreviewSVG(t.config, false); } catch (_e) { thumb = ''; }
@@ -10144,6 +10406,7 @@ class BhasApp {
                 <div>
                     <div style="font-size:0.95rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.style_name || '무제')}</div>
                     <div style="font-size:0.72rem;color:var(--text-muted)">${t.style_no ? esc(t.style_no) + ' · ' : ''}${when(t.created_at)}</div>
+                    ${itemOf(t) ? `<div style="font-size:0.72rem;color:#0a84ff;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><i class="ph ph-t-shirt"></i> ${esc(itemOf(t).name || '제품')}</div>` : ''}
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
                     <button onclick="app.openTechPack('${t.id}')" class="btn-primary" style="padding:7px 0;border-radius:9px;font-size:0.8rem"><i class="ph ph-pencil-simple"></i> 열기</button>
@@ -10419,7 +10682,10 @@ class BhasApp {
         const rows = qs.map(q => `
             <tr class="q-row" data-id="${q.id}" style="border-bottom:1px solid var(--card-border);cursor:pointer">
                 <td style="padding:10px;font-size:0.82rem;color:var(--text-muted)">${q.quote_date || '-'}</td>
-                <td style="padding:10px;font-weight:600">${this._vesc(q.client_name)}</td>
+                <td style="padding:10px;font-weight:600">${this._vesc(q.client_name)}${(() => {
+                    const it = (this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id));
+                    return it ? `<div style="font-size:0.7rem;font-weight:600;color:#0a84ff"><i class="ph ph-t-shirt"></i> ${this._vesc(it.name || '제품')}</div>` : '';
+                })()}</td>
                 <td style="padding:10px;font-size:0.85rem;color:var(--text-muted)">${(q.items || []).length}개 품목</td>
                 <td style="padding:10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">${this._won(q.total_amount)}원</td>
                 <td style="padding:10px;text-align:center;white-space:nowrap"><span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${q.status === 'confirmed' ? 'rgba(34,197,94,0.18)' : (q.status === 'sent' ? 'rgba(59,130,246,0.18)' : 'rgba(245,158,11,0.18)')};color:${q.status === 'confirmed' ? '#22c55e' : (q.status === 'sent' ? '#60a5fa' : '#f59e0b')}">${this._quoteStatusLabel(q.status)}</span>${q.tax_status === 'issued' ? ' <span style="font-size:0.66rem;padding:2px 7px;border-radius:8px;background:rgba(34,197,94,0.18);color:#22c55e">계산서✓</span>' : ''}</td>
@@ -11094,7 +11360,7 @@ class BhasApp {
                 let errMsg = '등록 실패';
                 if (insertError.code === '42501') errMsg = '권한 부족: 데이터베이스에 쓸 권한이 없습니다.';
                 else if (insertError.code === '22P02') errMsg = '데이터 형식 오류: 유효한 ID가 아닙니다.';
-                else if (insertError.message && insertError.message.includes('foreign key')) errMsg = '선택한 프로젝트가 존재하지 않습니다. 페이지를 새로고침 후 다시 시도해주세요.';
+                else if (insertError.message && insertError.message.includes('foreign key')) errMsg = '선택한 시즌가 존재하지 않습니다. 페이지를 새로고침 후 다시 시도해주세요.';
                 else errMsg = '등록 실패: ' + insertError.message;
                 this.showToast(errMsg);
                 return false;
@@ -11396,7 +11662,7 @@ class BhasApp {
     // 계정 권한 체크박스에 노출할 배정 가능한 메뉴 (계정/브랜드 관리는 MASTER 전용이라 제외, 할일은 항상노출이라 제외)
     _assignableMenus() {
         return [
-            { g: '생산관리', items: [['dashboard','프로젝트'],['timeline','타임라인'],['sample_maker','샘플'],['vendors','생산현황'],['quotes','견적']] },
+            { g: '생산관리', items: [['dashboard','시즌'],['timeline','타임라인'],['sample_maker','샘플'],['vendors','생산현황'],['quotes','견적']] },
             { g: '재고·판매', items: [['orders','주문'],['sales','매출'],['inventory','재고'],['integrations','연동']] },
             { g: '업무관리', items: [['pages','페이지'],['kanban','보드'],['calendar','캘린더'],['table','표']] },
             { g: '자료실', items: [['documents','문서']] }
@@ -11405,7 +11671,7 @@ class BhasApp {
     _defaultMenuAccess(role) {
         const all = this._assignableMenus().flatMap(s => s.items.map(i => i[0]));
         if (role === 'MASTER' || role === 'STAFF') return all;
-        return ['dashboard']; // CLIENT 기본: 프로젝트(대시보드)만
+        return ['dashboard']; // CLIENT 기본: 시즌(대시보드)만
     }
     _renderPermMenuChecks(selected) {
         const sel = new Set(selected || []);
@@ -11747,7 +12013,7 @@ class BhasApp {
         try {
             // product_id가 유효한지 확인
             const pid = String(product_id);
-            if (!pid || pid === 'null' || pid === 'undefined') throw new Error('유효하지 않은 프로젝트 ID입니다.');
+            if (!pid || pid === 'null' || pid === 'undefined') throw new Error('유효하지 않은 시즌 ID입니다.');
 
             // 1. 이미지 리사이징
             const optimizedBlob = await this.resizeImage(file);
