@@ -3790,3 +3790,44 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   color:var(--text-muted) !important;padding:3px 9px !important;border-radius:6px !important;font-size:14px !important}
 .macwin .fd-seg button.on{background:var(--card-bg) !important;color:inherit !important;
   box-shadow:0 .5px 2px rgba(0,0,0,.14) !important}
+
+/* ── 파인더 사이드바 — 대분류 ▸ 중분류 ───────────────────── */
+.fd-sh.tog{display:flex;align-items:center;gap:4px;cursor:default;user-select:none}
+.fd-sh.tog>i{font-size:11px;transition:transform .12s ease;opacity:.7}
+.fd-sh.tog.on>i{transform:rotate(90deg)}
+.fd-sh.tog:hover{opacity:1}
+.fd-tw{border:0;background:transparent;color:var(--text-muted);padding:0;width:13px;height:13px;
+  flex:0 0 auto;display:grid;place-items:center;cursor:default;border-radius:3px}
+.fd-tw i{font-size:10px;transition:transform .12s ease}
+.fd-tw.on i{transform:rotate(90deg)}
+.fd-tw:hover{background:rgba(127,127,127,.22)}
+.fd-tw.sp{visibility:hidden}
+.fd-s.d1{padding-left:30px}
+.fd-s.d1 i{font-size:13px}
+.fd-s.d1 span{font-size:12px}
+.macwin .fd-tw{box-shadow:none !important;border:0 !important;background:transparent !important}
+
+/* ── 메모 속성 — 접혀 있는 게 기본. 한 줄 요약만 보인다 ──────── */
+.np-bar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;cursor:default;user-select:none;
+  padding:6px 0 10px;margin-bottom:4px;border-bottom:.5px solid var(--card-border)}
+.np-bar>i{font-size:11px;color:var(--text-muted);transition:transform .12s ease}
+.np-bar.on>i{transform:rotate(90deg)}
+.np-bar>b{font-size:11.5px;font-weight:700;color:var(--text-muted);margin-right:2px}
+.np-bar:hover>b,.np-bar:hover>i{color:inherit}
+.np-chip{font-style:normal;font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;
+  display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+  color:var(--c,var(--text-muted));background:color-mix(in srgb,var(--c,#8e8e93) 14%,transparent)}
+.np-chip i{font-size:11px}
+.np-chip.none{opacity:.55;font-weight:500}
+.np-bar.on+.npanel{margin-top:2px}
+
+/* 메모 사이드 — 시즌 구역 접기 */
+.nt-shead.tog{display:flex;align-items:center;gap:4px;cursor:default;user-select:none}
+.nt-shead.tog>i{font-size:11px;opacity:.7;transition:transform .12s ease}
+.nt-shead.tog.on>i{transform:rotate(90deg)}
+/* 목록 머리의 시즌 거르개 */
+.nt-sea{border:.5px solid var(--card-border);background:rgba(127,127,127,.1);color:inherit;
+  font-family:inherit;font-size:11.5px;border-radius:7px;padding:3px 6px;max-width:116px;
+  outline:none;cursor:default;margin-left:auto}
+.macwin .nt-sea{padding:3px 6px !important;font-size:11.5px !important}
+.nt-sea option{background:#1c1c1e;color:#fff}

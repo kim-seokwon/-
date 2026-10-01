@@ -3393,7 +3393,7 @@ class BhasApp {
             // ── 자료실 = 파인더 ────────────────────────────────────────
             //  왼쪽 즐겨찾기(분류·시즌) · 위 도구막대(보기 전환·검색) ·
             //  가운데 아이콘 격자 또는 목록 · 아래 경로막대(개수). 맥 파인더 그대로.
-            const categories = ['작업지시서', '회의록', '참고이미지', '기타자료', '세금계산서'];
+            const categories = ['작업지시서', '견적서', '회의록', '참고이미지', '기타자료', '세금계산서'];
             const filteredProjectIds = products.map(p => p.id);
             let aggregatedDocs = (mockData.globalDocuments || []).filter(d => filteredProjectIds.includes(d.productId));
             products.forEach(p => {
@@ -3414,16 +3414,38 @@ class BhasApp {
                     });
                 });
             });
+            //  다른 화면에 흩어진 것도 자료실 한 곳에서 — 작업지시서·견적
+            (this._techPacks || []).forEach(t => {
+                const it = (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
+                aggregatedDocs.push({
+                    id: 'tp:' + t.id, name: (t.style_name || '무제') + (t.style_no ? ` (${t.style_no})` : ''),
+                    category: '작업지시서', productId: it ? it.product_id : null, url: '',
+                    date: (t.created_at || '').slice(0, 10), memo: '', open: `app.openTechPack('${t.id}')`,
+                    icon: 'ph-clipboard-text', iconColor: '#5e5ce6', kindText: '작업지시서',
+                });
+            });
+            (this.quotes || []).forEach(qt => {
+                const it = (this.pItems || []).find(i => String(i.id) === String(qt.item_id) || String(i.quote_id) === String(qt.id));
+                aggregatedDocs.push({
+                    id: 'q:' + qt.id, name: (qt.quote_no ? qt.quote_no + ' ' : '') + (qt.client_name || '견적서'),
+                    category: '견적서', productId: it ? it.product_id : null, url: '',
+                    date: qt.quote_date || (qt.created_at || '').slice(0, 10), memo: '',
+                    open: `app.showQuoteModal('${qt.id}')`, icon: 'ph-receipt', iconColor: '#30d158', kindText: '견적서',
+                });
+            });
             const cur = this.selectedDocCategory || '전체';
             const q = (this.docQ || '').trim().toLowerCase();
             let docs = aggregatedDocs;
-            if (cur.startsWith('p:')) docs = docs.filter(d => d.productId === cur.slice(2));
-            else if (cur !== '전체') docs = docs.filter(d => d.category === cur);
+            if (cur.startsWith('p:')) {
+                const [pid, cat] = cur.slice(2).split('/');
+                docs = docs.filter(d => d.productId === pid && (!cat || d.category === cat));
+            } else if (cur !== '전체') docs = docs.filter(d => d.category === cur);
             if (q) docs = docs.filter(d => (d.name || '').toLowerCase().includes(q));
             const view = this.docView || 'grid';
             const esc = s => this._vesc(s);
             const isImg = u => /\.(jpe?g|png|gif|webp|heic|avif)$/i.test(u || '') || (u || '').includes('photos/');
             const kindOf = (d) => {
+                if (d.icon) return { i: d.icon, c: d.iconColor || '#8e8e93', t: d.kindText || '파일' };
                 const u = d.url || '';
                 if (isImg(u)) return { i: 'ph-image', c: '#34c759', t: '이미지' };
                 if (/\.pdf$/i.test(u)) return { i: 'ph-file-pdf', c: '#ff3b30', t: 'PDF' };
@@ -3433,13 +3455,22 @@ class BhasApp {
                 return { i: 'ph-file', c: '#8e8e93', t: '파일' };
             };
             const nameOfP = id => (mockData.products.find(p => p.id === id) || {}).name || '';
-            const side = (key, label, icon, n, color) => `<div class="fd-s${cur === key ? ' on' : ''}"
-                onclick="app.setDocCategory('${key}')" oncontextmenu="app.docFolderMenu(event,'${key}')"
-                ><i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
+            //  pid 를 주면 왼쪽에 펼침 삼각형이 붙는다(대분류). depth 1 은 그 아래 중분류.
+            const side = (key, label, icon, n, color, depth, pid, open) => `<div class="fd-s${cur === key ? ' on' : ''}${depth ? ' d1' : ''}"
+                onclick="app.setDocCategory('${key}')" oncontextmenu="app.docFolderMenu(event,'${key}')">
+                ${pid ? `<button class="fd-tw${open ? ' on' : ''}" onclick="event.stopPropagation();app.toggleDocSeason('${pid}')"><i class="ph ph-caret-right"></i></button>` : (depth ? '' : '<span class="fd-tw sp"></span>')}
+                <i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
+            //  접히는 구역 머리
+            const sec = (name, inner, defOpen) => {
+                const v = (this.docOpenSec || {})[name];
+                const open = v === undefined ? defOpen !== false : v;
+                return `<div class="fd-sh tog${open ? ' on' : ''}" onclick="app.toggleDocSec('${name}')">
+                    <i class="ph ph-caret-right"></i>${esc(name)}</div>${open ? inner : ''}`;
+            };
             const grid = docs.map(d => {
                 const k = kindOf(d);
                 return `<button class="fd-it${String(this.docSel) === String(d.id) ? ' on' : ''}"
-                        ondblclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')"
+                        ondblclick="${d.open || `app.showFileModal('${esc(d.url)}','${esc(d.name)}')`}"
                         onclick="app.selectDoc('${esc(String(d.id))}')"
                         oncontextmenu="app.docMenu(event,'${esc(String(d.id))}','${esc(d.url)}','${esc(d.name)}')" title="${esc(d.name)}">
                     <span class="fd-th">${isImg(d.url) ? `<img src="${esc(d.url)}" alt="" loading="lazy">`
@@ -3451,7 +3482,7 @@ class BhasApp {
                 const k = kindOf(d);
                 return `<div class="fd-r${String(this.docSel) === String(d.id) ? ' on' : ''}"
                         onclick="app.selectDoc('${esc(String(d.id))}')"
-                        ondblclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')"
+                        ondblclick="${d.open || `app.showFileModal('${esc(d.url)}','${esc(d.name)}')`}"
                         oncontextmenu="app.docMenu(event,'${esc(String(d.id))}','${esc(d.url)}','${esc(d.name)}')">
                     <span class="fd-rn"><i class="ph ${k.i}" style="color:${k.c}"></i>${esc(d.name)}</span>
                     <span>${esc(d.date || '')}</span>
@@ -3459,18 +3490,27 @@ class BhasApp {
                     <span>${esc(nameOfP(d.productId))}</span>
                 </div>`;
             }).join('');
-            const where = cur === '전체' ? '자료실' : (cur.startsWith('p:') ? nameOfP(cur.slice(2)) : cur);
+            const where = cur === '전체' ? '자료실'
+                : (cur.startsWith('p:')
+                    ? (([pid, cat]) => nameOfP(pid) + (cat ? ' › ' + cat : ''))(cur.slice(2).split('/'))
+                    : cur);
             return `
             <div class="fd">
                 <aside class="fd-side">
                     <div class="fd-sh">즐겨찾기</div>
                     ${side('전체', '모든 자료', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#0a84ff')}
-                    <div class="fd-sh">분류</div>
-                    ${categories.map(c => side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join('')}
-                    <div class="fd-sh">시즌</div>
-                    ${products.length ? products.map(p => side('p:' + p.id, p.name, 'ph-folder-simple',
-                        aggregatedDocs.filter(d => d.productId === p.id).length, '#5ac8fa')).join('')
-                      : '<div class="fd-none sm">시즌 없음</div>'}
+                    ${sec('분류', categories.map(c =>
+                        side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join(''), true)}
+                    ${sec('시즌', products.length ? products.map(p => {
+                        const n = aggregatedDocs.filter(d => d.productId === p.id).length;
+                        const col = ((mockData.brands || []).find(b => b.id === p.brand_id) || {}).brand_color || '#5ac8fa';
+                        const open = !!(this.docOpenP || {})[p.id];
+                        const kids = !open ? '' : categories.map(c => {
+                            const kn = aggregatedDocs.filter(d => d.productId === p.id && d.category === c).length;
+                            return side('p:' + p.id + '/' + c, c, 'ph-folder-simple', kn, '#8e8e93', 1);
+                        }).join('');
+                        return side('p:' + p.id, p.name, 'ph-folder-simple', n, col, 0, p.id, open) + kids;
+                    }).join('') : '<div class="fd-none sm">시즌 없음</div>', false)}
                 </aside>
                 <section class="fd-main">
                     <div class="fd-bar">
@@ -5061,6 +5101,12 @@ class BhasApp {
         if (v === 'reminders' && !this._remLoaded && !this._remLoading) this.loadReminders();
         if ((v === 'expenses' || v === 'sales') && !this._expLoaded && !this._expLoading) this.loadExpenses();
         if (v === 'tech_packs') this.ensureTechPacks();
+        // 자료실은 작업지시서·견적까지 한 곳에 모아 보여준다
+        if (v === 'documents') {
+            this.ensureTechPacks();
+            if (!this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
+            if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
+        }
         if ((v === 'tech_packs' || v === 'vendors' || v === 'dashboard') && !this._itemsLoaded && !this._itemsLoading) this.loadItems();
         if (v === 'items') {
             if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
@@ -6110,6 +6156,8 @@ class BhasApp {
         catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
     }
     selectNote(id) { this.saveNote(); this.noteSel = id; this.notePreview = true; this.requestRender(); }
+    toggleNoteSeasons() { this.noteSeaOpen = !this.noteSeaOpen; this.requestRender(); }
+    setNoteSea(v) { this.noteSea = v; this.noteSel = null; this.requestRender(); }
     setNoteFolder(f) { this.saveNote(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
     async deleteNote() {
         const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
@@ -6163,6 +6211,26 @@ class BhasApp {
         catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
     toggleNoteProps() { this.noteProps = !this.noteProps; this.requestRender(); }
+    //  속성은 접혀 있는 게 기본이다 — 본문이 가려지면 메모가 아니다.
+    //  접힌 상태에서도 상태·날짜·담당자·시즌은 한 줄로 보인다.
+    _notePropsBar(n) {
+        const esc = s => this._vesc(s);
+        const meta = this._noteMeta(n);
+        const open = !!this.noteProps;
+        const st = this.NOTE_STATUS.find(x => x.k === (meta.status || '없음')) || this.NOTE_STATUS[0];
+        const pr = (mockData.products || []).find(p => String(p.id) === String(meta.proj || n.product_id));
+        const bits = [];
+        if (meta.status && meta.status !== '없음')
+            bits.push(`<em class="np-chip" style="--c:${st.c}">${esc(meta.status)}</em>`);
+        if (meta.due) bits.push(`<em class="np-chip"><i class="ph ph-calendar-blank"></i>${esc(meta.due)}</em>`);
+        if (meta.who) bits.push(`<em class="np-chip"><i class="ph ph-user"></i>${esc(meta.who)}</em>`);
+        if (pr) bits.push(`<em class="np-chip"><i class="ph ph-folder-simple"></i>${esc(pr.name)}</em>`);
+        if (n.pinned) bits.push(`<em class="np-chip"><i class="ph-fill ph-push-pin"></i>고정</em>`);
+        return `<div class="np-bar${open ? ' on' : ''}" onclick="app.toggleNoteProps()">
+            <i class="ph ph-caret-right"></i><b>속성</b>
+            ${bits.length ? bits.join('') : '<em class="np-chip none">비어 있음</em>'}
+        </div>${open ? this._notePropsHTML(n) : ''}`;
+    }
     // 속성 판 — 노션의 페이지 속성 그대로
     _notePropsHTML(n) {
         const esc = s => this._vesc(s);
@@ -6452,7 +6520,11 @@ class BhasApp {
             if (cur.startsWith('f:')) return (n.folder || '') === cur.slice(2);
             return true;
         };
-        const list = all.filter(inFolder);
+        let list = all.filter(inFolder);
+        //  시즌 모아보기 — 폴더와 상관없이 그 시즌에 붙은 메모만
+        const seaF = this.noteSea || 'ALL';
+        if (seaF === 'NONE') list = list.filter(n => !n.product_id);
+        else if (seaF !== 'ALL') list = list.filter(n => String(n.product_id) === String(seaF));
         const sel = list.find(n => n.id === this.noteSel) || list[0];
         const cnt = (fn) => all.filter(fn).length;
         // 맥 메모의 날짜 묶음: 오늘 · 어제 · 이전 7일 · 이전 30일 · 월 · 연도
@@ -6498,15 +6570,22 @@ class BhasApp {
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-folder-simple', '메모', all.length)}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
-                <div class="nt-shead">시즌
-                    <button class="nt-add" title="새 시즌" onclick="app.newProjectFromNotes()">＋</button></div>
-                ${projects.length ? projects.map(pr => fold('p:' + pr.id, 'ph-folder-simple', pr.name, cnt(n => n.product_id === pr.id), '#e0a800')).join('')
-                  : '<div class="nt-none sm">시즌 없음</div>'}
+                <div class="nt-shead tog${this.noteSeaOpen ? ' on' : ''}" onclick="app.toggleNoteSeasons()">
+                    <i class="ph ph-caret-right"></i>시즌
+                    <button class="nt-add" title="새 시즌" onclick="event.stopPropagation();app.newProjectFromNotes()">＋</button></div>
+                ${!this.noteSeaOpen ? '' : (projects.length
+                    ? projects.map(pr => fold('p:' + pr.id, 'ph-folder-simple', pr.name, cnt(n => n.product_id === pr.id), '#e0a800')).join('')
+                    : '<div class="nt-none sm">시즌 없음</div>')}
             </aside>
             <section class="nt-list">
                 <div class="nt-lbar">
                     <div><b>${esc(cur === 'private' ? '개인 메모' : (cur === 'all' ? '메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2))))}</b>
                         <span>${list.length}개의 메모</span></div>
+                    <select class="nt-sea" onchange="app.setNoteSea(this.value)" title="시즌으로 거르기">
+                        <option value="ALL"${seaF === 'ALL' ? ' selected' : ''}>모든 시즌</option>
+                        ${projects.map(pr => `<option value="${pr.id}"${String(seaF) === String(pr.id) ? ' selected' : ''}>${esc(pr.name)}</option>`).join('')}
+                        <option value="NONE"${seaF === 'NONE' ? ' selected' : ''}>시즌 없음</option>
+                    </select>
                     <button class="nt-new" onclick="app.addNote()" title="새 메모"><i class="ph ph-note-pencil"></i></button>
                 </div>
                 <div class="nt-rows">${items}</div>
@@ -6525,12 +6604,12 @@ class BhasApp {
                         <i class="ph ${this.notePreview ? 'ph-pencil-simple' : 'ph-eye'}"></i></button>
                     <button onclick="app.deleteNote()" title="삭제"><i class="ph ph-trash"></i></button>
                     <span class="nt-scope">${sel.scope === 'private' ? '개인' : (sel.scope === 'project' ? '시즌' : '공용')}</span>
-                    <button class="${this.noteProps !== false ? 'on' : ''}" onclick="app.toggleNoteProps()" title="속성"><i class="ph ph-sliders-horizontal"></i></button>
+                    <button class="${this.noteProps ? 'on' : ''}" onclick="app.toggleNoteProps()" title="속성 펼치기"><i class="ph ph-sliders-horizontal"></i></button>
                 </div>
                 <div class="nt-page">
                     <div class="nt-when">${esc(longWhen(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
                     <input id="note-title" class="nt-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
-                    ${this.noteProps !== false ? this._notePropsHTML(sel) : ''}
+                    ${this._notePropsBar(sel)}
                     ${(() => {
                         const td = this._noteTodos(sel);
                         const ats = [...new Set(td.flatMap(x => x.at))];
@@ -6981,6 +7060,17 @@ class BhasApp {
     }
     setCSFilter(f) { this.csFilter = f; this.requestRender(); }
     setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.requestRender(); }
+    toggleDocSec(name) {
+        this.docOpenSec = this.docOpenSec || {};
+        const cur = this.docOpenSec[name] === undefined ? (name !== '시즌') : this.docOpenSec[name];
+        this.docOpenSec[name] = !cur;
+        this.requestRender();
+    }
+    toggleDocSeason(pid) {
+        this.docOpenP = this.docOpenP || {};
+        this.docOpenP[pid] = !this.docOpenP[pid];
+        this.requestRender();
+    }
     selectDoc(id) { this.docSel = id; this.requestRender(); }
     docMenu(ev, id, url, name) {
         this.ctxMenu(ev, [
