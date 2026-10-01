@@ -3624,8 +3624,8 @@ class BhasApp {
         return '';
     }
     selectOrder(id) { this.orderSel = id; this.requestRender(); }
-    selectCS(id) { this.csSel = id; this.requestRender(); }
-    selectInv(id) { this.invSel = id; this.requestRender(); }
+    selectCS(id) { if (String(this.csSel) === String(id)) return; this.csSel = id; this.requestRender(); }
+    selectInv(id) { if (String(this.invSel) === String(id)) return; this.invSel = id; this.requestRender(); }
     // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
     switchAppTab(winId, view) {
         const w = (this.wins || []).find(x => x.id === winId);
@@ -6446,12 +6446,14 @@ class BhasApp {
                 </span>
             </div>
             <div id="mac-snap-hint" class="mac-snap-hint"></div>
-            <div class="desk-find" onclick="app.openFind()">
-                <i class="ph ph-magnifying-glass"></i>
-                <span>무엇이든 찾기 — 제품 · 시즌 · 주문 · CS · 메모 · 자료</span>
-                <kbd>⌘K</kbd>
+            <div class="mac-deskboard">
+                <div class="desk-find" onclick="app.openFind()">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <span>무엇이든 찾기</span>
+                    <kbd>⌘K</kbd>
+                </div>
+                ${deskboard}
             </div>
-            <div class="mac-deskboard">${deskboard}</div>
             ${winsHtml}
             <nav class="mac-dock lg">${dock}<span class="mdsep"></span>${tools}${mins ? '<span class="mdsep"></span>' + mins : ''}</nav>
         </div>`;
@@ -7910,7 +7912,7 @@ class BhasApp {
         const row = t => {
             const sc = stColor(t.status), kc = kindColor(t.kind);
             return `<tr class="it-row${String(this.csSel) === String(t.id) ? ' on' : ''}" data-id="${t.id}"
-                onclick="app.selectCS('${t.id}')"${t.status === '완료' ? ' style="opacity:.62"' : ''}>
+                onclick="app.rowPick(event,'${t.id}','cs')"${t.status === '완료' ? ' style="opacity:.62"' : ''}>
                 <td class="nw">${esc((t.occurred_on || '').slice(2))}</td>
                 <td><span class="it-tag" style="--c:${kc}">${esc(t.kind)}</span></td>
                 <td class="bd">${esc(t.customer_name || '')}</td>
@@ -8667,7 +8669,7 @@ class BhasApp {
             const map = listingOf(i.id);
             const low = i.on_hand <= i.safety_stock;
             return `<tr class="it-row inv-row${String(this.invSel) === String(i.id) ? ' on' : ''}" data-id="${i.id}"
-                onclick="app.selectInv('${i.id}')">
+                onclick="app.rowPick(event,'${i.id}','inv')">
                 <td class="mono">${this._vesc(i.sku || '')}</td>
                 <td class="bd">${this._vesc(i.name || '')}</td>
                 <td>${this._vesc(i.option_name || '')}</td>
@@ -10998,7 +11000,15 @@ class BhasApp {
         this.requestRender();
     }
 
-    selItem(id) { this.itemSel = id; this.requestRender(); }
+    selItem(id) { if (String(this.itemSel) === String(id)) return; this.itemSel = id; this.requestRender(); }
+    //  칸 안의 입력칸·선택칸을 누른 것은 '줄 고르기' 가 아니다.
+    //  이걸 안 가리면 드롭다운을 여는 순간 다시 그려서 0.2초 만에 닫힌다.
+    rowPick(ev, id, what) {
+        if (ev && ev.target && ev.target.closest('input,select,textarea,button,label,a')) return;
+        if (what === 'cs') { this.csSel = id; this.requestRender(); return; }
+        if (what === 'inv') { this.selectInv(id); return; }
+        this.selItem(id);
+    }
     selectTechPack(id) { this.tpSel = id; this.requestRender(); }
     setSeasonView(v) { this.seasonView = v; this.requestRender(); }
     seasonFind(v) { this.seasonQ = v; clearTimeout(this._seaQT); this._seaQT = setTimeout(() => this.requestRender(), 200); }
@@ -11225,7 +11235,7 @@ class BhasApp {
 
         const opt = (v, t, cur) => `<option value="${esc(String(v))}"${String(cur || '') === String(v) ? ' selected' : ''}>${esc(t)}</option>`;
         const txt = (it, f, ph, cls) => `<input class="it-in ${cls || ''}" value="${esc(it[f] || '')}" placeholder="${esc(ph || '')}"
-            onchange="app.setItem('${it.id}','${f}',this.value)">`;
+            onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','${f}',this.value)">`;
         const dat = (it, f) => `<input class="it-in it-dt${it[f] ? '' : ' empty'}" type="date" value="${it[f] || ''}" onchange="app.setItem('${it.id}','${f}',this.value,1)">`;
         const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''} onchange="app.setItem('${it.id}','${f}',this.checked,1)">`;
         const pick = (it, f, list, ph) => `<select class="it-sel" onchange="app.setItem('${it.id}','${f}',this.value,1)">
@@ -11234,7 +11244,8 @@ class BhasApp {
         const tr = it => {
             const sc = this.ITEM_SC[it.status] || '#8e8e93';
             const tp = packs.find(p => String(p.id) === String(it.tech_pack_id));
-            return `<tr class="it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}" onclick="app.selItem('${it.id}')">
+            return `<tr class="it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}"
+                onclick="app.rowPick(event,'${it.id}')">
                 <td class="it-c">${chk(it, 'checked')}</td>
                 <td>${pick(it, 'brand_id', brands.map(b => ({ v: b.id, t: b.name })), '브랜드')}</td>
                 <td>${txt(it, 'name', '제품 이름', 'it-name')}</td>

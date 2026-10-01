@@ -3931,25 +3931,27 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .spot-more{font-size:11px;color:var(--text-muted);padding:3px 16px 6px}
 
-/* 바탕화면 한가운데 큼직한 검색칸 */
-.desk-find{position:absolute;top:46px;left:50%;transform:translateX(-50%);z-index:3;
-  display:flex;align-items:center;gap:10px;width:min(520px,72vw);cursor:default;
-  padding:11px 16px;border-radius:12px;background:rgba(255,255,255,.62);
-  border:.5px solid rgba(255,255,255,.7);backdrop-filter:blur(18px) saturate(1.7);
-  box-shadow:0 6px 24px rgba(0,0,0,.14)}
-.desk-find:hover{background:rgba(255,255,255,.76)}
-.desk-find>i{font-size:17px;color:#6b7280}
-.desk-find>span{flex:1;min-width:0;font-size:13.5px;color:#6b7280;
+/* 바탕화면 검색칸 — 떠 있지 않고 글 흐름 안에. 스포트라이트 결 */
+.desk-find{display:flex;align-items:center;gap:9px;width:min(420px,78%);margin:0 auto 22px;
+  cursor:default;padding:9px 14px;border-radius:11px;
+  background:rgba(255,255,255,.5);border:.5px solid rgba(255,255,255,.55);
+  backdrop-filter:blur(24px) saturate(1.6);
+  box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 24px rgba(0,0,0,.07);
+  transition:background .12s,box-shadow .12s}
+.desk-find:hover{background:rgba(255,255,255,.72);
+  box-shadow:0 1px 2px rgba(0,0,0,.06),0 10px 30px rgba(0,0,0,.1)}
+.desk-find>i{font-size:15px;color:#8a8f98}
+.desk-find>span{flex:1;min-width:0;font-size:13px;color:#8a8f98;letter-spacing:-.01em;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.desk-find kbd{font-family:inherit;font-size:10.5px;font-weight:700;color:#6b7280;
-  background:rgba(0,0,0,.07);border-radius:5px;padding:2px 7px}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) .desk-find{background:rgba(40,40,44,.6);border-color:rgba(255,255,255,.12)}
-  :root:not([data-theme="light"]) .desk-find>i,
-  :root:not([data-theme="light"]) .desk-find>span,
-  :root:not([data-theme="light"]) .desk-find kbd{color:#c9cdd4}
-}
-.mac-deskboard{padding-top:66px}
+.desk-find kbd{font-family:inherit;font-size:10px;font-weight:700;color:#9aa0a8;
+  background:rgba(0,0,0,.05);border-radius:5px;padding:2px 6px;letter-spacing:.02em}
+/* 이 앱은 body.light 로 밝은 테마를 쓴다 — 어두운 테마일 때만 어둡게 */
+body:not(.light) .desk-find{background:rgba(44,44,48,.55);border-color:rgba(255,255,255,.1)}
+body:not(.light) .desk-find:hover{background:rgba(54,54,58,.7)}
+body:not(.light) .desk-find>i,
+body:not(.light) .desk-find>span{color:#9ba0a8}
+body:not(.light) .desk-find kbd{color:#9ba0a8;background:rgba(255,255,255,.08)}
+.mac-deskboard{padding-top:20px}
 .mac-find{border:0;background:transparent;color:inherit;cursor:default;font-size:13px;
   padding:2px 6px;border-radius:6px;opacity:.8}
 .mac-find:hover{background:rgba(127,127,127,.2);opacity:1}
