@@ -4422,3 +4422,28 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .nt-bulk button:hover{border-color:var(--primary);color:var(--primary)}
 .nt-bulk button.danger:hover{border-color:#ef4444;color:#ef4444}
 .nt-bulk button.plain{border-color:transparent;opacity:.65}
+
+/* 시즌 단계 모듈 고르기 */
+.sp-box .sp-when{display:flex;align-items:center;gap:9px;padding:11px 18px;flex-wrap:wrap;
+  border-bottom:1px solid var(--pane-line)}
+.sp-box .sp-when label{font-size:.8rem;font-weight:700}
+.sp-box .sp-when input{font:inherit;font-size:.82rem;padding:4px 8px;border-radius:7px;
+  border:1px solid var(--card-border);background:transparent;color:inherit}
+.sp-box .sp-when span{font-size:.72rem;color:var(--text-muted)}
+.sp-list{max-height:48vh;overflow:auto;padding:6px 10px}
+.sp-row{display:flex;align-items:center;gap:9px;width:100%;padding:8px 9px;border:0;border-radius:9px;
+  background:transparent;color:inherit;cursor:pointer;text-align:left;font:inherit}
+.sp-row:hover{background:rgba(127,127,127,.08)}
+.sp-row.on{background:rgba(10,132,255,.08)}
+.sp-row b{font-size:.86rem;font-weight:700;min-width:54px}
+.sp-row i{font-size:16px}
+.sp-ck{width:16px;height:16px;border-radius:5px;flex:0 0 auto;position:relative;
+  border:1.5px solid rgba(127,127,127,.5)}
+.sp-ck.on{background:var(--primary);border-color:var(--primary)}
+.sp-ck.on::after{content:'';position:absolute;left:4.5px;top:1px;width:4px;height:8px;
+  border:solid #fff;border-width:0 2px 2px 0;transform:rotate(43deg)}
+.sp-off{font-style:normal;font-size:.72rem;color:var(--text-muted);min-width:78px}
+.sp-due{font-size:.76rem;font-weight:700;font-variant-numeric:tabular-nums;margin-left:auto}
+.sp-n{font-size:.68rem;color:var(--text-muted);min-width:30px;text-align:right}
+.sp-f{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--pane-line)}
+.sp-f span{font-size:.74rem;color:var(--text-muted);margin-right:auto}

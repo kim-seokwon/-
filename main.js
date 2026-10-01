@@ -1658,8 +1658,10 @@ class BhasApp {
 
                 await this.loadInitialData();
                 modal.style.display = 'none';
-                this.requestRender();
                 this.showToast('새 시즌이 등록되었습니다.');
+                if (!this._noteLoaded) await this.loadNotes();
+                await this.askSeasonSteps(newId);      // 바로 단계를 깔지 묻는다
+                this.requestRender();
             } catch (error) {
                 let errorMsg = error.message || '알 수 없는 오류';
                 if (error.code === '42501') errorMsg = '데이터베이스 권한(RLS)이 없습니다.';
@@ -2458,7 +2460,7 @@ class BhasApp {
         const remList = (() => {
             const t = new Date().toISOString().slice(0, 10);
             //  할 일은 '체크해서 끝내는 것' 만. 생산 작업·시즌 마감은 캘린더에만 둔다.
-            const open = allDue.filter(x => !x.done && ['rem', 'todo', 'note'].includes(x.kind)).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+            const open = allDue.filter(x => !x.done && ['rem', 'todo', 'note', 'step'].includes(x.kind)).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
             const soon = open.filter(x => x.date && x.date <= t).concat(open.filter(x => !x.date || x.date > t)).slice(0, 12);
             if (!soon.length) return '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">할 일을 넣으면 여기 모입니다</div>';
             return soon.map(x => {
@@ -3150,6 +3152,7 @@ class BhasApp {
         this.ctxMenu(ev, [
             { t: '열기', icon: 'ph-arrow-square-out', run: () => this.openSeasonItems(id) },
             { t: '속성 · 접근 권한…', icon: 'ph-info', run: () => this.folderInfo(id) },
+            { t: '단계 만들기…', icon: 'ph-list-checks', run: () => this.askSeasonSteps(id) },
             { sep: true },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameProject(id) },
             { t: '브랜드 바꾸기…', icon: 'ph-shield-check', run: () => this.moveProjectBrand(id) },
@@ -6931,6 +6934,12 @@ class BhasApp {
                 const { data: fd } = await this.supabase.from('note_folders').select('*');
                 this.noteFolders = fd || [];
             } catch (_e) { this.noteFolders = this.noteFolders || []; }
+            //  시즌 단계 모듈 (048 을 안 돌렸으면 조용히 비워 둔다)
+            try {
+                const { data: st } = await this.supabase.from('season_steps').select('*')
+                    .eq('active', true).order('sort');
+                this.seasonSteps = st || [];
+            } catch (_e) { this.seasonSteps = this.seasonSteps || []; }
         } catch (e) { this.noteList = []; this._noteLoaded = true; this.showToast('메모를 불러오지 못했습니다: ' + (e.message || e)); }
         this._noteLoading = false; this.requestRender();
     }
@@ -7627,11 +7636,28 @@ class BhasApp {
                 tag: '시즌', go: `app.openSeasonItems('${p.id}')`,
             });
         });
-        this._allNoteTodos().forEach(t => out.push({
-            date: t.due, title: t.title, sub: t.from,
-            done: t.done, color: '#30d158', kind: 'note', view: 'notes', tag: '메모',
-            go: `app.findGo('notes','${t.noteId}')`,
-        }));
+        //  날짜가 붙은 메모는 그 자체로 한 건이다 — 시즌 단계(촬영·오픈…)가 여기 해당한다
+        (this.noteList || []).forEach(n => {
+            const due = this._noteMeta(n).due;
+            if (!due) return;
+            const td = this._noteTodos(n);
+            out.push({
+                date: due, title: n.title || '메모', sub: '',
+                done: td.length ? td.every(x => x.done) : (this._noteMeta(n).status === '완료'),
+                color: '#bf5af2', kind: 'step', view: 'notes', tag: '단계',
+                go: `app.findGo('notes','${n.id}')`,
+            });
+        });
+        //  단계 메모는 위에서 한 줄로 넣었다 — 그 안의 세부까지 또 늘어놓지 않는다
+        const stepNotes = new Set((this.noteList || []).filter(n => this._noteMeta(n).due).map(n => String(n.id)));
+        this._allNoteTodos().forEach(t => {
+            if (stepNotes.has(String(t.noteId))) return;
+            out.push({
+                date: t.due, title: t.title, sub: t.from,
+                done: t.done, color: '#30d158', kind: 'note', view: 'notes', tag: '메모',
+                go: `app.findGo('notes','${t.noteId}')`,
+            });
+        });
         (this.vendors || []).forEach(v => (v.jobs || []).forEach(j => out.push({
             date: j.due_date, title: j.title || '작업', sub: v.name,
             done: j.status === 'done', color: '#6366f1', kind: 'job', view: 'vendors', tag: '생산',
@@ -8062,6 +8088,122 @@ class BhasApp {
     }
     linkFindClose() { setTimeout(() => document.getElementById('np-link-hits')?.classList.remove('on'), 150); }
 
+
+    // ── 시즌 단계 모듈 ────────────────────────────────────────
+    //  시즌을 만들면 샘플 → 제작 → 촬영 → 마케팅 → 오픈 → 출고 → 행사 가
+    //  오픈일 기준으로 날짜까지 잡힌 메모로 깔린다. 놓치는 걸 줄이려는 장치다.
+    _stepsFor(brandId) {
+        const all = (this.seasonSteps || []).filter(x => x.active !== false);
+        const mine = all.filter(x => String(x.brand_id || '') === String(brandId || ''));
+        //  그 브랜드만의 차례가 있으면 그걸 쓰고, 없으면 공통을 쓴다
+        return (mine.length ? mine : all.filter(x => !x.brand_id)).sort((a, b) => (a.sort || 0) - (b.sort || 0));
+    }
+    //  시즌을 만든 직후 부르면 '어떤 단계를 깔까' 를 묻는다
+    async askSeasonSteps(seasonId) {
+        const sea = this._seasons().find(p => String(p.id) === String(seasonId));
+        if (!sea) { this.showToast('시즌을 찾지 못했습니다'); return; }
+        if (!this.seasonSteps) {
+            try {
+                const { data } = await this.supabase.from('season_steps').select('*').eq('active', true).order('sort');
+                this.seasonSteps = data || [];
+            } catch (_e) { this.seasonSteps = []; }
+        }
+        const steps = this._stepsFor(sea.brand_id);
+        if (!steps.length) { this.showToast('단계 모듈이 없습니다 (048_season_steps.sql)'); return; }
+        this.stepPick = { id: seasonId, on: new Set(steps.filter(x => x.on_default !== false).map(x => x.id)), open: sea.deadline || '' };
+        this._paintStepPick();
+    }
+    toggleStepPick(id) {
+        if (!this.stepPick) return;
+        this.stepPick.on.has(id) ? this.stepPick.on.delete(id) : this.stepPick.on.add(id);
+        this._paintStepPick();
+    }
+    setStepOpen(v) { if (this.stepPick) { this.stepPick.open = v; this._paintStepPick(); } }
+    closeStepPick() {
+        this.stepPick = null;
+        const c = document.getElementById('global-modal-container');
+        if (c) { c.style.display = 'none'; c.innerHTML = ''; }
+    }
+    _paintStepPick() {
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        c.innerHTML = this._stepPickHTML();
+        c.style.display = 'flex';
+        c.onclick = (e) => { if (e.target === c) this.closeStepPick(); };
+    }
+    _stepDate(openYmd, off) {
+        if (!openYmd) return null;
+        const d = new Date(openYmd); if (isNaN(d)) return null;
+        d.setDate(d.getDate() + Number(off || 0));
+        return this._ymd(d);
+    }
+    //  고른 단계를 메모로 깐다 — 폴더는 브랜드, 시즌 속성이 붙고, 본문엔 할 일이 들어간다
+    async makeSeasonSteps() {
+        const pk = this.stepPick; if (!pk) return;
+        const sea = this._seasons().find(p => String(p.id) === String(pk.id)); if (!sea) return;
+        const brand = (mockData.brands || []).find(b => String(b.id) === String(sea.brand_id));
+        const steps = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
+        if (!steps.length) { this.showToast('고른 단계가 없습니다'); return; }
+        const folder = brand ? brand.name : '공용';
+        const me = this.currentUser?.name || null;
+        const rows = steps.map(st => {
+            const due = this._stepDate(pk.open, st.offset_days);
+            const meta = { proj: String(sea.id), status: '요청' };
+            if (due) meta.due = due;
+            const body = (st.checklist || []).map(c => `[ ] ${c}`).join('\n');
+            return {
+                title: `${sea.name} · ${st.name}`,
+                body: this._joinNote(meta, body),
+                folder, scope: 'shared', product_id: sea.id,
+                owner: this._me(), created_by: me,
+            };
+        });
+        try {
+            const { data, error } = await this.supabase.from('notes').insert(rows).select();
+            if (error) throw error;
+            this.noteList = [...(data || []), ...(this.noteList || [])];
+            this.stepPick = null;
+            this.noteFolder = 'f:' + folder; this.noteSea = String(sea.id);
+            this.closeStepPick();
+            this.showToast(`${sea.name} 단계 ${rows.length}개를 만들었습니다`);
+            this.switchView('notes');
+        } catch (e) { this.showToast('만들지 못했습니다: ' + (e.message || e)); }
+    }
+    //  단계 고르기 판
+    _stepPickHTML() {
+        const pk = this.stepPick; if (!pk) return '';
+        const esc = s => this._vesc(s);
+        const sea = this._seasons().find(p => String(p.id) === String(pk.id));
+        if (!sea) return '';
+        const brand = (mockData.brands || []).find(b => String(b.id) === String(sea.brand_id));
+        const steps = this._stepsFor(sea.brand_id);
+        const row = (st) => {
+            const on = pk.on.has(st.id);
+            const due = this._stepDate(pk.open, st.offset_days);
+            const off = Number(st.offset_days || 0);
+            return `<button class="sp-row${on ? ' on' : ''}" onclick="app.toggleStepPick('${st.id}')">
+                <span class="sp-ck${on ? ' on' : ''}"></span>
+                <i class="ph ${st.icon || 'ph-circle'}" style="color:${st.color || '#8e8e93'}"></i>
+                <b>${esc(st.name)}</b>
+                <em class="sp-off">${off === 0 ? '오픈일' : (off < 0 ? `오픈 ${-off}일 전` : `오픈 ${off}일 뒤`)}</em>
+                <span class="sp-due">${due || '날짜 미정'}</span>
+                <span class="sp-n">${(st.checklist || []).length}개</span>
+            </button>`;
+        };
+        return `<div class="modal-content vmodal sp-box" style="width:94%;max-width:520px">
+                <div class="hk-top"><b>${esc(brand ? brand.name + ' · ' : '')}${esc(sea.name)} 단계 만들기</b>
+                    <button class="fi-x" onclick="app.closeStepPick()">×</button></div>
+                <div class="sp-when">
+                    <label>오픈일</label>
+                    <input type="date" value="${esc(pk.open || '')}" onchange="app.setStepOpen(this.value)">
+                    <span>이 날을 기준으로 앞뒤 날짜가 잡힙니다</span>
+                </div>
+                <div class="sp-list">${steps.map(row).join('')}</div>
+                <div class="sp-f">
+                    <span>${pk.on.size}개를 메모로 만듭니다 · 각 메모 안에 할 일이 들어갑니다</span>
+                    <button class="mbtn pri" onclick="app.makeSeasonSteps()">만들기</button>
+                </div>
+        </div>`;
+    }
     // ── 메모 여러 개 고르기 — 끌어서 훑고, 한번에 옮기거나 지운다 ──
     _picked() { if (!(this.noteMulti instanceof Set)) this.noteMulti = new Set(); return this.noteMulti; }
     clearNotePick() { this.noteMulti = new Set(); this.requestRender(); }
@@ -10546,6 +10688,7 @@ class BhasApp {
     // ── 캘린더 (맥 캘린더 그대로 · 분류 / 달력 / 그날 일정) ─────
     CAL_SRC = [
         { k: 'rem',  t: '할 일',      c: '#ff9f0a' },
+        { k: 'step', t: '시즌 단계',   c: '#bf5af2' },
         { k: 'todo', t: '시즌 할 일',  c: '#0a84ff' },
         { k: 'note', t: '메모 체크',   c: '#30d158' },
         { k: 'job',  t: '생산 작업',   c: '#6366f1' },
