@@ -2734,7 +2734,8 @@ class BhasApp {
         //  지출은 판매가 아니다 — 매출의 짝이라 '정산' 안에서 전환한다(숨은 탭).
         { head: 'orders', label: '판매', tabs: [
             { k: 'orders', t: '주문' }, { k: 'cs', t: 'CS' }, { k: 'inventory', t: '재고' },
-            { k: 'sales', t: '정산' }, { k: 'expenses', t: '지출', hidden: true },
+            { k: 'sales', t: '정산' }, { k: 'analysis', t: '고객 분석' },
+            { k: 'expenses', t: '지출', hidden: true },
         ] },
         // 만드는 쪽 — 견적 내고, 샘플 뜨고, 작업지시서 쓰고, 생산처가 만든다
         { head: 'items', label: '생산', tabs: [
@@ -2747,7 +2748,7 @@ class BhasApp {
     // 묶음 앱의 첫 칸 — 가로 탭 대신 세로 분류 목록(메모·자료실과 같은 결)
     APP_ICONS = {
         orders: 'ph-shopping-bag-open', cs: 'ph-arrows-counter-clockwise', inventory: 'ph-package',
-        sales: 'ph-chart-line-up', expenses: 'ph-credit-card',
+        sales: 'ph-chart-line-up', expenses: 'ph-credit-card', analysis: 'ph-crown-simple',
         items: 'ph-t-shirt', dashboard: 'ph-calendar-blank', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
         sample_maker: 'ph-scissors', quotes: 'ph-receipt',
     };
@@ -3970,7 +3971,7 @@ class BhasApp {
         } else if (this.currentView === 'sales') {
             return this._appShell('sales', this.renderSales());
         } else if (this.currentView === 'analysis') {
-            return this.renderAnalysis();
+            return this._appShell('analysis', this.renderAnalysis());
         } else if (this.currentView === 'notes') {
             return this.renderNotes();
         } else if (this.currentView === 'reminders') {
@@ -4692,14 +4693,20 @@ class BhasApp {
             </div>
         </div>` : '';
         return `<div class="mp">
-            ${this._mpTop('고객 분석', bf ? `${this._vesc(bf)} · ${range.label} · 주문 ${orderCnt.toLocaleString()}건 — 브랜드마다 고객이 달라 통합하지 않습니다` : '브랜드를 선택하세요', `
-                    <select onchange="app.setAnalysisPeriod(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
+            ${this._mpTop('고객 분석', bf ? `${this._vesc(bf)} · ${range.label} · 주문 ${orderCnt.toLocaleString()}건` : '브랜드를 고르세요', `
+                    <select class="it-sel it-season" onchange="app.setAnalysisPeriod(this.value)">
                         ${periods.map(([v, l]) => `<option value="${v}" ${curP === v ? 'selected' : ''}>${l}</option>`).join('')}
                     </select>`)}
+            <div class="it-pills">
+                ${names.length ? names.map(n => `<button class="it-pill${bf === n ? ' on' : ''}"
+                    onclick="app.setAnalysisBrand('${this._vesc(n).replace(/'/g, "\\'")}')">${this._vesc(n)}</button>`).join('')
+                  : '<span class="mu" style="font-size:11.5px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다</span>'}
+                <span class="pill-sp"></span>
+                <span class="sync-b">브랜드마다 고객이 달라 통합하지 않습니다</span>
+            </div>
             <div class="mp-body">
-            <div class="analysis-layout" style="display:flex;gap:1.3rem;align-items:flex-start">
-                ${names.length ? this._brandRail(names.map(n => ({ value: n, label: this._vesc(n), active: bf === n, onclick: `app.setAnalysisBrand('${this._vesc(n).replace(/'/g, "\\'")}')` }))) : `<div class="analysis-brandbar" style="width:154px;flex-shrink:0"><div style="font-size:0.8rem;color:var(--text-muted);padding:6px 4px">브랜드 없음</div></div>`}
-                <div class="analysis-content" style="flex:1;min-width:0">
+            <div class="analysis-layout" style="display:block">
+                <div class="analysis-content" style="min-width:0">
                     ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
                 </div>
             </div>
