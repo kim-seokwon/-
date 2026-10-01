@@ -2833,6 +2833,124 @@ class BhasApp {
         items: 'ph-t-shirt', dashboard: 'ph-calendar-blank', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
         sample_maker: 'ph-scissors', quotes: 'ph-receipt',
     };
+    // ── 1단 '보기' 트리 — 화면마다 묶어 보는 방식 ──────────────
+    //  2단(표)에서 깔때기로 더 좁히면 되니, 여기는 큰 갈래만 둔다.
+    _navRow(on, label, count, click, depth, color) {
+        const esc = s => this._vesc(s);
+        return `<div class="m3-s nav${on ? ' on' : ''}${depth ? ' d1' : ''}" onclick="${click}">
+            ${depth ? `<i class="ph-fill ph-circle" style="font-size:7px;color:${color || '#8e8e93'}"></i>`
+                    : `<i class="ph ${color || 'ph-squares-four'}" style="color:#0a84ff"></i>`}
+            <span>${esc(label)}</span><em>${count == null ? '' : count}</em></div>`;
+    }
+    _navSec(name, key, inner) {
+        const open = (this.navOpen || {})[key] !== false;
+        return `<div class="m3-h tog${open ? ' on' : ''}" onclick="app.toggleNav('${key}')">
+            <i class="ph ph-caret-right"></i>${this._vesc(name)}</div>${open ? inner : ''}`;
+    }
+    toggleNav(k) {
+        this.navOpen = this.navOpen || {};
+        this.navOpen[k] = this.navOpen[k] === false;
+        this.requestRender();
+    }
+    navPick(view, kind, id) {
+        const R = this._navRow;
+        if (view === 'orders') {
+            if (kind === 'st') { this.orderFilter = id; this.orderMall = 'ALL'; }
+            else { this.orderMall = id; this.orderFilter = 'all'; }
+        } else if (view === 'cs') {
+            if (kind === 'st') { this.csFilter = id; this.csKind = 'ALL'; this.csBrand = 'ALL'; }
+            else if (kind === 'kind') { this.csKind = id; this.csFilter = '전체'; this.csBrand = 'ALL'; }
+            else { this.csBrand = id; this.csFilter = '전체'; this.csKind = 'ALL'; }
+        } else if (view === 'inventory') {
+            if (kind === 'low') { this.invLow = true; this.invSelectedBrand = 'all'; }
+            else { this.invSelectedBrand = id; this.invLow = false; }
+        } else if (view === 'expenses') {
+            if (kind === 'co') { this.expCoFilter = id; }
+            else { this.expMonth = id; this.expCoFilter = 'ALL'; }
+        } else if (view === 'quotes') {
+            if (kind === 'st') { this.quoteStatus = id; this.quoteClient = 'ALL'; }
+            else { this.quoteClient = id; this.quoteStatus = 'ALL'; }
+        }
+        this.requestRender();
+    }
+    _viewNav(view) {
+        const R = (...a) => this._navRow(...a);
+        const S = (...a) => this._navSec(...a);
+        const esc = s => this._vesc(s);
+        const brands = (mockData.brands || []);
+
+        if (view === 'items') return this._itemNav();
+
+        if (view === 'orders') {
+            const all = this.orders || [];
+            const f = this.orderFilter || 'target', m = this.orderMall || 'ALL';
+            const n = (fn) => all.filter(fn).length;
+            const malls = [...new Set(all.map(o => o.mall_key).filter(Boolean))];
+            const mallName = k => ((this._mallBrand(k) || {}).name) || k;
+            return `<div class="m3-h">보기</div>
+                ${R(m === 'ALL' && f === 'target', '배송대상', n(o => o.status === 'new' || o.status === 'ready'), `app.navPick('orders','st','target')`, 0, 'ph-package')}
+                ${R(m === 'ALL' && f === 'shipping', '배송중', n(o => o.status === 'shipping'), `app.navPick('orders','st','shipping')`, 0, 'ph-truck')}
+                ${R(m === 'ALL' && f === 'done', '완료', n(o => o.status === 'done'), `app.navPick('orders','st','done')`, 0, 'ph-check-circle')}
+                ${R(m === 'ALL' && f === 'all', '전체', all.length, `app.navPick('orders','st','all')`, 0, 'ph-tray')}
+                ${S('몰별', 'omall', malls.map(k => R(String(m) === String(k), mallName(k),
+                    n(o => o.mall_key === k), `app.navPick('orders','mall','${esc(k)}')`, 1)).join(''))}`;
+        }
+
+        if (view === 'cs') {
+            const all = this.csList || [];
+            const f = this.csFilter || '진행중', k2 = this.csKind || 'ALL', b2 = this.csBrand || 'ALL';
+            const n = (fn) => all.filter(fn).length;
+            return `<div class="m3-h">보기</div>
+                ${R(f === '진행중' && k2 === 'ALL' && b2 === 'ALL', '진행 중', n(t => t.status !== '완료'), `app.navPick('cs','st','진행중')`, 0, 'ph-hourglass')}
+                ${R(f === '전체' && k2 === 'ALL' && b2 === 'ALL', '전체', all.length, `app.navPick('cs','st','전체')`, 0, 'ph-tray')}
+                ${S('유형별', 'cskind', this.CS_KINDS.map(x => R(k2 === x, x,
+                    n(t => t.kind === x), `app.navPick('cs','kind','${esc(x)}')`, 1)).join(''))}
+                ${S('브랜드별', 'csbrd', brands.map(b => R(String(b2) === String(b.id), b.name,
+                    n(t => String(t.brand_id) === String(b.id)), `app.navPick('cs','brd','${b.id}')`, 1, b.brand_color)).join(''))}`;
+        }
+
+        if (view === 'inventory') {
+            const inv = (this.inventory && this.inventory.items) || [];
+            const cur = this.invSelectedBrand || 'all', low = !!this.invLow;
+            const n = (fn) => inv.filter(fn).length;
+            return `<div class="m3-h">보기</div>
+                ${R(!low && cur === 'all', '전체', inv.length, `app.navPick('inventory','brd','all')`, 0, 'ph-tray')}
+                ${R(low, '재발주 필요', n(i => i.on_hand <= i.safety_stock), `app.navPick('inventory','low')`, 0, 'ph-warning-diamond')}
+                ${S('브랜드별', 'invbrd', brands.map(b => R(!low && String(cur) === String(b.id), b.name,
+                    n(i => String(i.brand_id) === String(b.id)), `app.navPick('inventory','brd','${b.id}')`, 1, b.brand_color)).join(''))}`;
+        }
+
+        if (view === 'expenses') {
+            const all = this.expList || [];
+            const months = [...new Set(all.map(e => (e.spent_on || '').slice(0, 7)).filter(Boolean))].sort().reverse();
+            const cm = this.expMonth || months[0] || '';
+            const co = this.expCoFilter || 'ALL';
+            const inM = all.filter(e => (e.spent_on || '').startsWith(cm));
+            const cos = [...new Set(inM.map(e => e.company || '미지정'))];
+            return `<div class="m3-h">보기</div>
+                ${R(co === 'ALL', `${cm} 전체`, inM.length, `app.navPick('expenses','co','ALL')`, 0, 'ph-tray')}
+                ${S('회사별', 'expco', cos.map(c => R(co === c, c,
+                    inM.filter(e => (e.company || '미지정') === c).length, `app.navPick('expenses','co','${esc(c)}')`, 1)).join(''))}
+                ${S('달별', 'expm', months.slice(0, 18).map(m => R(cm === m, m,
+                    all.filter(e => (e.spent_on || '').startsWith(m)).length, `app.navPick('expenses','m','${m}')`, 1)).join(''))}`;
+        }
+
+        if (view === 'quotes') {
+            const all = this.quotes || [];
+            const st = this.quoteStatus || 'ALL', cl = this.quoteClient || 'ALL';
+            const n = (fn) => all.filter(fn).length;
+            const clients = [...new Set(all.map(q => q.client_name).filter(Boolean))];
+            const STS = [['draft', '작성중'], ['sent', '발송'], ['confirmed', '확정']];
+            return `<div class="m3-h">보기</div>
+                ${R(st === 'ALL' && cl === 'ALL', '전체', all.length, `app.navPick('quotes','st','ALL')`, 0, 'ph-tray')}
+                ${S('상태별', 'qst', STS.map(([v, t]) => R(st === v, t,
+                    n(q => (q.status || 'draft') === v), `app.navPick('quotes','st','${v}')`, 1)).join(''))}
+                ${S('고객사별', 'qcl', clients.slice(0, 40).map(c => R(cl === c, c,
+                    n(q => q.client_name === c), `app.navPick('quotes','cl','${esc(c)}')`, 1)).join(''))}`;
+        }
+        return '';
+    }
+
     //  제품리스트 1단 — 보는 방식(전체 · 시즌별 · 브랜드별)
     _itemNav() {
         const esc = s => this._vesc(s);
@@ -2883,7 +3001,7 @@ class BhasApp {
                 return `<div class="m3-s${on ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
                 <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}" style="color:#0a84ff"></i><span>${esc(t.t)}</span></div>`;
             }).join('')}
-            ${view === 'items' ? this._itemNav() : ''}
+            ${this._viewNav(view)}
         </aside>`;
     }
     // 분류 칸 + 본문을 한 틀에 담는다
@@ -8100,6 +8218,8 @@ class BhasApp {
         if (filter === '진행중') list = all.filter(isOpen);
         else if (filter === '교환') list = all.filter(t => t.kind === '교환');
         else if (filter === '반품') list = all.filter(t => t.kind === '반품');
+        if ((this.csKind || 'ALL') !== 'ALL') list = list.filter(t => t.kind === this.csKind);
+        if ((this.csBrand || 'ALL') !== 'ALL') list = list.filter(t => String(t.brand_id) === String(this.csBrand));
         if (q) list = list.filter(t => [t.customer_name, t.order_no, t.product_name, t.memo].some(v => (v || '').includes(q)));
 
         const ym = new Date().toISOString().slice(0, 7);
@@ -8214,7 +8334,8 @@ class BhasApp {
         const all = this.expList || [];
         const months = [...new Set(all.map(e => (e.spent_on || '').slice(0, 7)).filter(Boolean))].sort().reverse();
         const month = this.expMonth || months[0] || new Date().toISOString().slice(0, 7);
-        const list = all.filter(e => (e.spent_on || '').startsWith(month));
+        let list = all.filter(e => (e.spent_on || '').startsWith(month));
+        if ((this.expCoFilter || 'ALL') !== 'ALL') list = list.filter(e => (e.company || '미지정') === this.expCoFilter);
         const total = list.reduce((s, e) => s + Number(e.amount || 0), 0);
         const byCo = {};
         list.forEach(e => { const k = e.company || '미지정'; byCo[k] = (byCo[k] || 0) + Number(e.amount || 0); });
@@ -8489,7 +8610,9 @@ class BhasApp {
     renderOrders() {
         if (!this._ordersLoaded) return this._loadingSkeleton('주문');
         const filter = this.orderFilter || 'target';
-        const all = this.orders || [];
+        let all = this.orders || [];
+        const mallF = this.orderMall || 'ALL';
+        if (mallF !== 'ALL') all = all.filter(o => o.mall_key === mallF);
         const counts = {
             target: all.filter(o => o.status === 'new' || o.status === 'ready').length,
             shipping: all.filter(o => o.status === 'shipping').length,
@@ -8859,6 +8982,7 @@ class BhasApp {
         const listingOf = (itemId) => (inv.listings || []).find(l => l.channel === 'cafe24' && l.inventory_item_id === itemId);
         let items = inv.items;
         if (this.invSelectedBrand && this.invSelectedBrand !== 'all') items = items.filter(i => i.brand_id === this.invSelectedBrand);
+        if (this.invLow) items = items.filter(i => i.on_hand <= i.safety_stock);
 
         const ls = inv.lastSync;
         const syncBadge = ls
@@ -11961,7 +12085,9 @@ class BhasApp {
     }
     renderQuotes() {
         if (!this._quotesLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">견적을 불러오는 중...</div>`;
-        const qs = this.quotes || [];
+        let qs = this.quotes || [];
+        if ((this.quoteStatus || 'ALL') !== 'ALL') qs = qs.filter(q => (q.status || 'draft') === this.quoteStatus);
+        if ((this.quoteClient || 'ALL') !== 'ALL') qs = qs.filter(q => q.client_name === this.quoteClient);
         const stc = st => st === 'confirmed' ? '#30d158' : (st === 'sent' ? '#0a84ff' : '#ff9f0a');
         const rows = qs.map(q => {
             const it = (this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id));
