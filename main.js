@@ -7147,6 +7147,7 @@ class BhasApp {
             all:   x => !x.done,
             late:  x => !x.done && x.due && x.due < today,
             mine:  x => !x.done && x.src === 'todo' && x.assignee === me,
+            nodate: x => !x.done && !x.due,
             done:  x => x.done,
         };
         const cur = this.remList2 || 'today';
@@ -7155,6 +7156,7 @@ class BhasApp {
             { k: 'plan',  label: '예정',  icon: 'ph-calendar-dots',  cls: 'red' },
             { k: 'all',   label: '전체',  icon: 'ph-tray',           cls: 'dark' },
             { k: 'late',  label: '지연',  icon: 'ph-flag',           cls: 'orange' },
+            { k: 'nodate', label: '날짜 없음', icon: 'ph-calendar-x', cls: 'pink' },
             { k: 'mine',  label: '내 할 일', icon: 'ph-user',        cls: 'pink' },
             { k: 'done',  label: '완료됨', icon: 'ph-check',         cls: 'gray' },
         ];
