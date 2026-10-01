@@ -7785,10 +7785,21 @@ class BhasApp {
         this._nbSync(); this._nbGrow(ta); this.noteTyping(); this._nbSave();
     }
     nbKey(ev) {
-        if (this._atHits) { this.noteKey(ev); return; }
+        //  @ 목록이 떠 있으면 Enter·Tab 은 '고르기' 다. 줄을 넘기지 않는다.
+        //  한글은 조합 중에 Enter 가 오기도 해서 _atHits 말고 화면에 뜬 목록으로 본다.
+        if (document.getElementById('at-pop') && this._atHits && this._atHits.length) {
+            if (ev.key === 'Enter' || ev.key === 'Tab') {
+                ev.preventDefault(); ev.stopPropagation();
+                this.pickAt(this._atSel || 0);
+                return;
+            }
+            if (['ArrowDown', 'ArrowUp', 'Escape'].includes(ev.key)) { this.noteKey(ev); return; }
+        }
+        //  한글을 조합하는 중의 Enter 는 '글자 확정' 이다 — 줄을 넘기면 안 된다
+        if (ev.isComposing || ev.keyCode === 229) return;
         const ta = ev.target, i = this.nbLine, L = this._nbLines;
         if (i == null || !L) return;
-        if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {
+        if (ev.key === 'Enter' && !ev.shiftKey) {
             ev.preventDefault();
             const pre = this._nbPre || '', at = ta.selectionStart;
             if (pre && !ta.value.trim()) { L[i] = ''; this._nbPre = ''; this._nbCaret = 0; }   // 빈 할 일에서 Enter → 네모를 뗀다
@@ -8095,7 +8106,7 @@ class BhasApp {
     closeAtPop() { document.getElementById('at-pop')?.remove(); this._atHits = null; }
     pickAt(i) {
         const ta = this._nbTA(); if (!ta || !this._atHits) return;
-        const h = this._atHits[i]; if (!h) return;
+        const h = this._atHits[i] || this._atHits[0]; if (!h) return;
         const end = ta.selectionStart;
         ta.value = ta.value.slice(0, this._atStart) + '@' + h.n + ' ' + ta.value.slice(end);
         const np = this._atStart + h.n.length + 2;
