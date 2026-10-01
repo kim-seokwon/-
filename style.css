@@ -3285,19 +3285,6 @@ body:not(.light) .mac-deskboard .glass{
 
 /* 독 맨 왼쪽 전체 메뉴 단추 */
 /* 우리가 그린 맥 결 아이콘 — 흰 둥근 사각형 + 기호 하나 */
-.apic{width:47px;height:47px;border-radius:11.3px;display:grid;place-items:center;overflow:hidden;
-  background:var(--bg);position:relative;
-  box-shadow:inset 0 0 0 .5px rgba(0,0,0,.10),inset 0 1px 0 rgba(255,255,255,.95),
-             inset 0 -1px 0 rgba(0,0,0,.05),0 3px 8px rgba(0,0,0,.26)}
-.ap-sv{width:26px;height:26px;display:block}
-/* 런치패드 — 색색 네모 아홉 */
-.ap-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3.4px;width:29px;height:29px}
-.ap-grid i{display:block;border-radius:3px;box-shadow:inset 0 .5px 0 rgba(255,255,255,.55)}
-/* 캘린더 — 오늘 날짜 */
-.ap-cal{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  width:100%;height:100%;line-height:1;gap:1px;padding-top:1px}
-.ap-cal em{font-style:normal;font-size:8px;font-weight:800;color:#ff453a;letter-spacing:-.03em;line-height:1}
-.ap-cal b{font-size:21px;font-weight:400;color:#111;letter-spacing:-.05em;line-height:1}
 /* 전체 메뉴 — 런치패드 */
 .launcher{position:fixed;inset:0;z-index:6000;display:flex;flex-direction:column;align-items:center;
   padding:64px 24px 40px;overflow:auto;
