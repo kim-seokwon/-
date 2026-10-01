@@ -153,7 +153,88 @@ async function trends() {
   } catch (e) { console.log(`· 데이터랩 실패: ${e.message.slice(0, 80)}`); }
 }
 
+
+// ── ④ 구글 뉴스 RSS — 키가 없어도 도는 단계 ────────────────
+//  공개 RSS 라 발급받을 게 없다. 브랜드 이름으로 한 번, 업계 말머리로 한 번.
+//  네이버·인스타 키가 들어오기 전까지 뉴스 칸을 채우는 건 이쪽이다.
+function parseRss(xml) {
+  const un = (v) => String(v || '')
+    .replace(/^\s*<!\[CDATA\[/, '').replace(/\]\]>\s*$/, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  return xml.split('<item>').slice(1).map((ch) => {
+    const tag = (t) => {
+      const m = ch.match(new RegExp(`<${t}[^>]*>([\\s\\S]*?)</${t}>`));
+      return m ? un(m[1]).trim() : '';
+    };
+    const title = tag('title');
+    const outlet = tag('source');
+    return {
+      title: outlet && title.endsWith(' - ' + outlet) ? title.slice(0, -(outlet.length + 3)) : title,
+      url: tag('link'),
+      outlet: outlet || null,
+      pub: tag('pubDate'),
+      desc: strip(tag('description')).slice(0, 300),
+    };
+  }).filter((x) => x.title && x.url);
+}
+
+async function googleNews() {
+  const brands = await rest('brands?select=id,name&status=neq.closed');
+  const words = (E.NEWS_KEYWORDS || '아동복,유아복,키즈 패션,패션 리테일,의류 생산')
+    .split(',').map((x) => x.trim()).filter(Boolean).slice(0, 8);
+  //  [검색어, kind, brand_id] — 브랜드 이름은 '우리 후기', 말머리는 '트렌드·행사'
+  const jobs = [
+    ...brands.map((b) => [b.name, 'review', b.id]),
+    ...words.map((w) => [w, 'news', null]),
+  ];
+  //  일반 검색은 잡음이 심하다 — '아동복' 이 '아동복지시설' 을, '토비' 가 텔레토비를 긁어온다.
+  //  업계 매체로 한정하면 거의 사라진다. 매체를 늘리려면 NEWS_SITES 에 도메인을 적는다.
+  const sites = (E.NEWS_SITES || 'fashionbiz.co.kr,apparelnews.co.kr,fpost.co.kr,fashionn.com,okfashion.co.kr,ktnews.com')
+    .split(',').map((x) => x.trim()).filter(Boolean);
+  const MED = `(${sites.map((d) => 'site:' + d).join(' OR ')})`;
+  const qOf = (q) => `"${q}" ${MED} when:21d`;
+  //  브랜드 이름은 말 속에 묻혀 들어오면 안 된다 — 텔레토'비' 가 '토비' 로 잡히는 식이다.
+  //  앞뒤에 글자가 붙어 있으면 버린다. 업계 말머리는 매체가 이미 업계라 거르지 않는다.
+  const hasWord = (txt, q) => {
+    const t = String(txt || '').replace(/\s+/g, '');
+    return q.split(/\s+/).filter(Boolean).every((w) => {
+      for (let i = t.indexOf(w); i >= 0; i = t.indexOf(w, i + 1)) {
+        const before = t[i - 1] || '';
+        const after = t.slice(i + w.length, i + w.length + 2);
+        if (!/[가-힣A-Za-z]/.test(before) && !/^(지|지시설|지사|지관)/.test(after)) return true;
+      }
+      return false;
+    });
+  };
+  const rows = [];
+  for (const [q, kind, brand_id] of jobs) {
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(qOf(q))}&hl=ko&gl=KR&ceid=KR:ko`;
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bhas-news/1.0)' } });
+      if (!r.ok) { console.log(`· 구글뉴스 '${q}' → ${r.status}`); continue; }
+      const all = parseRss(await r.text());
+      //  업계 매체 피드는 그 자체가 쓸모 있다 — 말머리가 안 박혀 있어도 받는다.
+      //  브랜드 이름만 엄격히 본다(엉뚱한 기사가 '우리 후기' 로 들어오면 안 된다).
+      const got = (kind === 'review' ? all.filter((i) => hasWord(i.title + ' ' + i.desc, q)) : all).slice(0, 20);
+      got.forEach((i) => rows.push({
+        kind, source: 'google_news', brand_id,
+        title: i.title, snippet: i.desc, url: i.url, author: i.outlet,
+        published_at: i.pub ? new Date(i.pub).toISOString() : null,
+        meta: { q },
+      }));
+      console.log(`· 구글뉴스 '${q}' ${got.length}건 (받은 것 ${all.length})`);
+    } catch (e) { console.log(`· 구글뉴스 '${q}' 실패: ${e.message.slice(0, 80)}`); }
+  }
+  //  같은 기사가 두 말머리에 걸리면 뒤엣것은 버린다 (unique(kind,url))
+  const seen = new Set();
+  const uniq = rows.filter((x) => { const k = x.kind + '|' + x.url; if (seen.has(k)) return false; seen.add(k); return true; });
+  await upsert('news_items', uniq, 'kind,url');
+  console.log(`· 구글뉴스 모두 ${uniq.length}건`);
+}
+
 await competitors();
 await reviews();
+await googleNews();
 await trends();
 console.log('끝');

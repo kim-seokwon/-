@@ -11083,10 +11083,12 @@ class BhasApp {
         const esc = s => this._vesc(s);
         const items = this.newsItems || [];
         const comps = this.competitors || [];
-        const cur = this.newsTab || 'competitor';
+        const n_ = (k) => items.filter(i => k === 'trend' ? (i.kind === 'trend' || i.kind === 'news') : i.kind === (k === 'competitor' ? 'competitor_post' : 'review')).length;
+        //  빈 칸을 먼저 보여주지 않는다 — 들어온 게 있는 칸으로 연다
+        const cur = this.newsTab || ['competitor', 'review', 'trend'].find(k => n_(k)) || 'competitor';
         const q = (this.newsQ || '').trim().toLowerCase();
         const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스',
-                      google: '구글', instagram: '인스타그램', datalab: '데이터랩' };
+                      google: '구글', google_news: '구글 뉴스', instagram: '인스타그램', datalab: '데이터랩' };
         const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '';
         const brandOf = id => (mockData.brands || []).find(b => b.id === id)?.name || '';
 
@@ -11120,9 +11122,9 @@ class BhasApp {
         <div class="m3 wide">
             <aside class="m3-side">
                 <div class="m3-h">뉴스</div>
-                ${side('competitor', '경쟁사 소식', 'ph-users-three', items.filter(i => i.kind === 'competitor_post').length)}
-                ${side('review', '우리 후기', 'ph-chat-circle-text', items.filter(i => i.kind === 'review').length)}
-                ${side('trend', '트렌드·행사', 'ph-trend-up', items.filter(i => i.kind === 'trend' || i.kind === 'news').length)}
+                ${side('competitor', '경쟁사 소식', 'ph-users-three', n_('competitor'))}
+                ${side('review', '우리 후기', 'ph-chat-circle-text', n_('review'))}
+                ${side('trend', '업계 뉴스', 'ph-trend-up', n_('trend'))}
                 <div class="m3-h">지켜보는 곳
                     <button class="nt-add" title="경쟁사 추가" onclick="app.addCompetitor()">＋</button></div>
                 ${comps.length ? comps.map(c => `<div class="m3-s" oncontextmenu="app.compMenu(event,'${c.id}')">
@@ -11130,7 +11132,7 @@ class BhasApp {
                   : '<div style="padding:6px 10px;font-size:12px;color:var(--text-muted)">＋로 경쟁사를 넣으세요</div>'}
             </aside>
             <section class="m3-list">
-                <div class="m3-lbar"><div><b>${cur === 'competitor' ? '경쟁사 소식' : (cur === 'review' ? '우리 후기' : '트렌드·행사')}</b>
+                <div class="m3-lbar"><div><b>${cur === 'competitor' ? '경쟁사 소식' : (cur === 'review' ? '우리 후기' : '업계 뉴스')}</b>
                     <span>${list.length}건</span></div></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
                     <input placeholder="찾기" value="${esc(this.newsQ || '')}" oninput="app.newsQ=this.value;app.requestRender()"></div>
