@@ -4277,3 +4277,13 @@ body:not(.light) .ntoast .nt-ac button.pri{background:#0a84ff;color:#fff}
   font-weight:700;border-radius:99px;padding:2px 9px;cursor:default;white-space:nowrap}
 .flt-off:hover{background:rgba(10,132,255,.24)}
 .macwin .th-f,.macwin .flt-off,.macwin .colf-h button{box-shadow:none !important;border:0 !important}
+
+/* 1단의 '보기' 트리 */
+.appside .m3-h.tog{display:flex;align-items:center;gap:4px;cursor:default;user-select:none}
+.appside .m3-h.tog>i{font-size:10px;opacity:.65;transition:transform .12s ease}
+.appside .m3-h.tog.on>i{transform:rotate(90deg)}
+.m3-s.nav{font-size:12.5px}
+.m3-s.nav em{font-style:normal;font-size:10.5px;color:var(--text-muted);margin-left:auto}
+.m3-s.nav.d1{padding-left:22px}
+.m3-s.nav.d1 span{font-size:12px}
+.m3-s.nav>i{flex:0 0 auto}

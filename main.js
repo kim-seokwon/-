@@ -2819,7 +2819,8 @@ class BhasApp {
         ] },
         // 만드는 쪽 — 견적 내고, 샘플 뜨고, 작업지시서 쓰고, 생산처가 만든다
         { head: 'items', label: '생산', tabs: [
-            { k: 'items', t: '제품리스트' }, { k: 'dashboard', t: '시즌' }, { k: 'vendors', t: '생산현황' },
+            { k: 'items', t: '제품리스트' }, { k: 'vendors', t: '생산현황' },
+            { k: 'dashboard', t: '시즌', hidden: true },
             { k: 'tech_packs', t: '작업지시서' }, { k: 'sample_maker', t: '샘플·디자인' },
             { k: 'quotes', t: '견적' },
         ] },
@@ -2832,6 +2833,45 @@ class BhasApp {
         items: 'ph-t-shirt', dashboard: 'ph-calendar-blank', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
         sample_maker: 'ph-scissors', quotes: 'ph-receipt',
     };
+    //  제품리스트 1단 — 보는 방식(전체 · 시즌별 · 브랜드별)
+    _itemNav() {
+        const esc = s => this._vesc(s);
+        const items = this.pItems || [];
+        const sea = this._seasons();
+        const brands = (mockData.brands || []);
+        const curS = this.itemSeason || 'ALL', curB = this.itemBrand || 'ALL';
+        const n = (f) => items.filter(f).length;
+        const row = (on, label, count, click, depth, color) =>
+            `<div class="m3-s nav${on ? ' on' : ''}${depth ? ' d1' : ''}" onclick="${click}">
+                ${depth ? `<i class="ph-fill ph-circle" style="font-size:7px;color:${color || '#8e8e93'}"></i>`
+                        : `<i class="ph ph-squares-four" style="color:#0a84ff"></i>`}
+                <span>${esc(label)}</span><em>${count}</em></div>`;
+        const sec = (name, key, inner) => {
+            const open = (this.itemNavOpen || {})[key] !== false;
+            return `<div class="m3-h tog${open ? ' on' : ''}" onclick="app.toggleItemNav('${key}')">
+                <i class="ph ph-caret-right"></i>${esc(name)}</div>${open ? inner : ''}`;
+        };
+        return `<div class="m3-h">보기</div>
+            ${row(curS === 'ALL' && curB === 'ALL', '전체', items.length, "app.itemNavPick('all')")}
+            ${sec('시즌별', 'sea', sea.map(p => row(String(curS) === String(p.id), p.name,
+                n(i => String(i.product_id) === String(p.id)), `app.itemNavPick('sea','${p.id}')`, 1,
+                (brands.find(b => b.id === p.brand_id) || {}).brand_color)).join('')
+                + (n(i => !i.product_id) ? row(curS === 'NONE', '시즌 없음', n(i => !i.product_id), "app.itemNavPick('sea','NONE')", 1) : ''))}
+            ${sec('브랜드별', 'brd', brands.map(b => row(String(curB) === String(b.id), b.name,
+                n(i => String(i.brand_id) === String(b.id)), `app.itemNavPick('brd','${b.id}')`, 1, b.brand_color)).join('')
+                + (n(i => !i.brand_id) ? row(curB === 'NONE', '브랜드 없음', n(i => !i.brand_id), "app.itemNavPick('brd','NONE')", 1) : ''))}`;
+    }
+    toggleItemNav(k) {
+        this.itemNavOpen = this.itemNavOpen || {};
+        this.itemNavOpen[k] = this.itemNavOpen[k] === false;
+        this.requestRender();
+    }
+    itemNavPick(kind, id) {
+        if (kind === 'all') { this.itemSeason = 'ALL'; this.itemBrand = 'ALL'; }
+        else if (kind === 'sea') { this.itemSeason = id; this.itemBrand = 'ALL'; }
+        else { this.itemBrand = id; this.itemSeason = 'ALL'; }
+        this.requestRender();
+    }
     _appTabBar(view) {
         const g = this._groupOf(view); if (!g) return '';
         const esc = s => this._vesc(s);
@@ -2843,6 +2883,7 @@ class BhasApp {
                 return `<div class="m3-s${on ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
                 <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}" style="color:#0a84ff"></i><span>${esc(t.t)}</span></div>`;
             }).join('')}
+            ${view === 'items' ? this._itemNav() : ''}
         </aside>`;
     }
     // 분류 칸 + 본문을 한 틀에 담는다
@@ -11201,7 +11242,7 @@ class BhasApp {
     seasonFind(v) { this.seasonQ = v; clearTimeout(this._seaQT); this._seaQT = setTimeout(() => this.requestRender(), 200); }
     //  시즌 카드 → 그 시즌만 걸러진 제품리스트
     openSeasonItems(pid) {
-        this.itemSeason = pid; this.itemStatus = 'ALL'; this.itemQ = '';
+        this.itemSeason = pid; this.itemBrand = 'ALL'; this.itemStatus = 'ALL'; this.itemQ = '';
         const w = (this.wins || []).find(x => this._groupOf(x.view) === this._groupOf('items'));
         if (this.macMode && w) { w.view = 'items'; w.min = false; this.macFocus(w.id); this.requestRender(); return; }
         this.switchView('items');
@@ -11508,6 +11549,8 @@ class BhasApp {
         const q = (this.itemQ || '').trim().toLowerCase();
         let rows = all;
         if (sKey !== 'ALL') rows = rows.filter(i => sKey === 'NONE' ? !i.product_id : String(i.product_id) === String(sKey));
+        const bKey = this.itemBrand || 'ALL';
+        if (bKey !== 'ALL') rows = rows.filter(i => bKey === 'NONE' ? !i.brand_id : String(i.brand_id) === String(bKey));
         if (stKey !== 'ALL') rows = rows.filter(i => (i.status || '') === stKey);
         if (q) rows = rows.filter(i => [i.name, i.pattern_no, i.memo].some(v => String(v || '').toLowerCase().includes(q)));
         //  칸마다 걸어 둔 거르기
@@ -11592,12 +11635,12 @@ class BhasApp {
 
         return `<div class="mp it-wrap">
             <div class="mp-top">
-                <div class="mp-tl"><b>제품리스트</b><span>${rows.length}/${all.length}</span>
+                <div class="mp-tl"><b>${esc(sKey !== 'ALL'
+                    ? ((seasons.find(p => String(p.id) === String(sKey)) || {}).name || '시즌 없음')
+                    : (bKey !== 'ALL' ? (this._brandNameById(bKey) !== '-' ? this._brandNameById(bKey) : '브랜드 없음') : '제품리스트'))}</b><span>${rows.length}/${all.length}</span>
                     ${Object.keys(this.itemColF || {}).length ? `<button class="flt-off" onclick="app.clearAllColFilters()"
                         title="거르기 모두 풀기"><i class="ph ph-funnel-fill"></i> ${Object.keys(this.itemColF).length}칸 거르는 중 ✕</button>` : ''}</div>
-                <select class="it-sel it-season" onchange="app.setItemSeason(this.value)">
-                    ${opt('ALL', '시즌 전체', sKey)}${seasons.map(s => opt(s.id, s.name, sKey)).join('')}${opt('NONE', '시즌 없음', sKey)}
-                </select>
+
                 <div class="it-find"><i class="ph ph-magnifying-glass"></i>
                     <input value="${esc(this.itemQ || '')}" placeholder="이름·패턴·메모" oninput="app.itemFind(this.value)"></div>
                 <button class="mbtn" onclick="app.pickNotionCSV()" title="노션 데이터베이스 → ··· → Export → CSV"><i class="ph ph-download-simple"></i> 노션 CSV</button>
