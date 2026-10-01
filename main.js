@@ -3538,6 +3538,16 @@ class BhasApp {
                 ${f('출고예정일', it.ship_date)}
                 ${f('오픈일', it.open_date)}
                 ${f('부자재', it.trims ? '준비됨' : '아직')}
+                <div class="dt-sec">판매명 <em style="font-style:normal;font-weight:600;opacity:.6">카페24 최종 상품명</em></div>
+                ${(it.sale_names || []).length
+                    ? (it.sale_names || []).map(n2 => `<div class="dt-li sale">
+                        <span>${esc(n2)}</span>
+                        <button class="dt-x" title="떼기" onclick="app.itemDelSale('${it.id}','${esc(n2).replace(/'/g, "\\'")}')">×</button></div>`).join('')
+                    : '<div class="dt-li"><span>아직 안 붙였습니다</span><b></b></div>'}
+                ${(() => { const sold = this._itemSold(it);
+                    return sold ? `<div class="dt-f"><span>팔린 수량</span><b>${sold.qty}개 · 주문 ${sold.n}건</b></div>` : ''; })()}
+                <div class="dt-li"><span></span><b style="cursor:pointer;color:#0a84ff"
+                    onclick="app.pickSaleName('${it.id}')">판매명 고르기</b></div>
                 <div class="dt-sec">연동</div>
                 ${link('작업지시서·샘플', !!tp, tp ? (tp.style_name || '열기') : '', `app.openTechPack('${tp ? tp.id : ''}')`, `app.itemNewTechPack('${it.id}')`)}
                 ${link('견적', !!qt, qt ? (qt.quote_no || qt.client_name || '열기') : '', `app.itemOpenQuote('${it.id}')`, `app.itemNewQuote('${it.id}')`)}
@@ -5580,6 +5590,7 @@ class BhasApp {
         if ((v === 'tech_packs' || v === 'vendors' || v === 'dashboard') && !this._itemsLoaded && !this._itemsLoading) this.loadItems();
         if (v === 'items') {
             if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
+            if (!this._ordersLoaded && !this._ordersLoading) this.loadOrders();
             if (!this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
             if (!this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
             this.ensureTechPacks();
@@ -10868,6 +10879,100 @@ class BhasApp {
         if (redraw) this.requestRender();
     }
 
+    // ── 판매명 ──────────────────────────────────────────────
+    //  제품리스트 이름은 약식(ST하렘팬츠), 손님이 보는 최종 이름은 카페24에 올라간 이름.
+    //  한 제품이 여러 이름으로 팔리기도 한다(선주문판·일반판) → 여러 개를 붙인다.
+    _saleNamePool() {
+        if (this._salePoolCache && this._salePoolAt === (this.orders || []).length) return this._salePoolCache;
+        const m = new Map();
+        (this.orders || []).forEach(o => (o.items || []).forEach(it => {
+            const n = (it.product_name || '').trim();
+            if (!n) return;
+            const cur = m.get(n) || { name: n, n: 0, qty: 0, last: '' };
+            cur.n += 1; cur.qty += Number(it.qty || it.quantity || 1) || 1;
+            if ((o.order_date || '') > cur.last) cur.last = o.order_date || '';
+            m.set(n, cur);
+        }));
+        this._salePoolCache = [...m.values()].sort((a, b) => b.n - a.n);
+        this._salePoolAt = (this.orders || []).length;
+        return this._salePoolCache;
+    }
+    //  그 제품이 실제로 몇 개 팔렸나 — 붙인 판매명들을 합쳐서
+    _itemSold(it) {
+        const names = new Set(it.sale_names || []);
+        if (!names.size) return null;
+        let n = 0, qty = 0;
+        this._saleNamePool().forEach(p => { if (names.has(p.name)) { n += p.n; qty += p.qty; } });
+        return { n, qty };
+    }
+    async setItemSales(id, names) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        const old = it.sale_names || [];
+        it.sale_names = names;
+        const { error } = await this.supabase.from('product_items').update({ sale_names: names }).eq('id', id);
+        if (error) { it.sale_names = old; this.showToast('저장 실패 (046 SQL 필요): ' + error.message); }
+        this.requestRender();
+    }
+    itemDelSale(id, name) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        this.setItemSales(id, (it.sale_names || []).filter(x => x !== name));
+    }
+    //  주문에 나온 이름에서 고른다 — 직접 적을 수도 있다
+    pickSaleName(id) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const esc = s => this._vesc(s);
+        this._salePick = new Set(it.sale_names || []);
+        const draw = () => {
+            const q = (this._saleQ || '').trim().toLowerCase();
+            let pool = this._saleNamePool();
+            //  약식 이름과 글자가 겹치는 것을 위로 올려 준다
+            const key = (it.name || '').toLowerCase().replace(/\s/g, '');
+            if (!q && key) pool = [...pool].sort((a, b) => {
+                const A = a.name.toLowerCase().replace(/\s/g, '').includes(key) ? 1 : 0;
+                const B = b.name.toLowerCase().replace(/\s/g, '').includes(key) ? 1 : 0;
+                return B - A || b.n - a.n;
+            });
+            if (q) pool = pool.filter(p => p.name.toLowerCase().includes(q));
+            const list = c.querySelector('#sn-list'); if (!list) return;
+            list.innerHTML = pool.slice(0, 120).map(p => `<label class="pa-m sn-m">
+                <input type="checkbox" value="${esc(p.name)}" ${this._salePick.has(p.name) ? 'checked' : ''}>
+                <span>${esc(p.name)}<em>주문 ${p.n}건 · ${p.qty}개${p.last ? ' · 최근 ' + esc(p.last) : ''}</em></span>
+            </label>`).join('') || '<div class="np-none">찾는 이름이 없습니다</div>';
+            list.querySelectorAll('input').forEach(i => i.onchange = () => {
+                if (i.checked) this._salePick.add(i.value); else this._salePick.delete(i.value);
+                const cnt = c.querySelector('#sn-cnt'); if (cnt) cnt.textContent = this._salePick.size;
+            });
+        };
+        c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:460px">
+            <div class="hk-top"><b>판매명 고르기</b><button class="fi-x" onclick="app.closeGlobalModal()">×</button></div>
+            <p class="fi-note" style="margin:8px 0 10px">제품리스트 이름은 <b>${esc(it.name || '')}</b> 입니다.
+                손님이 보는 최종 상품명(카페24에 올라간 이름)을 골라 붙이세요. 여러 개 고를 수 있습니다.
+                <span id="sn-cnt">${(it.sale_names || []).length}</span>개 골랐습니다.</p>
+            <div class="mp-find" style="margin-bottom:8px"><i class="ph ph-magnifying-glass"></i>
+                <input id="sn-q" placeholder="상품명 찾기" autocomplete="off"></div>
+            <div class="pa-list sn-list" id="sn-list"></div>
+            <div class="fi-r" style="margin-top:10px"><span>직접 적기</span>
+                <input id="sn-manual" class="nw-f" placeholder="목록에 없으면 여기에"></div>
+            <div class="fi-act">
+                <button class="mbtn" onclick="app.closeGlobalModal()">취소</button>
+                <button class="mbtn pri" id="sn-ok">저장</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        draw();
+        const qi = c.querySelector('#sn-q');
+        qi.oninput = () => { this._saleQ = qi.value; draw(); };
+        c.querySelector('#sn-ok').onclick = async () => {
+            const manual = c.querySelector('#sn-manual').value.trim();
+            if (manual) this._salePick.add(manual);
+            await this.setItemSales(id, [...this._salePick]);
+            this.closeGlobalModal();
+            this.showToast(`판매명 ${this._salePick.size}개를 붙였습니다`);
+        };
+        setTimeout(() => qi.focus(), 40);
+    }
+
     async addItem() {
         const row = { name: '', status: '요청하기', created_by: this._actor() };
         if (this.itemSeason && this.itemSeason !== 'ALL') {
@@ -11133,6 +11238,14 @@ class BhasApp {
                 <td class="it-c">${chk(it, 'checked')}</td>
                 <td>${pick(it, 'brand_id', brands.map(b => ({ v: b.id, t: b.name })), '브랜드')}</td>
                 <td>${txt(it, 'name', '제품 이름', 'it-name')}</td>
+                <td>${(() => {
+                    const sn = it.sale_names || [];
+                    const sold = this._itemSold(it);
+                    return `<button class="it-sale${sn.length ? ' on' : ''}" onclick="event.stopPropagation();app.pickSaleName('${it.id}')"
+                        title="${sn.length ? esc(sn.join(' · ')) : '카페24 상품명 붙이기'}">
+                        ${sn.length ? `${esc(sn[0])}${sn.length > 1 ? ` <em>+${sn.length - 1}</em>` : ''}${sold ? ` <b>${sold.qty}</b>` : ''}`
+                                    : '<i class="ph ph-link-simple"></i> 붙이기'}</button>`;
+                })()}</td>
                 <td>${txt(it, 'pattern_no', '패턴명')}</td>
                 <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
                         onchange="app.setItem('${it.id}','status',this.value,1)">
@@ -11173,11 +11286,11 @@ class BhasApp {
             <div class="it-pills">${pill('ALL', '전체', all.length)}${this.ITEM_STATUSES.map(s => pill(s, s, cnt(s))).join('')}</div>
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>
-                    <th class="it-c">체크</th><th>브랜드</th><th>이름</th><th>패턴명</th><th>제작현황</th><th>메모</th>
+                    <th class="it-c">체크</th><th>브랜드</th><th>이름</th><th>판매명</th><th>패턴명</th><th>제작현황</th><th>메모</th>
                     <th class="it-c">부자재</th><th>공장</th><th>시즌</th><th>출고예정일</th><th>오픈일</th><th>연동</th>
                 </tr></thead>
                 <tbody>${rows.length ? rows.map(tr).join('')
-                    : `<tr><td colspan="12" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}</tbody>
+                    : `<tr><td colspan="13" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}</tbody>
                 </table>
             </div>
         </div>`;

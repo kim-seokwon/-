@@ -4137,3 +4137,20 @@ body.pgripping *{cursor:col-resize !important}
 .npv-fi:hover{background:#0a84ff;color:#fff}
 .npv-fdw:hover .npv-c{opacity:0}
 .macwin .npv-fi{padding:0 !important;box-shadow:none !important;border:0 !important}
+
+/* 제품리스트 — 판매명(카페24 최종 상품명) */
+.it-sale{max-width:190px;border:.5px dashed var(--card-border);background:transparent;color:var(--text-muted);
+  font-family:inherit;font-size:11.5px;border-radius:7px;padding:4px 8px;cursor:default;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left}
+.it-sale:hover{border-style:solid;border-color:#0a84ff;color:inherit}
+.it-sale.on{border-style:solid;border-color:var(--card-border);color:inherit;font-weight:600}
+.it-sale em{font-style:normal;font-size:10px;color:#0a84ff;font-weight:800}
+.it-sale b{font-size:10.5px;color:#30d158;font-weight:800}
+.macwin .it-sale{box-shadow:none !important}
+.dt-li.sale{align-items:flex-start}
+.dt-li.sale span{white-space:normal;line-height:1.45}
+.dt-x{border:0;background:transparent;color:var(--text-muted);font-size:14px;line-height:1;
+  cursor:default;padding:0 2px;flex:0 0 auto}
+.dt-x:hover{color:#ff453a}
+.sn-list{max-height:260px}
+.sn-m span em{display:block;font-style:normal;font-size:10.5px;color:var(--text-muted);margin-top:1px}
