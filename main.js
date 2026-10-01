@@ -10769,14 +10769,14 @@ class BhasApp {
             </aside>
             <section class="m3-list">
                 <div class="m3-lbar"><div><b>${esc(cur === '전체' ? '모든 연락처' : cur)}</b><span>${list.length}곳</span></div>
-                    <button class="m3-new" onclick="app.showVendorModal(null)" title="새 연락처"><i class="ph ph-plus"></i></button></div>
+                    <button class="m3-new" onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
                     <input placeholder="상호·전화·주소" value="${esc(this.contactQ || '')}" oninput="app.contactQ=this.value;app.requestRender()"></div>
                 <div class="m3-rows">
                     ${list.map(v => `<div class="m3-r${sel && v.id === sel.id ? ' on' : ''}" onclick="app.selectContact('${v.id}')"
                             oncontextmenu="app.contactMenu(event,'${v.id}')">
                         <b><span class="ct-face" style="width:22px;height:22px;font-size:11px">${esc(initial(v.name))}</span>${esc(v.name)}</b>
-                        <div class="sub"><span>${esc(v.category || '기타')}</span><span>${esc(v.phone || v.address || '')}</span></div>
+                        <div class="sub">${cur === '전체' ? `<span>${esc(v.category || '기타')}</span>` : ''}<span>${esc(v.phone || v.address || '')}</span></div>
                     </div>`).join('') || `<div class="m3-none">${q || cur !== '전체' ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다'}</div>`}
                 </div>
             </section>
@@ -10786,9 +10786,25 @@ class BhasApp {
                     ${sel.phone ? `<a class="mbtn" href="tel:${esc(tel(sel.phone))}" style="text-decoration:none"><i class="ph ph-phone"></i> 전화</a>` : ''}
                     ${sel.email ? `<a class="mbtn" href="mailto:${esc(sel.email)}" style="text-decoration:none"><i class="ph ph-envelope-simple"></i> 메일</a>` : ''}
                     <span class="sp"></span>
-                    <button onclick="app.showVendorModal('${sel.id}')" title="수정"><i class="ph ph-pencil-simple"></i></button>
+                    <button class="${this.contactEdit ? 'on' : ''}" onclick="app.toggleContactEdit()" title="고치기"><i class="ph ph-pencil-simple"></i></button>
                 </div>
                 <div class="m3-page">
+                    ${(this.contactEdit || this.contactNew) ? `
+                    <h2 class="m3-big">${this.contactNew ? '새 연락처' : esc(sel.name)}</h2>
+                    <div class="m3-sub">${this.contactNew ? '빈칸은 비워 둬도 됩니다' : '고치는 중'}</div>
+                    <div class="fi-r"><span>상호</span><input id="vd-name" class="nw-f" value="${this.contactNew ? '' : esc(sel.name || '')}"></div>
+                    <div class="fi-r"><span>분류</span><select id="vd-cat" class="nw-f">
+                        ${cats.map(k => `<option value="${k}"${(!this.contactNew && sel.category === k) ? ' selected' : ''}>${k}</option>`).join('')}</select></div>
+                    <div class="fi-r"><span>전화</span><input id="vd-phone" class="nw-f" value="${this.contactNew ? '' : esc(sel.phone || '')}"></div>
+                    <div class="fi-r"><span>주소</span><input id="vd-addr" class="nw-f" value="${this.contactNew ? '' : esc(sel.address || '')}"></div>
+                    <div class="fi-r"><span>사업자</span><input id="vd-biz" class="nw-f" value="${this.contactNew ? '' : esc(sel.biz_no || '')}"></div>
+                    <div class="m3-f" style="flex-direction:column;align-items:stretch">
+                        <span class="k" style="width:auto;margin-bottom:5px">메모</span>
+                        <textarea id="vd-memo" class="dt-ta">${this.contactNew ? '' : esc(sel.memo || '')}</textarea></div>
+                    <div class="fi-act">
+                        <button class="mbtn" onclick="app.cancelContactEdit()">취소</button>
+                        <button class="mbtn pri" onclick="app.saveVendor('${this.contactNew ? '' : sel.id}')">저장</button>
+                    </div>` : `
                     <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
                         <span class="ct-face" style="width:54px;height:54px;font-size:22px">${esc(initial(sel.name))}</span>
                         <div><h2 class="m3-big">${esc(sel.name)}</h2>
@@ -10807,13 +10823,16 @@ class BhasApp {
                             ${jobs.slice(0, 6).map(j => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0">
                                 <span>${esc(j.title)}</span><span style="color:var(--text-muted)">${esc(j.due_date || '')}</span></div>`).join('')}
                         </div>` : '';
-                    })()}
+                    })()}`}
                 </div>` : `<div class="m3-none mid">왼쪽에서 연락처를 고르세요</div>`}
             </section>
         </div>`;
     }
     // 메모 사이드바의 시즌 ＋ — 기존 시즌 만들기 창을 그대로 띄운다
     newProjectFromNotes() { this.showProjectModal(); }
+    toggleContactEdit() { this.contactEdit = !this.contactEdit; this.contactNew = false; this.requestRender(); }
+    newContact() { this.contactNew = true; this.contactEdit = false; this._vendorPick = null; this.requestRender(); }
+    cancelContactEdit() { this.contactEdit = false; this.contactNew = false; this.requestRender(); }
     setContactCat(c) { this.contactCat = c; this.contactSel = null; this.requestRender(); }
     selectContact(id) { this.contactSel = id; this.requestRender(); }
     contactMenu(ev, id) {
@@ -10821,7 +10840,7 @@ class BhasApp {
         this.ctxMenu(ev, [
             { t: '보기', icon: 'ph-arrow-square-out', run: () => this.selectContact(id) },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameVendor(id) },
-            { t: '수정', icon: 'ph-pencil-simple', run: () => this.showVendorModal(id) },
+            { t: '고치기', icon: 'ph-pencil-simple', run: () => { this.selectContact(id); this.contactEdit = true; this.contactNew = false; this.requestRender(); } },
             ...(v.phone ? [{ t: '전화 걸기', icon: 'ph-phone', run: () => { location.href = 'tel:' + String(v.phone).replace(/[^0-9+]/g, ''); } }] : []),
             ...(v.phone ? [{ t: '번호 복사', icon: 'ph-copy', run: () => { navigator.clipboard?.writeText(v.phone); this.showToast('번호를 복사했습니다'); } }] : []),
             { sep: true },
@@ -10910,7 +10929,7 @@ class BhasApp {
         else ({ error } = await this.supabase.from('vendors').insert([row]));
         if (error) { this.showToast('저장 실패: ' + error.message); return; }
         this.closeGlobalModal();
-        this.venEdit = false;
+        this.venEdit = false; this.contactEdit = false; this.contactNew = false;
         await this.loadVendors();
         if (!id) { const made = (this.vendors || []).find(x => x.name === name); if (made) this.venSel = made.id; }
         this.showToast('저장되었습니다.');
