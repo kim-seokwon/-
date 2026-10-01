@@ -898,8 +898,8 @@ class BhasApp {
                     
                     <form class="login-form" id="login-form">
                         <div class="input-group">
-                            <label for="username">아이디 (또는 이메일)</label>
-                            <input type="text" id="username" class="login-input" placeholder="아이디를 입력하세요" required>
+                            <label for="username">아이디</label>
+                            <input type="text" id="username" class="login-input" placeholder="아이디 (예: bokyung)" autocapitalize="off" autocorrect="off" spellcheck="false" required>
                         </div>
                         <div class="input-group">
                             <label for="password">비밀번호</label>
@@ -948,19 +948,28 @@ class BhasApp {
             const saveIdChecked = document.getElementById('save-id-chk')?.checked;
             const autoLoginChecked = document.getElementById('auto-login-chk')?.checked;
 
-            // 아이디 형식인 경우 자동으로 @bhas.com 추가
-            const email = identifier.includes('@') ? identifier : `${identifier}@bhas.com`;
+            //  아이디만 쳐도 로그인되게 — 뒤에 붙는 주소는 우리가 찾는다.
+            //  계정마다 주소가 달라서(@bhas.com · gmail) 순서대로 해 본다.
+            const LOGIN_DOMAINS = ['bhas.com', 'gmail.com'];
+            const candidates = identifier.includes('@')
+                ? [identifier]
+                : LOGIN_DOMAINS.map(d => `${identifier}@${d}`);
 
             loginBtn.disabled = true;
             loginBtn.innerText = '로그인 중...';
             errorMsg.style.display = 'none';
 
             try {
-                // 1. Supabase Auth 우선 시도
-                const { data: authData, error: authError } = await this.supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
+                // 1. Supabase Auth 우선 시도 — 주소 후보를 차례로
+                let authData = null, authError = null, email = candidates[0];
+                for (const cand of candidates) {
+                    const r = await this.supabase.auth.signInWithPassword({ email: cand, password });
+                    if (!r.error && r.data && r.data.user) { authData = r.data; authError = null; email = cand; break; }
+                    authError = r.error;
+                    //  비밀번호가 틀린 게 아니라 '그 주소가 없는' 경우에만 다음 후보로 넘어간다
+                    if (!/invalid login credentials/i.test(r.error?.message || '')) break;
+                }
+                authData = authData || { user: null };
 
                 if (!authError && authData.user) {
                     // 로그인 성공 후 기업 프로필 조회
