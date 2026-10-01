@@ -7583,6 +7583,7 @@ class BhasApp {
             const m = line.match(this.NOTE_TODO_RE);
             if (!m) return;
             const text = (m[3] || '').trim();
+            if (!text) return;            // 아직 아무것도 안 적은 줄은 할 일이 아니다
             out.push({
                 src: 'note', id: `${n.id}#${i}`, noteId: n.id, line: i,
                 title: text.replace(/[@#][^\s]+/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim() || '(내용 없음)',
@@ -7740,9 +7741,11 @@ class BhasApp {
     }
     _nbSave() { clearTimeout(this._nbT); this._nbT = setTimeout(() => this.saveNote(), 700); }
     nbPick(i, toStart) {
+        if (this.nbLine === i) return;              // 이미 그 줄이면 그대로 둔다
         this._nbSync();
+        if (this.nbLine != null) this._fixWhenInLine(this.nbLine);   // '내일' 을 실제 날짜로
         this.nbLine = i; this._nbCaret = toStart ? 0 : -1;
-        this.requestRender(); this._nbFocus();
+        this._nbPaint();
     }
     //  빈 바닥을 누르면 마지막 줄로 간다 (없으면 한 줄 만든다)
     nbBlank(ev) {
@@ -7758,7 +7761,7 @@ class BhasApp {
         const now = (m[2] || ' ').toLowerCase() === 'x';
         L[i] = `${m[1]}[${now ? ' ' : 'x'}] ${m[3]}`;
         if (i === this.nbLine) this._nbPre = this._nbPreOf(L[i]);
-        this.saveNote(); this.requestRender();
+        this.saveNote(); this._nbPaint();
     }
     nbInput(ev) {
         const ta = ev.target;
@@ -7771,7 +7774,7 @@ class BhasApp {
                 this._nbLines[this.nbLine] = pre + rest;
                 this._nbPre = pre; ta.value = rest;        // 머리표는 네모가 맡는다
                 this._nbCaret = 0;
-                this.saveNote(); this.requestRender(); this._nbFocus();
+                this.saveNote(); this._nbPaint();
                 return;
             }
             //  '- ' 는 글머리로
@@ -7790,9 +7793,10 @@ class BhasApp {
             else {
                 L[i] = pre + ta.value.slice(0, at);
                 L.splice(i + 1, 0, pre + ta.value.slice(at));
+                this._fixWhenInLine(i);                     // '내일' 을 실제 날짜로
                 this.nbLine = i + 1; this._nbCaret = 0;
             }
-            this.saveNote(); this.requestRender(); this._nbFocus();
+            this.saveNote(); this._nbPaint();
             return;
         }
         if (ev.key === 'Backspace' && ta.selectionStart === 0 && ta.selectionEnd === 0) {
@@ -7807,14 +7811,15 @@ class BhasApp {
                     this.nbLine = i - 1; this._nbCaret = t2.length;
                 }
             } else return;
-            this.saveNote(); this.requestRender(); this._nbFocus();
+            this.saveNote(); this._nbPaint();
             return;
         }
         if ((ev.key === 'ArrowUp' && ta.selectionStart === 0 && i > 0)
          || (ev.key === 'ArrowDown' && ta.selectionStart === ta.value.length && i < L.length - 1)) {
             ev.preventDefault(); this._nbSync();
+            this._fixWhenInLine(i);
             this.nbLine = i + (ev.key === 'ArrowUp' ? -1 : 1); this._nbCaret = -1;
-            this.requestRender(); this._nbFocus();
+            this._nbPaint();
             return;
         }
         this.noteKey(ev);
@@ -7835,17 +7840,166 @@ class BhasApp {
             const m = line.match(this.NOTE_TODO_RE);
             const done = !!m && (m[2] || ' ').toLowerCase() === 'x';
             const raw = m ? m[3] : line;
-            if (i === this.nbLine) this._nbPre = m ? `${m[1]}[${done ? 'x' : ' '}] ` : '';
-            const inner = (i === this.nbLine)
+            const live = i === this.nbLine;
+            if (live) this._nbPre = m ? `${m[1]}[${done ? 'x' : ' '}] ` : '';
+            //  고치는 줄은 날것 그대로, 아닌 줄은 날짜를 떼어 칩으로 보여준다
+            const sp = m && !live ? this._splitDue(raw) : { text: raw, due: '' };
+            const inner = live
                 ? `<textarea id="note-body" class="nb-in" rows="1" spellcheck="false" data-i="${i}"
                      oninput="app.nbInput(event)" onkeydown="app.nbKey(event)" onblur="app.nbBlur()">${esc(raw)}</textarea>`
-                : `<span class="nb-t" onclick="app.nbPick(${i})">${raw.trim() ? paint(raw) : '<i class="nb-e"></i>'}</span>`;
-            if (m) return `<div class="nb-row nb-todo${done ? ' done' : ''}">
-                <button class="nb-ck${done ? ' on' : ''}" onclick="app.nbToggle(${i})"></button>${inner}</div>`;
-            return `<div class="nb-row nb-l">${inner}</div>`;
+                : `<span class="nb-t">${sp.text.trim() ? paint(sp.text) : '<i class="nb-e"></i>'}</span>`;
+            if (m) return `<div class="nb-row nb-todo${done ? ' done' : ''}" onclick="app.nbPick(${i})">
+                <button class="nb-ck${done ? ' on' : ''}" onclick="event.stopPropagation();app.nbToggle(${i})"></button>${inner}
+                ${this._dueChip(i, sp.due, live)}</div>`;
+            return `<div class="nb-row nb-l" onclick="app.nbPick(${i})">${inner}</div>`;
         }).join('');
         return `<div class="nt-live" onclick="app.nbBlank(event)">${body}
             ${lines.length === 1 && !lines[0] && this.nbLine == null ? '<div class="nb-hint">내용을 적어주세요 · [ ] 를 치면 할 일이 됩니다</div>' : ''}</div>`;
+    }
+
+    //  .nt-live 만 다시 그린다 — 줄 하나 옮길 때마다 화면 전체를 그리면 손이 느려진다
+    _nbPaint() {
+        const n = this._curNote(); if (!n) { this.requestRender(); return; }
+        const el = document.querySelector('.nt-live');
+        if (!el) { this.requestRender(); return; }
+        el.outerHTML = this._noteLiveHTML(n);
+        const mt = document.querySelector('.nt-meta-slot');
+        if (mt) mt.innerHTML = this._noteMetaChips(n);
+        this._nbFocusNow();
+    }
+    _nbFocusNow() {
+        const ta = document.getElementById('note-body'); if (!ta) return;
+        const c = this._nbCaret;
+        const at = (c == null || c < 0) ? ta.value.length : Math.min(c, ta.value.length);
+        ta.focus(); ta.setSelectionRange(at, at); this._nbGrow(ta);
+        this._nbCaret = null;
+    }
+    // ── 날짜 — '내일까지' 라고 써도 알아듣는다 ──────────────────
+    _ymd(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    _plusDays(k) { const d = new Date(); d.setDate(d.getDate() + k); return this._ymd(d); }
+    //  요일 이름으로 다음 그 요일을 찾는다 (이번주/다음주)
+    _nextDow(dow, nextWeek) {
+        const d = new Date();
+        if (nextWeek) {
+            //  '다음주 월요일' 은 다음 주(월~일)의 그 요일이다 — 돌아오는 요일이 아니다
+            const mon = new Date(d);
+            mon.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 7);
+            mon.setDate(mon.getDate() + ((dow + 6) % 7));
+            return this._ymd(mon);
+        }
+        let add = (dow - d.getDay() + 7) % 7;
+        if (add === 0) add = 7;
+        d.setDate(d.getDate() + add);
+        return this._ymd(d);
+    }
+    DOW_KO = { '일': 0, '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6 };
+    //  글에서 날짜를 찾아낸다. 돌려주는 건 { at, len, date } — 없으면 null
+    _findWhen(text) {
+        const t = String(text || '');
+        let m;
+        if ((m = t.match(/\b(\d{4})-(\d{2})-(\d{2})\b/)))
+            return { at: m.index, len: m[0].length, date: m[0] };
+        if ((m = t.match(/(그저께|그제|어제|오늘|내일|모레|글피)/))) {
+            const k = { '그저께': -2, '그제': -2, '어제': -1, '오늘': 0, '내일': 1, '모레': 2, '글피': 3 }[m[1]];
+            return { at: m.index, len: m[0].length, date: this._plusDays(k) };
+        }
+        if ((m = t.match(/(이번\s*주|다음\s*주|담\s*주)\s*([일월화수목금토])요?일?/)))
+            return { at: m.index, len: m[0].length, date: this._nextDow(this.DOW_KO[m[2]], !/이번/.test(m[1])) };
+        if ((m = t.match(/(\d{1,2})\s*일\s*(뒤|후)/)))
+            return { at: m.index, len: m[0].length, date: this._plusDays(Number(m[1])) };
+        if ((m = t.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/))) {
+            const y = new Date().getFullYear();
+            return { at: m.index, len: m[0].length, date: `${y}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}` };
+        }
+        if ((m = t.match(/(?:^|\s)(\d{1,2})\/(\d{1,2})(?=\s|$)/))) {
+            const y = new Date().getFullYear();
+            const off = m[0].length - (m[1].length + m[2].length + 1);
+            return { at: m.index + off, len: m[0].length - off, date: `${y}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}` };
+        }
+        return null;
+    }
+    //  할 일 줄에서 날짜 글자를 떼어낸다 — 글은 글대로, 날짜는 칩으로 보여주려고
+    _splitDue(raw) {
+        const w = this._findWhen(raw);
+        if (!w) return { text: raw, due: '' };
+        const rest = (raw.slice(0, w.at) + raw.slice(w.at + w.len))
+            .replace(/\s*(까지|쯤|에)\s*/, ' ').replace(/\s{2,}/g, ' ').trim();
+        return { text: rest, due: w.date };
+    }
+    //  '내일' 처럼 적은 말을 실제 날짜로 박아 넣는다. 보는 날이 달라져도 안 흔들리게.
+    _fixWhenInLine(i) {
+        const L = this._nbLines; if (!L || !L[i]) return false;
+        const m = L[i].match(this.NOTE_TODO_RE); if (!m) return false;
+        const w = this._findWhen(m[3]);
+        if (!w || /^\d{4}-\d{2}-\d{2}$/.test(m[3].slice(w.at, w.at + w.len))) return false;
+        const fixed = m[3].slice(0, w.at) + w.date + m[3].slice(w.at + w.len);
+        L[i] = this._nbPreOf(L[i]) + fixed;
+        return true;
+    }
+    //  날짜 칩을 눌렀을 때 — 오늘·내일·이번주 금요일 … 그 자리에서 고른다
+    pickDue(ev, i) {
+        ev.stopPropagation();
+        const L = this._nbLines; if (!L) return;
+        const put = (date) => {
+            const m = (L[i] || '').match(this.NOTE_TODO_RE); if (!m) return;
+            const { text } = this._splitDue(m[3]);
+            L[i] = this._nbPreOf(L[i]) + (date ? `${text} ${date}`.trim() : text);
+            if (i === this.nbLine) this._nbCaret = -1;
+            this.saveNote(); this._nbPaint();
+        };
+        this.ctxMenu(ev, [
+            { t: '오늘', run: () => put(this._plusDays(0)) },
+            { t: '내일', run: () => put(this._plusDays(1)) },
+            { t: '모레', run: () => put(this._plusDays(2)) },
+            { sep: true },
+            { t: '이번주 금요일', run: () => put(this._nextDow(5, false)) },
+            { t: '다음주 월요일', run: () => put(this._nextDow(1, true)) },
+            { t: '일주일 뒤', run: () => put(this._plusDays(7)) },
+            { sep: true },
+            { t: '직접 고르기…', run: async () => {
+                const v = await this.showPrompt('날짜 (2026-10-05)', this._plusDays(1), '날짜 정하기');
+                if (v && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) put(v.trim());
+            } },
+            { t: '날짜 지우기', danger: true, run: () => put('') },
+        ]);
+    }
+    //  제목 앞 진행 도넛 — 줄을 하나 더 쓰지 않고 한눈에 보이게
+    _donut(td) {
+        if (!td || !td.length) return '';
+        const done = td.filter(x => x.done).length;
+        const p = done / td.length;
+        const C = 2 * Math.PI * 7;       // r=7
+        return `<svg class="nt-dn" viewBox="0 0 20 20" title="${done}/${td.length}">
+            <circle cx="10" cy="10" r="7" fill="none" stroke="rgba(127,127,127,.25)" stroke-width="4"/>
+            ${p > 0 ? `<circle cx="10" cy="10" r="7" fill="none" stroke="#30d158" stroke-width="4"
+                stroke-dasharray="${(C * p).toFixed(2)} ${C.toFixed(2)}" transform="rotate(-90 10 10)"/>` : ''}
+        </svg>`;
+    }
+    //  제목 밑 요약 칩 — 할 일 개수 · 가장 가까운 날짜 · 담당자 · 꼬리표
+    _noteMetaChips(n) {
+        const esc = s => this._vesc(s);
+        const td = this._noteTodos(n);
+        const ats = [...new Set(td.flatMap(x => x.at))];
+        const tags = [...new Set(td.flatMap(x => x.tags))];
+        const due = td.filter(x => !x.done).map(x => x.due).filter(Boolean).sort()[0];
+        if (!td.length && !ats.length && !tags.length) return '';
+        return `<div class="nt-meta">
+            ${td.length ? `<span class="nt-chip"><i class="ph ph-check-square"></i> 할 일 ${td.filter(x => x.done).length}/${td.length}</span>` : ''}
+            ${due ? `<span class="nt-chip"><i class="ph ph-calendar-blank"></i> ${esc(due)}</span>` : ''}
+            ${ats.map(a => `<span class="nt-chip at">@${esc(a)}</span>`).join('')}
+            ${tags.map(t => `<span class="nt-chip tag">#${esc(t)}</span>`).join('')}
+        </div>`;
+    }
+    //  할 일 줄 오른쪽 날짜 — 없으면 흐린 '날짜', 누르면 그 자리에서 고른다
+    _dueChip(i, due, live) {
+        if (live) return '';
+        if (!due) return `<button class="nb-due none" title="날짜 정하기" onclick="app.pickDue(event,${i})">날짜</button>`;
+        const dd = Math.round((new Date(due) - new Date(this._ymd(new Date()))) / 86400000);
+        const cls = dd < 0 ? 'late' : (dd === 0 ? 'today' : (dd <= 3 ? 'soon' : ''));
+        const lbl = dd < 0 ? `지남 ${-dd}일` : (dd === 0 ? '오늘' : (dd === 1 ? '내일' : due.slice(5).replace('-', '/')));
+        return `<button class="nb-due ${cls}" title="${due}" onclick="app.pickDue(event,${i})">${lbl}</button>`;
     }
     // ── 연결된 메모 찾기 — 메모가 수백 개라 목록으로는 못 고른다 ──
     linkFind(q) {
@@ -7998,7 +8152,7 @@ class BhasApp {
             const bare = this._nbLines[i].slice(this._nbPreOf(this._nbLines[i]).length).replace(/^·\s*/, '');
             this._nbLines[i] = (kind === 'todo' ? '[ ] ' : '· ') + bare;
             this._nbCaret = -1;
-            this.saveNote(); this.requestRender(); this._nbFocus();
+            this.saveNote(); this._nbPaint();
             return;
         }
         const map = { todo: '[ ] ', at: '@', tag: '#', date: new Date().toISOString().slice(0, 10) + ' ', bullet: '· ' };
@@ -8057,16 +8211,18 @@ class BhasApp {
         list.forEach(n => {
             const b = bucket(n.updated_at);
             if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
-            const prev = this._noteText(n).replace(/!\[[^\]]*\]\([^)]*\)/g, '[사진]').replace(/\s+/g, ' ').trim().slice(0, 30);
+            const prev = this._noteText(n)
+                .split('\n').filter(l => !/^\s*\[( |x|X)?\]\s*$/.test(l)).join('\n')   // 빈 할 일 줄은 뺀다
+                .replace(/!\[[^\]]*\]\([^)]*\)/g, '[사진]')
+                .replace(/^\s*\[( |x|X)?\]\s?/gm, (_m, c) => (String(c || '').toLowerCase() === 'x' ? '☑ ' : '☐ '))
+                .replace(/\s+/g, ' ').trim().slice(0, 30);
             const td = this._noteTodos(n);
             items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}" oncontextmenu="app.noteMenu(event,'${n.id}')"
                     draggable="true" ondragstart="app.nbDragStart(event,'${n.id}')" title="끌어서 폴더로 옮길 수 있습니다"
                     onclick="app.selectNote('${n.id}')">
-                <b>${esc(n.title || '새 메모')}</b>
+                <b>${this._donut(td)}${esc(n.title || '새 메모')}</b>
                 <div class="nt-sub"><span class="nt-d">${esc(when(n.updated_at))}</span>
                     <span class="nt-p">${esc(prev) || '추가 텍스트 없음'}</span></div>
-                ${td.length ? `<div class="nt-bar"><i style="width:${Math.round(td.filter(x => x.done).length / td.length * 100)}%"></i>
-                    <em>${td.filter(x => x.done).length}/${td.length}</em></div>` : ''}
             </div>`;
         });
         if (!items) items = `<div class="nt-none">메모 없음</div>`;
@@ -8136,19 +8292,7 @@ class BhasApp {
                     <div class="nt-when">${esc(longWhen(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
                     <input id="note-title" class="nt-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
                     ${this._notePropsBar(sel)}
-                    ${(() => {
-                        const td = this._noteTodos(sel);
-                        const ats = [...new Set(td.flatMap(x => x.at))];
-                        const tags = [...new Set(td.flatMap(x => x.tags))];
-                        const due = td.map(x => x.due).filter(Boolean).sort()[0];
-                        if (!td.length && !ats.length && !tags.length) return '';
-                        return `<div class="nt-meta">
-                            ${td.length ? `<span class="nt-chip"><i class="ph ph-check-square"></i> 할 일 ${td.filter(x => x.done).length}/${td.length}</span>` : ''}
-                            ${due ? `<span class="nt-chip"><i class="ph ph-calendar-blank"></i> ${esc(due)}</span>` : ''}
-                            ${ats.map(a => `<span class="nt-chip at">@${esc(a)}</span>`).join('')}
-                            ${tags.map(t => `<span class="nt-chip tag">#${esc(t)}</span>`).join('')}
-                        </div>`;
-                    })()}
+                    <div class="nt-meta-slot">${this._noteMetaChips(sel)}</div>
                     ${this.notePreview
                         ? `<textarea id="note-raw" class="nt-body" placeholder="내용을 적어주세요"
                               oninput="app.noteTyping(event)" onkeydown="app.noteKey(event)"

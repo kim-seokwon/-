@@ -3686,8 +3686,11 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   border-color:var(--primary) !important;background:rgba(10,132,255,.06) !important;outline:none !important}
 /* 메모·제품리스트처럼 '종이' 로 보여야 하는 칸은 회색 바탕을 씌우지 않는다 */
 .macwin .nt-body,.macwin .nt-title,.macwin .nt-body:focus,.macwin .nt-title:focus,
+.macwin .nb-in,.macwin .nb-in:focus,
 .macwin .nt-find input,.macwin .mp-find input,.macwin .fd-find input,.macwin .spot-f input{
   background:transparent !important;border:0 !important;padding:0 !important;box-shadow:none !important}
+/* live 글칸은 그려진 줄과 글자가 딱 맞아야 한다 — 밀리면 바로 티가 난다 */
+.macwin .nb-in{font-size:14px !important;line-height:1.75 !important;font-family:inherit !important}
 .macwin .nt-body{min-height:340px}
 /* 제품리스트 표의 칸은 자기 모양을 지킨다 */
 .macwin .it-in,.macwin .it-sel{background:transparent !important;border-color:transparent !important;
@@ -4353,7 +4356,8 @@ body:not(.light){ --pane-line: rgba(255,255,255,.16); }
 .nb-t{flex:1;white-space:pre-wrap;word-break:break-word;min-height:25px;display:block}
 .nb-e{display:block;height:25px}
 .nt-live .nb-todo.done .nb-t,.nt-live .nb-todo.done .nb-in{color:var(--text-muted);text-decoration:line-through}
-.nt-live .nb-ck{margin-top:5px}
+.nt-live .nb-ck{width:14px;height:14px;border-radius:3.5px;border-width:1.5px;margin-top:5.5px}
+.nt-live .nb-ck.on::after{left:4px;top:1px;width:3.5px;height:7px}
 .nb-hint{position:absolute;top:0;left:0;color:var(--text-muted);opacity:.55;pointer-events:none}
 .macwin .nb-in,.macwin .nb-in:focus{background:transparent !important;box-shadow:none !important;border:0 !important}
 
@@ -4381,3 +4385,25 @@ body:not(.light){ --pane-line: rgba(255,255,255,.16); }
 /* 미리알림 칸은 옆 캘린더 높이에 맞춰 끝까지 내려온다 */
 .glass.pfill{display:flex;flex-direction:column}
 .glass.pfill .pfill-b{flex:1;min-height:0;overflow:auto}
+
+/* 줄 아무 데나 눌러도 그 줄에서 쓸 수 있게 */
+.nb-row{cursor:text}
+.nt-live .nb-t{min-width:0}
+/* 할 일 줄의 담당자·날짜 칩 */
+.nb-due{flex:0 0 auto;font-size:11px;font-weight:700;white-space:nowrap;border-radius:99px;
+  padding:1px 8px;margin-top:4px;cursor:pointer;border:0;background:rgba(127,127,127,.12);color:var(--text-muted)}
+.nb-due:hover{background:rgba(10,132,255,.14);color:var(--primary)}
+.nb-due.soon{background:rgba(245,158,11,.16);color:#b45309}
+.nb-due.today{background:rgba(10,132,255,.14);color:#0a6fd8}
+.nb-due.late{background:rgba(239,68,68,.15);color:#dc2626}
+.nb-due.none{opacity:0;font-weight:500}
+.nb-row:hover .nb-due.none{opacity:.5}
+.nb-due.none:hover{opacity:1}
+body:not(.light) .nb-due.soon{color:#fbbf24}
+body:not(.light) .nb-due.today{color:#6ab3ff}
+body:not(.light) .nb-due.late{color:#ff8080}
+
+/* 메모 목록 제목 앞 진행 도넛 — 줄을 하나 더 쓰지 않는다 */
+.nt-dn{width:13px;height:13px;flex:0 0 auto;margin-right:6px;vertical-align:-1.5px;display:inline-block}
+.nt-row b{display:flex;align-items:center;min-width:0}
+.nt-row b .nt-dn{margin-top:0}
