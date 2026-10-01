@@ -7222,7 +7222,7 @@ class BhasApp {
                 ${fold('private', 'ph-note', '개인 메모', cnt(n => n.scope === 'private' && n.owner === me))}
                 <div class="nt-shead">워크스페이스
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
-                ${fold('all', 'ph-folder-simple', '메모', all.length)}
+                ${fold('all', 'ph-tray', '모든 메모', all.length, '#8e8e93')}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
                 <button class="nt-prod${this.noteProd ? ' on' : ''}" onclick="app.toggleNoteProducts()"
                     title="제품을 보면서 쓰기">
@@ -7232,7 +7232,7 @@ class BhasApp {
             ${this._noteProductsHTML()}
             <section class="nt-list">
                 <div class="nt-lbar">
-                    <div><b>${esc(cur === 'private' ? '개인 메모' : (cur === 'all' ? '메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2))))}</b>
+                    <div><b>${esc(cur === 'private' ? '개인 메모' : (cur === 'all' ? '모든 메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2))))}</b>
                         <span>${list.length}개의 메모</span></div>
                     <select class="nt-sea" onchange="app.setNoteSea(this.value)" title="시즌으로 거르기">
                         <option value="ALL"${seaF === 'ALL' ? ' selected' : ''}>모든 시즌</option>
