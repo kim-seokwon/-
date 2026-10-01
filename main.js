@@ -12158,7 +12158,7 @@ class BhasApp {
         nameInput.value = user.name || '';
         idInput.value = user.username || '';
         idInput.disabled = true; // 아이디 수정 불가 (Auth 연동 이슈 방지)
-        pwInput.placeholder = '변경 시에만 입력하세요 (영문·숫자 포함 10자 이상)';
+        pwInput.placeholder = '변경 시에만 입력하세요 · 6자 이상';
         roleSelect.value = user.role || 'CLIENT';
 
         // 기존 권한 체크박스 복원 (menu_access 없으면 역할 기본값)
@@ -12178,7 +12178,7 @@ class BhasApp {
             const newBrandId = newRole === 'CLIENT' ? (brand_access && brand_access[0]) || '' : '';
 
             if (!newName) { this.showToast('이름을 입력해주세요.'); return; }
-            if (newPw && !this._isStrongPassword(newPw)) { this.showToast('비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.'); return; }
+            if (newPw && !this._isStrongPassword(newPw)) { this.showToast('비밀번호는 6자 이상이어야 합니다. (숫자만도 됩니다)'); return; }
             if (newRole === 'CLIENT' && !newBrandId) { this.showToast('고객사(CLIENT) 계정은 브랜드 접근에서 최소 1개를 체크해야 합니다.'); return; }
             if (newRole === 'STAFF' && !(brand_access && brand_access.length)) { this.showToast('직원 계정은 접근 가능한 브랜드를 최소 1개 체크해야 합니다.'); return; }
 
@@ -12737,7 +12737,7 @@ class BhasApp {
                 <input type="password" id="pw-now" class="login-input" autocomplete="current-password">
                 <label>새 비밀번호</label>
                 <input type="password" id="pw-new" class="login-input" autocomplete="new-password"
-                    placeholder="영문·숫자 포함 10자 이상">
+                    placeholder="6자 이상 (숫자만도 됩니다)">
                 <label>새 비밀번호 한 번 더</label>
                 <input type="password" id="pw-new2" class="login-input" autocomplete="new-password">
             </div>
@@ -12758,7 +12758,7 @@ class BhasApp {
             const pw = c.querySelector('#pw-new').value.trim();
             const pw2 = c.querySelector('#pw-new2').value.trim();
             if (!now) return err('지금 쓰는 비밀번호를 넣으세요.');
-            if (!this._isStrongPassword(pw)) return err('새 비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.');
+            if (!this._isStrongPassword(pw)) return err('새 비밀번호는 6자 이상이어야 합니다. (숫자만도 됩니다)');
             if (pw !== pw2) return err('새 비밀번호를 두 번 다르게 넣었습니다.');
             if (pw === now) return err('지금 쓰는 것과 같습니다.');
 
@@ -12785,9 +12785,9 @@ class BhasApp {
     // 비밀번호 변경 — 서버(admin-users)에서 auth.admin.updateUserById 로 처리.
     // 로그인 계정이 아직 없는 프로필(예전 방식으로 만들어진 행)이면 그 자리에서 연결해준다.
     async changeAccountPassword(companyId, username) {
-        const pw = await this.showPrompt(`${username} 계정의 새 비밀번호 (영문·숫자 포함 10자 이상)`);
+        const pw = await this.showPrompt(`${username} 계정의 새 비밀번호 — 6자 이상(숫자만도 됩니다)`);
         if (pw === null) return;
-        if (!this._isStrongPassword(pw.trim())) { this.showToast('비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.'); return; }
+        if (!this._isStrongPassword(pw.trim())) { this.showToast('비밀번호는 6자 이상이어야 합니다. (숫자만도 됩니다)'); return; }
         this.showToast('비밀번호 변경 중...');
         const call = (action) => this._invokeFn('admin-users', { action, company_id: companyId, password: pw.trim() });
         let res = await call('set-password');
@@ -12813,8 +12813,9 @@ class BhasApp {
         const brand = [...document.querySelectorAll('.perm-brand-check:checked')].map(c => c.value);
         return { menu_access: menu, brand_access: brand.length ? brand : null };
     }
+    //  Supabase 가 6자 미만을 받지 않는다(플랫폼 제한). 그 안에서 제일 느슨하게.
     _isStrongPassword(password) {
-        return String(password || '').length >= 10 && /[A-Za-z]/.test(password) && /\d/.test(password);
+        return String(password || '').trim().length >= 6;
     }
     _applyRoleDefaultsToPermChecks(role) {
         const def = new Set(this._defaultMenuAccess(role));
@@ -12864,7 +12865,7 @@ class BhasApp {
                 
                 <div class="login-field" style="margin-bottom: 1.5rem;">
                     <label>비밀번호</label>
-                    <input type="password" id="new-user-pw" class="login-input" placeholder="영문·숫자 포함 10자 이상">
+                    <input type="password" id="new-user-pw" class="login-input" placeholder="6자 이상 (숫자만도 됩니다)">
                 </div>
                 
                 <div class="login-field" style="margin-bottom: 1.5rem;">
@@ -12997,7 +12998,7 @@ class BhasApp {
         }
 
         if (!this._isStrongPassword(password)) {
-            { this.showToast('비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.'); return; }
+            { this.showToast('비밀번호는 6자 이상이어야 합니다. (숫자만도 됩니다)'); return; }
         }
 
         // 메뉴/브랜드 접근 권한 체크박스 수집
