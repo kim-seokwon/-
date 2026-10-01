@@ -6389,6 +6389,7 @@ class BhasApp {
             this.currentView = v;
             try { this.bindDashboardEvents(); } catch (_e) {}
             this._bindFindKey();
+            try { this._mountGrips(); } catch (_e) {}
             const fn = per[v];
             if (fn && typeof this[fn] === 'function') { try { this[fn](); } catch (_e) {} }
         });
@@ -6699,6 +6700,76 @@ class BhasApp {
     }
     // ── 메모 사진 첨부 ────────────────────────────────────────
     //  스토리지(bhas 버킷)에 올리고 본문에 ![](주소) 로 끼워 넣는다. 보기 상태에서 사진으로 뜬다.
+    // ── 메모 옆 제품리스트 사이드뷰 ──────────────────────────
+    //  메모를 쓰면서 제품을 보고 바로 연동한다. 왼쪽에서 밀려 나온다.
+    toggleNoteProducts() {
+        this.noteProd = !this.noteProd;
+        if (this.noteProd && !this._itemsLoaded && !this._itemsLoading) this.loadItems();
+        this.requestRender();
+    }
+    noteProdFind(v) { this.noteProdQ = v; clearTimeout(this._npT); this._npT = setTimeout(() => this.requestRender(), 150); }
+    _noteProductsHTML() {
+        if (!this.noteProd) return '';
+        const esc = s => this._vesc(s);
+        const q = (this.noteProdQ || '').trim().toLowerCase();
+        const seasons = this._seasons();
+        let items = this.pItems || [];
+        if (q) items = items.filter(i => [i.name, i.pattern_no, i.status].some(v => String(v || '').toLowerCase().includes(q)));
+        const bySea = {};
+        items.forEach(i => { const k = String(i.product_id || ''); (bySea[k] = bySea[k] || []).push(i); });
+        const order = [...seasons.map(s => String(s.id)), ''].filter(k => bySea[k]);
+        const body = !this._itemsLoaded ? '<div class="np-none">제품을 불러오는 중…</div>'
+            : (order.length ? order.map(k => {
+                const sea = seasons.find(s => String(s.id) === k);
+                return `<div class="npv-g">${esc(sea ? sea.name : '시즌 없음')} <em>${bySea[k].length}</em></div>` +
+                    bySea[k].slice(0, 60).map(i => {
+                        const col = this.ITEM_SC[i.status] || '#8e8e93';
+                        return `<div class="npv-i" title="${esc(i.name || '')}">
+                            <button class="npv-t" onclick="app.insertProduct('${i.id}')">
+                                <b>${esc(i.name || '이름 없는 제품')}</b>
+                                <em>${esc([i.pattern_no, i.status].filter(Boolean).join(' · '))}</em>
+                            </button>
+                            <span class="npv-d" style="background:${col}"></span>
+                            ${sea ? `<button class="npv-l" title="이 메모를 '${esc(sea.name)}' 에 붙이기"
+                                onclick="app.linkNoteSeason('${sea.id}')"><i class="ph ph-link-simple"></i></button>` : ''}
+                        </div>`;
+                    }).join('');
+            }).join('') : `<div class="np-none">${q ? '찾는 제품이 없습니다' : '제품이 없습니다'}</div>`);
+        return `<aside class="npv">
+            <div class="npv-top"><b>제품리스트</b>
+                <button class="fi-x" onclick="app.toggleNoteProducts()">×</button></div>
+            <div class="mp-find npv-f"><i class="ph ph-magnifying-glass"></i>
+                <input value="${esc(this.noteProdQ || '')}" placeholder="제품 찾기" oninput="app.noteProdFind(this.value)"></div>
+            <div class="npv-b">${body}</div>
+            <div class="npv-hint">이름을 누르면 쓰던 자리에 넣고, 🔗 는 이 메모를 그 시즌에 붙입니다</div>
+        </aside>`;
+    }
+    //  제품 이름을 쓰던 자리에 넣는다
+    insertProduct(id) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        const ta = document.getElementById('note-body');
+        if (!ta) { this.showToast('메모를 열고 눌러주세요'); return; }
+        const p = ta.selectionStart;
+        const name = it.name || '제품';
+        ta.value = ta.value.slice(0, p) + name + ta.value.slice(p);
+        const np = p + name.length;
+        ta.focus(); ta.setSelectionRange(np, np);
+        this.saveNote();
+    }
+    //  이 메모를 그 시즌에 붙인다
+    async linkNoteSeason(pid) {
+        const n = this._curNote(); if (!n) { this.showToast('메모를 먼저 여세요'); return; }
+        const sea = this._seasons().find(p => String(p.id) === String(pid));
+        n.product_id = pid;
+        const meta = this._noteMeta(n); meta.proj = pid;
+        n.body = this._joinNote(meta, this._noteText(n));
+        const { error } = await this.supabase.from('notes')
+            .update({ product_id: pid, body: n.body }).eq('id', n.id);
+        if (error) { this.showToast('붙이지 못했습니다: ' + error.message); return; }
+        this.requestRender();
+        this.showToast(`'${(sea && sea.name) || '시즌'}' 에 붙였습니다`);
+    }
+
     //  지금 화면에 떠 있는 메모 (고르지 않았어도 첫 메모가 떠 있다)
     _curNote() {
         return (this.noteList || []).find(x => x.id === this.noteSel)
@@ -7043,12 +7114,17 @@ class BhasApp {
                 ${fold('all', 'ph-folder-simple', '메모', all.length)}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
                 <div class="nt-shead tog${this.noteSeaOpen ? ' on' : ''}" onclick="app.toggleNoteSeasons()">
-                    <i class="ph ph-caret-right"></i>시즌
+                    <i class="ph ph-caret-right"></i>제품리스트
                     <button class="nt-add" title="새 시즌" onclick="event.stopPropagation();app.newProjectFromNotes()">＋</button></div>
                 ${!this.noteSeaOpen ? '' : (projects.length
                     ? projects.map(pr => fold('p:' + pr.id, 'ph-folder-simple', pr.name, cnt(n => n.product_id === pr.id), '#e0a800')).join('')
                     : '<div class="nt-none sm">시즌 없음</div>')}
+                <button class="nt-prod${this.noteProd ? ' on' : ''}" onclick="app.toggleNoteProducts()"
+                    title="제품을 보면서 쓰기">
+                    <i class="ph ph-t-shirt"></i><span>제품 보기</span>
+                    <i class="ph ${this.noteProd ? 'ph-caret-left' : 'ph-caret-right'} nt-prod-c"></i></button>
             </aside>
+            ${this._noteProductsHTML()}
             <section class="nt-list">
                 <div class="nt-lbar">
                     <div><b>${esc(cur === 'private' ? '개인 메모' : (cur === 'all' ? '메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2))))}</b>
@@ -11461,6 +11537,80 @@ class BhasApp {
             this.closeGlobalModal(); this._quotesLoaded = false; await this.loadQuotes();
             this.showToast('세금계산서 발행 완료');
         } catch (e) { this.showToast('발행 오류: ' + (e.message || e)); }
+    }
+
+    // ── 칸 너비 조절 ────────────────────────────────────────
+    //  3단 사이 경계를 끌면 늘고 준다. 창마다·화면마다 따로 기억한다.
+    PANES = [
+        { sel: '.appwrap', vars: ['--c1'], min: [120], max: [360] },
+        { sel: '.appwrap.three', vars: ['--c1', '--c3'], min: [120, 180], max: [360, 520] },
+        { sel: '.nt', vars: ['--c1', '--c2'], min: [140, 190], max: [380, 520] },
+        { sel: '.fd', vars: ['--c1', '--c3'], min: [130, 150], max: [380, 480] },
+        { sel: '.m3', vars: ['--c1', '--c2'], min: [140, 190], max: [380, 520] },
+    ];
+    _paneKey(el, view) { return `pw:${view || this.currentView || ''}:${el.className.split(' ')[0]}`; }
+    _mountGrips() {
+        const seen = new Set();
+        document.querySelectorAll('.macwin .appwrap, .macwin .nt, .macwin .fd, .macwin .m3').forEach(box => {
+            if (seen.has(box)) return; seen.add(box);
+            const spec = box.classList.contains('appwrap')
+                ? (box.classList.contains('three') ? this.PANES[1] : this.PANES[0])
+                : this.PANES.find(p => box.classList.contains(p.sel.slice(1)));
+            if (!spec) return;
+            const win = box.closest('.macwin');
+            const view = win ? ((this.wins || []).find(w => w.id === win.id) || {}).view : this.currentView;
+            const key = this._paneKey(box, view);
+
+            // 기억해 둔 너비 되살리기
+            let saved = {};
+            try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch (_e) {}
+            spec.vars.forEach(v => { if (saved[v]) box.style.setProperty(v, saved[v] + 'px'); });
+
+            box.querySelectorAll(':scope > .pgrip').forEach(g => g.remove());
+            const panes = [...box.children].filter(x => !x.classList.contains('pgrip'));
+            //  경계는 '그 칸이 끝나는 자리' — 마지막 칸 뒤에는 안 둔다
+            const edges = spec.vars.map((v, i) => (v === '--c3' ? panes.length - 1 : i + 1));
+            edges.forEach((edgeIdx, i) => {
+                const grip = document.createElement('div');
+                grip.className = 'pgrip';
+                grip.style.left = panes.slice(0, edgeIdx).reduce((s, p) => s + p.offsetWidth, 0) + 'px';
+                grip.title = '끌어서 너비 조절 · 두 번 누르면 처음대로';
+                const vr = spec.vars[i], lo = spec.min[i], hi = spec.max[i];
+                const fromRight = (vr === '--c3');
+                grip.onmousedown = (e) => {
+                    e.preventDefault();
+                    const startX = e.clientX;
+                    const base = panes[fromRight ? panes.length - 1 : i].offsetWidth;
+                    grip.classList.add('on'); document.body.classList.add('pgripping');
+                    const move = (ev) => {
+                        const d = ev.clientX - startX;
+                        const w = Math.max(lo, Math.min(hi, base + (fromRight ? -d : d)));
+                        box.style.setProperty(vr, w + 'px');
+                        grip.style.left = panes.slice(0, edgeIdx).reduce((s, p) => s + p.offsetWidth, 0) + 'px';
+                    };
+                    const up = () => {
+                        document.removeEventListener('mousemove', move);
+                        document.removeEventListener('mouseup', up);
+                        grip.classList.remove('on'); document.body.classList.remove('pgripping');
+                        const out = {};
+                        spec.vars.forEach(v => {
+                            const px = parseInt(box.style.getPropertyValue(v), 10);
+                            if (px) out[v] = px;
+                        });
+                        try { localStorage.setItem(key, JSON.stringify(out)); } catch (_e) {}
+                        this._mountGrips();
+                    };
+                    document.addEventListener('mousemove', move);
+                    document.addEventListener('mouseup', up);
+                };
+                grip.ondblclick = () => {
+                    spec.vars.forEach(v => box.style.removeProperty(v));
+                    try { localStorage.removeItem(key); } catch (_e) {}
+                    this._mountGrips();
+                };
+                box.appendChild(grip);
+            });
+        });
     }
 
     //  ⌘K · ⌘F 는 어디서든 먹는다. 한 번만 단다.
