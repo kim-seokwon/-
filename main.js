@@ -76,14 +76,49 @@ class BhasApp {
 
     // 저장해둔 로그인 정보로 들어왔을 때 진짜 Supabase 세션이 살아 있는지 확인한다.
     //  없으면 데이터가 하나도 안 보이므로, 조용히 두지 말고 다시 로그인하게 한다.
-    async _verifyAuth() {
+    async _verifyAuth(mid) {
         try {
             const { data } = await this.supabase.auth.getSession();
-            if (data && data.session) { this._authOk = true; return true; }
+            if (data && data.session) {
+                this._authOk = true;
+                document.getElementById('auth-bar')?.remove();
+                return true;
+            }
         } catch (_e) { /* 아래로 */ }
         this._authOk = false;
-        this._showAuthBar();
+        if (mid) this._showAuthBar();   // 일하는 중이면 쓰던 걸 날리지 않게 띠만 띄운다
+        else this.forceLogin('로그인이 만료되었습니다. 다시 로그인해 주세요.');
         return false;
+    }
+    // 저장이 안 되는 상태로 화면만 띄워두지 않는다 — 곧장 로그인으로 보낸다
+    forceLogin(msg) {
+        this._loginNotice = msg || '다시 로그인해 주세요.';
+        localStorage.removeItem('bhas_session_user');
+        localStorage.removeItem('bhas_auto_login');
+        document.querySelectorAll('#auth-bar, .sticky, #calc-pop, #noti-center, #launcher, #sticky-list, #ctx-menu')
+            .forEach(el => el.remove());
+        this.wins = []; this._stickiesRestored = false;
+        this.currentUser = null; this.currentView = 'login'; this._isInitialLoading = false;
+        this.render();
+    }
+    // 세션을 계속 지켜본다 — 로그아웃·토큰 갱신 신호 + 창으로 돌아올 때 + 10분마다
+    _watchAuth() {
+        if (this._authWatching) return;
+        this._authWatching = true;
+        try {
+            this.supabase.auth.onAuthStateChange((event) => {
+                if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+                    this._authOk = true; document.getElementById('auth-bar')?.remove(); return;
+                }
+                if (event === 'SIGNED_OUT' && this.currentUser) { this._authOk = false; this._showAuthBar(); }
+            });
+        } catch (_e) { /* 안 되면 아래 주기 확인만으로 */ }
+        setInterval(() => { if (this.currentUser) this._verifyAuth(true); }, 10 * 60 * 1000);
+        window.addEventListener('focus', () => {
+            if (!this.currentUser) return;
+            if (Date.now() - (this._lastAuthCheck || 0) < 60 * 1000) return;
+            this._lastAuthCheck = Date.now(); this._verifyAuth(true);
+        });
     }
     _showAuthBar() {
         if (document.getElementById('auth-bar')) return;
@@ -92,10 +127,12 @@ class BhasApp {
         el.innerHTML = `<i class="ph ph-warning-circle"></i>
             <span>로그인이 풀렸습니다 — 데이터가 안 보이고 저장도 안 됩니다.
                 아래 단추로 <b>이 대시보드에</b> 아이디·비번을 다시 넣어주세요.</span>
-            <button onclick="app.logout()">로그인 화면으로</button>`;
+            <button onclick="app.forceLogin('로그인이 만료되었습니다. 다시 로그인해 주세요.')">지금 로그인</button>`;
         document.body.appendChild(el);
     }
+    // 저장 실패가 '로그인 풀림' 때문인지 가려낸다 — 그렇다면 조용히 두지 않는다
     showToast(message) {
+        if (/JWT|not authenticated|expired|PGRST301|401/i.test(String(message))) this._showAuthBar();
         // 전역 중복 알림 방지: 동일 메시지가 화면에 활성 상태이면 무시
         if (!window.__BHAS_ACTIVE_TOASTS__) window.__BHAS_ACTIVE_TOASTS__ = new Set();
         const cleanMsg = String(message).trim();
@@ -153,6 +190,7 @@ class BhasApp {
                         //   RLS 가 전부 막아 데이터가 0 으로 뜨고 새로 만드는 것도 안 된다.
                         //   (다른 컴퓨터·토큰 만료 때 이런 일이 난다)
                         this._verifyAuth();
+                        this._watchAuth();
                     } else {
                         throw new Error('Invalid session data');
                     }
@@ -867,6 +905,7 @@ class BhasApp {
                             <label for="password">비밀번호</label>
                             <input type="password" id="password" class="login-input" placeholder="비밀번호를 입력하세요" required>
                         </div>
+                        ${this._loginNotice ? `<div class="login-notice"><i class="ph ph-info"></i> ${this._vesc(this._loginNotice)}</div>` : ''}
                         <div id="login-error" class="login-error">이메일 또는 비밀번호가 올바르지 않습니다.</div>
                         <div style="display: flex; gap: 15px; margin-bottom: 1.5rem; font-size: 0.85rem; color: var(--text-muted);">
                             <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
@@ -948,6 +987,7 @@ class BhasApp {
                     }
 
                     this._authOk = true; document.getElementById('auth-bar')?.remove();
+                    this._loginNotice = null; this._watchAuth();
                     if (saveIdChecked) localStorage.setItem('bhas_saved_id', identifier);
                     else localStorage.removeItem('bhas_saved_id');
                     
@@ -2356,14 +2396,33 @@ class BhasApp {
             </div>`;
         }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem;padding:10px 0">주문 없음</div>';
 
-        // ── 생산: 생산중 품목·할일 + 이번달 캘린더 ──
+        // ── 모든 일정 한 벌 — 미리알림·할일·메모 체크·생산 작업·프로젝트 마감 ──
+        const allDue = this._allDated();
+        // ── 이번달 캘린더 ──
         const yy = today.getFullYear(), moIdx = today.getMonth();
         const daysIn = new Date(yy, moIdx + 1, 0).getDate();
         const firstDow = new Date(yy, moIdx, 1).getDay();
         const jobsByDay = {};
-        activeJobs.forEach(j => { if (!j.due_date) return; const d = new Date(j.due_date); if (d.getFullYear() === yy && d.getMonth() === moIdx) { const k = d.getDate(); (jobsByDay[k] = jobsByDay[k] || []).push(j); } });
-        const prodList = activeJobs.length ? activeJobs.slice(0, 7).map(j => { const dd = dday(j.due_date); const col = dd == null ? 'var(--text-muted)' : (dd < 0 ? '#ef4444' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)')); return `<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(j.title || '작업')}${j._v ? ` · <span style="color:var(--text-muted)">${this._vesc(j._v)}</span>` : ''}</span>${j.due_date ? `<span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span>` : ''}</div>`; }).join('')
-            : '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">생산 물품·할일을 등록하면 여기 떠요<br><button onclick="app.switchView(\'vendors\')" style="margin-top:8px;font-size:0.76rem;padding:4px 11px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--primary);cursor:pointer">생산현황에서 등록 →</button></div>';
+        allDue.forEach(x => {
+            if (!x.date) return;
+            const d = new Date(x.date);
+            if (d.getFullYear() === yy && d.getMonth() === moIdx) (jobsByDay[d.getDate()] ||= []).push(x);
+        });
+        const remList = (() => {
+            const t = new Date().toISOString().slice(0, 10);
+            const open = allDue.filter(x => !x.done).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+            const soon = open.filter(x => x.date && x.date <= t).concat(open.filter(x => !x.date || x.date > t)).slice(0, 7);
+            if (!soon.length) return '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">미리알림·할일을 넣으면 여기 모입니다</div>';
+            return soon.map(x => {
+                const dd = dday(x.date);
+                const col = dd == null ? 'var(--text-muted)' : (dd < 0 ? '#ef4444' : (dd === 0 ? '#0a84ff' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)')));
+                return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--card-border);font-size:0.82rem">
+                    <span style="width:7px;height:7px;border-radius:50%;background:${x.color};flex-shrink:0"></span>
+                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.title)}${x.sub ? ` · <span style="color:var(--text-muted)">${this._vesc(x.sub)}</span>` : ''}</span>
+                    ${x.date ? `<span style="color:${col};font-weight:700;white-space:nowrap">${dd < 0 ? `지연${-dd}` : (dd === 0 ? '오늘' : `D-${dd}`)}</span>` : ''}
+                </div>`;
+            }).join('');
+        })();
         const dow = ['일', '월', '화', '수', '목', '금', '토'];
         let calCells = '';
         for (let i = 0; i < firstDow; i++) calCells += '<div></div>';
@@ -2372,7 +2431,7 @@ class BhasApp {
             const isToday = d === today.getDate();
             calCells += `<div style="min-height:54px;border:1px solid var(--card-border);border-radius:8px;padding:3px 4px;${isToday ? 'background:rgba(99,102,241,0.09);border-color:var(--primary)' : ''}">
                 <div style="font-size:0.68rem;font-weight:${isToday ? '800' : '500'};color:${isToday ? 'var(--primary)' : 'var(--text-muted)'}">${d}</div>
-                ${jobs.slice(0, 2).map(j => `<div style="font-size:0.6rem;background:${j.due_date && dday(j.due_date) < 0 ? '#ef4444' : '#6366f1'};color:#fff;border-radius:3px;padding:1px 3px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(j.title || '작업')}</div>`).join('')}
+                ${jobs.slice(0, 2).map(x => `<div title="${this._vesc(x.title)}" style="font-size:0.6rem;background:${x.color};color:#fff;border-radius:4px;padding:1px 4px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.title)}</div>`).join('')}
                 ${jobs.length > 2 ? `<div style="font-size:0.58rem;color:var(--text-muted);margin-top:1px">+${jobs.length - 2}</div>` : ''}
             </div>`;
         }
@@ -2525,12 +2584,12 @@ class BhasApp {
                 </div>
             </div>
 
-            <!-- ═══ 블록 2: 생산 업무 ═══ -->
-            ${sectionHead('ph-factory', '생산 업무', '생산중 품목 · 할일 · 마감 캘린더')}
+            <!-- ═══ 블록 2: 미리알림 · 통합 캘린더 ═══ -->
+            ${sectionHead('ph-list-checks', '미리알림 · 통합 캘린더', '미리알림 · 할일 · 메모 체크 · 생산 작업 · 프로젝트 마감을 한데')}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem">
-                ${panel('생산중 · 할일', prodList,
-                    `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('vendors')">생산현황 →</span>`)}
-                ${panel(`${mm}월 생산 캘린더`, calendar,
+                ${panel('미리알림', remList,
+                    `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('reminders')">미리알림 →</span>`)}
+                ${panel(`${mm}월 통합 캘린더`, calendar,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('calendar')">캘린더 →</span>`)}
             </div>
 
@@ -2708,14 +2767,21 @@ class BhasApp {
         </aside><div class="appmain">${inner}</div></div>`;
     }
     setSnsAcc(k) { this.snsAcc = k; this.requestRender(); }
-    // 프로젝트 화면 안의 보기 전환 — 카드 / 타임라인
-    _projSwitch() {
-        const cur = this.projTab || 'cards';
-        const b = (k, t, i) => `<button class="${cur === k ? 'on' : ''}" onclick="app.setProjTab('${k}')">
-            <i class="ph ${i}"></i> ${t}</button>`;
-        return `<div class="projsw">${b('cards', '카드', 'ph-squares-four')}${b('timeline', '타임라인', 'ph-chart-bar-horizontal')}</div>`;
+    // 생산현황 지도 아래에 붙는 타임라인 — 공정이 어디까지 갔는지 한눈에
+    _vendorTimeline(products) {
+        const esc = s => this._vesc(s);
+        const prev = this.currentView;
+        this.currentView = 'timeline';
+        let tl = '';
+        try { tl = this.renderSubView(products) || ''; } catch (_e) { tl = ''; }
+        this.currentView = prev;
+        if (!tl) return '';
+        return `<div class="vtl">
+            <div class="vtl-h"><i class="ph ph-chart-bar-horizontal"></i> 공정 타임라인
+                <em>프로젝트별 단계와 마감</em></div>
+            ${tl}
+        </div>`;
     }
-    setProjTab(k) { this.projTab = k; this.requestRender(); }
     // 프로젝트 카드 우클릭 — 이름·브랜드(분류)·마감을 그 자리에서 고친다
     projectMenu(ev, id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
@@ -2724,9 +2790,66 @@ class BhasApp {
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameProject(id) },
             { t: '브랜드 바꾸기…', icon: 'ph-shield-check', run: () => this.moveProjectBrand(id) },
             { t: '마감일 바꾸기', icon: 'ph-calendar-blank', run: () => this.setProjectDue(id) },
+            { t: '담당자·권한…', icon: 'ph-users-three', run: () => this.projectAccess(id) },
             { sep: true },
             { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.handleDelete(ev, 'product', id) },
         ]);
+    }
+    // 내가 이 프로젝트를 볼 수 있나 (화면에서 거르는 용도 — 진짜 차단은 040 SQL 이 한다)
+    _canSeeProject(p) {
+        if (!p) return true;
+        if (this.currentUser?.role === 'MASTER') return true;
+        if ((p.access || 'all') === 'all') return true;
+        return (p.members || []).includes(this._me());
+    }
+    // 프로젝트 담당자·권한 고치기
+    projectAccess(id) {
+        const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
+        const esc = s => this._vesc(s);
+        const accs = (mockData.companies || []).filter(c => c.username);
+        const mem = new Set(p.members || []);
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in" style="width:92%;max-width:420px;padding:1.6rem;border-radius:18px">
+            <h2 style="margin:0 0 .3rem;font-size:1.1rem">${esc(p.name)} · 접근 권한</h2>
+            <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:1.1rem">
+                누가 이 프로젝트의 메모·할일·미리알림을 볼 수 있는지 정합니다.
+            </div>
+            <label class="pa-opt"><input type="radio" name="pa" value="all" ${(p.access || 'all') === 'all' ? 'checked' : ''}>
+                <span><b>전체 권한</b><em>브랜드에 접근할 수 있는 사람 모두</em></span></label>
+            <label class="pa-opt"><input type="radio" name="pa" value="members" ${p.access === 'members' ? 'checked' : ''}>
+                <span><b>담당자만</b><em>아래에서 고른 사람만</em></span></label>
+            <div class="pa-list" id="pa-list">
+                ${accs.map(a => `<label class="pa-m"><input type="checkbox" value="${esc(a.username)}" ${mem.has(a.username) ? 'checked' : ''}>
+                    <span class="mrow-face" style="width:24px;height:24px;font-size:11px">${esc((a.name || '?')[0])}</span>
+                    <span>${esc(a.name)}<em>${esc(a.username)}</em></span></label>`).join('')}
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:1.3rem">
+                <button onclick="app.closeGlobalModal()" class="mbtn">취소</button>
+                <button class="mbtn pri" onclick="app.saveProjectAccess('${id}')">저장</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        const sync = () => {
+            const v = c.querySelector('input[name=pa]:checked')?.value;
+            c.querySelector('#pa-list').style.opacity = v === 'members' ? '1' : '.45';
+            c.querySelector('#pa-list').style.pointerEvents = v === 'members' ? 'auto' : 'none';
+        };
+        c.querySelectorAll('input[name=pa]').forEach(r => r.onchange = sync);
+        sync();
+    }
+    async saveProjectAccess(id) {
+        const c = document.getElementById('global-modal-container');
+        const access = c.querySelector('input[name=pa]:checked')?.value || 'all';
+        const members = [...c.querySelectorAll('#pa-list input:checked')].map(x => x.value);
+        const p = (mockData.products || []).find(x => String(x.id) === String(id));
+        if (p) { p.access = access; p.members = members; }
+        this.closeGlobalModal(); this.requestRender();
+        try {
+            const { error } = await this.supabase.from('products').update({ access, members }).eq('id', id);
+            if (error) throw error;
+            this.showToast(access === 'members' ? `담당자 ${members.length}명만 보게 했습니다` : '전체 권한으로 바꿨습니다');
+        } catch (e) { this.showToast('저장 실패 (040 SQL 실행 필요): ' + (e.message || e)); }
     }
     async renameProject(id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
@@ -3023,14 +3146,6 @@ class BhasApp {
             return Math.round((completedCount / STAGES.length) * 100);
         };
 
-        if (this.currentView === 'dashboard' && (this.projTab || 'cards') === 'timeline') {
-            const prev = this.currentView;
-            this.currentView = 'timeline';
-            let tl = '';
-            try { tl = this.renderSubView(products) || ''; } catch (_e) { tl = ''; }
-            this.currentView = prev;
-            return this._appShell('dashboard', this._projSwitch() + tl);
-        }
         if (this.currentView === 'dashboard') {
             const isActive = (p) => {
                 const stage = p.currentStage || 'consulting';
@@ -3235,7 +3350,7 @@ class BhasApp {
                 </div>
             `;
 
-            return this._appShell('dashboard', this._projSwitch() + `
+            return this._appShell('dashboard', `
                 <div class="dashboard-sections">
                     ${kpiStrip}
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -3880,7 +3995,7 @@ class BhasApp {
         } else if (this.currentView === 'table') {
             return this.renderTableView();
         } else if (this.currentView === 'vendors') {
-            return this._appShell('vendors', this.renderVendors());
+            return this._appShell('vendors', this.renderVendors() + this._vendorTimeline(products));
         } else if (this.currentView === 'integrations') {
             return this.renderIntegrations();
         } else if (this.currentView === 'quotes') {
@@ -6251,9 +6366,65 @@ class BhasApp {
                     <option value="">+ 메모 연결</option>
                     ${others.slice(0, 40).map(o => `<option value="${o.id}">${esc(o.title || '메모')}</option>`).join('')}
                 </select>`)}
+            ${row('ph-lock-simple', '공개 범위', `
+                <select class="np-sel pill" style="--c:${n.scope === 'private' ? '#ff9f0a' : '#30d158'}"
+                    onchange="app.setNoteOpen(this.value)">
+                    <option value="shared"${n.scope !== 'private' ? ' selected' : ''}>공개</option>
+                    <option value="private"${n.scope === 'private' ? ' selected' : ''}>비공개</option>
+                </select>
+                <span class="np-hint">${n.scope === 'private'
+                    ? '만든 사람과 이 프로젝트 담당자만' : '폴더·프로젝트 권한이 있는 사람 모두'}</span>`)}
             ${row('ph-push-pin', '고정하기', `
                 <button class="np-ck${n.pinned ? ' on' : ''}" onclick="app.toggleNotePin()"></button>`)}
         </div>`;
+    }
+    async setNoteOpen(v) {
+        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        n.scope = v; if (v === 'private' && !n.owner) n.owner = this._me();
+        this.requestRender();
+        try {
+            const { error } = await this.supabase.from('notes')
+                .update({ scope: v, owner: n.owner || null }).eq('id', n.id);
+            if (error) throw error;
+        } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
+    }
+    // ── 메모 사진 첨부 ────────────────────────────────────────
+    //  스토리지(bhas 버킷)에 올리고 본문에 ![](주소) 로 끼워 넣는다. 보기 상태에서 사진으로 뜬다.
+    pickNotePhoto() {
+        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) { this.showToast('메모를 먼저 고르세요'); return; }
+        let el = document.getElementById('note-photo-input');
+        if (!el) {
+            el = document.createElement('input');
+            el.type = 'file'; el.id = 'note-photo-input'; el.accept = 'image/*'; el.multiple = true;
+            el.style.display = 'none'; document.body.appendChild(el);
+        }
+        el.onchange = async (e) => {
+            const files = [...(e.target.files || [])]; e.target.value = '';
+            for (const f of files) await this.attachNotePhoto(f);
+        };
+        el.click();
+    }
+    async attachNotePhoto(file) {
+        const n = (this.noteList || []).find(x => x.id === this.noteSel); if (!n) return;
+        this.showToast('사진 올리는 중…');
+        try {
+            const blob = await this.resizeImage(file);
+            const safe = (file.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+            const path = `notes/${n.id}/${Date.now()}_${safe}`;
+            const { error: upErr } = await this.supabase.storage.from('bhas')
+                .upload(path, blob, { contentType: file.type || 'image/jpeg', upsert: false });
+            if (upErr) throw upErr;
+            const { data } = this.supabase.storage.from('bhas').getPublicUrl(path);
+            const url = data.publicUrl;
+            const text = this._noteText(n);
+            const add = (text && !text.endsWith('\n') ? '\n' : '') + `![사진](${url})\n`;
+            n.body = this._joinNote(this._noteMeta(n), text + add);
+            n.updated_at = new Date().toISOString();
+            const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
+            if (error) throw error;
+            this.notePreview = true; this.requestRender();
+            this.showToast('사진을 넣었습니다');
+        } catch (e) { this.showToast('사진 올리기 실패: ' + (e.message || e)); }
     }
     linkNote(id) {
         if (!id) return;
@@ -6290,6 +6461,33 @@ class BhasApp {
         return out;
     }
     _allNoteTodos() { return (this.noteList || []).flatMap(n => this._noteTodos(n)); }
+    // 날짜가 붙은 모든 것 한 벌 — 홈의 미리알림 목록과 통합 캘린더가 같이 쓴다
+    _allDated() {
+        const out = [];
+        (this.remList || []).forEach(r => out.push({
+            date: r.due_date, title: r.title, sub: r.list_name || '미리 알림',
+            done: !!r.done, color: '#ff9f0a', kind: 'rem', view: 'reminders',
+        }));
+        (mockData.products || []).forEach(p => {
+            (p.todos || []).forEach(t => out.push({
+                date: t.due_date, title: t.text, sub: p.name,
+                done: !!t.completed, color: '#0a84ff', kind: 'todo', view: 'reminders',
+            }));
+            if (p.due_date) out.push({
+                date: p.due_date, title: p.name, sub: '프로젝트 마감',
+                done: (p.currentStage || '') === 'shipping', color: '#bf5af2', kind: 'proj', view: 'dashboard',
+            });
+        });
+        this._allNoteTodos().forEach(t => out.push({
+            date: t.due, title: t.title, sub: t.from,
+            done: t.done, color: '#30d158', kind: 'note', view: 'notes',
+        }));
+        (this.vendors || []).forEach(v => (v.jobs || []).forEach(j => out.push({
+            date: j.due_date, title: j.title || '작업', sub: v.name,
+            done: j.status === 'done', color: '#6366f1', kind: 'job', view: 'vendors',
+        })));
+        return out;
+    }
     // 메모 본문의 그 줄만 [ ] ↔ [x] 로 뒤집고 저장한다
     async toggleNoteTodo(noteId, line) {
         const n = (this.noteList || []).find(x => String(x.id) === String(noteId)); if (!n) return;
@@ -6317,6 +6515,8 @@ class BhasApp {
                     <button class="nb-ck${done ? ' on' : ''}" onclick="app.toggleNoteTodo('${n.id}',${i})"></button>
                     <span>${body}</span></div>`;
             }
+            const img = line.match(/^!\[[^\]]*\]\((.+?)\)\s*$/);
+            if (img) return `<img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">`;
             if (!line.trim()) return '<div class="nb-sp"></div>';
             const body = esc(line).replace(/@([^\s]+)/g, '<b class="nb-at">@$1</b>')
                                   .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
@@ -6439,7 +6639,7 @@ class BhasApp {
         list.forEach(n => {
             const b = bucket(n.updated_at);
             if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
-            const prev = this._noteText(n).replace(/\s+/g, ' ').trim().slice(0, 30);
+            const prev = this._noteText(n).replace(/!\[[^\]]*\]\([^)]*\)/g, '[사진]').replace(/\s+/g, ' ').trim().slice(0, 30);
             const td = this._noteTodos(n);
             items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}" oncontextmenu="app.noteMenu(event,'${n.id}')"
                     onclick="app.selectNote('${n.id}')">
@@ -6463,7 +6663,8 @@ class BhasApp {
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-folder-simple', '메모', all.length)}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
-                <div class="nt-shead">프로젝트</div>
+                <div class="nt-shead">프로젝트
+                    <button class="nt-add" title="새 프로젝트" onclick="app.newProjectFromNotes()">＋</button></div>
                 ${projects.length ? projects.map(pr => fold('p:' + pr.id, 'ph-folder-simple', pr.name, cnt(n => n.product_id === pr.id), '#e0a800')).join('')
                   : '<div class="nt-none sm">프로젝트 없음</div>'}
             </aside>
@@ -6483,6 +6684,7 @@ class BhasApp {
                     <button onclick="app.noteInsert('at')" title="담당자 @"><i class="ph ph-at"></i></button>
                     <button onclick="app.noteInsert('tag')" title="꼬리표 #"><i class="ph ph-hash"></i></button>
                     <button onclick="app.noteInsert('date')" title="오늘 날짜"><i class="ph ph-calendar-blank"></i></button>
+                    <button onclick="app.pickNotePhoto()" title="사진 넣기"><i class="ph ph-image"></i></button>
                     <span class="nt-div"></span>
                     <button class="${this.notePreview ? 'on' : ''}" onclick="app.toggleNotePreview()" title="보기/고치기">
                         <i class="ph ${this.notePreview ? 'ph-pencil-simple' : 'ph-eye'}"></i></button>
@@ -8592,56 +8794,142 @@ class BhasApp {
         return items;
     }
 
+    // ── 캘린더 (맥 캘린더 그대로 · 분류 / 달력 / 그날 일정) ─────
+    CAL_SRC = [
+        { k: 'rem',  t: '미리알림',    c: '#ff9f0a' },
+        { k: 'todo', t: '할일',        c: '#0a84ff' },
+        { k: 'note', t: '메모 체크',   c: '#30d158' },
+        { k: 'job',  t: '생산 작업',   c: '#6366f1' },
+        { k: 'proj', t: '프로젝트 마감', c: '#bf5af2' },
+    ];
+    _calOn(k) { const off = this.calOff || {}; return !off[k]; }
+    toggleCalSrc(k) { this.calOff = { ...(this.calOff || {}) }; this.calOff[k] = this._calOn(k); this.requestRender(); }
+    calMove(n) {
+        const d = this._calCursor ? new Date(this._calCursor) : new Date();
+        if ((this.calView || 'month') === 'month') d.setMonth(d.getMonth() + n);
+        else if (this.calView === 'week') d.setDate(d.getDate() + n * 7);
+        else d.setDate(d.getDate() + n);
+        this._calCursor = d.toISOString().slice(0, 10); this.requestRender();
+    }
+    calToday() { this._calCursor = new Date().toISOString().slice(0, 10); this.calDay = this._calCursor; this.requestRender(); }
+    setCalView(v) { this.calView = v; this.requestRender(); }
+    selectCalDay(d) { this.calDay = d; this.requestRender(); }
     renderCalendar() {
-        if (!this._cardsLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">캘린더를 불러오는 중...</div>`;
-        const now = new Date();
-        if (!this.calYear) { this.calYear = now.getFullYear(); this.calMonth = now.getMonth(); }
-        const y = this.calYear, m = this.calMonth;
-        const first = new Date(y, m, 1);
-        const startDay = first.getDay();
-        const daysInMonth = new Date(y, m + 1, 0).getDate();
-        const items = this._calItems();
+        const esc = s => this._vesc(s);
+        const todayS = new Date().toISOString().slice(0, 10);
+        const cur = new Date(this._calCursor || todayS);
+        const yy = cur.getFullYear(), mo = cur.getMonth();
+        const view = this.calView || 'month';
+        const items = this._allDated().filter(x => x.date && this._calOn(x.kind));
         const byDate = {};
-        items.forEach(it => { (byDate[it.date] = byDate[it.date] || []).push(it); });
-        const pad = (n) => String(n).padStart(2, '0');
-        const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        items.forEach(x => { (byDate[x.date] ||= []).push(x); });
+        const ymd = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const dow = ['일', '월', '화', '수', '목', '금', '토'];
+        const sel = this.calDay || todayS;
 
-        let cells = '';
-        for (let i = 0; i < startDay; i++) cells += `<div style="min-height:96px"></div>`;
-        for (let d = 1; d <= daysInMonth; d++) {
-            const ds = `${y}-${pad(m + 1)}-${pad(d)}`;
-            const dayItems = byDate[ds] || [];
-            const isToday = ds === todayStr;
-            cells += `
-            <div style="min-height:96px;border:1px solid var(--card-border);border-radius:10px;padding:6px;background:${isToday ? 'rgba(99,102,241,0.12)' : 'rgba(var(--tint),0.02)'}">
-                <div style="font-size:0.78rem;color:${isToday ? '#a5b4fc' : 'var(--text-muted)'};font-weight:${isToday ? '700' : '400'};margin-bottom:4px">${d}</div>
-                ${dayItems.slice(0, 4).map(it => `<div style="font-size:0.68rem;padding:2px 5px;border-radius:5px;background:${it.color}22;color:${it.color};margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.label}</div>`).join('')}
-                ${dayItems.length > 4 ? `<div style="font-size:0.65rem;color:var(--text-muted)">+${dayItems.length - 4}</div>` : ''}
-            </div>`;
+        // 가운데 — 달/주/일
+        let grid = '';
+        if (view === 'month') {
+            const first = new Date(yy, mo, 1).getDay();
+            const days = new Date(yy, mo + 1, 0).getDate();
+            const prevDays = new Date(yy, mo, 0).getDate();
+            const cells = [];
+            for (let i = first - 1; i >= 0; i--) cells.push({ d: prevDays - i, out: true, key: ymd(mo === 0 ? yy - 1 : yy, mo === 0 ? 11 : mo - 1, prevDays - i) });
+            for (let d = 1; d <= days; d++) cells.push({ d, key: ymd(yy, mo, d) });
+            while (cells.length % 7) { const d = cells.length - first - days + 1; cells.push({ d, out: true, key: ymd(mo === 11 ? yy + 1 : yy, mo === 11 ? 0 : mo + 1, d) }); }
+            grid = `<div class="cal-dow">${dow.map((n, i) => `<span class="${i === 0 ? 'sun' : (i === 6 ? 'sat' : '')}">${n}</span>`).join('')}</div>
+                <div class="cal-grid">${cells.map(c => {
+                    const list = byDate[c.key] || [];
+                    return `<div class="cal-cell${c.out ? ' out' : ''}${c.key === todayS ? ' today' : ''}${c.key === sel ? ' on' : ''}"
+                            onclick="app.selectCalDay('${c.key}')">
+                        <span class="cal-d">${c.key === todayS ? `<i>${c.d}</i>` : c.d}${c.d === 1 && !c.out ? `<em>${mo + 1}월</em>` : ''}</span>
+                        ${list.slice(0, 3).map(x => `<span class="cal-chip" style="background:${x.color}" title="${esc(x.title)}">${esc(x.title)}</span>`).join('')}
+                        ${list.length > 3 ? `<span class="cal-more">+${list.length - 3}</span>` : ''}
+                    </div>`;
+                }).join('')}</div>`;
+        } else {
+            const base = new Date(cur);
+            const n = view === 'week' ? 7 : 1;
+            if (view === 'week') base.setDate(base.getDate() - base.getDay());
+            const days = [...Array(n)].map((_, i) => { const d = new Date(base); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10); });
+            grid = `<div class="cal-cols" style="grid-template-columns:repeat(${n},1fr)">
+                ${days.map(k => {
+                    const list = byDate[k] || [];
+                    const d = new Date(k);
+                    return `<div class="cal-col${k === todayS ? ' today' : ''}" onclick="app.selectCalDay('${k}')">
+                        <div class="cal-colh">${dow[d.getDay()]} <b>${d.getDate()}</b></div>
+                        ${list.map(x => `<div class="cal-ev" style="border-left-color:${x.color}">
+                            <b>${esc(x.title)}</b><span>${esc(x.sub || '')}</span></div>`).join('')
+                          || '<div class="cal-empty">없음</div>'}
+                    </div>`;
+                }).join('')}</div>`;
         }
-        const week = ['일', '월', '화', '수', '목', '금', '토'];
+
+        // 왼쪽 아래 작은 달력
+        const mFirst = new Date(yy, mo, 1).getDay(), mDays = new Date(yy, mo + 1, 0).getDate();
+        let mini = '';
+        for (let i = 0; i < mFirst; i++) mini += '<i></i>';
+        for (let d = 1; d <= mDays; d++) {
+            const k = ymd(yy, mo, d);
+            mini += `<i class="${k === todayS ? 'today' : ''}${k === sel ? ' on' : ''}${(byDate[k] || []).length ? ' has' : ''}"
+                onclick="app.selectCalDay('${k}')">${d}</i>`;
+        }
+
+        const selList = (byDate[sel] || []).slice().sort((a, b) => a.kind.localeCompare(b.kind));
         return `
-        <div class="glass" style="padding:2rem;border-radius:20px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
-                <h2 style="margin:0;font-size:1.5rem"><i class="ph ph-calendar-dots"></i> ${y}년 ${m + 1}월</h2>
-                <div style="display:flex;gap:8px;align-items:center">
-                    <button id="cal-prev" class="btn-secondary" style="padding:6px 12px;border-radius:8px">‹</button>
-                    <button id="cal-today" class="btn-secondary" style="padding:6px 14px;border-radius:8px;font-size:0.85rem">오늘</button>
-                    <button id="cal-next" class="btn-secondary" style="padding:6px 12px;border-radius:8px">›</button>
+        <div class="cal">
+            <aside class="cal-side">
+                <div class="m3-h">이 대시보드</div>
+                ${this.CAL_SRC.map(s2 => `<div class="cal-src" onclick="app.toggleCalSrc('${s2.k}')">
+                    <span class="cal-ck${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}"></span>
+                    <span>${esc(s2.t)}</span>
+                    <em>${items.filter(x => x.kind === s2.k).length}</em></div>`).join('')}
+                <div class="cal-mini">
+                    <div class="cal-mh"><button onclick="app.calMove(-1)">‹</button>
+                        <b>${yy}년 ${mo + 1}월</b><button onclick="app.calMove(1)">›</button></div>
+                    <div class="cal-mdow">${dow.map(x => `<span>${x}</span>`).join('')}</div>
+                    <div class="cal-mgrid">${mini}</div>
                 </div>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px">
-                ${week.map((w, i) => `<div style="text-align:center;font-size:0.8rem;color:${i === 0 ? '#ef4444' : (i === 6 ? '#60a5fa' : 'var(--text-muted)')};padding:4px">${w}</div>`).join('')}
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cells}</div>
-            <div style="display:flex;gap:14px;margin-top:1rem;font-size:0.78rem;color:var(--text-muted)">
-                <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#22c55e"></span> 할일</span>
-                <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f59e0b"></span> 일정</span>
-                <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#6366f1"></span> 보드카드</span>
-            </div>
+            </aside>
+            <section class="cal-main">
+                <div class="cal-top">
+                    <button class="cal-add" onclick="app.quickAddFromCalendar()" title="새 미리알림"><i class="ph ph-plus"></i></button>
+                    <div class="cal-seg">
+                        ${[['day', '일'], ['week', '주'], ['month', '월']].map(([k, t]) =>
+                            `<button class="${view === k ? 'on' : ''}" onclick="app.setCalView('${k}')">${t}</button>`).join('')}
+                    </div>
+                    <div class="cal-nav"><button onclick="app.calMove(-1)">‹</button>
+                        <button class="t" onclick="app.calToday()">오늘</button>
+                        <button onclick="app.calMove(1)">›</button></div>
+                </div>
+                <h1 class="cal-h1">${yy}년 ${mo + 1}월</h1>
+                ${grid}
+            </section>
+            <aside class="cal-day">
+                <div class="dt-h"><b>${esc(new Date(sel).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' }))}</b>
+                    <span>${selList.length}건</span></div>
+                <div class="dt-b">
+                    ${selList.length ? selList.map(x => `<div class="cal-ev" style="border-left-color:${x.color}"
+                            onclick="app.macOpen('${x.view}')">
+                        <b${x.done ? ' class="done"' : ''}>${esc(x.title)}</b><span>${esc(x.sub || '')}</span></div>`).join('')
+                      : `<div class="m3-none">이 날은 비어 있습니다</div>`}
+                </div>
+                <div class="dt-a"><button class="mbtn pri" onclick="app.quickAddFromCalendar()">이 날에 추가</button></div>
+            </aside>
         </div>`;
     }
-
+    async quickAddFromCalendar() {
+        const day = this.calDay || new Date().toISOString().slice(0, 10);
+        const title = window.prompt(`${day} 에 추가할 내용`); if (!title || !title.trim()) return;
+        try {
+            const { data, error } = await this.supabase.from('reminders')
+                .insert([{ title: title.trim(), due_date: day, list_name: '미리 알림', created_by: this.currentUser?.name || null }])
+                .select('*').single();
+            if (error) throw error;
+            this.remList = [data, ...(this.remList || [])];
+            this.requestRender();
+        } catch (e) { this.showToast('추가 실패: ' + (e.message || e)); }
+    }
     bindCalendarEvents() {
         const prev = document.getElementById('cal-prev');
         const next = document.getElementById('cal-next');
@@ -9472,6 +9760,8 @@ class BhasApp {
             </section>
         </div>`;
     }
+    // 메모 사이드바의 프로젝트 ＋ — 기존 프로젝트 만들기 창을 그대로 띄운다
+    newProjectFromNotes() { this.showProjectModal(); }
     setContactCat(c) { this.contactCat = c; this.contactSel = null; this.requestRender(); }
     selectContact(id) { this.contactSel = id; this.requestRender(); }
     contactMenu(ev, id) {
