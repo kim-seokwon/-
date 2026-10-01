@@ -2720,6 +2720,9 @@ class BhasApp {
                 <div class="set-head">계정</div>
                 ${row(this.currentUser?.name || '-', role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사'),
                     `<button class="set-btn danger" onclick="app.logout()">로그아웃</button>`)}
+                ${row('아이디', this.currentUser?.username || (this.currentUser?.email || '').split('@')[0] || '-', '')}
+                ${row('비밀번호', '처음 받은 비밀번호는 바꿔서 쓰세요',
+                    `<button class="set-btn" onclick="app.changeMyPassword()">비밀번호 바꾸기</button>`)}
             </div>
         </div></div></div>`;
     }
@@ -2800,11 +2803,12 @@ class BhasApp {
     projectMenu(ev, id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
         this.ctxMenu(ev, [
-            { t: '열기', icon: 'ph-arrow-square-out', run: () => { this.activeProjectId = id; this.switchView('detail'); } },
+            { t: '열기', icon: 'ph-arrow-square-out', run: () => this.openSeasonItems(id) },
+            { t: '속성 · 접근 권한…', icon: 'ph-info', run: () => this.folderInfo(id) },
+            { sep: true },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameProject(id) },
             { t: '브랜드 바꾸기…', icon: 'ph-shield-check', run: () => this.moveProjectBrand(id) },
             { t: '마감일 바꾸기', icon: 'ph-calendar-blank', run: () => this.setProjectDue(id) },
-            { t: '담당자·권한…', icon: 'ph-users-three', run: () => this.projectAccess(id) },
             { sep: true },
             { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.handleDelete(ev, 'product', id) },
         ]);
@@ -2817,6 +2821,93 @@ class BhasApp {
         return (p.members || []).includes(this._me());
     }
     // 시즌 담당자·권한 고치기
+    // ── 폴더 속성 (맥 '정보 가져오기' 결) ───────────────────
+    //  이름·브랜드·마감·담긴 것, 그리고 **접근 권한을 그 자리에서** 고친다.
+    //  권한을 고치는 건 마스터만. 나머지는 누가 볼 수 있는지 읽기만 한다.
+    folderInfo(id) {
+        const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
+        const esc = s => this._vesc(s);
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const isMaster = this.currentUser?.role === 'MASTER';
+        const accs = (mockData.companies || []).filter(a => a.username);
+        const mem = new Set(p.members || []);
+        const acc = p.access || 'all';
+        const nItems = (this.pItems || []).filter(i => String(i.product_id) === String(id)).length;
+        const nNotes = (this.noteList || []).filter(n => String(n.product_id) === String(id)).length;
+        const nDocs = (mockData.globalDocuments || []).filter(d => String(d.productId) === String(id)).length;
+        const who = acc === 'all' ? '브랜드에 접근할 수 있는 사람 모두'
+            : (mem.size ? [...mem].map(u => (accs.find(a => a.username === u) || {}).name || u).join(' · ') : '아무도 없음 — 담당자를 고르세요');
+
+        c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:430px">
+            <div class="fi-top">
+                <i class="ph-fill ph-folder" style="color:${((mockData.brands || []).find(b => b.id === p.brand_id) || {}).brand_color || '#5ac8fa'}"></i>
+                <div><b>${esc(p.name)}</b><em>시즌 · 제품 ${nItems} · 메모 ${nNotes} · 자료 ${nDocs}</em></div>
+                <button class="fi-x" onclick="app.closeGlobalModal()">×</button>
+            </div>
+
+            <div class="fi-sec">이름과 일정</div>
+            <div class="fi-r"><span>이름</span><input id="fi-name" class="nw-f" value="${esc(p.name || '')}" ${isMaster ? '' : 'disabled'}></div>
+            <div class="fi-r"><span>브랜드</span>
+                <select id="fi-brand" class="nw-f" ${isMaster ? '' : 'disabled'}>
+                    <option value="">브랜드 없음</option>
+                    ${(mockData.brands || []).map(b => `<option value="${b.id}"${String(p.brand_id) === String(b.id) ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}
+                </select></div>
+            <div class="fi-r"><span>마감</span><input id="fi-due" type="date" class="nw-f" value="${esc((p.deadline || p.due_date || '').slice(0, 10))}" ${isMaster ? '' : 'disabled'}></div>
+
+            <div class="fi-sec">누가 볼 수 있나</div>
+            ${isMaster ? `
+            <label class="pa-opt"><input type="radio" name="fi-acc" value="all" ${acc === 'all' ? 'checked' : ''}>
+                <span><b>전체 권한</b><em>브랜드에 접근할 수 있는 사람 모두</em></span></label>
+            <label class="pa-opt"><input type="radio" name="fi-acc" value="members" ${acc === 'members' ? 'checked' : ''}>
+                <span><b>담당자만</b><em>아래에서 고른 사람만</em></span></label>
+            <div class="pa-list" id="fi-list">
+                ${accs.map(a => `<label class="pa-m"><input type="checkbox" value="${esc(a.username)}" ${mem.has(a.username) ? 'checked' : ''}>
+                    <span class="mrow-face" style="width:24px;height:24px;font-size:11px">${esc((a.name || '?')[0])}</span>
+                    <span>${esc(a.name)}<em>${esc(a.username)} · ${a.role === 'MASTER' ? '마스터' : (a.role === 'STAFF' ? '직원' : '파트너')}</em></span></label>`).join('')}
+            </div>
+            <p class="fi-note">이 시즌의 <b>메모·할일·미리알림</b>에 적용됩니다. 제품·자료는 브랜드 권한을 따릅니다.</p>
+            ` : `
+            <div class="fi-r ro"><span>${acc === 'all' ? '전체 권한' : '담당자만'}</span><b>${esc(who)}</b></div>
+            <p class="fi-note">권한은 마스터만 바꿀 수 있습니다.</p>`}
+
+            <div class="fi-act">
+                <button class="mbtn" onclick="app.closeGlobalModal()">닫기</button>
+                ${isMaster ? `<button class="mbtn pri" id="fi-save">저장</button>` : ''}
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+
+        if (!isMaster) return;
+        const sync = () => {
+            const v = c.querySelector('input[name=fi-acc]:checked')?.value;
+            const list = c.querySelector('#fi-list');
+            list.style.opacity = v === 'members' ? '1' : '.4';
+            list.style.pointerEvents = v === 'members' ? 'auto' : 'none';
+        };
+        c.querySelectorAll('input[name=fi-acc]').forEach(r => r.onchange = sync);
+        sync();
+        c.querySelector('#fi-save').onclick = async () => {
+            const btn = c.querySelector('#fi-save');
+            const name = c.querySelector('#fi-name').value.trim();
+            if (!name) { this.showToast('이름은 비울 수 없습니다.'); return; }
+            const patch = {
+                name,
+                brand_id: c.querySelector('#fi-brand').value || null,
+                deadline: c.querySelector('#fi-due').value || null,
+                access: c.querySelector('input[name=fi-acc]:checked')?.value || 'all',
+                members: [...c.querySelectorAll('#fi-list input:checked')].map(x => x.value),
+            };
+            btn.disabled = true; btn.textContent = '저장 중...';
+            const { error } = await this.supabase.from('products').update(patch).eq('id', id);
+            btn.disabled = false; btn.textContent = '저장';
+            if (error) { this.showToast('저장 실패: ' + error.message); return; }
+            Object.assign(p, patch);
+            this.closeGlobalModal();
+            this.requestRender();
+            this.showToast(`'${name}' 속성을 저장했습니다`);
+        };
+    }
+
     projectAccess(id) {
         const p = (mockData.products || []).find(x => String(x.id) === String(id)); if (!p) return;
         const esc = s => this._vesc(s);
@@ -6335,7 +6426,9 @@ class BhasApp {
         ]);
     }
     folderMenu(ev, key) {
+        const pid = String(key || '').startsWith('p:') ? String(key).slice(2) : null;
         this.ctxMenu(ev, [
+            ...(pid ? [{ t: '속성 · 접근 권한…', icon: 'ph-info', run: () => this.folderInfo(pid) }, { sep: true }] : []),
             { t: '새 폴더', icon: 'ph-folder-plus', run: () => this.addNoteFolder() },
             { t: '이 폴더에 새 메모', icon: 'ph-note-pencil', run: () => { this.noteFolder = key; this.addNote(); } },
             ...(key.startsWith('f:') ? [{ sep: true },
@@ -6803,7 +6896,7 @@ class BhasApp {
         <div class="nt">
             <aside class="nt-side">
                 ${fold('private', 'ph-note', '개인 메모', cnt(n => n.scope === 'private' && n.owner === me))}
-                <div class="nt-shead">우리 회사
+                <div class="nt-shead">워크스페이스
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-folder-simple', '메모', all.length)}
                 ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
@@ -7326,7 +7419,9 @@ class BhasApp {
         ]);
     }
     docFolderMenu(ev, key) {
+        const pid = String(key || '').startsWith('p:') ? String(key).slice(2).split('/')[0] : null;
         this.ctxMenu(ev, [
+            ...(pid ? [{ t: '속성 · 접근 권한…', icon: 'ph-info', run: () => this.folderInfo(pid) }, { sep: true }] : []),
             { t: '새 자료 올리기', icon: 'ph-upload-simple', run: () => document.getElementById('quick-add-doc-btn')?.click() },
             { t: '아이콘 보기', icon: 'ph-squares-four', run: () => this.setDocView('grid') },
             { t: '목록 보기', icon: 'ph-list-dashes', run: () => this.setDocView('list') },
@@ -11971,6 +12066,63 @@ class BhasApp {
             if (parsed && typeof parsed === 'object') return parsed;
         } catch (e) { /* 본문이 JSON 이 아니면 아래 기본 메시지 */ }
         return { ok: false, error: error.message || '요청에 실패했습니다.' };
+    }
+
+    //  본인 비밀번호 바꾸기 — 로그인한 사람 스스로. 관리자 손이 필요 없다.
+    changeMyPassword() {
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const who = this._vesc(this.currentUser?.name || '');
+        c.innerHTML = `<div class="modal-content vmodal" style="width:94%;max-width:380px">
+            <h2>비밀번호 바꾸기</h2>
+            <p style="margin:-8px 0 14px;color:var(--text-muted);font-size:12px">${who} 계정. 바꾼 뒤에는 새 비밀번호로 들어옵니다.</p>
+            <div class="pwf">
+                <label>지금 쓰는 비밀번호</label>
+                <input type="password" id="pw-now" class="login-input" autocomplete="current-password">
+                <label>새 비밀번호</label>
+                <input type="password" id="pw-new" class="login-input" autocomplete="new-password"
+                    placeholder="영문·숫자 포함 10자 이상">
+                <label>새 비밀번호 한 번 더</label>
+                <input type="password" id="pw-new2" class="login-input" autocomplete="new-password">
+            </div>
+            <div id="pw-err" class="pw-err"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+                <button class="mbtn" onclick="app.closeGlobalModal()">취소</button>
+                <button class="mbtn pri" id="pw-go">바꾸기</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        const err = (m) => { const e = c.querySelector('#pw-err'); e.textContent = m || ''; e.style.display = m ? 'block' : 'none'; };
+        err('');
+        const go = c.querySelector('#pw-go');
+        c.querySelectorAll('input').forEach(i => i.onkeydown = (e) => { if (e.key === 'Enter') go.click(); });
+        setTimeout(() => c.querySelector('#pw-now')?.focus(), 40);
+        go.onclick = async () => {
+            const now = c.querySelector('#pw-now').value;
+            const pw = c.querySelector('#pw-new').value.trim();
+            const pw2 = c.querySelector('#pw-new2').value.trim();
+            if (!now) return err('지금 쓰는 비밀번호를 넣으세요.');
+            if (!this._isStrongPassword(pw)) return err('새 비밀번호는 영문·숫자를 포함해 10자 이상이어야 합니다.');
+            if (pw !== pw2) return err('새 비밀번호를 두 번 다르게 넣었습니다.');
+            if (pw === now) return err('지금 쓰는 것과 같습니다.');
+
+            const email = this.currentUser?.email
+                || (this.currentUser?.username ? `${this.currentUser.username}@bhas.com` : '');
+            if (!email) return err('계정 주소를 찾지 못했습니다. 다시 로그인해 주세요.');
+
+            go.disabled = true; go.textContent = '바꾸는 중...';
+            //  자리를 비운 사이 남이 바꾸지 못하게, 지금 비밀번호부터 맞는지 본다
+            const chk = await this.supabase.auth.signInWithPassword({ email, password: now });
+            if (chk.error) { go.disabled = false; go.textContent = '바꾸기'; return err('지금 쓰는 비밀번호가 맞지 않습니다.'); }
+
+            const { error } = await this.supabase.auth.updateUser({ password: pw });
+            go.disabled = false; go.textContent = '바꾸기';
+            if (error) return err('바꾸지 못했습니다: ' + error.message);
+            //  저장해 둔 자동 로그인 정보는 흘려두면 안 된다
+            localStorage.removeItem('bhas_auto_login');
+            localStorage.removeItem('bhas_session_user');
+            this.closeGlobalModal();
+            this.showToast('비밀번호를 바꿨습니다. 다음부터 새 비밀번호로 들어오세요.');
+        };
     }
 
     // 비밀번호 변경 — 서버(admin-users)에서 auth.admin.updateUserById 로 처리.

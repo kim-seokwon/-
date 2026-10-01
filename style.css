@@ -3942,3 +3942,27 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   padding:2px 6px;border-radius:6px;opacity:.8}
 .mac-find:hover{background:rgba(127,127,127,.2);opacity:1}
 @media (max-width:620px){ .desk-find{width:86vw} .desk-find kbd{display:none} }
+
+/* 비밀번호 바꾸기 창 */
+.pwf{display:flex;flex-direction:column;gap:4px}
+.pwf label{font-size:11.5px;font-weight:700;color:var(--text-muted);margin-top:8px}
+.pwf input{width:100%;box-sizing:border-box}
+.pw-err{display:none;color:#ff453a;font-size:11.5px;margin-top:9px;line-height:1.5}
+
+/* 폴더 속성 창 — 맥 '정보 가져오기' 결 */
+.fi .fi-top{display:flex;align-items:center;gap:12px;padding-bottom:14px;
+  border-bottom:.5px solid var(--card-border);margin-bottom:4px}
+.fi .fi-top>i{font-size:40px;flex:0 0 auto}
+.fi .fi-top>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.fi .fi-top b{font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fi .fi-top em{font-style:normal;font-size:11.5px;color:var(--text-muted)}
+.fi-x{border:0;background:transparent;color:var(--text-muted);font-size:20px;line-height:1;
+  cursor:default;padding:0 2px;align-self:flex-start}
+.fi-sec{font-size:11px;font-weight:800;color:var(--text-muted);margin:16px 0 6px}
+.fi-r{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12.5px}
+.fi-r>span{width:58px;flex:0 0 auto;color:var(--text-muted);font-size:11.5px}
+.fi-r>input,.fi-r>select{flex:1;min-width:0}
+.fi-r.ro>b{font-weight:600}
+.fi-note{font-size:11px;color:var(--text-muted);line-height:1.6;margin:10px 0 0}
+.fi-act{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.fi .pa-list{max-height:190px;overflow:auto;margin-top:6px}
