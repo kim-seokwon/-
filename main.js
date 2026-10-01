@@ -2887,51 +2887,77 @@ class BhasApp {
         this.noteList = [data, ...(this.noteList || [])];
     }
 
-    //  메모 폴더 정보 — 이 폴더는 시즌이 아니라 그냥 묶음이라 담긴 메모를 다룬다
+    //  메모 폴더 정보 — 마스터가 '이 폴더는 누구누구만' 을 정한다
     noteFolderInfo(name) {
         const c = document.getElementById('global-modal-container'); if (!c) return;
         const esc = s => this._vesc(s);
+        const isMaster = this.currentUser?.role === 'MASTER';
         const inF = (this.noteList || []).filter(n => (n.folder || '공용') === name);
-        const by = {};
-        inF.forEach(n => { const k = n.scope || 'shared'; by[k] = (by[k] || 0) + 1; });
-        const SC = { shared: '공용', private: '개인', project: '시즌' };
-        const who = [...new Set(inF.map(n => n.created_by).filter(Boolean))];
+        const accs = (mockData.companies || []).filter(a => a.username);
+        const f = (this.noteFolders || []).find(x => x.name === name) || { access: 'all', members: [] };
+        const mem = new Set(f.members || []);
+        const who = f.access === 'all' ? '워크스페이스 모두'
+            : (mem.size ? [...mem].map(u => (accs.find(a => a.username === u) || {}).name || u).join(' · ') : '아무도 없음 — 아래에서 고르세요');
         const last = inF.map(n => n.updated_at).filter(Boolean).sort().slice(-1)[0];
-        c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:400px">
+
+        c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:410px">
             <div class="fi-top">
                 <i class="ph-fill ph-folder" style="color:#e0a800"></i>
-                <div><b>${esc(name)}</b><em>메모 ${inF.length}개</em></div>
+                <div><b>${esc(name)}</b><em>메모 ${inF.length}개${last ? ' · 마지막 ' + esc(String(last).slice(0, 10)) : ''}</em></div>
                 <button class="fi-x" onclick="app.closeGlobalModal()">×</button>
             </div>
-            <div class="fi-sec">담긴 것</div>
-            <div class="fi-r ro"><span>공개 범위</span><b>${Object.keys(by).length
-                ? Object.entries(by).map(([k, v]) => `${SC[k] || k} ${v}`).join(' · ') : '없음'}</b></div>
-            <div class="fi-r ro"><span>쓴 사람</span><b>${who.length ? esc(who.join(' · ')) : '—'}</b></div>
-            <div class="fi-r ro"><span>마지막 수정</span><b>${last ? esc(String(last).slice(0, 10)) : '—'}</b></div>
-            <div class="fi-sec">이 폴더 메모 한꺼번에</div>
-            <p class="fi-note">폴더는 묶음일 뿐입니다. 누가 볼 수 있는지는 메모마다 정해지는데,
-                여기서 이 폴더 메모를 한 번에 바꿀 수 있습니다.</p>
+
+            <div class="fi-sec">이 폴더를 볼 수 있는 사람</div>
+            ${isMaster ? `
+            <label class="pa-opt"><input type="radio" name="nf-acc" value="all" ${f.access === 'all' ? 'checked' : ''}>
+                <span><b>모두</b><em>워크스페이스의 모든 계정</em></span></label>
+            <label class="pa-opt"><input type="radio" name="nf-acc" value="members" ${f.access === 'members' ? 'checked' : ''}>
+                <span><b>지정한 사람만</b><em>아래에서 고른 계정만 이 폴더를 본다</em></span></label>
+            <div class="pa-list" id="nf-list">
+                ${accs.map(a => `<label class="pa-m"><input type="checkbox" value="${esc(a.username)}" ${mem.has(a.username) ? 'checked' : ''}>
+                    <span class="mrow-face" style="width:24px;height:24px;font-size:11px">${esc((a.name || '?')[0])}</span>
+                    <span>${esc(a.name)}<em>${esc(a.username)} · ${a.role === 'MASTER' ? '마스터' : (a.role === 'STAFF' ? '직원' : '파트너')}</em></span></label>`).join('')}
+            </div>
+            <p class="fi-note">마스터는 늘 전부 봅니다. 폴더를 잠그면 그 안의 메모도 같이 가려집니다.</p>
+            ` : `
+            <div class="fi-r ro"><span>${f.access === 'all' ? '모두' : '지정한 사람만'}</span><b>${esc(who)}</b></div>
+            <p class="fi-note">폴더 권한은 마스터만 바꿀 수 있습니다.</p>`}
+
             <div class="fi-act" style="justify-content:space-between">
-                <span style="display:flex;gap:7px">
-                    <button class="mbtn" onclick="app.setFolderScope('${esc(name)}','shared')">모두 공용으로</button>
-                    <button class="mbtn" onclick="app.setFolderScope('${esc(name)}','private')">모두 개인으로</button>
-                </span>
                 <button class="mbtn" onclick="app.renameNoteFolder('${esc(name)}')">이름 바꾸기</button>
+                <span style="display:flex;gap:7px">
+                    <button class="mbtn" onclick="app.closeGlobalModal()">닫기</button>
+                    ${isMaster ? `<button class="mbtn pri" id="nf-save">저장</button>` : ''}
+                </span>
             </div>
         </div>`;
         c.style.display = 'flex';
-    }
-    async setFolderScope(name, scope) {
-        const inF = (this.noteList || []).filter(n => (n.folder || '공용') === name);
-        if (!inF.length) return;
-        const label = scope === 'private' ? '개인' : '공용';
-        if (!await this.showConfirm(`'${name}' 의 메모 ${inF.length}개를 모두 ${label} 으로 바꿀까요?`, '확인')) return;
-        const patch = scope === 'private' ? { scope: 'private', owner: this._actor() } : { scope: 'shared', owner: null };
-        const { error } = await this.supabase.from('notes').update(patch).eq('folder', name);
-        if (error) { this.showToast('바꾸지 못했습니다: ' + error.message); return; }
-        inF.forEach(n => Object.assign(n, patch));
-        this.closeGlobalModal(); this.requestRender();
-        this.showToast(`메모 ${inF.length}개를 ${label} 으로 바꿨습니다`);
+        if (!isMaster) return;
+        const sync = () => {
+            const v = c.querySelector('input[name=nf-acc]:checked')?.value;
+            const list = c.querySelector('#nf-list');
+            list.style.opacity = v === 'members' ? '1' : '.4';
+            list.style.pointerEvents = v === 'members' ? 'auto' : 'none';
+        };
+        c.querySelectorAll('input[name=nf-acc]').forEach(r => r.onchange = sync);
+        sync();
+        c.querySelector('#nf-save').onclick = async () => {
+            const btn = c.querySelector('#nf-save');
+            const row = {
+                name,
+                access: c.querySelector('input[name=nf-acc]:checked')?.value || 'all',
+                members: [...c.querySelectorAll('#nf-list input:checked')].map(x => x.value),
+            };
+            btn.disabled = true; btn.textContent = '저장 중...';
+            const { error } = await this.supabase.from('note_folders').upsert(row, { onConflict: 'name' });
+            btn.disabled = false; btn.textContent = '저장';
+            if (error) { this.showToast('저장 실패 (045 SQL 필요): ' + error.message); return; }
+            this.noteFolders = [...(this.noteFolders || []).filter(x => x.name !== name), row];
+            this.closeGlobalModal(); this.requestRender();
+            this.showToast(row.access === 'all'
+                ? `'${name}' 는 모두가 봅니다`
+                : `'${name}' 는 ${row.members.length}명만 봅니다`);
+        };
     }
 
     // ── 폴더 속성 (맥 '정보 가져오기' 결) ───────────────────
@@ -6471,6 +6497,11 @@ class BhasApp {
             if (error) throw error;
             this.noteList = data || []; this._noteLoaded = true;
             if (!this.noteSel && this.noteList.length) this.noteSel = this.noteList[0].id;
+            //  폴더 권한 (045 를 안 돌렸으면 조용히 비워 둔다 — 화면은 그대로 돈다)
+            try {
+                const { data: fd } = await this.supabase.from('note_folders').select('*');
+                this.noteFolders = fd || [];
+            } catch (_e) { this.noteFolders = this.noteFolders || []; }
         } catch (e) { this.noteList = []; this._noteLoaded = true; this.showToast('메모를 불러오지 못했습니다: ' + (e.message || e)); }
         this._noteLoading = false; this.requestRender();
     }
@@ -7223,7 +7254,12 @@ class BhasApp {
                 <div class="nt-shead">워크스페이스
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-tray', '모든 메모', all.length, '#8e8e93')}
-                ${otherFolders.map(f => fold('f:' + f, 'ph-folder-simple', f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800')).join('')}
+                ${otherFolders.map(f => {
+                    const fx = (this.noteFolders || []).find(x => x.name === f);
+                    const locked = fx && fx.access === 'members';
+                    return fold('f:' + f, locked ? 'ph-folder-simple-lock' : 'ph-folder-simple', f,
+                        cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), '#e0a800');
+                }).join('')}
                 <button class="nt-prod${this.noteProd ? ' on' : ''}" onclick="app.toggleNoteProducts()"
                     title="제품을 보면서 쓰기">
                     <i class="ph ph-t-shirt"></i><span>제품리스트</span>
