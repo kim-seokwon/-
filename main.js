@@ -2731,9 +2731,10 @@ class BhasApp {
     //   · 생산현황 ↔ 재고 : 만든 것과 쌓인 것
     APP_GROUPS = [
         // 파는 쪽 — 주문이 들어오고, 탈나면 CS, 물건은 재고, 돈은 정산·지출
+        //  지출은 판매가 아니다 — 매출의 짝이라 '정산' 안에서 전환한다(숨은 탭).
         { head: 'orders', label: '판매', tabs: [
             { k: 'orders', t: '주문' }, { k: 'cs', t: 'CS' }, { k: 'inventory', t: '재고' },
-            { k: 'sales', t: '정산' }, { k: 'expenses', t: '지출' },
+            { k: 'sales', t: '정산' }, { k: 'expenses', t: '지출', hidden: true },
         ] },
         // 만드는 쪽 — 견적 내고, 샘플 뜨고, 작업지시서 쓰고, 생산처가 만든다
         { head: 'items', label: '생산', tabs: [
@@ -2756,8 +2757,11 @@ class BhasApp {
         const win = this._renderingWin || '';
         return `<aside class="appside">
             <div class="m3-h">${esc(g.label)}</div>
-            ${g.tabs.map(t => `<div class="m3-s${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
-                <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}" style="color:#0a84ff"></i><span>${esc(t.t)}</span></div>`).join('')}
+            ${g.tabs.filter(t => !t.hidden).map(t => {
+                const on = t.k === view || (t.k === 'sales' && view === 'expenses');
+                return `<div class="m3-s${on ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
+                <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}" style="color:#0a84ff"></i><span>${esc(t.t)}</span></div>`;
+            }).join('')}
         </aside>`;
     }
     // 분류 칸 + 본문을 한 틀에 담는다
@@ -4045,7 +4049,10 @@ class BhasApp {
             const names = (mockData.brands || []).map(b => b.name).filter(Boolean);
             const shown = names.slice(0, 3).map(n => this._vesc(n)).join(' · ');
             const salesWord = names.length ? `판매 브랜드(${shown}${names.length > 3 ? ` 외 ${names.length - 3}개` : ''})` : '판매 브랜드';
-            return `<div class="fade-in" style="padding:1.5rem;max-width:1100px;margin:0 auto"><h1 style="font-size:1.4rem"><i class="ph ph-chart-line-up"></i> 매출</h1><div class="glass" style="padding:3rem;border-radius:16px;text-align:center;color:var(--text-muted);margin-top:1rem">매출 데이터가 없습니다.<br>${salesWord}는 몰 주문이 수집되면, 컨설팅은 세금계산서(견적)가 등록되면 자동 집계됩니다.</div></div>`;
+            return `<div class="mp">
+                ${this._mpTop('정산', '매출', this._moneyTabs('sales'))}
+                <div class="mp-body"><div class="mnone">매출 자료가 없습니다.<br>${salesWord}는 몰 주문이 수집되면, 컨설팅은 세금계산서(견적)가 등록되면 저절로 쌓입니다.</div></div>
+            </div>`;
         }
 
         const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
@@ -4484,6 +4491,7 @@ class BhasApp {
 
         return `<div class="mp">
             ${this._mpTop(bf === 'ALL' ? '정산' : bf, bf === 'ALL' ? `전체 브랜드 통합 · ${periodLabel} 기준` : `브랜드 상세 · ${periodLabel} 기준`, `
+                    ${this._moneyTabs('sales')}
                     <select onchange="app.setSalesYear(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         ${yearsAvail.map(y => `<option value="${y}" ${y === selY ? 'selected' : ''}>${y}년</option>`).join('')}
                     </select>
@@ -7291,7 +7299,8 @@ class BhasApp {
             .map(([k, v]) => `<span class="sum-b"><em>${esc(k)}</em>${won(v)}원</span>`).join('');
 
         return `<div class="mp">
-            ${this._mpTop('지출', `${esc(month)} 합계 ${won(total)}원 · ${list.length}건`, `
+            ${this._mpTop('정산', `지출 · ${esc(month)} 합계 ${won(total)}원 · ${list.length}건`, `
+                ${this._moneyTabs('expenses')}
                 <select class="it-sel it-season" onchange="app.setExpMonth(this.value)">
                     ${months.slice(0, 24).map(m => `<option value="${m}"${m === month ? ' selected' : ''}>${m}</option>`).join('')}
                 </select>`)}
@@ -7894,6 +7903,12 @@ class BhasApp {
         return tab === 'materials' ? this.renderMaterialInventory() : this.renderFinishedGoodsInventory();
     }
     //  완제품 ↔ 원·부자재 — 머리막대 안의 분절 컨트롤
+    //  정산 — 돈이 들어온 쪽(매출)과 나간 쪽(지출)
+    _moneyTabs(cur) {
+        const win = this._renderingWin || '';
+        const b = (k, label) => `<button class="${cur === k ? 'on' : ''}" onclick="app.switchAppTab('${win}','${k}')">${label}</button>`;
+        return `<div class="mp-seg">${b('sales', '매출')}${b('expenses', '지출')}</div>`;
+    }
     _invTabs() {
         const tab = this.inventoryTab || 'finished';
         const b = (id, label) => `<button class="${tab === id ? 'on' : ''}" data-inventory-tab="${id}">${label}</button>`;
