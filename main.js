@@ -6541,6 +6541,7 @@ class BhasApp {
             try { this.bindDashboardEvents(); } catch (_e) {}
             this._bindFindKey();
             try { this._mountGrips(); } catch (_e) {}
+            try { this._restoreCell(); } catch (_e) {}
             const fn = per[v];
             if (fn && typeof this[fn] === 'function') { try { this[fn](); } catch (_e) {} }
         });
@@ -11170,10 +11171,30 @@ class BhasApp {
     //  칸 안의 입력칸·선택칸을 누른 것은 '줄 고르기' 가 아니다.
     //  이걸 안 가리면 드롭다운을 여는 순간 다시 그려서 0.2초 만에 닫힌다.
     rowPick(ev, id, what) {
-        if (ev && ev.target && ev.target.closest('input,select,textarea,button,label,a')) return;
-        if (what === 'cs') { this.csSel = id; this.requestRender(); return; }
+        const t = ev && ev.target;
+        const ctl = t && t.closest('input,select,textarea,button,label,a');
+        //  펼친 드롭다운은 다시 그리면 닫힌다 — 고르기만 하고 그리지 않는다
+        if (ctl && ctl.tagName === 'SELECT') {
+            if (what === 'cs') this.csSel = id; else if (what === 'inv') this.invSel = id; else this.itemSel = id;
+            return;
+        }
+        //  글자 칸·날짜 칸은 눌러도 줄이 골라져야 한다. 그린 뒤 커서를 제자리에 돌려놓는다.
+        if (ctl && (ctl.tagName === 'INPUT' || ctl.tagName === 'TEXTAREA')) {
+            if (ctl.type === 'checkbox' || ctl.type === 'radio') return;
+            this._cellBack = { row: id, f: ctl.dataset.f || '', at: ctl.selectionStart };
+        } else if (ctl) return;   // 단추는 제 할 일만
+        if (what === 'cs') { if (String(this.csSel) !== String(id)) { this.csSel = id; this.requestRender(); } return; }
         if (what === 'inv') { this.selectInv(id); return; }
         this.selItem(id);
+    }
+    //  다시 그린 뒤, 누르고 있던 칸으로 커서를 돌려놓는다
+    _restoreCell() {
+        const c = this._cellBack; if (!c) return;
+        this._cellBack = null;
+        const el = this.appContainer?.querySelector(`.it-row[data-id="${c.row}"] [data-f="${c.f}"]`);
+        if (!el) return;
+        el.focus();
+        try { if (c.at != null && el.setSelectionRange) el.setSelectionRange(c.at, c.at); } catch (_e) {}
     }
     selectTechPack(id) { this.tpSel = id; this.requestRender(); }
     setSeasonView(v) { this.seasonView = v; this.requestRender(); }
@@ -11187,6 +11208,92 @@ class BhasApp {
     }
     setItemSeason(v) { this.itemSeason = v; this.requestRender(); }
     setItemStatus(v) { this.itemStatus = v; this.requestRender(); }
+    pickRow(id, on) {
+        this._itemPicked = this._itemPicked || new Set();
+        if (on) this._itemPicked.add(id); else this._itemPicked.delete(id);
+        this.requestRender();
+    }
+    pickAllRows(on) {
+        this._itemPicked = new Set();
+        if (on) (this._lastItemRows || []).forEach(i => this._itemPicked.add(i.id));
+        this.requestRender();
+    }
+    //  고른 줄을 한꺼번에 — 제작현황 · 시즌 · 공장
+    async bulkItems(field, value) {
+        const ids = [...(this._itemPicked || [])];
+        if (!ids.length) return;
+        const v = value === '' ? null : value;
+        const label = { status: '제작현황', product_id: '시즌', vendor_id: '공장' }[field] || field;
+        const { error } = await this.supabase.from('product_items').update({ [field]: v }).in('id', ids);
+        if (error) { this.showToast('바꾸지 못했습니다: ' + error.message); return; }
+        (this.pItems || []).forEach(i => { if (ids.includes(i.id)) i[field] = v; });
+        this.showToast(`${ids.length}개의 ${label}을 바꿨습니다`);
+        this.requestRender();
+    }
+    async bulkDeleteItems() {
+        const ids = [...(this._itemPicked || [])];
+        if (!ids.length) return;
+        if (!await this.showConfirm(`고른 제품 ${ids.length}개를 지웁니다.`, '삭제')) return;
+        const { error } = await this.supabase.from('product_items').delete().in('id', ids);
+        if (error) { this.showToast('삭제 실패: ' + error.message); return; }
+        this.pItems = (this.pItems || []).filter(i => !ids.includes(i.id));
+        this._itemPicked = new Set();
+        this.showToast(`${ids.length}개를 지웠습니다`);
+        this.requestRender();
+    }
+    //  칸 거르기 — 그 칸에 실제로 있는 값만 모아 고르게 한다(엑셀 결)
+    _itemColVal(i, k) {
+        const B = id => this._brandNameById(id);
+        const V = id => ((this.vendors || []).find(v => String(v.id) === String(id)) || {}).name || '';
+        const S = id => (this._seasons().find(p => String(p.id) === String(id)) || {}).name || '';
+        return ({
+            brand_id: B(i.brand_id), name: i.name || '', sale: (i.sale_names || [])[0] || '',
+            pattern_no: i.pattern_no || '', status: i.status || '', memo: i.memo || '',
+            trims: i.trims ? '예' : '아니오', checked: i.checked ? '예' : '아니오',
+            vendor_id: V(i.vendor_id), product_id: S(i.product_id),
+            ship_date: i.ship_date || '', open_date: i.open_date || '',
+        })[k] ?? '';
+    }
+    openColFilter(ev, k, label) {
+        ev && ev.stopPropagation();
+        document.getElementById('colf')?.remove();
+        const esc = x => this._vesc(x);
+        const base = (this.pItems || []);
+        const vals = [...new Set(base.map(i => this._itemColVal(i, k)))]
+            .sort((a, b) => String(a).localeCompare(String(b), 'ko'));
+        const cur = (this.itemColF || {})[k];
+        const sel = new Set(cur || vals);
+        const el = document.createElement('div');
+        el.id = 'colf'; el.className = 'colf';
+        el.innerHTML = `<div class="colf-h">${esc(label)} 거르기
+                <button onclick="app.clearColFilter('${k}')">모두</button></div>
+            <div class="colf-b">${vals.map((v, i) => `<label class="pa-m colf-m">
+                <input type="checkbox" value="${esc(v)}" ${sel.has(v) ? 'checked' : ''}>
+                <span>${esc(v) || '<em>(빈칸)</em>'}<em>${base.filter(x => this._itemColVal(x, k) === v).length}</em></span>
+            </label>`).join('')}</div>
+            <div class="colf-a"><button class="mbtn" id="colf-x">취소</button>
+                <button class="mbtn pri" id="colf-ok">적용</button></div>`;
+        document.body.appendChild(el);
+        const th = ev && ev.target.closest('th');
+        if (th) { const r = th.getBoundingClientRect();
+            el.style.left = Math.min(r.left, innerWidth - el.offsetWidth - 10) + 'px';
+            el.style.top = (r.bottom + 4) + 'px'; }
+        el.querySelector('#colf-x').onclick = () => el.remove();
+        el.querySelector('#colf-ok').onclick = () => {
+            const picked = [...el.querySelectorAll('input:checked')].map(i => i.value);
+            this.itemColF = this.itemColF || {};
+            if (picked.length === vals.length) delete this.itemColF[k]; else this.itemColF[k] = picked;
+            el.remove(); this.requestRender();
+        };
+        this._colfOff = (e) => { if (!el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', this._colfOff); } };
+        setTimeout(() => document.addEventListener('mousedown', this._colfOff), 0);
+    }
+    clearColFilter(k) {
+        if (this.itemColF) delete this.itemColF[k];
+        document.getElementById('colf')?.remove();
+        this.requestRender();
+    }
+    clearAllColFilters() { this.itemColF = {}; this.requestRender(); }
     sortItems(k) {
         const cur = this.itemSort || { k: '', dir: 1 };
         this.itemSort = cur.k === k ? (cur.dir > 0 ? { k, dir: -1 } : { k: '', dir: 1 }) : { k, dir: 1 };
@@ -11403,6 +11510,12 @@ class BhasApp {
         if (sKey !== 'ALL') rows = rows.filter(i => sKey === 'NONE' ? !i.product_id : String(i.product_id) === String(sKey));
         if (stKey !== 'ALL') rows = rows.filter(i => (i.status || '') === stKey);
         if (q) rows = rows.filter(i => [i.name, i.pattern_no, i.memo].some(v => String(v || '').toLowerCase().includes(q)));
+        //  칸마다 걸어 둔 거르기
+        const colF = this.itemColF || {};
+        Object.keys(colF).forEach(k => {
+            const keep = new Set(colF[k]);
+            rows = rows.filter(i => keep.has(this._itemColVal(i, k)));
+        });
 
         //  줄 세우기 — 머리글을 누르면 그 칸 기준. 한 번 더 누르면 거꾸로.
         const srt = this.itemSort || { k: '', dir: 1 };
@@ -11425,9 +11538,9 @@ class BhasApp {
         }
 
         const opt = (v, t, cur) => `<option value="${esc(String(v))}"${String(cur || '') === String(v) ? ' selected' : ''}>${esc(t)}</option>`;
-        const txt = (it, f, ph, cls) => `<input class="it-in ${cls || ''}" value="${esc(it[f] || '')}" placeholder="${esc(ph || '')}"
-            onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','${f}',this.value)">`;
-        const dat = (it, f) => `<input class="it-in it-dt${it[f] ? '' : ' empty'}" type="date" value="${it[f] || ''}" onchange="app.setItem('${it.id}','${f}',this.value,1)">`;
+        const txt = (it, f, ph, cls) => `<input class="it-in ${cls || ''}" data-f="${f}" value="${esc(it[f] || '')}" placeholder="${esc(ph || '')}"
+            onchange="app.setItem('${it.id}','${f}',this.value)">`;
+        const dat = (it, f) => `<input class="it-in it-dt${it[f] ? '' : ' empty'}" data-f="${f}" type="date" value="${it[f] || ''}" onchange="app.setItem('${it.id}','${f}',this.value,1)">`;
         const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''} onchange="app.setItem('${it.id}','${f}',this.checked,1)">`;
         const pick = (it, f, list, ph) => `<select class="it-sel" onchange="app.setItem('${it.id}','${f}',this.value,1)">
             ${opt('', ph, it[f] ? 'x' : '')}${list.map(o => opt(o.v, o.t, it[f])).join('')}</select>`;
@@ -11437,7 +11550,8 @@ class BhasApp {
             const tp = packs.find(p => String(p.id) === String(it.tech_pack_id));
             return `<tr class="it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}"
                 onclick="app.rowPick(event,'${it.id}')">
-                <td class="it-c">${chk(it, 'checked')}</td>
+                <td class="it-c"><input class="it-ck" type="checkbox" ${this._itemPicked?.has(it.id) ? 'checked' : ''}
+                    onclick="event.stopPropagation()" onchange="app.pickRow('${it.id}',this.checked)"></td>
                 <td>${pick(it, 'brand_id', brands.map(b => ({ v: b.id, t: b.name })), '브랜드')}</td>
                 <td>${txt(it, 'name', '제품 이름', 'it-name')}</td>
                 <td>${(() => {
@@ -11455,6 +11569,7 @@ class BhasApp {
                         .map(s => opt(s, s, it.status)).join('')}</select></td>
                 <td>${txt(it, 'memo', '메모')}</td>
                 <td class="it-c">${chk(it, 'trims')}</td>
+                <td class="it-c">${chk(it, 'checked')}</td>
                 <td>${pick(it, 'vendor_id', vendors.map(v => ({ v: v.id, t: v.name })), '공장')}</td>
                 <td>${pick(it, 'product_id', seasons.map(s => ({ v: s.id, t: s.name })), '시즌')}</td>
                 <td>${dat(it, 'ship_date')}</td>
@@ -11470,13 +11585,16 @@ class BhasApp {
             </tr>`;
         };
 
+        this._lastItemRows = rows;
         const cnt = s => all.filter(i => (i.status || '') === s).length;
         const pill = (k, label, n) => `<button class="it-pill${stKey === k ? ' on' : ''}" onclick="app.setItemStatus('${k}')"
             ${k !== 'ALL' ? `style="--pc:${this.ITEM_SC[k] || '#8e8e93'}"` : ''}>${esc(label)}<em>${n}</em></button>`;
 
         return `<div class="mp it-wrap">
             <div class="mp-top">
-                <div class="mp-tl"><b>제품리스트</b><span>${rows.length}/${all.length}</span></div>
+                <div class="mp-tl"><b>제품리스트</b><span>${rows.length}/${all.length}</span>
+                    ${Object.keys(this.itemColF || {}).length ? `<button class="flt-off" onclick="app.clearAllColFilters()"
+                        title="거르기 모두 풀기"><i class="ph ph-funnel-fill"></i> ${Object.keys(this.itemColF).length}칸 거르는 중 ✕</button>` : ''}</div>
                 <select class="it-sel it-season" onchange="app.setItemSeason(this.value)">
                     ${opt('ALL', '시즌 전체', sKey)}${seasons.map(s => opt(s.id, s.name, sKey)).join('')}${opt('NONE', '시즌 없음', sKey)}
                 </select>
@@ -11486,17 +11604,37 @@ class BhasApp {
                 <button class="it-add" onclick="app.addItem()"><i class="ph ph-plus"></i> 제품 추가</button>
             </div>
             <div class="it-pills">${pill('ALL', '전체', all.length)}${this.ITEM_STATUSES.map(s => pill(s, s, cnt(s))).join('')}</div>
+            ${(this._itemPicked && this._itemPicked.size) ? `<div class="bulk-bar">
+                <b>${this._itemPicked.size}개 골랐습니다</b>
+                <select class="it-sel" onchange="app.bulkItems('status',this.value);this.selectedIndex=0">
+                    <option value="">제작현황 바꾸기…</option>
+                    ${this.ITEM_STATUSES.map(s2 => `<option value="${esc(s2)}">${esc(s2)}</option>`).join('')}</select>
+                <select class="it-sel" onchange="app.bulkItems('product_id',this.value);this.selectedIndex=0">
+                    <option value="">시즌 옮기기…</option>
+                    ${seasons.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+                <select class="it-sel" onchange="app.bulkItems('vendor_id',this.value);this.selectedIndex=0">
+                    <option value="">공장 정하기…</option>
+                    ${vendors.map(v => `<option value="${v.id}">${esc(v.name)}</option>`).join('')}</select>
+                <span class="pill-sp"></span>
+                <button class="mbtn danger" onclick="app.bulkDeleteItems()">지우기</button>
+                <button class="mbtn" onclick="app.pickAllRows(false)">고르기 풀기</button>
+            </div>` : ''}
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>
-                    ${[['checked', '체크', 'it-c'], ['brand_id', '브랜드'], ['name', '이름'], ['sale', '판매명'],
+                    <th class="it-c" title="골라서 한꺼번에 바꾸기"><input type="checkbox" class="it-ck"
+                        ${rows.length && rows.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''}
+                        onchange="app.pickAllRows(this.checked)"></th>
+                    ${[['brand_id', '브랜드'], ['name', '이름'], ['sale', '판매명'],
                        ['pattern_no', '패턴명'], ['status', '제작현황'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
+                       ['checked', '확인', 'it-c'],
                        ['vendor_id', '공장'], ['product_id', '시즌'], ['ship_date', '출고예정일'], ['open_date', '오픈일']]
-                      .map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}" onclick="app.sortItems('${k}')"
-                        title="눌러서 줄 세우기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}</th>`).join('')}
+                      .map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${(this.itemColF || {})[k] ? ' flt' : ''}"
+                        onclick="app.sortItems('${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
+                        onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${(this.itemColF || {})[k] ? '-fill' : ''}"></i></button></th>`).join('')}
                     <th>연동</th>
                 </tr></thead>
                 <tbody>${rows.length ? rows.map(tr).join('')
-                    : `<tr><td colspan="13" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}</tbody>
+                    : `<tr><td colspan="14" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}</tbody>
                 </table>
             </div>
         </div>`;

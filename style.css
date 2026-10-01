@@ -4245,3 +4245,35 @@ body:not(.light) .ntoast .nt-sb{color:#a9aeb6}
 body:not(.light) .ntoast .nt-ac button{background:rgba(255,255,255,.14);color:#f2f2f5}
 body:not(.light) .ntoast .nt-ac button.pri{background:#0a84ff;color:#fff}
 @media (max-width:620px){ .nstack{left:12px;right:12px;align-items:stretch} .ntoast{width:auto} }
+
+/* 골라서 한꺼번에 바꾸기 */
+.bulk-bar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:8px 14px;flex:0 0 auto;
+  background:rgba(10,132,255,.08);border-bottom:.5px solid var(--card-border)}
+.bulk-bar>b{font-size:12px;font-weight:800;color:#0a84ff;white-space:nowrap}
+.bulk-bar .it-sel{border-color:var(--card-border);background:var(--card-bg);max-width:150px}
+
+/* 칸 거르기 (엑셀 결) */
+.it-tbl th{position:relative;padding-right:20px !important}
+.th-f{position:absolute;right:3px;top:50%;margin-top:-9px;width:17px;height:17px;border:0;
+  background:transparent;color:var(--text-muted);font-size:10px;cursor:default;padding:0;
+  border-radius:4px;opacity:0;display:grid;place-items:center}
+.it-tbl th:hover .th-f,.it-tbl th.flt .th-f{opacity:1}
+.th-f:hover{background:rgba(127,127,127,.25);color:inherit}
+.it-tbl th.flt{color:#0a84ff !important;background:rgba(10,132,255,.1)}
+.it-tbl th.flt .th-f{color:#0a84ff}
+.colf{position:fixed;z-index:9600;width:230px;max-height:340px;display:flex;flex-direction:column;
+  background:var(--card-bg);border:.5px solid var(--card-border);border-radius:11px;
+  box-shadow:0 14px 40px rgba(0,0,0,.26);overflow:hidden}
+.colf-h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;
+  font-size:11.5px;font-weight:800;border-bottom:.5px solid var(--card-border)}
+.colf-h button{border:0;background:transparent;color:#0a84ff;font-family:inherit;font-size:11px;
+  font-weight:700;cursor:default;padding:0}
+.colf-b{flex:1;min-height:0;overflow:auto;padding:4px 0}
+.colf-m span{display:flex;align-items:baseline;gap:6px;min-width:0}
+.colf-m span em{font-style:normal;font-size:10px;color:var(--text-muted);margin-left:auto}
+.colf-a{display:flex;gap:6px;justify-content:flex-end;padding:8px 10px;
+  border-top:.5px solid var(--card-border)}
+.flt-off{border:0;background:rgba(10,132,255,.14);color:#0a84ff;font-family:inherit;font-size:10.5px;
+  font-weight:700;border-radius:99px;padding:2px 9px;cursor:default;white-space:nowrap}
+.flt-off:hover{background:rgba(10,132,255,.24)}
+.macwin .th-f,.macwin .flt-off,.macwin .colf-h button{box-shadow:none !important;border:0 !important}
