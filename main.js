@@ -6384,9 +6384,9 @@ class BhasApp {
                 <header class="macwin-bar" onmousedown="app.macDragStart(event,'${w.id}')"
                         ondblclick="app.macZoom('${w.id}',event)" onwheel="app.macWheel(event,'${w.id}')">
                     <span class="mw-lights">
-                        <button class="mw-l red" title="닫기" onclick="app.macClose('${w.id}',event)"></button>
-                        <button class="mw-l yellow" title="내리기" onclick="app.macMin('${w.id}',event)"></button>
-                        <button class="mw-l green" title="키우기" onclick="app.macZoom('${w.id}',event)"></button>
+                        <button class="mw-l red" data-g="✕" title="닫기" onclick="app.macClose('${w.id}',event)"></button>
+                        <button class="mw-l yellow" data-g="−" title="독으로 내리기" onclick="app.macMin('${w.id}',event)"></button>
+                        <button class="mw-l green" data-g="${w.max ? '⤡' : '⤢'}" title="${w.max ? '원래 크기로' : '꽉 채우기'}" onclick="app.macZoom('${w.id}',event)"></button>
                     </span>
                     <b>${esc(this._macTitle(w.view))}</b>
                     <span class="mw-snap">

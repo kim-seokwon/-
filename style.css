@@ -2570,6 +2570,13 @@ body.light .macwin-bar{background:rgba(0,0,0,.035);border-color:rgba(0,0,0,.08)}
 .mw-l{width:12px;height:12px;border-radius:50%;border:0;padding:0;cursor:pointer;position:relative}
 .mw-l::before{content:'';position:absolute;inset:-8px;border-radius:50%}   /* 보이진 않고 누르는 자리만 넓힌다 */
 .mw-l.red{background:#ff5f57}.mw-l.yellow{background:#febc2e}.mw-l.green{background:#28c840}
+/* 맥처럼 — 세 개 중 아무 데나 마우스를 올리면 안에 기호가 뜬다 */
+.mw-l::after{content:attr(data-g);position:absolute;inset:0;display:grid;place-items:center;
+  font-size:9px;font-weight:900;line-height:1;color:rgba(0,0,0,.55);opacity:0;
+  transition:opacity .1s;pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+.mw-lights:hover .mw-l::after,.macwin-bar:hover .mw-l::after{opacity:1}
+.mw-l:active{filter:brightness(.85)}
+
 .mw-snap{display:flex;gap:2px;opacity:.5;position:relative;z-index:30}
 .mw-snap button{border:0;background:transparent;color:inherit;cursor:pointer;font-size:.85rem;padding:2px 4px;font-family:inherit}
 .mw-snap button:hover{opacity:1}
