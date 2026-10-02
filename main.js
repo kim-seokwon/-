@@ -665,6 +665,8 @@ class BhasApp {
                 } else {
                     this.requestRender();
                 }
+            } else {
+                this.showToast(`삭제할 수 없는 항목입니다 (${type})`);
             }
         } catch (error) {
             this.showToast('삭제 중 오류가 발생했습니다.');
@@ -3161,7 +3163,7 @@ class BhasApp {
             { t: '브랜드 바꾸기…', icon: 'ph-shield-check', run: () => this.moveProjectBrand(id) },
             { t: '마감일 바꾸기', icon: 'ph-calendar-blank', run: () => this.setProjectDue(id) },
             { sep: true },
-            { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.handleDelete(ev, 'product', id) },
+            { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.handleDelete(ev, 'project', id) },
         ]);
     }
     // 내가 이 시즌를 볼 수 있나 (화면에서 거르는 용도 — 진짜 차단은 040 SQL 이 한다)
@@ -7167,8 +7169,11 @@ class BhasApp {
         const n = this._curNote(); if (!n) return;
         if (!await this.showConfirm(`"${n.title || '제목 없음'}" 메모를 삭제할까요?`, '삭제')) return;
         try {
-            const { error } = await this.supabase.from('notes').delete().eq('id', n.id);
+            //  .select() 를 붙여야 '몇 줄 지웠는지' 가 온다. RLS 가 막으면 오류 없이 0줄이라
+            //  이게 없으면 화면에서만 사라지고 새로고침하면 되살아난다.
+            const { data, error } = await this.supabase.from('notes').delete().eq('id', n.id).select('id');
             if (error) throw error;
+            if (!data || !data.length) { this.showToast('권한이 없어 지우지 못했습니다'); return; }
             this.noteList = this.noteList.filter(x => x.id !== n.id); this.noteSel = this.noteList[0]?.id || null;
             this.requestRender();
         } catch (e) { this.showToast('삭제 실패(개인 메모 또는 마스터만 가능): ' + (e.message || e)); }
@@ -7231,10 +7236,9 @@ class BhasApp {
         if (meta.who) bits.push(`<em class="np-chip"><i class="ph ph-user"></i>${esc(meta.who)}</em>`);
         if (pr) bits.push(`<em class="np-chip"><i class="ph ph-folder-simple"></i>${esc(pr.name)}</em>`);
         if (n.pinned) bits.push(`<em class="np-chip"><i class="ph-fill ph-push-pin"></i>고정</em>`);
-        return `<div class="np-bar${open ? ' on' : ''}" onclick="app.toggleNoteProps()">
-            <i class="ph ph-caret-right"></i><b>속성</b>
-            ${bits.length ? bits.join('') : '<em class="np-chip none">비어 있음</em>'}
-        </div>${open ? this._notePropsHTML(n) : ''}`;
+        if (!open) return '';
+        return `<div class="np-bar on">${bits.length ? bits.join('') : '<em class="np-chip none">비어 있음</em>'}</div>
+            ${this._notePropsHTML(n)}`;
     }
     // 속성 판 — 노션의 페이지 속성 그대로
     _notePropsHTML(n) {
@@ -7915,7 +7919,7 @@ class BhasApp {
         if (!el) { this.requestRender(); return; }
         el.outerHTML = this._noteLiveHTML(n);
         const mt = document.querySelector('.nt-meta-slot');
-        if (mt) mt.innerHTML = this._noteMetaChips(n);
+        if (mt) mt.innerHTML = this.noteProps ? this._noteMetaChips(n) : '';
         this._nbFocusNow();
     }
     _nbFocusNow() {
@@ -8562,19 +8566,14 @@ class BhasApp {
         list.forEach(n => {
             const b = n.pinned ? '고정됨' : bucket(n.updated_at);
             if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
-            const prev = this._noteText(n)
-                .split('\n').filter(l => !/^\s*\[( |x|X)?\]\s*$/.test(l)).join('\n')   // 빈 할 일 줄은 뺀다
-                .replace(/!\[[^\]]*\]\([^)]*\)/g, '[사진]')
-                .replace(/^\s*\[( |x|X)?\]\s?/gm, (_m, c) => (String(c || '').toLowerCase() === 'x' ? '☑ ' : '☐ '))
-                .replace(/\s+/g, ' ').trim().slice(0, 30);
+            //  목록은 이름만 — 날짜·본문 미리보기를 같이 깔면 눈이 어지러워 제목이 안 읽힌다.
+            //  날짜는 위의 묶음 머리말(오늘/어제)이 이미 말해 준다.
             const td = this._noteTodos(n);
             items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}${pick.has(String(n.id)) ? ' pick' : ''}"
                     data-id="${n.id}" oncontextmenu="app.noteMenu(event,'${n.id}')"
                     draggable="true" ondragstart="app.nbDragStart(event,'${n.id}')" title="끌어서 훑으면 여러 개를 고를 수 있습니다"
                     onclick="app.noteClick(event,'${n.id}')">
                 <b>${this._donut(td)}${esc(n.title || '새 메모')}</b>
-                <div class="nt-sub"><span class="nt-d">${esc(when(n.updated_at))}</span>
-                    <span class="nt-p">${esc(prev) || '추가 텍스트 없음'}</span></div>
             </div>`;
         });
         if (!items) items = `<div class="nt-none">메모 없음</div>`;
@@ -8588,10 +8587,10 @@ class BhasApp {
                 ${brand && seas.length ? `<button class="nt-car${open ? ' on' : ''}" onclick="event.stopPropagation();app.toggleBrandSeasons('${brand.id}')" title="시즌 펼치기"><i class="ph ph-caret-right"></i></button>` : '<button class="nt-car sp" tabindex="-1" aria-hidden="true"></button>'}
                 <i class="ph ${icon}" style="color:${color || '#e0a800'}"></i><span>${esc(label)}</span><em>${n}</em>
                 ${brand ? `<button class="nt-addsea" title="${esc(label)}에 새 시즌" onclick="event.stopPropagation();app.newSeasonIn('${brand.id}')"><i class="ph ph-plus"></i></button>` : ''}</div>`;
-            const kids = (brand && open) ? seas.map(p => `<div class="nt-sea2${this.noteSea === String(p.id) ? ' on' : ''}"
+            const kids = (brand && open) ? `<div class="nt-kids">` + seas.map(p => `<div class="nt-sea2${this.noteSea === String(p.id) ? ' on' : ''}"
                 onclick="app.pickBrandSeason('${key}','${p.id}')" oncontextmenu="app.projectMenu(event,'${p.id}')">
                 <i class="ph ph-calendar-blank"></i><span>${esc(p.name)}</span>
-                <em>${all.filter(n2 => String(n2.product_id) === String(p.id)).length}</em></div>`).join('') : '';
+                <em>${all.filter(n2 => String(n2.product_id) === String(p.id)).length}</em></div>`).join('') + `</div>` : '';
             return head + kids;
         };
         //  브랜드 폴더 + 공용은 메모가 없어도 늘 자리를 지킨다
@@ -8663,9 +8662,13 @@ class BhasApp {
                 </div>
                 <div class="nt-page">
                     <div class="nt-when">${esc(longWhen(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
-                    <input id="note-title" class="nt-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
+                    <div class="nt-trow">
+                        <input id="note-title" class="nt-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
+                        <button class="nt-det${this.noteProps ? ' on' : ''}" onclick="app.toggleNoteProps()"
+                            title="상태·날짜·담당자·시즌">상세보기<i class="ph ph-caret-down"></i></button>
+                    </div>
                     ${this._notePropsBar(sel)}
-                    <div class="nt-meta-slot">${this._noteMetaChips(sel)}</div>
+                    <div class="nt-meta-slot">${this.noteProps ? this._noteMetaChips(sel) : ''}</div>
                     ${this.notePreview
                         ? `<textarea id="note-raw" class="nt-body" placeholder="내용을 적어주세요"
                               oninput="app.noteTyping(event)" onkeydown="app.noteKey(event)"
