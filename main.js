@@ -8164,8 +8164,12 @@ class BhasApp {
         const pk = this.stepPick; if (!pk) return;
         const sea = this._seasons().find(p => String(p.id) === String(pk.id)); if (!sea) return;
         const brand = (mockData.brands || []).find(b => String(b.id) === String(sea.brand_id));
-        const steps = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
-        if (!steps.length) { this.showToast('고른 단계가 없습니다'); return; }
+        const chosen = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
+        if (!chosen.length) { this.showToast('고른 단계가 없습니다'); return; }
+        //  '샘플·제작' 처럼 kind='items' 인 단계는 메모가 아니라 제품리스트에서 하는 일이다.
+        //  메모를 만들지 않고, 만들기가 끝나면 그 시즌의 제품리스트를 열어 준다.
+        const toItems = chosen.some(x => x.kind === 'items');
+        const steps = chosen.filter(x => x.kind !== 'items');
         const folder = brand ? brand.name : '공용';
         const me = this.currentUser?.name || null;
         const rows = steps.map(st => {
@@ -8181,14 +8185,18 @@ class BhasApp {
             };
         });
         try {
-            const { data, error } = await this.supabase.from('notes').insert(rows).select();
-            if (error) throw error;
+            let data = [];
+            if (rows.length) {
+                const r = await this.supabase.from('notes').insert(rows).select();
+                if (r.error) throw r.error;
+                data = r.data || [];
+            }
             this.noteList = [...(data || []), ...(this.noteList || [])];
             this.stepPick = null;
             this.noteFolder = 'f:' + folder; this.noteSea = String(sea.id);
             this.closeStepPick();
-            this.showToast(`${sea.name} · 단계 ${rows.length}개를 만들었습니다`);
-            this.switchView('notes');
+            this.showToast(`${sea.name} · 페이지 ${rows.length}개를 만들었습니다${toItems ? ' · 제품리스트를 엽니다' : ''}`);
+            if (toItems) this.openSeasonItems(sea.id); else this.switchView('notes');
         } catch (e) { this.showToast('만들지 못했습니다: ' + (e.message || e)); }
     }
     //  단계 고르기 판
@@ -8210,7 +8218,7 @@ class BhasApp {
                     <i class="ph ${st.icon || 'ph-circle'}" style="color:${st.color || '#8e8e93'}"></i>
                     <b>${esc(st.name)}</b>
                     <em class="sp-off">${off === 0 ? '오픈일' : (off < 0 ? `오픈 ${-off}일 전` : `오픈 ${off}일 뒤`)}</em>
-                    <span class="sp-n">할 일 ${(st.checklist || []).length}</span>
+                    <span class="sp-n">${st.kind === 'items' ? '제품리스트에 올림' : `할 일 ${(st.checklist || []).length}`}</span>
                 </button>
                 <input class="sp-date" type="date" value="${esc(due || '')}"
                        onchange="app.setStepDate('${st.id}', this.value)" onclick="event.stopPropagation()">
@@ -8226,7 +8234,9 @@ class BhasApp {
                 </div>
                 <div class="sp-list">${steps.map(row).join('')}</div>
                 <div class="sp-f">
-                    <span>단계 ${pk.on.size}개를 메모로 만듭니다 · 각 메모 안에 [ ] 할 일이 들어갑니다</span>
+                    <span>${(() => { const c = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
+                        const ni = c.filter(x => x.kind !== 'items').length, it = c.length - ni;
+                        return `${ni}개 페이지를 만듭니다${it ? ' · 샘플·제작은 제품리스트에서 합니다' : ''} · 각 페이지 안에 [ ] 할 일이 들어갑니다`; })()}</span>
                     <button class="mbtn pri" onclick="app.makeSeasonSteps()">만들기</button>
                 </div>
         </div>`;
