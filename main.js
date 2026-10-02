@@ -8678,6 +8678,63 @@ class BhasApp {
     }
 
 
+
+    // ── 제품 페이지 — 리스트에서 이름을 누르면 넓게 펼친다 ────────
+    //  칸이 좁은 표 대신 한 장짜리 페이지에서 속성·사진·기록을 다 본다. 기록은 [ ] 로 할 일도 된다.
+    openItemPage(id) { this.itemPage = id; this.requestRender(); window.scrollTo(0, 0); }
+    closeItemPage() { this.itemPage = null; this.requestRender(); }
+    _itemPageHTML(id) {
+        const esc = s => this._vesc(s);
+        const it = (this.pItems || []).find(x => String(x.id) === String(id));
+        if (!it) return `<div class="ip2-none">제품을 찾지 못했습니다 <button class="mbtn" onclick="app.closeItemPage()">목록으로</button></div>`;
+        const seasons = this._seasons();
+        const sea = seasons.find(p => String(p.id) === String(it.product_id));
+        const brands = mockData.brands || [];
+        const vendors = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+        const note = this._itemNoteOf(it.id);
+        const text = note ? this._noteText(note) : '';
+        const photos = this._itemPhotos(it.id);
+        const col = (this.ITEM_SC || {})[it.status] || '#8e8e93';
+        const sel = (f, list, ph) => `<select class="ip2-in" onchange="app.setItem('${it.id}','${f}',this.value,1)">
+            <option value="">${esc(ph)}</option>
+            ${list.map(o => `<option value="${o.v}"${String(it[f] || '') === String(o.v) ? ' selected' : ''}>${esc(o.t)}</option>`).join('')}</select>`;
+        const inp = (f, ph, type) => `<input class="ip2-in" type="${type || 'text'}" value="${esc(it[f] || '')}" placeholder="${esc(ph)}"
+            onchange="app.setItem('${it.id}','${f}',this.value,${type === 'date' ? 1 : 0})">`;
+        const field = (label, html) => `<div class="ip2-f"><label>${esc(label)}</label>${html}</div>`;
+        const STATUSES = Object.keys(this.ITEM_SC || {}).map(k => ({ v: k, t: k }));
+        return `<div class="ip2">
+            <div class="ip2-top">
+                <button class="ip2-back" onclick="app.closeItemPage()"><i class="ph ph-caret-left"></i> 제품리스트</button>
+                <span class="ip2-tag" style="--c:${col}">${esc(it.status || '요청하기')}</span>
+                <div class="ip2-sp"></div>
+                ${it.tech_pack_id ? `<button class="mbtn" onclick="app.openTechPack('${it.tech_pack_id}')">작업지시서 열기</button>` : ''}
+                <button class="mbtn" onclick="app.pickItemPhoto('${it.id}')"><i class="ph ph-image"></i> 사진 올리기</button>
+            </div>
+            <input class="ip2-title" value="${esc(it.name || '')}" placeholder="제품 이름"
+                   onchange="app.setItem('${it.id}','name',this.value)">
+            <div class="ip2-sub">${esc(this._brandNameById(it.brand_id) || '브랜드 없음')}${sea ? ' · ' + esc(sea.name) : ''}${it.pattern_no ? ' · ' + esc(it.pattern_no) : ''}</div>
+            <div class="ip2-grid">
+                ${field('브랜드', sel('brand_id', brands.map(b => ({ v: b.id, t: b.name })), '브랜드'))}
+                ${field('시즌', sel('product_id', seasons.map(p => ({ v: p.id, t: p.name })), '시즌 없음'))}
+                ${field('제작현황', sel('status', STATUSES, '상태'))}
+                ${field('공장', sel('vendor_id', vendors.map(v => ({ v: v.id, t: v.name })), '공장'))}
+                ${field('패턴명', inp('pattern_no', '패턴'))}
+                ${field('출고예정일', inp('ship_date', '', 'date'))}
+                ${field('오픈일', inp('open_date', '', 'date'))}
+                ${field('판매명', `<button class="ip2-in as-btn" onclick="app.pickSaleName('${it.id}')">${(it.sale_names || []).length ? esc((it.sale_names || []).join(' · ')) : '카페24 상품명 붙이기'}</button>`)}
+            </div>
+            ${photos.length ? `<div class="ip2-ph">${photos.map(u => `<img src="${esc(u)}" alt="">`).join('')}</div>` : ''}
+            <div class="ip2-note">
+                <div class="ip2-nh">기록 <span>[ ] 로 적으면 할 일이 됩니다 · 자동 저장</span></div>
+                <textarea id="item-page-note" class="ip2-ta" placeholder="원단·부자재·수정사항·전달내용을 자유롭게 적으세요"
+                    onblur="app.saveItemPageNote('${it.id}', this.value)">${esc(text)}</textarea>
+            </div>
+        </div>`;
+    }
+    async saveItemPageNote(id, text) {
+        try { await this.saveItemNote(id, text); } catch (e) { this.showToast('기록 저장 실패: ' + (e.message || e)); }
+    }
+
     // ── 샘플·제작 페이지 안의 제품리스트 ─────────────────────
     //  제품리스트 창을 따로 띄우지 않는다. 이 표에서 더하고 고치면 제품리스트(product_items)가 바로 바뀌고,
     //  제품리스트에서 바꾼 것도 여기에 그대로 보인다. 같은 표를 두 군데서 보는 것뿐이다.
@@ -12878,6 +12935,7 @@ class BhasApp {
 
     renderItems() {
         if (!this._itemsLoaded) return this._loadingSkeleton('제품리스트');
+        if (this.itemPage) return this._itemPageHTML(this.itemPage);
         const esc = s => this._vesc(s);
         const seasons = this._seasons();
         const brands = mockData.brands || [];
@@ -12936,7 +12994,8 @@ class BhasApp {
                 <td class="it-c"><input class="it-ck" type="checkbox" ${this._itemPicked?.has(it.id) ? 'checked' : ''}
                     onclick="event.stopPropagation()" onchange="app.pickRow('${it.id}',this.checked)"></td>
                 <td>${pick(it, 'brand_id', brands.map(b => ({ v: b.id, t: b.name })), '브랜드')}</td>
-                <td>${txt(it, 'name', '제품 이름', 'it-name')}</td>
+                <td><button class="it-nameb" onclick="event.stopPropagation();app.openItemPage('${it.id}')"
+                    title="눌러서 제품 페이지 열기">${esc(it.name || '이름 없는 제품')}</button></td>
                 <td>${(() => {
                     const sn = it.sale_names || [];
                     const sold = this._itemSold(it);
