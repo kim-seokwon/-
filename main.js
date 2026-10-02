@@ -8101,6 +8101,12 @@ class BhasApp {
         //  그 브랜드만의 차례가 있으면 그걸 쓰고, 없으면 공통을 쓴다
         return (mine.length ? mine : all.filter(x => !x.brand_id)).sort((a, b) => (a.sort || 0) - (b.sort || 0));
     }
+    //  '2026.11.20' · '2026/11/20' · '2026-11-20' 을 모두 2026-11-20 으로
+    _toYmd(v) {
+        const t = String(v || '').trim(); if (!t) return '';
+        const m = t.match(/(\d{4})[.\-/\s]+(\d{1,2})[.\-/\s]+(\d{1,2})/);
+        return m ? `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}` : '';
+    }
     //  시즌을 만든 직후 부르면 '어떤 단계를 깔까' 를 묻는다
     async askSeasonSteps(seasonId) {
         const sea = this._seasons().find(p => String(p.id) === String(seasonId));
@@ -8124,7 +8130,8 @@ class BhasApp {
         this.stepPick = {
             id: seasonId,
             on: new Set(steps.filter(x => x.on_default !== false).map(x => x.id)),
-            open: sea.deadline || '',
+            //  마감일은 '2026.11.20' 처럼 점으로 저장돼 있다. 날짜 칸은 2026-11-20 만 받으므로 맞춰 준다.
+            open: this._toYmd(sea.deadline),
             dates: {},                 // 단계별로 날짜를 직접 고치면 여기 담긴다
             items: new Set(),          // 이 시즌에 넣을 제품
             itemQ: '',

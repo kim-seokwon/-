@@ -4473,10 +4473,12 @@ body:not(.light) .nb-due.late{color:#ff8080}
 
 /* 메모 사이드바 — 브랜드 안의 시즌 */
 .nt-f{position:relative}
-.nt-car{width:16px;height:16px;flex:0 0 auto;border:0;background:transparent;color:var(--text-muted);
-  cursor:pointer;padding:0;display:grid;place-items:center;font-size:.72rem;transition:transform .15s}
+/* 펼침 화살표 자리 — 화살표가 있든 없든 같은 너비를 차지해야 폴더 이름이 한 줄로 선다 */
+.nt-car{flex:0 0 16px;width:16px;height:16px;border:0;background:transparent;color:var(--text-muted);
+  cursor:pointer;padding:0;margin:0;display:grid;place-items:center;font-size:.72rem;line-height:1;
+  transition:transform .15s}
 .nt-car.on{transform:rotate(90deg)}
-.nt-car.sp{display:inline-block}
+.nt-car.sp{visibility:hidden;pointer-events:none}
 .nt-addsea{margin-left:6px;width:20px;height:20px;border:0;border-radius:6px;background:transparent;
   color:var(--text-muted);cursor:pointer;display:none;place-items:center;font-size:.8rem}
 .nt-f:hover .nt-addsea{display:grid}
