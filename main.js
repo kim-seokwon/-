@@ -8888,6 +8888,7 @@ class BhasApp {
         const rems = (this.remList || []).map(r => ({
             src: 'rem', id: r.id, title: r.title, memo: r.memo, due: r.due_date,
             done: !!r.done, list: (this.remGroup || 'list') === 'project' ? '시즌 없음' : (r.list_name || '기본'),
+            assignee: r.assignee || null, atName: r.assignee || null, createdBy: r.created_by || null,
         }));
         const byProj = (this.remGroup || 'list') === 'project';
         const todos = (mockData.products || []).flatMap(p => (p.todos || []).map(t => ({
@@ -8906,17 +8907,25 @@ class BhasApp {
             due: t.due, done: t.done,
             list: byProj ? (projOfNote(t.noteId) || '시즌 없음') : '메모', from: t.from,
             assignee: (mockData.companies || []).find(c => c.name === t.at[0])?.id || null,
-            atName: t.at[0] || null, tags: t.tags,
+            atName: t.at[0] || null, tags: t.tags, createdBy: t.from || null,
         }));
         const all = [...rems, ...todos, ...noteTodos];
         const open = all.filter(x => !x.done);
+        //  '나' 는 아이디로도 이름으로도 적힌다(todos 는 아이디, 미리알림·메모 @는 이름). 둘 다 본다.
+        const myName = this.currentUser?.name || '';
+        const isMine = (x) => String(x.assignee || '') === String(me)
+            || (!!x.atName && String(x.atName) === myName)
+            || (!!x.assignee && String(x.assignee) === myName);
+        const madeByMe = (x) => !!x.createdBy && (String(x.createdBy) === myName || String(x.createdBy) === String(me));
+        const hasOwner = (x) => !!(x.assignee || x.atName);
         const F = {
-            today: x => !x.done && x.due && x.due <= today,
-            plan:  x => !x.done && x.due && x.due > today,
-            all:   x => !x.done,
-            late:  x => !x.done && x.due && x.due < today,
-            mine:  x => !x.done && x.src === 'todo' && x.assignee === me,
-            nodate: x => !x.done && !x.due,
+            today: x => !x.done && x.due && x.due <= today,       // 기한이 오늘이거나 이미 지난 것
+            plan:  x => !x.done && x.due && x.due > today,        // 기한이 앞으로 남은 것
+            all:   x => !x.done,                                   // 안 끝난 것 전부
+            late:  x => !x.done && x.due && x.due < today,        // 기한이 지난 것
+            mine:  x => !x.done && isMine(x),                      // 나에게 온 것(담당이 나)
+            sent:  x => !x.done && madeByMe(x) && hasOwner(x) && !isMine(x),  // 내가 남에게 넘긴 것
+            nodate: x => !x.done && !x.due,                        // 기한을 안 적은 것
             done:  x => x.done,
         };
         const cur = this.remList2 || 'today';
@@ -8927,6 +8936,7 @@ class BhasApp {
             { k: 'late',  label: '지연',  icon: 'ph-flag',           cls: 'orange' },
             { k: 'nodate', label: '날짜 없음', icon: 'ph-calendar-x', cls: 'pink' },
             { k: 'mine',  label: '내 할 일', icon: 'ph-user',        cls: 'pink' },
+            { k: 'sent',  label: '요청한 것', icon: 'ph-paper-plane-tilt', cls: 'teal' },
             { k: 'done',  label: '완료됨', icon: 'ph-check',         cls: 'gray' },
         ];
         const listNames = [...new Set(all.map(x => x.list))];
@@ -8966,7 +8976,8 @@ class BhasApp {
         <div class="rm">
             <aside class="rm-side">
                 <div class="rm-tiles">
-                    ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')">
+                    ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
+                        title="${({today:'기한이 오늘이거나 이미 지난 것',plan:'기한이 앞으로 남은 것',all:'안 끝난 것 전부',late:'기한이 지난 것',nodate:'기한을 안 적은 것',mine:'담당이 나로 되어 있는 것',sent:'내가 만들어 남에게 넘긴 것',done:'끝낸 것'})[t.k] || ''}">
                         <span class="rm-ti"><i class="ph ${t.icon}"></i></span>
                         <b>${all.filter(F[t.k]).length}</b>
                         <em>${t.label}</em>

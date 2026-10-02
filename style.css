@@ -4549,3 +4549,4 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .ip2-nh span{font-weight:400;font-size:.74rem;color:var(--text-muted);margin-left:8px}
 .ip2-ta{width:100%;min-height:320px;border:0;background:transparent;color:var(--text-main);font-size:.92rem;
   line-height:1.75;font-family:inherit;resize:vertical;outline:0}
+.rm-tile.teal{background:linear-gradient(180deg,#2dd4bf,#0d9488)}
