@@ -4470,3 +4470,20 @@ body:not(.light) .nb-due.late{color:#ff8080}
   border:1px dashed var(--card-border);border-radius:9px;background:transparent;color:var(--primary);
   font-size:.83rem;font-weight:700;cursor:pointer;font-family:inherit}
 .nt-newsea:hover{background:rgba(var(--tint),.08);border-style:solid}
+
+/* 메모 사이드바 — 브랜드 안의 시즌 */
+.nt-f{position:relative}
+.nt-car{width:16px;height:16px;flex:0 0 auto;border:0;background:transparent;color:var(--text-muted);
+  cursor:pointer;padding:0;display:grid;place-items:center;font-size:.72rem;transition:transform .15s}
+.nt-car.on{transform:rotate(90deg)}
+.nt-car.sp{display:inline-block}
+.nt-addsea{margin-left:6px;width:20px;height:20px;border:0;border-radius:6px;background:transparent;
+  color:var(--text-muted);cursor:pointer;display:none;place-items:center;font-size:.8rem}
+.nt-f:hover .nt-addsea{display:grid}
+.nt-addsea:hover{background:rgba(var(--tint),.14);color:var(--primary)}
+.nt-sea2{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 34px;border-radius:8px;cursor:pointer;
+  font-size:.8rem;color:var(--text-main)}
+.nt-sea2:hover{background:rgba(var(--tint),.07)}
+.nt-sea2.on{background:var(--primary);color:#fff}
+.nt-sea2 em{margin-left:auto;font-style:normal;font-size:.72rem;color:var(--text-muted)}
+.nt-sea2.on em{color:rgba(255,255,255,.8)}

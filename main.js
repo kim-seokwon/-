@@ -1567,8 +1567,11 @@ class BhasApp {
         });
     }
 
-    showProjectModal() {
-        const modal = document.getElementById('modal-container');
+    showProjectModal(brandId) {
+        //  셸이 바뀌면서 #modal-container 가 없어졌다. 지금 쓰는 칸을 찾아 쓴다.
+        const modal = document.getElementById('modal-container') || document.getElementById('global-modal-container');
+        if (!modal) { this.showToast('창을 띄울 자리를 찾지 못했습니다'); return; }
+        this._newSeaBrand = brandId || null;     // 브랜드 안에서 눌렀으면 그 브랜드로 고정
         modal.style.display = 'flex';
         modal.innerHTML = `
             <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
@@ -1582,7 +1585,7 @@ class BhasApp {
                     <select id="modal-p-brand" class="login-input" style="background: rgba(0,0,0,0.8); color: white; -webkit-appearance: listbox;">
                         <option value="">브랜드 선택</option>
                         ${mockData.brands.map(b => `
-                            <option value="${b.id}">${b.name}</option>
+                            <option value="${b.id}"${String(this._newSeaBrand || '') === String(b.id) ? ' selected' : ''}>${b.name}</option>
                         `).join('')}
                     </select>
                 </div>
@@ -8572,10 +8575,22 @@ class BhasApp {
             </div>`;
         });
         if (!items) items = `<div class="nt-none">메모 없음</div>`;
-        const fold = (key, icon, label, n, color) => `<div class="nt-f${cur === key ? ' on' : ''}" onclick="app.setNoteFolder('${key}')"
-            ondragover="app.nbDragOver(event,'${key}')" ondragleave="app.nbDragOut(event)" ondrop="app.nbDrop(event,'${key}')"
-            oncontextmenu="app.folderMenu(event,'${key}')">
-            <i class="ph ${icon}" style="color:${color || '#e0a800'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
+        const fold = (key, icon, label, n, color, brand) => {
+            //  브랜드 폴더면 그 브랜드의 시즌을 아래에 펼치고, 줄 끝 ＋ 로 그 브랜드에 시즌을 추가한다
+            const seas = brand ? (this._seasons() || []).filter(p => String(p.brand_id) === String(brand.id)) : [];
+            const open = brand && (this.noteBrandOpen || {})[brand.id];
+            const head = `<div class="nt-f${cur === key ? ' on' : ''}" onclick="app.setNoteFolder('${key}')"
+                ondragover="app.nbDragOver(event,'${key}')" ondragleave="app.nbDragOut(event)" ondrop="app.nbDrop(event,'${key}')"
+                oncontextmenu="app.folderMenu(event,'${key}')">
+                ${brand && seas.length ? `<button class="nt-car${open ? ' on' : ''}" onclick="event.stopPropagation();app.toggleBrandSeasons('${brand.id}')" title="시즌 펼치기"><i class="ph ph-caret-right"></i></button>` : '<span class="nt-car sp"></span>'}
+                <i class="ph ${icon}" style="color:${color || '#e0a800'}"></i><span>${esc(label)}</span><em>${n}</em>
+                ${brand ? `<button class="nt-addsea" title="${esc(label)}에 새 시즌" onclick="event.stopPropagation();app.newSeasonIn('${brand.id}')"><i class="ph ph-plus"></i></button>` : ''}</div>`;
+            const kids = (brand && open) ? seas.map(p => `<div class="nt-sea2${this.noteSea === String(p.id) ? ' on' : ''}"
+                onclick="app.pickBrandSeason('${key}','${p.id}')" oncontextmenu="app.projectMenu(event,'${p.id}')">
+                <i class="ph ph-calendar-blank"></i><span>${esc(p.name)}</span>
+                <em>${all.filter(n2 => String(n2.product_id) === String(p.id)).length}</em></div>`).join('') : '';
+            return head + kids;
+        };
         //  브랜드 폴더 + 공용은 메모가 없어도 늘 자리를 지킨다
         const brandNames = (mockData.brands || []).filter(b => b.status !== 'closed').map(b => b.name);
         const otherFolders = [...new Set([...brandNames, '공용',
@@ -8601,10 +8616,8 @@ class BhasApp {
                     const br = (mockData.brands || []).find(b => b.name === f);
                     return fold('f:' + f, locked ? 'ph-folder-simple-lock' : (br ? 'ph-tag' : 'ph-folder-simple'), f,
                         cnt(n => (n.folder || '공용') === f && n.scope === 'shared'),
-                        br ? (br.brand_color || '#0a84ff') : '#8e8e93');
+                        br ? (br.brand_color || '#0a84ff') : '#8e8e93', br || null);
                 }).join('')}
-                <button class="nt-newsea" onclick="app.newProjectFromNotes()" title="시즌을 만들면 단계·제품 페이지가 한번에 깔립니다">
-                    <i class="ph ph-plus-circle"></i><span>새 시즌</span></button>
                 <button class="nt-prod${this.noteProd ? ' on' : ''}" onclick="app.toggleNoteProducts()"
                     title="제품을 보면서 쓰기">
                     <i class="ph ph-t-shirt"></i><span>제품리스트</span>
@@ -11801,6 +11814,17 @@ class BhasApp {
     }
     // 메모 사이드바의 시즌 ＋ — 기존 시즌 만들기 창을 그대로 띄운다
     newProjectFromNotes() { this.showProjectModal(); }
+    //  브랜드 줄의 ＋ — 그 브랜드로 시즌을 만든다
+    newSeasonIn(brandId) { this.showProjectModal(brandId); }
+    toggleBrandSeasons(brandId) {
+        this.noteBrandOpen = this.noteBrandOpen || {};
+        this.noteBrandOpen[brandId] = !this.noteBrandOpen[brandId];
+        this.requestRender();
+    }
+    //  브랜드 아래 시즌을 고르면 그 폴더 + 그 시즌으로 걸러 본다
+    pickBrandSeason(folderKey, seaId) {
+        this.noteFolder = folderKey; this.noteSea = String(seaId); this.noteSel = null; this.requestRender();
+    }
     toggleContactEdit() { this.contactEdit = !this.contactEdit; this.contactNew = false; this.requestRender(); }
     newContact() { this.contactNew = true; this.contactEdit = false; this._vendorPick = null; this.requestRender(); }
     cancelContactEdit() { this.contactEdit = false; this.contactNew = false; this.requestRender(); }
