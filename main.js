@@ -1575,13 +1575,13 @@ class BhasApp {
         modal.style.display = 'flex';
         modal.innerHTML = `
             <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
-                <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-plus-circle"></i> 새 시즌 등록</h2>
+                <h2 style="margin-bottom: 1.4rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-plus-circle"></i> 새 시즌</h2>
                 <div class="login-field">
                     <label>시즌명</label>
-                    <input type="text" id="modal-p-name" class="login-input" placeholder="예: 구스다운 패딩">
+                    <input type="text" id="modal-p-name" class="login-input" placeholder="예: 26FW 2차">
                 </div>
                 <div class="login-field" style="${this.currentUser.role === 'CLIENT' ? 'display: none;' : ''}">
-                    <label>파트너사 (브랜드)</label>
+                    <label>브랜드</label>
                     <select id="modal-p-brand" class="login-input" style="background: rgba(0,0,0,0.8); color: white; -webkit-appearance: listbox;">
                         <option value="">브랜드 선택</option>
                         ${mockData.brands.map(b => `
@@ -1590,7 +1590,7 @@ class BhasApp {
                     </select>
                 </div>
                 <div class="login-field">
-                    <label>마감 기한</label>
+                    <label>오픈일 <span style="font-weight:400;color:var(--text-muted);font-size:.78rem">· 이 날 기준으로 단계 날짜가 잡힙니다</span></label>
                     <input type="date" id="modal-p-deadline" class="login-input" max="2099-12-31">
                 </div>
                 <div style="display: flex; gap: 1rem; margin-top: 2.5rem;">
