@@ -8546,8 +8546,15 @@ class BhasApp {
         const longWhen = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
         let items = '', last = null;
         const pick = this._picked();
+        //  그릴 때마다 다시 정렬한다. 메모를 고치거나 새로 만들면 목록(this.noteList)의 순서가
+        //  DB 순서와 어긋나서, 날짜 머리말이 '어제 → 오늘 → 어제' 처럼 두 번 찍히는 일이 있었다.
+        list = list.slice().sort((a, b) =>
+            (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
+            String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+        //  고정한 메모는 맨 위 '고정됨' 묶음으로 따로 뺀다.
+        //  안 그러면 날짜 묶음(어제/오늘) 사이에 끼어들어 '어제 → 오늘 → 어제' 처럼 같은 머리말이 두 번 찍힌다.
         list.forEach(n => {
-            const b = bucket(n.updated_at);
+            const b = n.pinned ? '고정됨' : bucket(n.updated_at);
             if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
             const prev = this._noteText(n)
                 .split('\n').filter(l => !/^\s*\[( |x|X)?\]\s*$/.test(l)).join('\n')   // 빈 할 일 줄은 뺀다
@@ -8596,6 +8603,8 @@ class BhasApp {
                         cnt(n => (n.folder || '공용') === f && n.scope === 'shared'),
                         br ? (br.brand_color || '#0a84ff') : '#8e8e93');
                 }).join('')}
+                <button class="nt-newsea" onclick="app.newProjectFromNotes()" title="시즌을 만들면 단계·제품 페이지가 한번에 깔립니다">
+                    <i class="ph ph-plus-circle"></i><span>새 시즌</span></button>
                 <button class="nt-prod${this.noteProd ? ' on' : ''}" onclick="app.toggleNoteProducts()"
                     title="제품을 보면서 쓰기">
                     <i class="ph ph-t-shirt"></i><span>제품리스트</span>

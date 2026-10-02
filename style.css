@@ -4465,3 +4465,8 @@ body:not(.light) .nb-due.late{color:#ff8080}
   padding:5px 11px;font-size:.76rem;cursor:pointer;font-family:inherit}
 .sp-chip.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
 .sp-none{font-size:.78rem;color:var(--text-muted)}
+/* 메모 사이드바 — 새 시즌 만들기 */
+.nt-newsea{display:flex;align-items:center;gap:8px;width:100%;margin:10px 0 2px;padding:9px 10px;
+  border:1px dashed var(--card-border);border-radius:9px;background:transparent;color:var(--primary);
+  font-size:.83rem;font-weight:700;cursor:pointer;font-family:inherit}
+.nt-newsea:hover{background:rgba(var(--tint),.08);border-style:solid}
