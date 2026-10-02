@@ -8110,7 +8110,22 @@ class BhasApp {
         }
         const steps = this._stepsFor(sea.brand_id);
         if (!steps.length) { this.showToast('단계 모듈이 없습니다 (048_season_steps.sql)'); return; }
-        this.stepPick = { id: seasonId, on: new Set(steps.filter(x => x.on_default !== false).map(x => x.id)), open: sea.deadline || '' };
+        //  제품리스트(product_items) 에서 이 브랜드 것을 불러와 함께 고르게 한다
+        if (!this.seasonItems) {
+            try {
+                const { data } = await this.supabase.from('product_items')
+                    .select('id,name,brand_id,status,open_date,ship_date').order('created_at', { ascending: false }).limit(400);
+                this.seasonItems = data || [];
+            } catch (_e) { this.seasonItems = []; }
+        }
+        this.stepPick = {
+            id: seasonId,
+            on: new Set(steps.filter(x => x.on_default !== false).map(x => x.id)),
+            open: sea.deadline || '',
+            dates: {},                 // 단계별로 날짜를 직접 고치면 여기 담긴다
+            items: new Set(),          // 이 시즌에 넣을 제품
+            itemQ: '',
+        };
         this._paintStepPick();
     }
     toggleStepPick(id) {
@@ -8118,7 +8133,21 @@ class BhasApp {
         this.stepPick.on.has(id) ? this.stepPick.on.delete(id) : this.stepPick.on.add(id);
         this._paintStepPick();
     }
-    setStepOpen(v) { if (this.stepPick) { this.stepPick.open = v; this._paintStepPick(); } }
+    setStepOpen(v) { if (this.stepPick) { this.stepPick.open = v; this.stepPick.dates = {}; this._paintStepPick(); } }
+    //  단계 한 줄의 날짜를 직접 고친다(오픈일 계산값을 덮어쓴다)
+    setStepDate(id, v) { if (this.stepPick) { this.stepPick.dates[id] = v || null; this._paintStepPick(); } }
+    toggleSeasonItem(id) {
+        const pk = this.stepPick; if (!pk) return;
+        pk.items.has(id) ? pk.items.delete(id) : pk.items.add(id);
+        this._paintStepPick();
+    }
+    setSeasonItemQ(v) { if (this.stepPick) { this.stepPick.itemQ = v; this._paintStepPick(); } }
+    //  단계의 최종 날짜 — 직접 고친 값이 있으면 그걸, 없으면 오픈일 기준 계산값
+    _stepDueOf(st) {
+        const pk = this.stepPick;
+        const own = pk && pk.dates ? pk.dates[st.id] : null;
+        return own !== undefined && own !== null ? own : this._stepDate(pk ? pk.open : null, st.offset_days);
+    }
     closeStepPick() {
         this.stepPick = null;
         const c = document.getElementById('global-modal-container');
@@ -8146,7 +8175,7 @@ class BhasApp {
         const folder = brand ? brand.name : '공용';
         const me = this.currentUser?.name || null;
         const rows = steps.map(st => {
-            const due = this._stepDate(pk.open, st.offset_days);
+            const due = this._stepDueOf(st);
             const meta = { proj: String(sea.id), status: '요청' };
             if (due) meta.due = due;
             const body = (st.checklist || []).map(c => `[ ] ${c}`).join('\n');
@@ -8157,14 +8186,28 @@ class BhasApp {
                 owner: this._me(), created_by: me,
             };
         });
+        //  고른 제품은 '제품 페이지' 로 같이 깔린다 — 사진·기록·[ ] 할 일을 제품별로 남기는 자리
+        const picked = [...(pk.items || [])];
+        const itemRows = picked.map(iid => {
+            const it = (this.seasonItems || []).find(x => String(x.id) === String(iid));
+            const meta = { proj: String(sea.id), status: '요청' };
+            const due = this._stepDueOf({ id: '__item', offset_days: 0 }) || pk.open;
+            if (due) meta.due = due;
+            return {
+                title: `${sea.name} · ${it ? it.name : '제품'}`,
+                body: this._joinNote(meta, ['[ ] 원단·부자재 확정', '[ ] 샘플 확인', '[ ] 촬영 컷 확정', '[ ] 상세페이지', '[ ] 가격·재고 등록'].join('\n')),
+                folder, scope: 'shared', product_id: sea.id, item_id: iid,
+                owner: this._me(), created_by: me,
+            };
+        });
         try {
-            const { data, error } = await this.supabase.from('notes').insert(rows).select();
+            const { data, error } = await this.supabase.from('notes').insert([...rows, ...itemRows]).select();
             if (error) throw error;
             this.noteList = [...(data || []), ...(this.noteList || [])];
             this.stepPick = null;
             this.noteFolder = 'f:' + folder; this.noteSea = String(sea.id);
             this.closeStepPick();
-            this.showToast(`${sea.name} 단계 ${rows.length}개를 만들었습니다`);
+            this.showToast(`${sea.name} · 단계 ${rows.length}개${itemRows.length ? ` · 제품 ${itemRows.length}개` : ''} 만들었습니다`);
             this.switchView('notes');
         } catch (e) { this.showToast('만들지 못했습니다: ' + (e.message || e)); }
     }
@@ -8178,18 +8221,33 @@ class BhasApp {
         const steps = this._stepsFor(sea.brand_id);
         const row = (st) => {
             const on = pk.on.has(st.id);
-            const due = this._stepDate(pk.open, st.offset_days);
+            const due = this._stepDueOf(st);
             const off = Number(st.offset_days || 0);
-            return `<button class="sp-row${on ? ' on' : ''}" onclick="app.toggleStepPick('${st.id}')">
-                <span class="sp-ck${on ? ' on' : ''}"></span>
-                <i class="ph ${st.icon || 'ph-circle'}" style="color:${st.color || '#8e8e93'}"></i>
-                <b>${esc(st.name)}</b>
-                <em class="sp-off">${off === 0 ? '오픈일' : (off < 0 ? `오픈 ${-off}일 전` : `오픈 ${off}일 뒤`)}</em>
-                <span class="sp-due">${due || '날짜 미정'}</span>
-                <span class="sp-n">${(st.checklist || []).length}개</span>
-            </button>`;
+            //  날짜는 오픈일 기준으로 자동으로 잡히되, 칸을 눌러 직접 고칠 수 있다
+            return `<div class="sp-row${on ? ' on' : ''}">
+                <button class="sp-hit" onclick="app.toggleStepPick('${st.id}')">
+                    <span class="sp-ck${on ? ' on' : ''}"></span>
+                    <i class="ph ${st.icon || 'ph-circle'}" style="color:${st.color || '#8e8e93'}"></i>
+                    <b>${esc(st.name)}</b>
+                    <em class="sp-off">${off === 0 ? '오픈일' : (off < 0 ? `오픈 ${-off}일 전` : `오픈 ${off}일 뒤`)}</em>
+                    <span class="sp-n">할 일 ${(st.checklist || []).length}</span>
+                </button>
+                <input class="sp-date" type="date" value="${esc(due || '')}"
+                       onchange="app.setStepDate('${st.id}', this.value)" onclick="event.stopPropagation()">
+            </div>`;
         };
-        return `<div class="modal-content vmodal sp-box" style="width:94%;max-width:520px">
+        //  제품리스트에서 이 시즌에 넣을 제품 고르기
+        const q = (pk.itemQ || '').trim();
+        const pool = (this.seasonItems || []).filter(it => !sea.brand_id || !it.brand_id || String(it.brand_id) === String(sea.brand_id));
+        const hits = (q ? pool.filter(it => (it.name || '').toLowerCase().includes(q.toLowerCase())) : pool).slice(0, 60);
+        const itemHtml = `<div class="sp-items">
+            <div class="sp-ih"><b>제품</b><span>${pk.items.size}개 선택 · 고른 제품마다 기록 페이지가 생깁니다</span>
+                <input class="sp-q" placeholder="제품 검색" value="${esc(q)}" oninput="app.setSeasonItemQ(this.value)"></div>
+            <div class="sp-ilist">${hits.map(it => `<button class="sp-chip${pk.items.has(it.id) ? ' on' : ''}"
+                onclick="app.toggleSeasonItem('${it.id}')">${esc(it.name || '이름 없음')}</button>`).join('')
+                || '<span class="sp-none">제품리스트가 비어 있습니다</span>'}</div>
+        </div>`;
+        return `<div class="modal-content vmodal sp-box" style="width:94%;max-width:620px">
                 <div class="hk-top"><b>${esc(brand ? brand.name + ' · ' : '')}${esc(sea.name)} 단계 만들기</b>
                     <button class="fi-x" onclick="app.closeStepPick()">×</button></div>
                 <div class="sp-when">
@@ -8198,8 +8256,9 @@ class BhasApp {
                     <span>이 날을 기준으로 앞뒤 날짜가 잡힙니다</span>
                 </div>
                 <div class="sp-list">${steps.map(row).join('')}</div>
+                ${itemHtml}
                 <div class="sp-f">
-                    <span>${pk.on.size}개를 메모로 만듭니다 · 각 메모 안에 할 일이 들어갑니다</span>
+                    <span>단계 ${pk.on.size}개${pk.items.size ? ` · 제품 ${pk.items.size}개` : ''} 를 메모로 만듭니다 · 각 메모 안에 [ ] 할 일이 들어갑니다</span>
                     <button class="mbtn pri" onclick="app.makeSeasonSteps()">만들기</button>
                 </div>
         </div>`;

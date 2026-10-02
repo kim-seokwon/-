@@ -4447,3 +4447,21 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .sp-n{font-size:.68rem;color:var(--text-muted);min-width:30px;text-align:right}
 .sp-f{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--pane-line)}
 .sp-f span{font-size:.74rem;color:var(--text-muted);margin-right:auto}
+
+/* 시즌 만들기 — 단계별 날짜 직접 지정 · 제품 고르기 */
+.sp-row{display:flex;align-items:center;gap:8px;padding:0 10px 0 0}
+.sp-hit{flex:1;display:flex;align-items:center;gap:9px;background:transparent;border:0;cursor:pointer;
+  color:var(--text-main);font-family:inherit;padding:9px 10px;text-align:left}
+.sp-date{width:140px;flex:0 0 auto;border:1px solid var(--card-border);border-radius:7px;padding:5px 8px;
+  font-size:.78rem;background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit}
+.sp-items{border-top:1px solid var(--card-border);padding:11px 12px 4px}
+.sp-ih{display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap}
+.sp-ih b{font-size:.86rem}
+.sp-ih span{font-size:.74rem;color:var(--text-muted)}
+.sp-q{margin-left:auto;min-width:150px;border:1px solid var(--card-border);border-radius:7px;padding:5px 9px;
+  font-size:.78rem;background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit}
+.sp-ilist{display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow:auto;padding-bottom:8px}
+.sp-chip{border:1px solid var(--card-border);background:transparent;color:var(--text-main);border-radius:999px;
+  padding:5px 11px;font-size:.76rem;cursor:pointer;font-family:inherit}
+.sp-chip.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
+.sp-none{font-size:.78rem;color:var(--text-muted)}
