@@ -5460,6 +5460,98 @@ class BhasApp {
         <p style="margin:1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 판매수량 기준 · 주문 옵션(color/size)에서 추출 · 취소·환불 제외 · 주요(누적 60%)/서브(~85%)/약한</p>`;
     }
 
+    // ── 떠난 고객 — 마지막 구매 뒤 발길이 끊긴 분들 ───────────────
+    //  숫자만 보면 '왜' 를 모른다. 눌러 들어가면 CS 건수와 마지막에 산 물건이 보인다.
+    _goneCardHTML(rep) {
+        const g = (this.analysisGone && this.analysisGone[this.analysisBrand || '']) || this._goneCur;
+        const won = n => this._won(n);
+        const row = (k, lbl, v) => `<div onclick="app.openCust('gone','${lbl}', ${k})"
+            style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;cursor:pointer;
+                   border-top:1px solid var(--card-border);font-size:0.82rem">
+            <span>${lbl}</span>
+            <b style="font-variant-numeric:tabular-nums">${(v || 0).toLocaleString()}명 <i class="ph ph-caret-right" style="font-size:0.68rem;color:var(--text-muted)"></i></b></div>`;
+        return `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
+            <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.6rem"><i class="ph ph-door-open" style="color:#ef4444"></i> 떠난 고객
+                <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">마지막 구매 뒤 소식 없는 분</span></div>
+            ${!g ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${this._goneLoading ? '불러오는 중…' : '데이터 없음'}</div>` : `
+            <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:0.5rem">
+                <span style="font-size:2rem;font-weight:900;color:#ef4444;line-height:1">${Math.round((g.d90 || 0) / (g.customers || 1) * 100)}%</span>
+                <span style="font-size:0.78rem;color:var(--text-muted)">90일 넘게 안 오신 분 ${(g.d90 || 0).toLocaleString()}명</span>
+            </div>
+            <div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.5rem">
+                그중 재구매까지 했던 분 <b style="color:var(--text-main)">${(g.repeat90 || 0).toLocaleString()}명</b>
+                · 이분들이 쓰던 돈 <b style="color:var(--text-main)">${won(g.lost90_spend || 0)}원</b></div>
+            ${row(90, '90일 넘게', g.d90)}${row(180, '180일 넘게', g.d180)}${row(365, '1년 넘게', g.d365)}`}
+        </div>`;
+    }
+    async _loadGone(brand, fromISO, toISO) {
+        const key = `${brand}|${fromISO}|${toISO}`;
+        if (!brand || this._goneKey === key || this._goneLoading) return;
+        this._goneLoading = true; this.requestRender();
+        try {
+            const { data, error } = await this.supabase.rpc('brand_gone_counts', { p_brand: brand, p_from: fromISO, p_to: toISO });
+            if (error) throw error;
+            this.analysisGone = { [brand]: data }; this._goneCur = data;
+        } catch (e) { this.analysisGone = { [brand]: null }; this._goneCur = null; }
+        this._goneKey = key; this._goneLoading = false; this.requestRender();
+    }
+
+    // ── 고객 명단 — 분석의 블록을 누르면 '누구인지' 를 편다 ──────────
+    async openCust(kind, label, days) {
+        const bf = this.analysisBrand || (this._analysisBrandNames()[0] || null);
+        if (!bf) return;
+        const r = this._analysisRange();
+        this.cust = { kind, label, days: days || 90, brand: bf, rows: null, loading: true, q: '' };
+        this.requestRender();
+        try {
+            const { data, error } = await this.supabase.rpc('brand_customers', {
+                p_brand: bf, p_from: r.from || null, p_to: r.to || null,
+                p_kind: kind, p_days: days || 90, p_limit: 300,
+            });
+            if (error) throw error;
+            this.cust.rows = data || [];
+        } catch (e) { this.cust.rows = []; this.cust.err = e.message || String(e); }
+        this.cust.loading = false; this.requestRender();
+    }
+    closeCust() { this.cust = null; this.requestRender(); }
+    custSearch(v) { if (this.cust) { this.cust.q = v; this.requestRender(); } }
+    _custHTML() {
+        const c = this.cust; if (!c) return '';
+        const esc = s => this._vesc(s);
+        const won = n => this._won(n);
+        const q = (c.q || '').trim();
+        let rows = c.rows || [];
+        if (q) rows = rows.filter(r => String(r.name || '').includes(q) || String(r.phone || '').includes(q));
+        const head = `<tr><th>고객</th><th>구매</th><th>누적 구매액</th><th>처음</th><th>마지막</th><th>경과</th><th>CS</th><th>마지막에 산 것</th></tr>`;
+        const body = rows.map(r => {
+            const gone = r.gone_days == null ? '' : (r.gone_days >= 365 ? `${Math.floor(r.gone_days / 365)}년 ${r.gone_days % 365}일` : `${r.gone_days}일`);
+            const warn = (r.cs || 0) > 0;
+            return `<tr>
+                <td><b>${esc(r.name || '-')}</b><div class="cu-sub">${esc(r.phone || '')}</div></td>
+                <td class="num">${(r.orders || 0).toLocaleString()}회</td>
+                <td class="num"><b>${won(r.spend || 0)}</b></td>
+                <td class="num mu">${esc(r.first || '')}</td>
+                <td class="num">${esc(r.last || '')}</td>
+                <td class="num${(r.gone_days || 0) >= 180 ? ' bad' : ''}">${gone}</td>
+                <td class="num${warn ? ' bad' : ''}">${warn ? `${r.cs}건` : '—'}</td>
+                <td class="it">${esc(r.last_items || '')}</td>
+            </tr>`;
+        }).join('');
+        return `<div class="cu-back" onclick="app.closeCust()">
+            <div class="cu" onclick="event.stopPropagation()">
+                <div class="cu-top">
+                    <div><b>${esc(c.label || '고객')}</b>
+                        <span class="cu-mu">${esc(c.brand)} · ${rows.length.toLocaleString()}명${(c.rows || []).length >= 300 ? ' (상위 300명)' : ''}</span></div>
+                    <input class="cu-q" placeholder="이름·전화 찾기" value="${esc(c.q || '')}" oninput="app.custSearch(this.value)">
+                    <button class="cu-x" onclick="app.closeCust()"><i class="ph ph-x"></i></button>
+                </div>
+                ${c.kind === 'gone' ? `<div class="cu-note">CS가 있던 분은 빨갛게 표시했습니다 — 교환·반품을 겪고 발길이 끊겼다면 그게 떠난 이유일 수 있습니다.</div>` : ''}
+                <div class="cu-body">${c.loading ? '<div class="cu-none">불러오는 중…</div>'
+                    : (!rows.length ? '<div class="cu-none">해당하는 고객이 없습니다</div>'
+                    : `<table class="cu-t"><thead>${head}</thead><tbody>${body}</tbody></table>`)}</div>
+            </div></div>`;
+    }
+
     // 재구매 횟수 분포(1~10회+) · 단골 = 10회 이상
     _repeatDistHTML(rep) {
         const bmap = {}; (rep.dist || []).forEach(d => { bmap[d.bucket] = d.c; });
@@ -5472,7 +5564,8 @@ class BhasApp {
         const bars = buckets.map((b, i) => {
             const v = vals[i], isLoyal = b === '10+';
             const col = isLoyal ? '#4338ca' : (i === 0 ? '#cbd5e1' : '#6366f1');
-            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${b}회 구매 · ${v.toLocaleString()}명">
+            const kind = isLoyal ? 'loyal' : (i === 0 ? 'once' : 'n' + b);
+            return `<div onclick="app.openCust('${kind}','${b}회 구매한 고객')" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;cursor:pointer" title="${b}회 구매 · ${v.toLocaleString()}명 — 눌러서 명단 보기">
                 <span style="font-size:0.58rem;color:var(--text-muted);line-height:1;margin-bottom:2px">${v ? v.toLocaleString() : ''}</span>
                 <div style="width:100%;max-width:20px;background:${col};height:${barH(v)}px;border-radius:3px 3px 0 0"></div>
             </div>`;
@@ -5482,7 +5575,7 @@ class BhasApp {
             <div style="display:flex;align-items:flex-end;gap:3px;height:80px">${bars}</div>
             <div style="display:flex;gap:3px;margin-top:3px">${labels}</div>
             <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--card-border);display:flex;justify-content:space-between;align-items:baseline;font-size:0.8rem">
-                <span style="color:#4338ca;font-weight:800"><i class="ph ph-heart"></i> 단골고객 ${loyal.toLocaleString()}명</span>
+                <span onclick="app.openCust('loyal','단골고객 (10회 이상)')" style="color:#4338ca;font-weight:800;cursor:pointer"><i class="ph ph-heart"></i> 단골고객 ${loyal.toLocaleString()}명 <i class="ph ph-caret-right" style="font-size:0.7rem"></i></span>
                 <span style="color:var(--text-muted);font-size:0.72rem">10회 이상 · 전체의 ${Math.round(loyal / cust * 100)}%</span>
             </div>`;
     }
@@ -5535,9 +5628,10 @@ class BhasApp {
                 ${this._repeatDistHTML(rep)}`}
             </div>
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-                <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem"><i class="ph ph-crown-simple" style="color:#6366f1"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">누적 구매액 TOP</span></div>
+                <div onclick="app.openCust('vip','누적 구매액 순')" style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem;cursor:pointer"><i class="ph ph-crown-simple" style="color:#6366f1"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">누적 구매액 TOP</span> <i class="ph ph-caret-right" style="font-size:0.7rem;color:var(--text-muted)"></i></div>
                 ${!rep || !(rep.top && rep.top.length) ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : rep.top.map((t, i) => { const last = t.last ? new Date(t.last).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '—'; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"><b style="color:${i < 3 ? '#4338ca' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vesc(t.nm || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.n}회</span></span><span style="text-align:right;white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${won(t.spend || 0)}원</b><div style="font-size:0.66rem;color:var(--text-muted)">마지막 ${last}</div></span></div>`; }).join('')}
             </div>
+            ${this._goneCardHTML(rep)}
         </div>` : '';
         return `<div class="mp">
             ${this._mpTop('고객 분석', bf ? `${this._vesc(bf)} · ${range.label} · 주문 ${orderCnt.toLocaleString()}건` : '브랜드를 고르세요', `
@@ -5557,7 +5651,7 @@ class BhasApp {
                     ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
                 </div>
             </div>
-        </div></div>`;
+        </div>${this._custHTML()}</div>`;
     }
 
     // ============================================================
@@ -5994,7 +6088,7 @@ class BhasApp {
             const r = this._analysisRange();
             const from = r.from || '2000-01-01';
             const to = r.to || new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-            if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); }
+            if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); this._loadGone(bf, from, to); }
         }
         if (v === 'feedback' && !this._fbLoaded && !this._fbLoading) this.loadFeedback();
         if ((v === 'cs' || v === 'orders') && !this._csLoaded && !this._csLoading) this.loadCS();
@@ -8725,6 +8819,11 @@ class BhasApp {
                 ${field('출고예정일', inp('ship_date', '', 'date'))}
                 ${field('오픈일', inp('open_date', '', 'date'))}
                 ${field('판매명', `<button class="ip2-in as-btn" onclick="app.pickSaleName('${it.id}')">${(it.sale_names || []).length ? esc((it.sale_names || []).join(' · ')) : '카페24 상품명 붙이기'}</button>`)}
+                ${field('메모', inp('memo', '메모'))}
+                ${field('부자재·확인', `<label class="ip2-ck"><input type="checkbox"${it.trims ? ' checked' : ''}
+                        onchange="app.setItem('${it.id}','trims',this.checked,1)"> 부자재</label>
+                    <label class="ip2-ck"><input type="checkbox"${it.checked ? ' checked' : ''}
+                        onchange="app.setItem('${it.id}','checked',this.checked,1)"> 확인</label>`)}
             </div>
             ${photos.length ? `<div class="ip2-ph">${photos.map(u => `<img src="${esc(u)}" alt="">`).join('')}</div>` : ''}
             <div class="ip2-note">
@@ -12694,12 +12793,25 @@ class BhasApp {
         this.requestRender();
     }
     //  칸 거르기 — 그 칸에 실제로 있는 값만 모아 고르게 한다(엑셀 결)
+    // 카페24 판매명 앞에 붙는 [SALE]·[PRE-ORDER] 는 '행사' 표시고, 뒤가 진짜 판매명이다.
+    _saleParts(v) {
+        const raw = String(v || '').trim();
+        const m = raw.match(/^((?:\s*\[[^\]]*\])+)\s*(.*)$/);
+        if (!m) return { tag: '', name: raw };
+        const tag = (m[1].match(/\[([^\]]*)\]/g) || []).map(x => x.slice(1, -1).trim()).filter(Boolean).join(' · ');
+        return { tag, name: (m[2] || '').trim() || raw };
+    }
+    //  표에 보일 이름 — 판매명이 정해졌으면 그게 최종 이름이다
+    _itemLabel(it) {
+        const sn = (it.sale_names || [])[0];
+        return sn ? this._saleParts(sn).name : (it.name || '');
+    }
     _itemColVal(i, k) {
         const B = id => this._brandNameById(id);
         const V = id => ((this.vendors || []).find(v => String(v.id) === String(id)) || {}).name || '';
         const S = id => (this._seasons().find(p => String(p.id) === String(id)) || {}).name || '';
         return ({
-            brand_id: B(i.brand_id), name: i.name || '', sale: (i.sale_names || [])[0] || '',
+            brand_id: B(i.brand_id), name: this._itemLabel(i), sale: (i.sale_names || [])[0] || '',
             pattern_no: i.pattern_no || '', status: i.status || '', memo: i.memo || '',
             trims: i.trims ? '예' : '아니오', checked: i.checked ? '예' : '아니오',
             vendor_id: V(i.vendor_id), product_id: S(i.product_id),
@@ -12979,7 +13091,7 @@ class BhasApp {
             const nameOfV = id => (vendors.find(v => v.id === id) || {}).name || '';
             const nameOfS = id => (seasons.find(p => String(p.id) === String(id)) || {}).name || '';
             const val = (i) => ({
-                checked: i.checked ? 1 : 0, brand_id: nameOfB(i.brand_id), name: i.name || '',
+                checked: i.checked ? 1 : 0, brand_id: nameOfB(i.brand_id), name: this._itemLabel(i),
                 sale: (i.sale_names || [])[0] || '', pattern_no: i.pattern_no || '',
                 status: this.ITEM_STATUSES.indexOf(i.status) + 1 || 99, memo: i.memo || '',
                 trims: i.trims ? 1 : 0, vendor_id: nameOfV(i.vendor_id), product_id: nameOfS(i.product_id),
@@ -12992,44 +13104,37 @@ class BhasApp {
             });
         }
 
-        const opt = (v, t, cur) => `<option value="${esc(String(v))}"${String(cur || '') === String(v) ? ' selected' : ''}>${esc(t)}</option>`;
-        const txt = (it, f, ph, cls) => `<input class="it-in ${cls || ''}" data-f="${f}" value="${esc(it[f] || '')}" placeholder="${esc(ph || '')}"
-            onchange="app.setItem('${it.id}','${f}',this.value)">`;
-        const dat = (it, f) => `<input class="it-in it-dt${it[f] ? '' : ' empty'}" data-f="${f}" type="date" value="${it[f] || ''}" onchange="app.setItem('${it.id}','${f}',this.value,1)">`;
-        const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''} onchange="app.setItem('${it.id}','${f}',this.checked,1)">`;
-        const pick = (it, f, list, ph) => `<select class="it-sel" onchange="app.setItem('${it.id}','${f}',this.value,1)">
-            ${opt('', ph, it[f] ? 'x' : '')}${list.map(o => opt(o.v, o.t, it[f])).join('')}</select>`;
+        const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''}
+            onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','${f}',this.checked,1)">`;
 
+        //  표는 '보는 곳'이다 — 칸마다 드롭다운을 깔면 눈이 어지럽고 잘못 누르기도 쉽다.
+        //  고치는 건 이름을 눌러 들어가는 제품 페이지에서 한다.
+        const mu = v => v ? esc(v) : '<span class="it-mu">—</span>';
         const tr = it => {
             const sc = this.ITEM_SC[it.status] || '#8e8e93';
             const tp = packs.find(p => String(p.id) === String(it.tech_pack_id));
+            const sn = (it.sale_names || []);
+            const sp = sn.length ? this._saleParts(sn[0]) : null;
+            const sold = this._itemSold(it);
+            const vn = (vendors.find(v => String(v.id) === String(it.vendor_id)) || {}).name || '';
+            const se = (seasons.find(p => String(p.id) === String(it.product_id)) || {}).name || '';
             return `<tr class="it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}"
-                onclick="app.rowPick(event,'${it.id}')">
+                onclick="app.rowPick(event,'${it.id}')" ondblclick="app.openItemPage('${it.id}')">
                 <td class="it-c"><input class="it-ck" type="checkbox" ${this._itemPicked?.has(it.id) ? 'checked' : ''}
                     onclick="event.stopPropagation()" onchange="app.pickRow('${it.id}',this.checked)"></td>
-                <td>${pick(it, 'brand_id', brands.map(b => ({ v: b.id, t: b.name })), '브랜드')}</td>
+                <td class="it-mu">${mu(this._brandNameById(it.brand_id) === '-' ? '' : this._brandNameById(it.brand_id))}</td>
                 <td><button class="it-nameb" onclick="event.stopPropagation();app.openItemPage('${it.id}')"
-                    title="눌러서 제품 페이지 열기">${esc(it.name || '이름 없는 제품')}</button></td>
-                <td>${(() => {
-                    const sn = it.sale_names || [];
-                    const sold = this._itemSold(it);
-                    return `<button class="it-sale${sn.length ? ' on' : ''}" onclick="event.stopPropagation();app.pickSaleName('${it.id}')"
-                        title="${sn.length ? esc(sn.join(' · ')) : '카페24 상품명 붙이기'}">
-                        ${sn.length ? `${esc(sn[0])}${sn.length > 1 ? ` <em>+${sn.length - 1}</em>` : ''}${sold ? ` <b>${sold.qty}</b>` : ''}`
-                                    : '<i class="ph ph-link-simple"></i> 붙이기'}</button>`;
-                })()}</td>
-                <td>${txt(it, 'pattern_no', '패턴명')}</td>
-                <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
-                        onchange="app.setItem('${it.id}','status',this.value,1)">
-                    ${(this.ITEM_STATUSES.includes(it.status) || !it.status ? this.ITEM_STATUSES : [it.status, ...this.ITEM_STATUSES])
-                        .map(s => opt(s, s, it.status)).join('')}</select></td>
-                <td>${txt(it, 'memo', '메모')}</td>
+                    title="${sn.length ? esc(sn.join(' · ')) : '눌러서 제품 페이지 열기'}">${esc(this._itemLabel(it) || '이름 없는 제품')}</button>
+                    ${sp && sp.tag ? `<em class="it-evt">${esc(sp.tag)}</em>` : ''}
+                    ${sold ? `<em class="it-sold">${sold.qty.toLocaleString()}개</em>` : ''}
+                    ${!sn.length ? `<em class="it-nolink" title="카페24 판매명이 안 붙었습니다">미연동</em>` : ''}</td>
+                <td class="it-mu">${mu(it.pattern_no)}</td>
+                <td><span class="it-stt" style="color:${sc};background:${sc}1a">${esc(it.status || '—')}</span></td>
+                <td class="it-memo" title="${esc(it.memo || '')}">${mu(it.memo)}</td>
                 <td class="it-c">${chk(it, 'trims')}</td>
                 <td class="it-c">${chk(it, 'checked')}</td>
-                <td>${pick(it, 'vendor_id', vendors.map(v => ({ v: v.id, t: v.name })), '공장')}</td>
-                <td>${pick(it, 'product_id', seasons.map(s => ({ v: s.id, t: s.name })), '시즌')}</td>
-                <td>${dat(it, 'ship_date')}</td>
-                <td>${dat(it, 'open_date')}</td>
+                <td class="it-mu">${mu(vn)}</td>
+                <td class="it-mu">${mu(se)}</td>
                 <td class="it-lk">
                     ${tp ? `<button class="it-ib on" title="작업지시서: ${esc(tp.style_name || '')}" onclick="event.stopPropagation();app.openTechPack('${tp.id}')"><i class="ph ph-clipboard-text"></i></button>`
                          : `<button class="it-ib" title="작업지시서 만들기" onclick="event.stopPropagation();app.itemNewTechPack('${it.id}')"><i class="ph ph-clipboard-text"></i></button>`}
@@ -13042,9 +13147,6 @@ class BhasApp {
         };
 
         this._lastItemRows = rows;
-        const cnt = s => all.filter(i => (i.status || '') === s).length;
-        const pill = (k, label, n) => `<button class="it-pill${stKey === k ? ' on' : ''}" onclick="app.setItemStatus('${k}')"
-            ${k !== 'ALL' ? `style="--pc:${this.ITEM_SC[k] || '#8e8e93'}"` : ''}>${esc(label)}<em>${n}</em></button>`;
 
         return `<div class="mp it-wrap">
             <div class="mp-top">
@@ -13059,7 +13161,6 @@ class BhasApp {
                 <button class="mbtn" onclick="app.pickNotionCSV()" title="노션 데이터베이스 → ··· → Export → CSV"><i class="ph ph-download-simple"></i> 노션 CSV</button>
                 <button class="it-add" onclick="app.addItem()"><i class="ph ph-plus"></i> 제품 추가</button>
             </div>
-            <div class="it-pills">${pill('ALL', '전체', all.length)}${this.ITEM_STATUSES.map(s => pill(s, s, cnt(s))).join('')}</div>
             ${(this._itemPicked && this._itemPicked.size) ? `<div class="bulk-bar">
                 <b>${this._itemPicked.size}개 골랐습니다</b>
                 <select class="it-sel" onchange="app.bulkItems('status',this.value);this.selectedIndex=0">
@@ -13080,17 +13181,17 @@ class BhasApp {
                     <th class="it-c" title="골라서 한꺼번에 바꾸기"><input type="checkbox" class="it-ck"
                         ${rows.length && rows.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''}
                         onchange="app.pickAllRows(this.checked)"></th>
-                    ${[['brand_id', '브랜드'], ['name', '이름'], ['sale', '판매명'],
+                    ${[['brand_id', '브랜드'], ['name', '판매명'],
                        ['pattern_no', '패턴명'], ['status', '제작현황'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
                        ['checked', '확인', 'it-c'],
-                       ['vendor_id', '공장'], ['product_id', '시즌'], ['ship_date', '출고예정일'], ['open_date', '오픈일']]
+                       ['vendor_id', '공장'], ['product_id', '시즌']]
                       .map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${(this.itemColF || {})[k] ? ' flt' : ''}"
                         onclick="app.sortItems('${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
                         onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${(this.itemColF || {})[k] ? '-fill' : ''}"></i></button></th>`).join('')}
                     <th>연동</th>
                 </tr></thead>
                 <tbody>${rows.length ? rows.map(tr).join('')
-                    : `<tr><td colspan="14" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}</tbody>
+                    : `<tr><td colspan="11" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}</tbody>
                 </table>
             </div>
         </div>`;

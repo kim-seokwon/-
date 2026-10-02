@@ -52,12 +52,14 @@ select coalesce(json_agg(s.r order by s.sort_key desc), '[]'::json) from (
          ) r,
          case when p_kind = 'gone' then gone_days::numeric else spend end sort_key
     from x
-   where case p_kind
-           when 'once'   then n = 1
-           when 'repeat' then n >= 2
-           when 'loyal'  then n >= 10
-           when 'vip'    then true
-           when 'gone'   then gone_days >= p_days
+   where case
+           when p_kind = 'once'   then n = 1
+           when p_kind = 'repeat' then n >= 2
+           when p_kind = 'loyal'  then n >= 10
+           when p_kind = 'vip'    then true
+           when p_kind = 'gone'   then gone_days >= p_days
+           -- 'n3' 처럼 정확히 몇 회 산 사람 (분포 막대를 눌렀을 때)
+           when p_kind ~ '^n[0-9]+$' then n = substring(p_kind from 2)::int
            else true
          end
    order by sort_key desc

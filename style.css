@@ -4568,3 +4568,45 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .ip2-ta{width:100%;min-height:320px;border:0;background:transparent;color:var(--text-main);font-size:.92rem;
   line-height:1.75;font-family:inherit;resize:vertical;outline:0}
 .rm-tile.teal{background:linear-gradient(180deg,#2dd4bf,#0d9488)}
+
+/* ── 고객 명단 — 분석 블록을 누르면 '누구인지' 가 펼쳐진다 ──────── */
+.cu-back{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.34);
+  display:flex;align-items:center;justify-content:center;padding:4vh 3vw;backdrop-filter:blur(3px)}
+.cu{width:min(1080px,96vw);max-height:92vh;display:flex;flex-direction:column;min-height:0;
+  background:var(--card-bg,#fff);border:1px solid var(--card-border);border-radius:16px;
+  box-shadow:0 24px 70px rgba(0,0,0,.28);overflow:hidden}
+.cu-top{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--card-border)}
+.cu-top>div{flex:1;min-width:0}
+.cu-top b{font-size:1rem;font-weight:800}
+.cu-mu{font-size:.75rem;color:var(--text-muted);margin-left:8px}
+.cu-q{width:200px;flex:0 0 auto;border:1px solid var(--card-border);border-radius:9px;padding:7px 10px;
+  font-size:.82rem;font-family:inherit;background:rgba(127,127,127,.07);color:var(--text-main)}
+.cu-x{flex:0 0 auto;width:30px;height:30px;border:0;border-radius:8px;background:rgba(127,127,127,.1);
+  color:var(--text-muted);cursor:pointer;display:grid;place-items:center;font-size:1rem}
+.cu-x:hover{background:rgba(127,127,127,.2);color:inherit}
+.cu-note{padding:9px 16px;font-size:.76rem;color:#b91c1c;background:rgba(239,68,68,.07);
+  border-bottom:1px solid var(--card-border)}
+.cu-body{flex:1;overflow:auto;min-height:0}
+.cu-none{padding:3rem 1rem;text-align:center;color:var(--text-muted);font-size:.86rem}
+.cu-t{width:100%;border-collapse:collapse;font-size:.82rem}
+.cu-t th{position:sticky;top:0;z-index:1;background:var(--card-bg,#fff);text-align:left;font-weight:700;
+  font-size:.72rem;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--card-border);white-space:nowrap}
+.cu-t td{padding:9px 12px;border-bottom:1px solid var(--card-border);vertical-align:top}
+.cu-t tr:hover td{background:rgba(127,127,127,.05)}
+.cu-t td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cu-t td.mu{color:var(--text-muted)}
+.cu-t td.bad{color:#dc2626;font-weight:700}
+.cu-t td.it{color:var(--text-muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cu-sub{font-size:.7rem;color:var(--text-muted);margin-top:1px}
+
+/* ── 제품리스트 — 보는 표. 고치는 건 제품 페이지에서 ───────────── */
+.it-tbl td.it-mu{color:var(--text-muted);font-size:.84rem;white-space:nowrap}
+.it-tbl td.it-memo{color:var(--text-muted);font-size:.84rem;max-width:240px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it-mu .it-mu,.it-tbl .it-mu span.it-mu{opacity:.5}
+.it-stt{display:inline-block;font-size:11.5px;font-weight:700;border-radius:99px;padding:3px 10px;white-space:nowrap}
+.it-evt{font-style:normal;margin-left:6px;font-size:10px;font-weight:800;letter-spacing:.02em;
+  color:#b45309;background:rgba(245,158,11,.16);border-radius:99px;padding:2px 7px;white-space:nowrap}
+.it-sold{font-style:normal;margin-left:6px;font-size:10.5px;font-weight:700;color:var(--text-muted)}
+.it-nolink{font-style:normal;margin-left:6px;font-size:10px;font-weight:700;color:var(--text-muted);opacity:.6}
+.ip2-ck{display:inline-flex;align-items:center;gap:6px;font-size:.85rem;margin-right:14px;cursor:pointer}
