@@ -8162,20 +8162,39 @@ class BhasApp {
     //  고른 단계를 메모로 깐다 — 폴더는 브랜드, 시즌 속성이 붙고, 본문엔 할 일이 들어간다
     async makeSeasonSteps() {
         const pk = this.stepPick; if (!pk) return;
+        //  아직 시즌이 없으면(새로 만드는 중) 시즌부터 만들고 이어서 페이지를 깐다 — 창 하나로 끝낸다
+        if (!pk.id) {
+            const nm = (pk.name || '').trim();
+            if (!nm) { this.showToast('시즌명을 적어주세요'); return; }
+            if (!pk.brand) { this.showToast('브랜드를 골라주세요'); return; }
+            try {
+                const rep = (mockData.companies || []).find(c => String(c.brand_id) === String(pk.brand));
+                const { data: newId, error } = await this.supabase.rpc('create_product', {
+                    p_company_id: rep ? rep.id : this.currentUser.company_id,
+                    p_brand_id: pk.brand,
+                    p_name: nm,
+                    p_deadline: pk.open ? this.formatDateToUI(pk.open) : null,
+                });
+                if (error) throw error;
+                await this.loadInitialData();
+                pk.id = newId;
+            } catch (e) { this.showToast('시즌을 만들지 못했습니다: ' + (e.message || e)); return; }
+        }
         const sea = this._seasons().find(p => String(p.id) === String(pk.id)); if (!sea) return;
         const brand = (mockData.brands || []).find(b => String(b.id) === String(sea.brand_id));
         const chosen = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
         if (!chosen.length) { this.showToast('고른 단계가 없습니다'); return; }
         //  '샘플·제작' 처럼 kind='items' 인 단계는 메모가 아니라 제품리스트에서 하는 일이다.
         //  메모를 만들지 않고, 만들기가 끝나면 그 시즌의 제품리스트를 열어 준다.
-        const toItems = chosen.some(x => x.kind === 'items');
-        const steps = chosen.filter(x => x.kind !== 'items');
+        const steps = chosen;          // 샘플·제작도 페이지를 만든다. 그 페이지 안에 제품리스트가 붙는다.
         const folder = brand ? brand.name : '공용';
         const me = this.currentUser?.name || null;
         const rows = steps.map(st => {
             const due = this._stepDueOf(st);
             const meta = { proj: String(sea.id), status: '요청' };
             if (due) meta.due = due;
+            //  제품리스트와 묶이는 단계는 페이지 안에 제품표가 뜨도록 표시해 둔다
+            if (st.kind === 'items') meta.embed = 'items';
             const body = (st.checklist || []).map(c => `[ ] ${c}`).join('\n');
             return {
                 title: `${sea.name} · ${st.name}`,
@@ -8195,15 +8214,16 @@ class BhasApp {
             this.stepPick = null;
             this.noteFolder = 'f:' + folder; this.noteSea = String(sea.id);
             this.closeStepPick();
-            this.showToast(`${sea.name} · 페이지 ${rows.length}개를 만들었습니다${toItems ? ' · 제품리스트를 엽니다' : ''}`);
-            if (toItems) this.openSeasonItems(sea.id); else this.switchView('notes');
+            this.showToast(`${sea.name} · 페이지 ${rows.length}개를 만들었습니다`);
+            this.switchView('notes');
         } catch (e) { this.showToast('만들지 못했습니다: ' + (e.message || e)); }
     }
     //  단계 고르기 판
     _stepPickHTML() {
         const pk = this.stepPick; if (!pk) return '';
         const esc = s => this._vesc(s);
-        const sea = this._seasons().find(p => String(p.id) === String(pk.id));
+        const isNew = !pk.id;
+        const sea = isNew ? { name: pk.name, brand_id: pk.brand } : this._seasons().find(p => String(p.id) === String(pk.id));
         if (!sea) return '';
         const brand = (mockData.brands || []).find(b => String(b.id) === String(sea.brand_id));
         const steps = this._stepsFor(sea.brand_id);
@@ -8225,8 +8245,16 @@ class BhasApp {
             </div>`;
         };
         return `<div class="modal-content vmodal sp-box" style="width:94%;max-width:620px">
-                <div class="hk-top"><b>${esc(brand ? brand.name + ' · ' : '')}${esc(sea.name)} 단계 만들기</b>
+                <div class="hk-top"><b>${isNew ? '새 시즌' : `${esc(brand ? brand.name + ' · ' : '')}${esc(sea.name)} 단계 만들기`}</b>
                     <button class="fi-x" onclick="app.closeStepPick()">×</button></div>
+                ${isNew ? `<div class="sp-new">
+                    <input class="sp-nm" placeholder="시즌명 — 예: 26FW 2차" value="${esc(pk.name || '')}"
+                           oninput="app.setSeaName(this.value)" autofocus>
+                    <select class="sp-br" onchange="app.setSeaBrand(this.value)">
+                        <option value="">브랜드</option>
+                        ${(mockData.brands || []).map(b => `<option value="${b.id}"${String(pk.brand) === String(b.id) ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}
+                    </select>
+                </div>` : ''}
                 <div class="sp-when">
                     <label>오픈일</label>
                     <input type="date" value="${esc(pk.open || '')}" onchange="app.setStepOpen(this.value)">
@@ -8237,7 +8265,7 @@ class BhasApp {
                     <span>${(() => { const c = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
                         const ni = c.filter(x => x.kind !== 'items').length, it = c.length - ni;
                         return `${ni}개 페이지를 만듭니다${it ? ' · 샘플·제작은 제품리스트에서 합니다' : ''} · 각 페이지 안에 [ ] 할 일이 들어갑니다`; })()}</span>
-                    <button class="mbtn pri" onclick="app.makeSeasonSteps()">만들기</button>
+                    <button class="mbtn pri" onclick="app.makeSeasonSteps()">${isNew ? "시즌 만들기" : "만들기"}</button>
                 </div>
         </div>`;
     }
@@ -8643,10 +8671,115 @@ class BhasApp {
                               oninput="app.noteTyping(event)" onkeydown="app.noteKey(event)"
                               onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`
                         : this._noteLiveHTML(sel)}
+                    ${this._noteItemsHTML(sel)}
                 </div>` : `<div class="nt-none big">메모를 선택하세요</div>`}
             </section>
         </div>`;
     }
+
+
+    // ── 샘플·제작 페이지 안의 제품리스트 ─────────────────────
+    //  제품리스트 창을 따로 띄우지 않는다. 이 표에서 더하고 고치면 제품리스트(product_items)가 바로 바뀌고,
+    //  제품리스트에서 바꾼 것도 여기에 그대로 보인다. 같은 표를 두 군데서 보는 것뿐이다.
+    _noteItemsHTML(n) {
+        if (!n || this._noteMeta(n).embed !== 'items') return '';
+        const esc = s => this._vesc(s);
+        const seaId = n.product_id || this._noteMeta(n).proj;
+        const sea = this._seasons().find(p => String(p.id) === String(seaId));
+        if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
+        const items = (this.pItems || []).filter(x => String(x.product_id) === String(seaId));
+        const row = (it) => {
+            const col = (this.ITEM_SC || {})[it.status] || '#8e8e93';
+            return `<div class="ni-r" data-id="${it.id}">
+                <input class="ni-nm" value="${esc(it.name || '')}" placeholder="제품명"
+                       onchange="app.setItemField('${it.id}','name',this.value)">
+                <input class="ni-pt" value="${esc(it.pattern_no || '')}" placeholder="패턴"
+                       onchange="app.setItemField('${it.id}','pattern_no',this.value)">
+                <span class="ni-st" style="--c:${col}">${esc(it.status || '요청하기')}</span>
+                ${(() => { const ph = this._itemPhotos(it.id);
+                    return ph.length ? `<span class="ni-ph" title="사진 ${ph.length}장" onclick="app.openItemFromNote('${it.id}')">
+                        <img src="${esc(ph[0])}" alt="">${ph.length > 1 ? `<em>${ph.length}</em>` : ''}</span>` : ''; })()}
+                <button class="ni-cam" title="사진 올리기" onclick="app.pickItemPhoto('${it.id}')"><i class="ph ph-image"></i></button>
+                <button class="ni-go" title="제품 페이지 열기" onclick="app.openItemFromNote('${it.id}')"><i class="ph ph-arrow-square-out"></i></button>
+                <button class="ni-x" title="제품리스트에서 지우기" onclick="app.delItem('${it.id}')"><i class="ph ph-trash"></i></button>
+            </div>`;
+        };
+        return `<div class="ni">
+            <div class="ni-h"><b><i class="ph ph-t-shirt"></i> 이 시즌 제품</b>
+                <span>${items.length}개 · 제품리스트와 같은 표입니다</span>
+                <button class="ni-add" onclick="app.addItemHere('${seaId}')"><i class="ph ph-plus"></i> 제품 추가</button></div>
+            ${items.length ? items.map(row).join('') : `<div class="ni-none">아직 올린 제품이 없습니다. ‘제품 추가’ 로 ${esc(sea ? sea.name : '이 시즌')} 제품을 올리세요.</div>`}
+        </div>`;
+    }
+    //  이 페이지에서 바로 제품 올리기 — 시즌·브랜드가 자동으로 붙는다
+    async addItemHere(seaId) {
+        const sea = this._seasons().find(p => String(p.id) === String(seaId));
+        const row = { name: '', status: '요청하기', created_by: this._actor ? this._actor() : (this.currentUser?.name || null) };
+        if (seaId) row.product_id = seaId;
+        if (sea && sea.brand_id) row.brand_id = sea.brand_id;
+        const { data, error } = await this.supabase.from('product_items').insert([row]).select().single();
+        if (error) { this.showToast('추가 실패: ' + error.message); return; }
+        this.pItems = [data, ...(this.pItems || [])];
+        this.requestRender();
+        setTimeout(() => { const el = this.appContainer.querySelector(`.ni-r[data-id="${data.id}"] .ni-nm`); if (el) el.focus(); }, 60);
+    }
+
+    //  제품 사진 — 작업지시서를 만들 필요 없이 제품에 바로 붙인다.
+    //  저장은 그 제품의 '제품 페이지'(item_id 로 묶인 메모)에 들어가므로 제품리스트·메모 어디서나 같이 보인다.
+    _itemPhotos(itemId) {
+        const n = (this.noteList || []).find(x => String(x.item_id) === String(itemId));
+        if (!n) return [];
+        return [...String(n.body || '').matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map(m => m[1]);
+    }
+    pickItemPhoto(itemId) {
+        let el = document.getElementById('item-photo-input');
+        if (!el) {
+            el = document.createElement('input');
+            el.type = 'file'; el.accept = 'image/*'; el.multiple = true; el.id = 'item-photo-input';
+            el.style.display = 'none'; document.body.appendChild(el);
+        }
+        el.onchange = async (e) => {
+            const files = [...(e.target.files || [])]; e.target.value = '';
+            for (const f of files) await this.attachItemPhoto(itemId, f);
+            this.requestRender();
+        };
+        el.click();
+    }
+    async attachItemPhoto(itemId, file) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(itemId)); if (!it) return;
+        this.showToast('사진 올리는 중…');
+        try {
+            const blob = await this.resizeImage(file);
+            const safe = (file.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+            const path = `items/${itemId}/${Date.now()}_${safe}`;
+            const { error: upErr } = await this.supabase.storage.from('bhas')
+                .upload(path, blob, { contentType: file.type || 'image/jpeg', upsert: false });
+            if (upErr) throw upErr;
+            const url = this.supabase.storage.from('bhas').getPublicUrl(path).data.publicUrl;
+            //  제품 페이지가 없으면 만들어서 거기에 붙인다
+            let n = (this.noteList || []).find(x => String(x.item_id) === String(itemId));
+            if (!n) {
+                const sea = this._seasons().find(p => String(p.id) === String(it.product_id));
+                const brand = (mockData.brands || []).find(b => String(b.id) === String(it.brand_id));
+                const r = await this.supabase.from('notes').insert([{
+                    title: it.name || '제품', folder: brand ? brand.name : '공용', scope: 'shared',
+                    product_id: it.product_id || null, item_id: itemId,
+                    body: this._joinNote({ proj: it.product_id ? String(it.product_id) : '' }, ''),
+                    created_by: this.currentUser?.name || null, owner: this._me ? this._me() : null,
+                }]).select().single();
+                if (r.error) throw r.error;
+                n = r.data; this.noteList = [n, ...(this.noteList || [])];
+            }
+            const text = this._noteText(n);
+            const body = this._joinNote(this._noteMeta(n), (text ? text.replace(/\s*$/, '') + '\n' : '') + `![사진](${url})`);
+            const up = await this.supabase.from('notes').update({ body }).eq('id', n.id);
+            if (up.error) throw up.error;
+            n.body = body;
+            this.showToast('사진을 올렸습니다');
+        } catch (e) { this.showToast('사진 올리기 실패: ' + (e.message || e)); }
+    }
+    //  제품 페이지로 — 옆 패널에서 그 제품을 연다
+    openItemFromNote(id) { this.noteProd = true; this.npItem = id; this.requestRender(); }
 
     // ── 할 일 (맥 '미리알림' 앱 형태) ─────────────────────────
     async loadReminders() {
@@ -11788,9 +11921,37 @@ class BhasApp {
         </div>`;
     }
     // 메모 사이드바의 시즌 ＋ — 기존 시즌 만들기 창을 그대로 띄운다
-    newProjectFromNotes() { this.showProjectModal(); }
+    newProjectFromNotes() { this.newSeasonDialog(); }
     //  브랜드 줄의 ＋ — 그 브랜드로 시즌을 만든다
-    newSeasonIn(brandId) { this.showProjectModal(brandId); }
+    newSeasonIn(brandId) { this.newSeasonDialog(brandId); }
+    //  새 시즌 — 이름·브랜드·오픈일·만들 페이지를 한 창에서 받고 한 번에 만든다
+    async newSeasonDialog(brandId) {
+        if (!this.seasonSteps) {
+            try {
+                const { data } = await this.supabase.from('season_steps').select('*').eq('active', true).order('sort');
+                this.seasonSteps = data || [];
+            } catch (_e) { this.seasonSteps = []; }
+        }
+        const steps = this._stepsFor(brandId);
+        this.stepPick = {
+            id: null,                     // 아직 시즌이 없다 — 만들기 누를 때 같이 만든다
+            brand: brandId || '',
+            name: '',
+            open: '',
+            on: new Set(steps.filter(x => x.on_default !== false).map(x => x.id)),
+            dates: {},
+        };
+        this._paintStepPick();
+    }
+    setSeaName(v) { if (this.stepPick) this.stepPick.name = v; }
+    setSeaBrand(v) {
+        if (!this.stepPick) return;
+        this.stepPick.brand = v;
+        const steps = this._stepsFor(v);
+        this.stepPick.on = new Set(steps.filter(x => x.on_default !== false).map(x => x.id));
+        this.stepPick.dates = {};
+        this._paintStepPick();
+    }
     toggleBrandSeasons(brandId) {
         this.noteBrandOpen = this.noteBrandOpen || {};
         this.noteBrandOpen[brandId] = !this.noteBrandOpen[brandId];

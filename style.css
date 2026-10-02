@@ -4489,3 +4489,33 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .nt-sea2.on{background:var(--primary);color:#fff}
 .nt-sea2 em{margin-left:auto;font-style:normal;font-size:.72rem;color:var(--text-muted)}
 .nt-sea2.on em{color:rgba(255,255,255,.8)}
+/* 새 시즌 — 이름·브랜드를 같은 창에서 */
+.sp-new{display:flex;gap:8px;padding:11px 12px 0}
+.sp-nm{flex:1;border:1px solid var(--card-border);border-radius:8px;padding:9px 11px;font-size:.9rem;
+  background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit}
+.sp-br{width:150px;border:1px solid var(--card-border);border-radius:8px;padding:9px 10px;font-size:.86rem;
+  background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit}
+
+/* 샘플·제작 페이지 안의 제품표 */
+.ni{margin-top:22px;border-top:1px solid var(--card-border);padding-top:14px}
+.ni-h{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.ni-h b{font-size:.95rem;display:flex;align-items:center;gap:6px}
+.ni-h span{font-size:.76rem;color:var(--text-muted)}
+.ni-add{margin-left:auto;border:1px solid var(--card-border);background:transparent;color:var(--primary);
+  border-radius:8px;padding:6px 12px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
+.ni-add:hover{background:rgba(var(--tint),.08)}
+.ni-r{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--card-border)}
+.ni-nm{flex:1;min-width:0;border:0;background:transparent;color:var(--text-main);font-size:.88rem;font-family:inherit;padding:4px 2px}
+.ni-pt{width:110px;border:0;background:transparent;color:var(--text-muted);font-size:.8rem;font-family:inherit;padding:4px 2px}
+.ni-nm:focus,.ni-pt:focus{outline:0;background:rgba(127,127,127,.1);border-radius:6px}
+.ni-st{font-size:.72rem;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);
+  padding:3px 9px;border-radius:999px;white-space:nowrap}
+.ni-ph{position:relative;width:30px;height:30px;border-radius:6px;overflow:hidden;cursor:pointer;flex:0 0 auto}
+.ni-ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ni-ph em{position:absolute;right:0;bottom:0;background:rgba(0,0,0,.65);color:#fff;font-size:.6rem;
+  font-style:normal;padding:0 3px;border-radius:4px 0 0 0}
+.ni-cam,.ni-go,.ni-x{border:0;background:transparent;color:var(--text-muted);cursor:pointer;padding:4px;
+  border-radius:6px;font-size:.95rem}
+.ni-cam:hover,.ni-go:hover{background:rgba(var(--tint),.1);color:var(--primary)}
+.ni-x:hover{background:rgba(239,68,68,.12);color:#ef4444}
+.ni-none{font-size:.82rem;color:var(--text-muted);padding:10px 0}
