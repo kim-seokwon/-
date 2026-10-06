@@ -4634,11 +4634,19 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .pp-sub{text-align:center;font-size:12px;color:#554f45;padding:7px 0 0;letter-spacing:.01em}
 
 /* 머리기사 */
-.pp-head{margin:16px 0 4px;text-align:center;font-size:clamp(21px,3.2vw,34px);font-weight:800;
+.pp-top{display:block;text-decoration:none;color:inherit;padding:4px 0 2px}
+.pp-topk{text-align:center;font-size:11px;font-weight:800;letter-spacing:.14em;color:#a3341f;margin-top:14px}
+.pp-head{margin:7px 0 4px;text-align:center;font-size:clamp(21px,3.2vw,34px);font-weight:800;
   line-height:1.3;letter-spacing:-.01em;word-break:keep-all}
+.pp-top:hover .pp-head{text-decoration:underline}
+.pp-dek{margin:8px auto 0;max-width:62ch;text-align:center;font-size:14px;line-height:1.65;
+  color:#4a4439;word-break:keep-all}
+.pp-byline{margin-top:9px;text-align:center;font-size:11.5px;color:#8a8275}
+.pp-new{font-style:normal;margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;
+  color:#a3341f;vertical-align:1px}
 
 /* 단 — 세로 괘선으로 가른다 */
-.pp-cols{display:grid;grid-template-columns:1fr 1fr 1.08fr;gap:0;margin-top:14px;
+.pp-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;margin-top:18px;
   border-top:1px solid #d6cfc0}
 .pp-c{padding:14px 20px;border-left:1px solid #d6cfc0;min-width:0}
 .pp-c:first-child{border-left:0;padding-left:0}

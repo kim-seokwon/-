@@ -11896,112 +11896,109 @@ class BhasApp {
         const d = new Date(ymd + 'T00:00:00');
         return Math.max(1, Math.round((d - new Date('2025-01-01T00:00:00')) / 864e5) + 1);
     }
+    //  같은 사건을 매체마다 다르게 적어 목록이 그 이야기 하나로 덮인다.
+    //  제목이 쓰는 낱말이 절반 넘게 겹치면 같은 이야기로 보고 맨 처음 것만 남긴다.
+    _oneStoryEach(list) {
+        //  한국어는 조사가 붙어 '핼러윈' 과 '핼러윈에' 가 다른 낱말로 세어진다. 끝 조사를 뗀다.
+        const stem = w => w.replace(/(에서|에게|으로|에|의|은|는|이|가|을|를|로|와|과|도|만|까지|부터)$/, '') || w;
+        const toks = t => new Set(String(t || '').toLowerCase()
+            .replace(/[^0-9a-z가-힣]+/g, ' ').split(' ')
+            .map(stem).filter(w => w.length >= 2));
+        const kept = [];
+        for (const x of list) {
+            const a = toks(x.title);
+            if (!a.size) { kept.push(x); continue; }
+            const dup = kept.some(y => {
+                const b = y._tk || (y._tk = toks(y.title));
+                let hit = 0; a.forEach(w => { if (b.has(w)) hit++; });
+                return hit / Math.min(a.size, b.size) >= 0.5;
+            });
+            if (!dup) { x._tk = a; kept.push(x); }
+        }
+        return kept;
+    }
     _paperHTML() {
         const P = this.paper; if (!P) return '';
         const esc = s => this._vesc(s);
-        const won = n => this._won(n);
-        if (P.loading) return `<div class="pp-back"><div class="pp"><div class="pp-wait">조간을 짜는 중…</div></div></div>`;
+        if (P.loading) return `<div class="pp-back"><div class="pp"><div class="pp-wait">소식을 모으는 중…</div></div></div>`;
         const d = P.data || {};
         const dt = new Date((d.date || this._ymdSeoul()) + 'T00:00:00');
         const DOW = ['일', '월', '화', '수', '목', '금', '토'][dt.getDay()];
         const longDate = `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 ${DOW}요일`;
 
-        // ── 머리기사: 어제 판 것 ──────────────────────────────
-        const sales = (d.sales || []).filter(x => (x.amt || 0) > 0 || (x.amt_prev || 0) > 0);
-        const tot = sales.reduce((s, x) => s + Number(x.amt || 0), 0);
-        const totPrev = sales.reduce((s, x) => s + Number(x.amt_prev || 0), 0);
-        const totCnt = sales.reduce((s, x) => s + Number(x.cnt || 0), 0);
-        const diff = totPrev ? Math.round((tot - totPrev) / totPrev * 100) : null;
-        const headline = !sales.length
-            ? '어제는 주문이 없었습니다'
-            : (diff === null ? `어제 ${won(tot)}원, ${totCnt}건 팔렸습니다`
-                : (diff >= 0 ? `어제 ${won(tot)}원 — 그제보다 ${diff}% 늘었습니다`
-                             : `어제 ${won(tot)}원 — 그제보다 ${-diff}% 줄었습니다`));
-        const arrow = v => v == null ? '' : (v >= 0
-            ? `<span class="pp-up">▲ ${v}%</span>` : `<span class="pp-dn">▼ ${-v}%</span>`);
-        const salesRows = sales.map(x => {
-            const dv = Number(x.amt_prev || 0) ? Math.round((Number(x.amt || 0) - Number(x.amt_prev)) / Number(x.amt_prev) * 100) : null;
-            return `<tr><td>${esc(x.brand)}</td><td class="n">${won(x.amt || 0)}</td>
-                <td class="n">${Number(x.cnt || 0).toLocaleString()}건</td><td class="n">${arrow(dv)}</td></tr>`;
-        }).join('');
-
-        // ── 오늘 할 일 · 지난 일 ──────────────────────────────
-        const td = d.todo_today || [], late = d.todo_late || [];
-        const li = (x, extra) => `<li><span>${esc(x.title || '제목 없음')}</span>${extra || ''}
-            ${x.assignee ? `<em>${esc(x.assignee)}</em>` : ''}</li>`;
-
-        // ── 시즌 일정 ────────────────────────────────────────
-        const sea = (d.seasons || []).map(x => `<li><span>${esc(x.name)}${x.brand ? ` <small>${esc(x.brand)}</small>` : ''}</span>
-            <em class="${x.dday <= 7 ? 'hot' : ''}">D-${x.dday}</em></li>`).join('');
-
-        // ── 바깥 소식 ────────────────────────────────────────
         const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스',
                       google: '구글', google_news: '구글 뉴스', instagram: '인스타그램', datalab: '데이터랩' };
-        const news = (d.news || []);
-        const lead = news[0];
-        const rest = news.slice(1, 10);
-        const when = t => { if (!t) return ''; const x = new Date(t); return `${x.getMonth() + 1}.${x.getDate()}`; };
+        //  날짜는 '언제 올라온 글인지' 다. 오늘·어제는 말로, 그 뒤는 날짜로.
+        const when = (t, noDate) => {
+            if (!t) return '';
+            const x = new Date(t);
+            const day = Math.floor((new Date(d.date + 'T00:00:00') - new Date(x.getFullYear(), x.getMonth(), x.getDate())) / 864e5);
+            const ymd = `${x.getFullYear()}.${x.getMonth() + 1}.${x.getDate()}`;
+            const label = day <= 0 ? '오늘' : (day === 1 ? '어제' : (day < 7 ? `${day}일 전` : ymd));
+            //  published_at 이 없어 수집 시각으로 대신한 글은 티를 낸다 — 거짓 날짜를 보여줄 순 없다
+            return noDate ? `${ymd} 수집` : label;
+        };
+        const freshMark = (t, noDate) => {
+            if (!t || noDate) return '';
+            const x = new Date(t);
+            const day = Math.floor((new Date(d.date + 'T00:00:00') - new Date(x.getFullYear(), x.getMonth(), x.getDate())) / 864e5);
+            return day <= 1 ? '<em class="pp-new">NEW</em>' : '';
+        };
+        const meta = (x) => [SRC[x.source] || x.source || '', x.author ? esc(x.author) : '']
+            .filter(Boolean).join(' · ');
+
+        // 머리기사 — 우리 브랜드 글이 있으면 그게 1면, 없으면 업계 소식 맨 위
+        const ours = this._oneStoryEach(d.ours || []),
+              industry = this._oneStoryEach(d.industry || []),
+              trend = this._oneStoryEach(d.trend || []);
+        //  1면은 '우리 이야기'가 최근(2주 안)일 때만 양보한다. 1년 전 기사를 머리에 걸 순 없다.
+        const ageOf = x => x && x.at_ts
+            ? Math.floor((new Date(d.date + 'T00:00:00') - new Date(x.at_ts)) / 864e5) : 9999;
+        const freshOurs = ours[0] && ageOf(ours[0]) <= 14 ? ours[0] : null;
+        const others = [industry[0], trend[0]].filter(Boolean).sort((a, b) => ageOf(a) - ageOf(b));
+        const lead = freshOurs || others[0] || ours[0] || null;
+        const leadFrom = lead === ours[0] ? '우리 이야기' : (lead === industry[0] ? '아동복 소식' : '트렌드');
+        const drop = (arr) => arr.filter(x => x !== lead);
+        const ours2 = drop(ours), ind2 = drop(industry), tre2 = drop(trend);
+
+        const item = (x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">
+            <span>${esc(x.title || '')}${freshMark(x.at_ts, x.no_date)}</span>
+            <em>${meta(x)}${meta(x) ? ' · ' : ''}${when(x.at_ts, x.no_date)}</em></a></li>`;
+        const col = (kick, list, empty, cls) => `<section class="pp-c">
+            <div class="pp-kick${cls || ''}">${kick} <em>${list.length}건</em></div>
+            ${!list.length && lead && leadFrom === kick ? '<p class="pp-none">오늘은 1면에 실었습니다.</p>' : ''}
+            ${list.length ? `<ul class="pp-l news">${list.map(item).join('')}</ul>`
+                          : (lead && leadFrom === kick ? '' : `<p class="pp-none">${empty}</p>`)}
+        </section>`;
 
         return `<div class="pp-back">
         <div class="pp" onclick="event.stopPropagation()">
             <div class="pp-scroll">
                 <header class="pp-mast">
                     <div class="pp-ml">제${this._paperNo(d.date || this._ymdSeoul()).toLocaleString()}호</div>
-                    <h1>브하스 조간</h1>
+                    <h1>아동복 조간</h1>
                     <div class="pp-mr">${esc(longDate)}</div>
                 </header>
                 <div class="pp-rule"></div>
-                <div class="pp-sub">이일칠구 · 하이헤이호 · 로하이스튜디오 · 토비 &nbsp;|&nbsp; 어제까지의 장사와 오늘 할 일</div>
+                <div class="pp-sub">네이버 카페·블로그 · 구글 뉴스에서 모았습니다${d.fresh ? ` &nbsp;|&nbsp; 오늘 새로 들어온 글 ${Number(d.fresh).toLocaleString()}건` : ''}</div>
                 <div class="pp-rule thin"></div>
 
-                <h2 class="pp-head">${esc(headline)}</h2>
+                ${lead ? `<a class="pp-top" href="${esc(lead.url)}" target="_blank" rel="noopener">
+                    <div class="pp-topk">${leadFrom}</div>
+                    <h2 class="pp-head">${esc(lead.title || '')}</h2>
+                    ${lead.snippet ? `<p class="pp-dek">${esc(String(lead.snippet).slice(0, 160))}</p>` : ''}
+                    <div class="pp-byline">${meta(lead)}${meta(lead) ? ' · ' : ''}${when(lead.at_ts, lead.no_date)}</div>
+                </a>` : `<h2 class="pp-head">아직 모인 소식이 없습니다</h2>`}
+
                 <div class="pp-cols">
-                    <section class="pp-c">
-                        <div class="pp-kick">어제 판 것</div>
-                        ${sales.length ? `<table class="pp-t"><tbody>${salesRows}
-                            ${sales.length > 1 ? `<tr class="sum"><td>합계</td><td class="n">${won(tot)}</td>
-                                <td class="n">${totCnt.toLocaleString()}건</td><td class="n">${arrow(diff)}</td></tr>` : ''}
-                        </tbody></table>`
-                        : `<p class="pp-none">어제 들어온 주문이 없습니다. 취소·환불은 빼고 셉니다.</p>`}
-                        <p class="pp-note">※ 취소·환불 건은 빼고, 결제금액 기준으로 셉니다.</p>
-
-                        <div class="pp-kick mt">어제 많이 나간 것</div>
-                        ${(d.top_items || []).length
-                            ? `<ul class="pp-l">${(d.top_items || []).map(x => {
-                                const sp = this._saleParts(x.nm);
-                                return `<li><span>${esc(sp.name)}${sp.tag ? ` <small>${esc(sp.tag)}</small>` : ''}</span>
-                                    <em>${Number(x.qty || 0).toLocaleString()}개</em></li>`;
-                              }).join('')}</ul>`
-                            : `<p class="pp-none">어제 나간 상품이 없습니다.</p>`}
-
-                        <div class="pp-kick mt">시즌 일정</div>
-                        ${sea ? `<ul class="pp-l">${sea}</ul>` : `<p class="pp-none">45일 안에 마감인 시즌이 없습니다.</p>`}
-                    </section>
-
-                    <section class="pp-c">
-                        <div class="pp-kick">오늘 할 일 <em>${td.length}건</em></div>
-                        ${td.length ? `<ul class="pp-l">${td.map(x => li(x)).join('')}</ul>`
-                                    : `<p class="pp-none">오늘 날짜로 잡힌 일이 없습니다.</p>`}
-
-                        <div class="pp-kick mt alarm">지난 일 <em>${(d.todo_late_n || 0)}건</em></div>
-                        ${late.length ? `<ul class="pp-l late">${late.map(x => li(x, `<b>${x.late}일 지남</b>`)).join('')}</ul>`
-                                      : `<p class="pp-none">밀린 일이 없습니다.</p>`}
-                    </section>
-
-                    <section class="pp-c">
-                        <div class="pp-kick">바깥 소식</div>
-                        ${lead ? `<a class="pp-lead" href="${esc(lead.url)}" target="_blank" rel="noopener">
-                            <b>${esc(lead.title || '')}</b>
-                            <span>${esc(SRC[lead.source] || lead.source || '')}${lead.author ? ' · ' + esc(lead.author) : ''}${when(lead.published_at) ? ' · ' + when(lead.published_at) : ''}</span></a>` : ''}
-                        ${rest.length ? `<ul class="pp-l news">${rest.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">
-                            <span>${esc(x.title || '')}</span><em>${esc(SRC[x.source] || x.source || '')}</em></a></li>`).join('')}</ul>` : ''}
-                        ${!news.length ? `<p class="pp-none">아직 모인 소식이 없습니다. 네이버 카페·블로그는 열쇠(API 키)를 넣어야 들어옵니다.</p>` : ''}
-                    </section>
+                    ${col('우리 이야기', ours2, '우리 이름이 나온 글이 아직 없습니다. 후기는 대부분 네이버 카페·블로그에 올라오는데, 그건 열쇠(API 키)를 넣어야 들어옵니다.')}
+                    ${col('아동복 소식', ind2, '업계 소식이 아직 없습니다.')}
+                    ${col('트렌드', tre2, '네이버 카페 글은 열쇠(API 키)를 넣어야 들어옵니다.')}
                 </div>
                 <div class="pp-rule thin"></div>
                 <div class="pp-foot">
-                    <span>브하스 조간 · 매일 아침 한 번 펼쳐집니다</span>
-                    <button class="pp-done" onclick="app.closePaper()">다 읽었습니다 — 업무 시작</button>
+                    <span>매일 아침 한 번 펼쳐집니다 · 뉴스 화면에서 다시 볼 수 있습니다</span>
+                    <button class="pp-done" onclick="app.closePaper()">다 봤습니다 — 업무 시작</button>
                 </div>
             </div>
         </div></div>`;

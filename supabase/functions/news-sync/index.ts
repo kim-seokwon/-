@@ -24,6 +24,21 @@ function clean(s: string) {
 // 카페 이름 비교 — 띄어쓰기·대소문자 차이로 조용히 어긋나는 걸 막는다
 const key = (s: string) => String(s || "").replace(/\s+/g, "").toLowerCase();
 
+//  '우리 이야기' 칸은 진짜로 우리 이름이 나온 글만 들어가야 한다.
+//  구글 뉴스 RSS 는 검색어와 느슨하게 맞는 기사까지 돌려줘서, 그냥 담으면 남의 브랜드 소식으로 찬다.
+function mentions(query: string, title: string, snippet: string) {
+  const hay = key(`${title} ${snippet}`);
+  //  '토비 아동복' 처럼 두 낱말이면 둘 다 나와야 한다
+  return String(query || "").split(/\s+/).filter(Boolean).every(w => hay.includes(key(w)));
+}
+
+//  검색어마다 걸러낼 말 — '아동복' 으로 찾으면 '아동복지시설' 기사가 쏟아진다
+function blocked(block: string[] | null, title: string, snippet: string) {
+  if (!block || !block.length) return false;
+  const hay = key(`${title} ${snippet}`);
+  return block.some(w => w && hay.includes(key(w)));
+}
+
 type Row = {
   kind: string; source: string; title: string; snippet: string; url: string;
   author: string | null; published_at: string | null; brand_id: string | null; meta: unknown;
@@ -82,9 +97,12 @@ Deno.serve(async (req) => {
             const cafe = clean(it.cafename || "");
             //  카페를 지정했으면 그 카페 글만. (API 가 카페 지정 검색을 안 해 준다)
             if (s.kind === "cafe" && want.length && !want.some((w: string) => key(cafe).includes(w) || w.includes(key(cafe)))) continue;
+            const ttl = clean(it.title), des = clean(it.description);
+            if (blocked(s.block, ttl, des)) continue;
+            if (s.bucket === "review" && !mentions(s.query, ttl, des)) continue;
             rows.push({
               kind: s.bucket, source: s.kind === "cafe" ? "naver_cafe" : "naver_blog",
-              title: clean(it.title), snippet: clean(it.description), url: it.link,
+              title: ttl, snippet: des, url: it.link,
               author: cafe || clean(it.bloggername || "") || null,
               // 블로그는 postdate(YYYYMMDD), 카페글은 날짜를 안 준다 → 모르면 비워 둔다
               published_at: /^\d{8}$/.test(it.postdate || "") ? `${it.postdate.slice(0,4)}-${it.postdate.slice(4,6)}-${it.postdate.slice(6,8)}` : null,
@@ -96,6 +114,8 @@ Deno.serve(async (req) => {
           // 네이버 뉴스(키 있으면) + 구글 뉴스 RSS(항상)
           if (nid && nsec) {
             for (const it of await naver("news.json", s.query, nid, nsec, 30)) {
+              if (blocked(s.block, clean(it.title), clean(it.description))) continue;
+              if (s.bucket === "review" && !mentions(s.query, clean(it.title), clean(it.description))) continue;
               rows.push({
                 kind: s.bucket, source: "naver_news", title: clean(it.title), snippet: clean(it.description),
                 url: it.originallink || it.link, author: null,
@@ -105,6 +125,8 @@ Deno.serve(async (req) => {
             }
           }
           for (const it of await googleNews(s.query)) {
+            if (blocked(s.block, it.title, "")) continue;
+            if (s.bucket === "review" && !mentions(s.query, it.title, "")) continue;
             rows.push({
               kind: s.bucket, source: "google_news", title: it.title, snippet: "", url: it.link,
               author: it.source || null,
@@ -120,9 +142,11 @@ Deno.serve(async (req) => {
     const seen = new Set<string>();
     const uniq = rows.filter(r => {
       if (!r.url) return false;
-      const k = `${r.kind}|${r.url}`;
-      if (seen.has(k)) return false;
-      seen.add(k); return true;
+      //  주소가 달라도 제목이 같으면 같은 기사다(같은 글을 여러 매체가 받아쓴다)
+      const k = `${r.kind}|${r.url}`, kt = `${r.kind}~${key(r.title)}`;
+      if (seen.has(k) || (r.title && seen.has(kt))) return false;
+      seen.add(k); if (r.title) seen.add(kt);
+      return true;
     });
 
     let saved = 0;
