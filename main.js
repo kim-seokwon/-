@@ -11880,7 +11880,7 @@ class BhasApp {
         this.paper = { loading: true, data: null, auto: !!auto };
         this.requestRender();
         try {
-            const { data, error } = await this.supabase.rpc('morning_brief');
+            const { data, error } = await this.supabase.rpc('morning_brief', { p_days: 7 });
             if (error) throw error;
             this.paper.data = data;
         } catch (e) { this.paper.err = e.message || String(e); }
@@ -11920,84 +11920,119 @@ class BhasApp {
     _paperHTML() {
         const P = this.paper; if (!P) return '';
         const esc = s => this._vesc(s);
+        //  이모지로 시작하는 제목은 신문에서 보기 사납다 — 앞머리 장식만 뗀다
+        const noEmo = t => String(t || '')
+            .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}\u{2B00}-\u{2BFF}]/gu, ' ')
+            .replace(/\s+/g, ' ').trim();
         if (P.loading) return `<div class="pp-back"><div class="pp"><div class="pp-wait">소식을 모으는 중…</div></div></div>`;
         const d = P.data || {};
         const dt = new Date((d.date || this._ymdSeoul()) + 'T00:00:00');
         const DOW = ['일', '월', '화', '수', '목', '금', '토'][dt.getDay()];
         const longDate = `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 ${DOW}요일`;
+        const days = d.days || 7;
 
         const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스',
                       google: '구글', google_news: '구글 뉴스', instagram: '인스타그램', datalab: '데이터랩' };
-        //  날짜는 '언제 올라온 글인지' 다. 오늘·어제는 말로, 그 뒤는 날짜로.
-        const when = (t, noDate) => {
-            if (!t) return '';
-            const x = new Date(t);
-            const day = Math.floor((new Date(d.date + 'T00:00:00') - new Date(x.getFullYear(), x.getMonth(), x.getDate())) / 864e5);
-            const ymd = `${x.getFullYear()}.${x.getMonth() + 1}.${x.getDate()}`;
-            const label = day <= 0 ? '오늘' : (day === 1 ? '어제' : (day < 7 ? `${day}일 전` : ymd));
-            //  published_at 이 없어 수집 시각으로 대신한 글은 티를 낸다 — 거짓 날짜를 보여줄 순 없다
-            return noDate ? `${ymd} 수집` : label;
+        const ageOf = x => x && x.at_ts
+            ? Math.floor((new Date(d.date + 'T00:00:00') - new Date(x.at_ts)) / 864e5) : 9999;
+        const when = (x) => {
+            if (!x || !x.at_ts) return '';
+            const t = new Date(x.at_ts), a = ageOf(x);
+            const ymd = `${t.getFullYear()}.${t.getMonth() + 1}.${t.getDate()}`;
+            if (x.no_date) return `${ymd} 수집`;
+            return a <= 0 ? '오늘' : (a === 1 ? '어제' : (a < 7 ? `${a}일 전` : ymd));
         };
-        const freshMark = (t, noDate) => {
-            if (!t || noDate) return '';
-            const x = new Date(t);
-            const day = Math.floor((new Date(d.date + 'T00:00:00') - new Date(x.getFullYear(), x.getMonth(), x.getDate())) / 864e5);
-            return day <= 1 ? '<em class="pp-new">NEW</em>' : '';
+        //  인스타 글은 반응이 곧 기사 가치다 — 좋아요·댓글을 같이 적는다
+        const react = (x) => {
+            const m = x.meta || {};
+            if (x.source !== 'instagram' || (m.likes == null && m.comments == null)) return '';
+            return `<span class="pp-react">♥ ${Number(m.likes || 0).toLocaleString()}`
+                 + `${m.comments != null ? ` · 댓글 ${Number(m.comments).toLocaleString()}` : ''}</span>`;
         };
-        const meta = (x) => [SRC[x.source] || x.source || '', x.author ? esc(x.author) : '']
+        const by = (x) => [SRC[x.source] || x.source || '', x.author ? esc(x.author) : '', when(x)]
             .filter(Boolean).join(' · ');
 
-        // 머리기사 — 우리 브랜드 글이 있으면 그게 1면, 없으면 업계 소식 맨 위
         const ours = this._oneStoryEach(d.ours || []),
               industry = this._oneStoryEach(d.industry || []),
               trend = this._oneStoryEach(d.trend || []);
-        //  1면은 '우리 이야기'가 최근(2주 안)일 때만 양보한다. 1년 전 기사를 머리에 걸 순 없다.
-        const ageOf = x => x && x.at_ts
-            ? Math.floor((new Date(d.date + 'T00:00:00') - new Date(x.at_ts)) / 864e5) : 9999;
-        const freshOurs = ours[0] && ageOf(ours[0]) <= 14 ? ours[0] : null;
-        const others = [industry[0], trend[0]].filter(Boolean).sort((a, b) => ageOf(a) - ageOf(b));
-        const lead = freshOurs || others[0] || ours[0] || null;
-        const leadFrom = lead === ours[0] ? '우리 이야기' : (lead === industry[0] ? '아동복 소식' : '트렌드');
+
+        //  1면은 사진이 있는 우리 글을 먼저 본다. 없으면 가장 최근 소식.
+        const leadPool = [ours[0], industry[0], trend[0]].filter(Boolean);
+        const lead = ours.find(x => x.thumb) || leadPool.sort((a, b) => ageOf(a) - ageOf(b))[0] || null;
+        const leadFrom = ours.includes(lead) ? '우리 이야기' : (industry.includes(lead) ? '아동복 소식' : '트렌드');
         const drop = (arr) => arr.filter(x => x !== lead);
         const ours2 = drop(ours), ind2 = drop(industry), tre2 = drop(trend);
 
+        //  칸 안의 첫 기사는 사진을 달고 크게, 나머지는 제목 줄로 — 신문 지면의 결
+        const bigItem = (x) => `<a class="pp-art" href="${esc(x.url)}" target="_blank" rel="noopener">
+            ${x.thumb ? `<div class="pp-cut"><img src="${esc(x.thumb)}" alt="" loading="lazy"
+                onerror="this.closest('.pp-cut').remove()"></div>` : ''}
+            <b>${esc(noEmo(x.title) || '제목 없음')}${ageOf(x) <= 1 && !x.no_date ? '<em class="pp-new">NEW</em>' : ''}</b>
+            ${x.snippet ? `<p>${esc(noEmo(x.snippet).slice(0, 110))}</p>` : ''}
+            <span class="pp-by">${by(x)}</span>${react(x)}</a>`;
         const item = (x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">
-            <span>${esc(x.title || '')}${freshMark(x.at_ts, x.no_date)}</span>
-            <em>${meta(x)}${meta(x) ? ' · ' : ''}${when(x.at_ts, x.no_date)}</em></a></li>`;
-        const col = (kick, list, empty, cls) => `<section class="pp-c">
-            <div class="pp-kick${cls || ''}">${kick} <em>${list.length}건</em></div>
-            ${!list.length && lead && leadFrom === kick ? '<p class="pp-none">오늘은 1면에 실었습니다.</p>' : ''}
-            ${list.length ? `<ul class="pp-l news">${list.map(item).join('')}</ul>`
-                          : (lead && leadFrom === kick ? '' : `<p class="pp-none">${empty}</p>`)}
+            <span>${esc(noEmo(x.title) || '제목 없음')}${ageOf(x) <= 1 && !x.no_date ? '<em class="pp-new">NEW</em>' : ''}</span>
+            <em>${by(x)}</em>${react(x)}</a></li>`;
+        const col = (kick, list) => `<section class="pp-c">
+            <div class="pp-kick">${kick}<em>${list.length}</em></div>
+            ${list.length ? `${bigItem(list[0])}${list.length > 1
+                    ? `<ul class="pp-l news">${list.slice(1).map(item).join('')}</ul>` : ''}`
+                : (lead && leadFrom === kick
+                    ? `<p class="pp-none">오늘은 1면에 실었습니다.</p>`
+                    : `<p class="pp-none">최근 ${days}일 안에는 없습니다.</p>`)}
         </section>`;
 
         return `<div class="pp-back">
         <div class="pp" onclick="event.stopPropagation()">
             <div class="pp-scroll">
                 <header class="pp-mast">
-                    <div class="pp-ml">제${this._paperNo(d.date || this._ymdSeoul()).toLocaleString()}호</div>
+                    <div class="pp-ml">제${this._paperNo(d.date || this._ymdSeoul()).toLocaleString()}호<br>최근 ${days}일</div>
                     <h1>아동복 조간</h1>
-                    <div class="pp-mr">${esc(longDate)}</div>
+                    <div class="pp-mr">${esc(longDate)}<br>인스타그램 · 네이버 · 구글</div>
                 </header>
                 <div class="pp-rule"></div>
-                <div class="pp-sub">네이버 카페·블로그 · 구글 뉴스에서 모았습니다${d.fresh ? ` &nbsp;|&nbsp; 오늘 새로 들어온 글 ${Number(d.fresh).toLocaleString()}건` : ''}</div>
+
+                ${lead ? `<div class="pp-one">
+                    <a class="pp-top" href="${esc(lead.url)}" target="_blank" rel="noopener">
+                        <div class="pp-topk">${leadFrom}</div>
+                        <h2 class="pp-head">${esc(noEmo(lead.title) || '제목 없음')}</h2>
+                        <div class="pp-byline">${by(lead)}</div>
+                    </a>
+                    <div class="pp-onebody">
+                        ${lead.thumb ? `<a class="pp-fig" href="${esc(lead.url)}" target="_blank" rel="noopener">
+                            <img src="${esc(lead.thumb)}" alt="" onerror="this.closest('.pp-fig').remove()">
+                            <figcaption>${esc(lead.author || '')} ${when(lead)}</figcaption></a>` : ''}
+                        ${lead.snippet ? `<p class="pp-dek${/^[A-Za-z가-힣]/.test(noEmo(lead.snippet)) ? ' cap' : ''}">${esc(noEmo(lead.snippet).slice(0, 320))}</p>` : ''}
+                        ${react(lead) ? `<div class="pp-leadreact">${react(lead)}</div>` : ''}
+                    </div>
+                </div>` : `<h2 class="pp-head">최근 ${days}일 안에 들어온 소식이 없습니다</h2>`}
+
                 <div class="pp-rule thin"></div>
-
-                ${lead ? `<a class="pp-top" href="${esc(lead.url)}" target="_blank" rel="noopener">
-                    <div class="pp-topk">${leadFrom}</div>
-                    <h2 class="pp-head">${esc(lead.title || '')}</h2>
-                    ${lead.snippet ? `<p class="pp-dek">${esc(String(lead.snippet).slice(0, 160))}</p>` : ''}
-                    <div class="pp-byline">${meta(lead)}${meta(lead) ? ' · ' : ''}${when(lead.at_ts, lead.no_date)}</div>
-                </a>` : `<h2 class="pp-head">아직 모인 소식이 없습니다</h2>`}
-
                 <div class="pp-cols">
-                    ${col('우리 이야기', ours2, '우리 이름이 나온 글이 아직 없습니다. 후기는 대부분 네이버 카페·블로그에 올라오는데, 그건 열쇠(API 키)를 넣어야 들어옵니다.')}
-                    ${col('아동복 소식', ind2, '업계 소식이 아직 없습니다.')}
-                    ${col('트렌드', tre2, '네이버 카페 글은 열쇠(API 키)를 넣어야 들어옵니다.')}
+                    ${col('우리 이야기', ours2)}
+                    ${col('아동복 소식', ind2)}
+                    ${col('트렌드', tre2)}
                 </div>
+                ${(() => {
+                    //  중고로 돌아다니는 우리 옷 — 신문 아래쪽 박스 기사 자리
+                    const rs = d.resale || [];
+                    if (!rs.length) return '';
+                    const won = v => v ? `${Number(v).toLocaleString()}원` : '';
+                    return `<div class="pp-rule thin"></div>
+                    <section class="pp-box">
+                        <div class="pp-kick">중고로 올라온 우리 옷<em>${rs.length}</em></div>
+                        <div class="pp-used">${rs.map(x => `<a href="${esc(x.url)}" target="_blank" rel="noopener">
+                            ${(x.meta || {}).thumb ? `<img src="${esc((x.meta || {}).thumb)}" alt="" loading="lazy"
+                                onerror="this.remove()">` : ''}
+                            <b>${esc(noEmo(x.title))}</b>
+                            <span>${won((x.meta || {}).price)}${x.author ? ` · ${esc(x.author)}` : ''}
+                                · ${SRC[x.source] || x.source}${when(x) ? ` · ${when(x)}` : ''}</span>
+                        </a>`).join('')}</div>
+                    </section>`;
+                })()}
                 <div class="pp-rule thin"></div>
                 <div class="pp-foot">
-                    <span>매일 아침 한 번 펼쳐집니다 · 뉴스 화면에서 다시 볼 수 있습니다</span>
+                    <span>최근 ${days}일 치만 싣습니다 · 매일 아침 한 번 · 뉴스 화면에서 다시 볼 수 있습니다</span>
                     <button class="pp-done" onclick="app.closePaper()">다 봤습니다 — 업무 시작</button>
                 </div>
             </div>

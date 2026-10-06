@@ -23,6 +23,14 @@ function clean(s: string) {
 }
 // 카페 이름 비교 — 띄어쓰기·대소문자 차이로 조용히 어긋나는 걸 막는다
 const key = (s: string) => String(s || "").replace(/\s+/g, "").toLowerCase();
+// 인스타 아이디 비교용 — @ 와 대소문자를 치운다
+// 이모지·장식 기호를 뗀다 — 제목 첫 글자가 이모지면 신문에서 보기 사납다
+function stripEmoji(s: string) {
+  return String(s || "")
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, " ")
+    .replace(/\s+/g, " ").trim();
+}
+const norm = (u: string) => String(u || "").trim().toLowerCase().replace(/^@/, "");
 
 //  '우리 이야기' 칸은 진짜로 우리 이름이 나온 글만 들어가야 한다.
 //  구글 뉴스 RSS 는 검색어와 느슨하게 맞는 기사까지 돌려줘서, 그냥 담으면 남의 브랜드 소식으로 찬다.
@@ -64,6 +72,101 @@ async function googleNews(query: string) {
     out.push({ title: pick("title"), link: pick("link"), pubDate: pick("pubDate"), source: pick("source") });
   }
   return out;
+}
+
+// ── 번개장터: 우리 옷이 중고로 올라왔나 ──────────────────────
+//  공개 검색 API 다. no_result 값은 믿을 게 못 돼서(실제로 맞는 글이 있어도 true 로 온다)
+//  이름에 우리 브랜드가 들어간 것만 손으로 거른다.
+async function bunjang(query: string) {
+  const u = `https://api.bunjang.co.kr/api/1/find_v2.json?q=${encodeURIComponent(query)}&order=date&page=0&n=40`;
+  const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!r.ok) throw new Error(`bunjang ${r.status}`);
+  const j = await r.json();
+  const want = key(query);
+  return (j?.list || [])
+    .filter((x: { name?: string }) => key(x.name || "").includes(want))
+    .map((x: Record<string, string>) => ({
+      pid: x.pid, name: clean(x.name || ""), price: Number(x.price || 0),
+      img: String(x.product_image || "").replace("{res}", "266"),
+      at: x.update_time ? new Date(Number(x.update_time) * 1000).toISOString() : null,
+      where: clean(x.location || ""),
+    }));
+}
+
+// ── 인스타그램: 우리 계정이 올린 글 ────────────────────────────
+//  남의 계정·해시태그는 Meta 앱 심사('Instagram Public Content Access')를 받아야 읽을 수 있다.
+//  지금 토큰으로 되는 건 우리 계정의 게시물뿐이라, 그것만 가져온다.
+//  (경쟁사 피드를 보려면 심사를 통과해야 한다 — 코드가 아니라 권한 문제다.)
+const GRAPH = "https://graph.facebook.com/v20.0";
+async function igOwnPosts(db: ReturnType<typeof admin>, sinceDays: number) {
+  const { data: trow } = await db.from("ig_token").select("token").eq("id", 1).maybeSingle();
+  const token = trow?.token || Deno.env.get("META_IG_TOKEN") || "";
+  if (!token) return { rows: [] as Row[], err: "META_IG_TOKEN 없음" };
+
+  const { data: accs } = await db.from("ig_accounts").select("id, username, brand_id");
+  const want = new Map<string, { id: string; brand_id: string | null }>();
+  (accs || []).forEach((a: { id: string; username: string | null; brand_id: string | null }) => {
+    if (a.username) want.set(norm(a.username), { id: a.id, brand_id: a.brand_id });
+  });
+  if (!want.size) return { rows: [], err: "ig_accounts 비어 있음" };
+
+  const since = Date.now() - sinceDays * 864e5;
+  const rows: Row[] = [];
+  let err = "";
+  try {
+    const pages = await (await fetch(`${GRAPH}/me/accounts?fields=id&limit=100&access_token=${token}`)).json();
+    for (const pg of (pages?.data || [])) {
+      try {
+        const pt = (await (await fetch(`${GRAPH}/${pg.id}?fields=access_token&access_token=${token}`)).json())?.access_token;
+        if (!pt) continue;
+        const link = await (await fetch(`${GRAPH}/${pg.id}?fields=connected_instagram_account,instagram_business_account&access_token=${pt}`)).json();
+        const igId = link?.instagram_business_account?.id || link?.connected_instagram_account?.id;
+        if (!igId) continue;
+        const prof = await (await fetch(`${GRAPH}/${igId}?fields=username&access_token=${pt}`)).json();
+        const hit = want.get(norm(prof?.username || ""));
+        if (!hit) continue;   // 우리 브랜드 계정이 아니면 건너뛴다
+        const med = await (await fetch(`${GRAPH}/${igId}/media?fields=caption,permalink,timestamp,media_type,media_url,thumbnail_url,like_count,comments_count&limit=25&access_token=${pt}`)).json();
+        for (const m of (med?.data || [])) {
+          if (!m.timestamp || new Date(m.timestamp).getTime() < since) continue;
+          //  clean() 은 줄바꿈까지 공백으로 눌러 버린다. 인스타 캡션은 줄이 곧 문단이라
+          //  제목(첫 줄)과 본문(나머지)을 가르려면 줄바꿈을 살려 둬야 한다.
+          const cap = String(m.caption || "")
+            .replace(/<[^>]*>/g, "")
+            .replace(/[ \t]+/g, " ")
+            .replace(/\n{2,}/g, "\n").trim();
+          //  인스타 글머리는 이모지 줄로 시작하는 일이 많다. 글자가 든 첫 줄을 제목으로 쓴다.
+          //  마침표로 자르면 '10.14' 같은 날짜가 잘려 '10' 만 남는다 — 줄바꿈으로만 자른다.
+          const lines = cap.split("\n").map((x: string) => x.trim()).filter(Boolean);
+          const hasWord = (l: string) => /[A-Za-z가-힣0-9]/.test(stripEmoji(l));
+          //  한 줄짜리 캡션이면 제목과 본문이 같아져 버린다 → 앞머리를 제목, 나머지를 본문으로 가른다
+          const wordy = lines.filter(hasWord).map(stripEmoji).filter(Boolean);
+          const whole = wordy.join(" ");
+          let first = "", rest = "";
+          if (wordy.length > 1) { first = wordy[0].slice(0, 44).trim(); rest = wordy.slice(1).join(" "); }
+          else {
+            const one = whole;
+            if (one.length <= 44) { first = one; rest = ""; }
+            else {
+              const cut = one.lastIndexOf(" ", 44);
+              first = one.slice(0, cut > 16 ? cut : 44).trim();
+              rest = one.slice(first.length).trim();
+            }
+          }
+          rows.push({
+            kind: "review", source: "instagram",
+            title: first || `${prof.username} 새 게시물`,
+            snippet: rest.slice(0, 260).trim(),
+            url: m.permalink, author: prof.username,
+            published_at: m.timestamp ? new Date(m.timestamp).toISOString() : null,
+            brand_id: hit.brand_id,
+            meta: { likes: m.like_count ?? null, comments: m.comments_count ?? null,
+                    thumb: m.thumbnail_url || m.media_url || null, media_type: m.media_type },
+          });
+        }
+      } catch (e) { err = (e as Error).message; }
+    }
+  } catch (e) { err = (e as Error).message; }
+  return { rows, err };
 }
 
 Deno.serve(async (req) => {
@@ -110,6 +213,16 @@ Deno.serve(async (req) => {
               meta: { query: s.query, cafe: cafe || undefined },
             });
           }
+        } else if (s.kind === "bunjang") {
+          for (const b of await bunjang(s.query)) {
+            rows.push({
+              kind: "resale", source: "bunjang",
+              title: b.name, snippet: "", url: `https://m.bunjang.co.kr/products/${b.pid}`,
+              author: b.where || null, published_at: b.at,
+              brand_id: s.brand_id || null,
+              meta: { price: b.price, thumb: b.img, query: s.query },
+            });
+          }
         } else if (s.kind === "news") {
           // 네이버 뉴스(키 있으면) + 구글 뉴스 RSS(항상)
           if (nid && nsec) {
@@ -138,6 +251,13 @@ Deno.serve(async (req) => {
       } catch (e) { errs.push(`${s.kind}:${s.query} ${(e as Error).message}`); }
     }
 
+    // 인스타: 우리 계정이 올린 글
+    try {
+      const ig = await igOwnPosts(db, 30);
+      rows.push(...ig.rows);
+      if (ig.err) errs.push(`instagram ${ig.err}`);
+    } catch (e) { errs.push(`instagram ${(e as Error).message}`); }
+
     // 같은 (kind,url) 은 한 줄이다 — 매일 돌아도 쌓이지 않게
     const seen = new Set<string>();
     const uniq = rows.filter(r => {
@@ -152,7 +272,10 @@ Deno.serve(async (req) => {
     let saved = 0;
     for (let i = 0; i < uniq.length; i += 200) {
       const chunk = uniq.slice(i, i + 200);
-      const { error } = await db.from("news_items").upsert(chunk, { onConflict: "kind,url", ignoreDuplicates: true });
+      //  사진은 thumb 칸에 따로 넣는다 — 신문 1면에 그림이 들어가야 신문으로 보인다.
+      //  인스타 사진 주소는 며칠이면 만료돼서, 매일 돌 때 다시 덮어쓴다(ignoreDuplicates 를 끈 이유).
+      const body = chunk.map(r => ({ ...r, thumb: (r.meta as { thumb?: string } | null)?.thumb ?? null }));
+      const { error } = await db.from("news_items").upsert(body, { onConflict: "kind,url" });
       if (error) errs.push(`upsert ${error.message}`); else saved += chunk.length;
     }
 
