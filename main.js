@@ -11973,20 +11973,21 @@ class BhasApp {
         const item = (x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">
             <span>${esc(noEmo(x.title) || '제목 없음')}${ageOf(x) <= 1 && !x.no_date ? '<em class="pp-new">NEW</em>' : ''}</span>
             <em>${by(x)}</em>${react(x)}</a></li>`;
+        const WIN = { '우리 이야기': '최근 7일', '아동복 소식': '최근 3주', '트렌드': '최근 두 달' };
         const col = (kick, list) => `<section class="pp-c">
-            <div class="pp-kick">${kick}<em>${list.length}</em></div>
+            <div class="pp-kick">${kick}<em>${WIN[kick] || ''}</em></div>
             ${list.length ? `${bigItem(list[0])}${list.length > 1
                     ? `<ul class="pp-l news">${list.slice(1).map(item).join('')}</ul>` : ''}`
                 : (lead && leadFrom === kick
                     ? `<p class="pp-none">오늘은 1면에 실었습니다.</p>`
-                    : `<p class="pp-none">최근 ${days}일 안에는 없습니다.</p>`)}
+                    : `<p class="pp-none">${WIN[kick] || '최근'} 안에는 없습니다.</p>`)}
         </section>`;
 
         return `<div class="pp-back">
         <div class="pp" onclick="event.stopPropagation()">
             <div class="pp-scroll">
                 <header class="pp-mast">
-                    <div class="pp-ml">제${this._paperNo(d.date || this._ymdSeoul()).toLocaleString()}호<br>최근 ${days}일</div>
+                    <div class="pp-ml">제${this._paperNo(d.date || this._ymdSeoul()).toLocaleString()}호<br>새 소식 ${Number(d.fresh || 0).toLocaleString()}건</div>
                     <h1>아동복 조간</h1>
                     <div class="pp-mr">${esc(longDate)}<br>인스타그램 · 네이버 · 구글</div>
                 </header>
@@ -12005,7 +12006,7 @@ class BhasApp {
                         ${lead.snippet ? `<p class="pp-dek${/^[A-Za-z가-힣]/.test(noEmo(lead.snippet)) ? ' cap' : ''}">${esc(noEmo(lead.snippet).slice(0, 320))}</p>` : ''}
                         ${react(lead) ? `<div class="pp-leadreact">${react(lead)}</div>` : ''}
                     </div>
-                </div>` : `<h2 class="pp-head">최근 ${days}일 안에 들어온 소식이 없습니다</h2>`}
+                </div>` : `<h2 class="pp-head">아직 들어온 소식이 없습니다</h2>`}
 
                 <div class="pp-rule thin"></div>
                 <div class="pp-cols">
@@ -12032,7 +12033,7 @@ class BhasApp {
                 })()}
                 <div class="pp-rule thin"></div>
                 <div class="pp-foot">
-                    <span>최근 ${days}일 치만 싣습니다 · 매일 아침 한 번 · 뉴스 화면에서 다시 볼 수 있습니다</span>
+                    <span>우리 글은 최근 7일, 소식은 3주, 트렌드는 두 달 치를 싣습니다 · 매일 아침 한 번 · 뉴스 화면에서 다시 볼 수 있습니다</span>
                     <button class="pp-done" onclick="app.closePaper()">다 봤습니다 — 업무 시작</button>
                 </div>
             </div>
