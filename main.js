@@ -11965,7 +11965,7 @@ class BhasApp {
 
         //  칸 안의 첫 기사는 사진을 달고 크게, 나머지는 제목 줄로 — 신문 지면의 결
         const bigItem = (x) => `<a class="pp-art" href="${esc(x.url)}" target="_blank" rel="noopener">
-            ${x.thumb ? `<div class="pp-cut"><img src="${esc(x.thumb)}" alt="" loading="lazy"
+            ${x.thumb ? `<div class="pp-cut"><img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer"
                 onerror="this.closest('.pp-cut').remove()"></div>` : ''}
             <b>${esc(noEmo(x.title) || '제목 없음')}${ageOf(x) <= 1 && !x.no_date ? '<em class="pp-new">NEW</em>' : ''}</b>
             ${x.snippet ? `<p>${esc(noEmo(x.snippet).slice(0, 110))}</p>` : ''}
@@ -12001,7 +12001,7 @@ class BhasApp {
                     </a>
                     <div class="pp-onebody">
                         ${lead.thumb ? `<a class="pp-fig" href="${esc(lead.url)}" target="_blank" rel="noopener">
-                            <img src="${esc(lead.thumb)}" alt="" onerror="this.closest('.pp-fig').remove()">
+                            <img src="${esc(lead.thumb)}" alt="" referrerpolicy="no-referrer" onerror="this.closest('.pp-fig').remove()">
                             <figcaption>${esc(lead.author || '')} ${when(lead)}</figcaption></a>` : ''}
                         ${lead.snippet ? `<p class="pp-dek${/^[A-Za-z가-힣]/.test(noEmo(lead.snippet)) ? ' cap' : ''}">${esc(noEmo(lead.snippet).slice(0, 320))}</p>` : ''}
                         ${react(lead) ? `<div class="pp-leadreact">${react(lead)}</div>` : ''}
@@ -12023,7 +12023,7 @@ class BhasApp {
                     <section class="pp-box">
                         <div class="pp-kick">중고로 올라온 우리 옷<em>${rs.length}</em></div>
                         <div class="pp-used">${rs.map(x => `<a href="${esc(x.url)}" target="_blank" rel="noopener">
-                            ${(x.meta || {}).thumb ? `<img src="${esc((x.meta || {}).thumb)}" alt="" loading="lazy"
+                            ${(x.meta || {}).thumb ? `<img src="${esc((x.meta || {}).thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer"
                                 onerror="this.remove()">` : ''}
                             <b>${esc(noEmo(x.title))}</b>
                             <span>${won((x.meta || {}).price)}${x.author ? ` · ${esc(x.author)}` : ''}
