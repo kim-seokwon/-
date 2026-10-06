@@ -4610,3 +4610,89 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .it-sold{font-style:normal;margin-left:6px;font-size:10.5px;font-weight:700;color:var(--text-muted)}
 .it-nolink{font-style:normal;margin-left:6px;font-size:10px;font-weight:700;color:var(--text-muted);opacity:.6}
 .ip2-ck{display:inline-flex;align-items:center;gap:6px;font-size:.85rem;margin-right:14px;cursor:pointer}
+
+/* ══ 조간(朝刊) — 아침에 한 번 펼쳐지는 신문 한 장 ═══════════════
+   신문은 명조·세로 괘선·꽉 찬 단으로 짜야 신문으로 읽힌다.
+   그래서 여기만 앱의 산세리프·둥근 모서리 규칙을 따르지 않는다. */
+#paper-slot:empty{display:none}
+.pp-back{position:fixed;inset:0;z-index:12000;background:rgba(28,25,20,.55);
+  display:flex;align-items:flex-start;justify-content:center;padding:2.2vh 2vw;backdrop-filter:blur(4px)}
+.pp{width:min(1180px,97vw);max-height:95.6vh;display:flex;flex-direction:column;min-height:0;
+  background:#fbf8f1;color:#17150f;border-radius:3px;
+  box-shadow:0 30px 80px rgba(0,0,0,.45),0 0 0 1px rgba(0,0,0,.18);
+  font-family:'Nanum Myeongjo','Apple SD Gothic Neo',serif}
+.pp-scroll{overflow:auto;min-height:0;padding:26px 34px 20px}
+.pp-wait{padding:4rem;text-align:center;color:#6b6358;font-size:.95rem}
+
+/* 제호 */
+.pp-mast{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+.pp-mast h1{flex:1;text-align:center;margin:0;font-size:clamp(30px,5vw,54px);font-weight:800;
+  letter-spacing:.14em;line-height:1.05}
+.pp-ml,.pp-mr{flex:0 0 auto;font-size:12px;color:#6b6358;letter-spacing:.02em;padding-bottom:6px;white-space:nowrap}
+.pp-rule{height:0;border-top:3px solid #17150f;border-bottom:1px solid #17150f;margin:9px 0 0;padding-bottom:2px}
+.pp-rule.thin{border-top:1px solid #17150f;border-bottom:0;padding-bottom:0;margin:14px 0 0}
+.pp-sub{text-align:center;font-size:12px;color:#554f45;padding:7px 0 0;letter-spacing:.01em}
+
+/* 머리기사 */
+.pp-head{margin:16px 0 4px;text-align:center;font-size:clamp(21px,3.2vw,34px);font-weight:800;
+  line-height:1.3;letter-spacing:-.01em;word-break:keep-all}
+
+/* 단 — 세로 괘선으로 가른다 */
+.pp-cols{display:grid;grid-template-columns:1fr 1fr 1.08fr;gap:0;margin-top:14px;
+  border-top:1px solid #d6cfc0}
+.pp-c{padding:14px 20px;border-left:1px solid #d6cfc0;min-width:0}
+.pp-c:first-child{border-left:0;padding-left:0}
+.pp-c:last-child{padding-right:0}
+
+.pp-kick{font-size:12.5px;font-weight:800;letter-spacing:.06em;padding-bottom:6px;margin-bottom:9px;
+  border-bottom:2px solid #17150f;display:flex;align-items:baseline;gap:7px}
+.pp-kick.mt{margin-top:22px}
+.pp-kick em{font-style:normal;font-size:11px;font-weight:700;color:#8a8275;letter-spacing:0}
+.pp-kick.alarm{border-bottom-color:#a3341f}
+.pp-kick.alarm em{color:#a3341f}
+
+.pp-t{width:100%;border-collapse:collapse;font-size:14px}
+.pp-t td{padding:6px 0;border-bottom:1px dotted #cfc7b7;white-space:nowrap}
+.pp-t td.n{text-align:right;font-variant-numeric:tabular-nums;padding-left:16px}
+.pp-t td:first-child{width:100%;white-space:normal;word-break:keep-all}
+.pp-t tr.sum td{font-weight:800;border-bottom:0;border-top:1.5px solid #17150f;padding-top:8px}
+.pp-up{color:#a3341f;font-weight:700}
+.pp-dn{color:#2a4e8f;font-weight:700}
+
+.pp-l{list-style:none;margin:0;padding:0;font-size:14px}
+.pp-l li{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px dotted #cfc7b7;line-height:1.45}
+.pp-l li>span{flex:1;min-width:0;word-break:keep-all}
+.pp-l li small{color:#8a8275;font-size:11.5px;margin-left:4px}
+.pp-l li em{font-style:normal;flex:0 0 auto;font-size:11.5px;color:#6b6358;white-space:nowrap}
+.pp-l li em.hot{color:#a3341f;font-weight:800}
+.pp-l li b{flex:0 0 auto;font-size:11.5px;color:#a3341f;white-space:nowrap}
+.pp-l.late li>span{color:#3b352c}
+
+.pp-lead{display:block;text-decoration:none;color:inherit;padding-bottom:10px;margin-bottom:8px;
+  border-bottom:1px solid #d6cfc0}
+.pp-lead b{display:block;font-size:16.5px;font-weight:800;line-height:1.4;word-break:keep-all}
+.pp-lead span{display:block;margin-top:5px;font-size:11.5px;color:#8a8275}
+.pp-lead:hover b{text-decoration:underline}
+.pp-l.news li{padding:7px 0}
+.pp-l.news li a{display:block;width:100%;text-decoration:none;color:inherit}
+.pp-l.news li a>span{display:block;line-height:1.45;word-break:keep-all}
+.pp-l.news li a>em{display:block;margin-top:3px;font-size:11px;color:#9b9386}
+.pp-l.news li a:hover span{text-decoration:underline}
+
+.pp-none{font-size:13px;color:#8a8275;padding:4px 0 2px;word-break:keep-all}
+.pp-note{font-size:11px;color:#9b9386;margin:8px 0 0}
+
+.pp-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0 2px}
+.pp-foot>span{font-size:11.5px;color:#8a8275}
+.pp-done{border:1.5px solid #17150f;background:#17150f;color:#fbf8f1;border-radius:2px;
+  padding:10px 22px;font-size:14px;font-weight:800;cursor:pointer;
+  font-family:'Nanum Myeongjo','Apple SD Gothic Neo',serif;letter-spacing:.03em}
+.pp-done:hover{background:#fbf8f1;color:#17150f}
+
+/* 좁은 화면 — 단을 위아래로 푼다. 괘선도 가로로 바뀐다 */
+@media (max-width: 860px){
+  .pp-scroll{padding:18px 16px 14px}
+  .pp-cols{grid-template-columns:1fr}
+  .pp-c{border-left:0;border-top:1px solid #d6cfc0;padding:14px 0}
+  .pp-c:first-child{border-top:0}
+}

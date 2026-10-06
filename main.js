@@ -221,6 +221,7 @@ class BhasApp {
                 this.loadInitialData().then(() => {
                     this._isInitialLoading = false;
                     this.requestRender();
+                    this._maybeMorning();
                 }).catch(err => {
                     // 데이터 로드 실패
                     this._isInitialLoading = false;
@@ -845,7 +846,14 @@ class BhasApp {
             `;
         } finally {
             this._isRendering = false;
+            this._paintPaper();
         }
+    }
+    //  조간은 어느 화면이든 그 위를 덮는다 — 앱 칸 밖의 전용 자리에 그린다
+    _paintPaper() {
+        let el = document.getElementById('paper-slot');
+        if (!el) { el = document.createElement('div'); el.id = 'paper-slot'; document.body.appendChild(el); }
+        el.innerHTML = this.paper ? this._paperHTML() : '';
     }
 
     async loadInitialData() {
@@ -1053,6 +1061,7 @@ class BhasApp {
                     this.currentView = 'dashboard';
                     this.render();
                     try { await this.loadInitialData(); this.render(); } catch(e) {}
+                    this._maybeMorning();
                     return;
                 }
 
@@ -11851,6 +11860,153 @@ class BhasApp {
         setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 120);
     }
 
+    // ============================================================
+    //  조간(朝刊) — 아침에 처음 들어오면 한 장으로 펼쳐지는 신문.
+    //  어제 판 것 · 오늘 할 일 · 지난 일 · 시즌 일정 · 바깥 소식을 한 판에 짠다.
+    //  하루 한 번만 뜬다(계정별·날짜별 기억). 뉴스 화면에서 언제든 다시 펼 수 있다.
+    // ============================================================
+    _paperKey() { return `bhas_paper_${this._me() || 'x'}`; }
+    _ymdSeoul() {
+        return new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
+    }
+    //  로그인 직후 한 번 — 오늘 아직 안 봤으면 펼친다
+    async _maybeMorning() {
+        try {
+            if (localStorage.getItem(this._paperKey()) === this._ymdSeoul()) return;
+        } catch (_e) { /* 저장을 못 하는 브라우저면 그냥 보여준다 */ }
+        await this.openPaper(true);
+    }
+    async openPaper(auto) {
+        this.paper = { loading: true, data: null, auto: !!auto };
+        this.requestRender();
+        try {
+            const { data, error } = await this.supabase.rpc('morning_brief');
+            if (error) throw error;
+            this.paper.data = data;
+        } catch (e) { this.paper.err = e.message || String(e); }
+        this.paper.loading = false;
+        this.requestRender();
+    }
+    closePaper() {
+        try { localStorage.setItem(this._paperKey(), this._ymdSeoul()); } catch (_e) {}
+        this.paper = null; this.requestRender();
+    }
+    //  제호 옆 발행 호수 — 2025-01-01 을 창간일로 센다. 신문다운 장치다.
+    _paperNo(ymd) {
+        const d = new Date(ymd + 'T00:00:00');
+        return Math.max(1, Math.round((d - new Date('2025-01-01T00:00:00')) / 864e5) + 1);
+    }
+    _paperHTML() {
+        const P = this.paper; if (!P) return '';
+        const esc = s => this._vesc(s);
+        const won = n => this._won(n);
+        if (P.loading) return `<div class="pp-back"><div class="pp"><div class="pp-wait">조간을 짜는 중…</div></div></div>`;
+        const d = P.data || {};
+        const dt = new Date((d.date || this._ymdSeoul()) + 'T00:00:00');
+        const DOW = ['일', '월', '화', '수', '목', '금', '토'][dt.getDay()];
+        const longDate = `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 ${DOW}요일`;
+
+        // ── 머리기사: 어제 판 것 ──────────────────────────────
+        const sales = (d.sales || []).filter(x => (x.amt || 0) > 0 || (x.amt_prev || 0) > 0);
+        const tot = sales.reduce((s, x) => s + Number(x.amt || 0), 0);
+        const totPrev = sales.reduce((s, x) => s + Number(x.amt_prev || 0), 0);
+        const totCnt = sales.reduce((s, x) => s + Number(x.cnt || 0), 0);
+        const diff = totPrev ? Math.round((tot - totPrev) / totPrev * 100) : null;
+        const headline = !sales.length
+            ? '어제는 주문이 없었습니다'
+            : (diff === null ? `어제 ${won(tot)}원, ${totCnt}건 팔렸습니다`
+                : (diff >= 0 ? `어제 ${won(tot)}원 — 그제보다 ${diff}% 늘었습니다`
+                             : `어제 ${won(tot)}원 — 그제보다 ${-diff}% 줄었습니다`));
+        const arrow = v => v == null ? '' : (v >= 0
+            ? `<span class="pp-up">▲ ${v}%</span>` : `<span class="pp-dn">▼ ${-v}%</span>`);
+        const salesRows = sales.map(x => {
+            const dv = Number(x.amt_prev || 0) ? Math.round((Number(x.amt || 0) - Number(x.amt_prev)) / Number(x.amt_prev) * 100) : null;
+            return `<tr><td>${esc(x.brand)}</td><td class="n">${won(x.amt || 0)}</td>
+                <td class="n">${Number(x.cnt || 0).toLocaleString()}건</td><td class="n">${arrow(dv)}</td></tr>`;
+        }).join('');
+
+        // ── 오늘 할 일 · 지난 일 ──────────────────────────────
+        const td = d.todo_today || [], late = d.todo_late || [];
+        const li = (x, extra) => `<li><span>${esc(x.title || '제목 없음')}</span>${extra || ''}
+            ${x.assignee ? `<em>${esc(x.assignee)}</em>` : ''}</li>`;
+
+        // ── 시즌 일정 ────────────────────────────────────────
+        const sea = (d.seasons || []).map(x => `<li><span>${esc(x.name)}${x.brand ? ` <small>${esc(x.brand)}</small>` : ''}</span>
+            <em class="${x.dday <= 7 ? 'hot' : ''}">D-${x.dday}</em></li>`).join('');
+
+        // ── 바깥 소식 ────────────────────────────────────────
+        const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스',
+                      google: '구글', google_news: '구글 뉴스', instagram: '인스타그램', datalab: '데이터랩' };
+        const news = (d.news || []);
+        const lead = news[0];
+        const rest = news.slice(1, 10);
+        const when = t => { if (!t) return ''; const x = new Date(t); return `${x.getMonth() + 1}.${x.getDate()}`; };
+
+        return `<div class="pp-back">
+        <div class="pp" onclick="event.stopPropagation()">
+            <div class="pp-scroll">
+                <header class="pp-mast">
+                    <div class="pp-ml">제${this._paperNo(d.date || this._ymdSeoul()).toLocaleString()}호</div>
+                    <h1>브하스 조간</h1>
+                    <div class="pp-mr">${esc(longDate)}</div>
+                </header>
+                <div class="pp-rule"></div>
+                <div class="pp-sub">이일칠구 · 하이헤이호 · 로하이스튜디오 · 토비 &nbsp;|&nbsp; 어제까지의 장사와 오늘 할 일</div>
+                <div class="pp-rule thin"></div>
+
+                <h2 class="pp-head">${esc(headline)}</h2>
+                <div class="pp-cols">
+                    <section class="pp-c">
+                        <div class="pp-kick">어제 판 것</div>
+                        ${sales.length ? `<table class="pp-t"><tbody>${salesRows}
+                            ${sales.length > 1 ? `<tr class="sum"><td>합계</td><td class="n">${won(tot)}</td>
+                                <td class="n">${totCnt.toLocaleString()}건</td><td class="n">${arrow(diff)}</td></tr>` : ''}
+                        </tbody></table>`
+                        : `<p class="pp-none">어제 들어온 주문이 없습니다. 취소·환불은 빼고 셉니다.</p>`}
+                        <p class="pp-note">※ 취소·환불 건은 빼고, 결제금액 기준으로 셉니다.</p>
+
+                        <div class="pp-kick mt">어제 많이 나간 것</div>
+                        ${(d.top_items || []).length
+                            ? `<ul class="pp-l">${(d.top_items || []).map(x => {
+                                const sp = this._saleParts(x.nm);
+                                return `<li><span>${esc(sp.name)}${sp.tag ? ` <small>${esc(sp.tag)}</small>` : ''}</span>
+                                    <em>${Number(x.qty || 0).toLocaleString()}개</em></li>`;
+                              }).join('')}</ul>`
+                            : `<p class="pp-none">어제 나간 상품이 없습니다.</p>`}
+
+                        <div class="pp-kick mt">시즌 일정</div>
+                        ${sea ? `<ul class="pp-l">${sea}</ul>` : `<p class="pp-none">45일 안에 마감인 시즌이 없습니다.</p>`}
+                    </section>
+
+                    <section class="pp-c">
+                        <div class="pp-kick">오늘 할 일 <em>${td.length}건</em></div>
+                        ${td.length ? `<ul class="pp-l">${td.map(x => li(x)).join('')}</ul>`
+                                    : `<p class="pp-none">오늘 날짜로 잡힌 일이 없습니다.</p>`}
+
+                        <div class="pp-kick mt alarm">지난 일 <em>${(d.todo_late_n || 0)}건</em></div>
+                        ${late.length ? `<ul class="pp-l late">${late.map(x => li(x, `<b>${x.late}일 지남</b>`)).join('')}</ul>`
+                                      : `<p class="pp-none">밀린 일이 없습니다.</p>`}
+                    </section>
+
+                    <section class="pp-c">
+                        <div class="pp-kick">바깥 소식</div>
+                        ${lead ? `<a class="pp-lead" href="${esc(lead.url)}" target="_blank" rel="noopener">
+                            <b>${esc(lead.title || '')}</b>
+                            <span>${esc(SRC[lead.source] || lead.source || '')}${lead.author ? ' · ' + esc(lead.author) : ''}${when(lead.published_at) ? ' · ' + when(lead.published_at) : ''}</span></a>` : ''}
+                        ${rest.length ? `<ul class="pp-l news">${rest.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">
+                            <span>${esc(x.title || '')}</span><em>${esc(SRC[x.source] || x.source || '')}</em></a></li>`).join('')}</ul>` : ''}
+                        ${!news.length ? `<p class="pp-none">아직 모인 소식이 없습니다. 네이버 카페·블로그는 열쇠(API 키)를 넣어야 들어옵니다.</p>` : ''}
+                    </section>
+                </div>
+                <div class="pp-rule thin"></div>
+                <div class="pp-foot">
+                    <span>브하스 조간 · 매일 아침 한 번 펼쳐집니다</span>
+                    <button class="pp-done" onclick="app.closePaper()">다 읽었습니다 — 업무 시작</button>
+                </div>
+            </div>
+        </div></div>`;
+    }
+
     // ── 뉴스 (분류 / 목록 / 상세) ─────────────────────────────
     //  바깥에서 보는 기준을 모은다. 수집은 서버(Actions)가 하고 여기선 읽기만 한다.
     async loadNews() {
@@ -11915,6 +12071,8 @@ class BhasApp {
         <div class="m3 wide">
             <aside class="m3-side">
                 <div class="m3-h">뉴스</div>
+                <button class="nt-newsea" style="margin:2px 8px 8px" onclick="app.openPaper()">
+                    <i class="ph ph-newspaper"></i> 오늘 조간 펼치기</button>
                 ${side('competitor', '경쟁사 소식', 'ph-users-three', n_('competitor'))}
                 ${side('review', '우리 후기', 'ph-chat-circle-text', n_('review'))}
                 ${side('trend', '업계 뉴스', 'ph-trend-up', n_('trend'))}
