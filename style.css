@@ -4713,3 +4713,29 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .pp-used b{display:block;font-size:12.5px;font-weight:700;line-height:1.45;word-break:keep-all}
 .pp-used span{display:block;margin-top:3px;font-size:10.5px;color:#9b9386;line-height:1.5}
 .pp-used a:hover b{text-decoration:underline}
+
+/* C4. 수집 끊김 띠 — 모든 화면 맨 위 */
+.syncwarn {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 14px; padding: 10px 14px; border-radius: 12px;
+    background: color-mix(in srgb, var(--wc) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--wc) 38%, transparent);
+    color: var(--text-main); font-size: 0.85rem; line-height: 1.5;
+}
+.syncwarn > i { color: var(--wc); font-size: 1.1rem; flex-shrink: 0; }
+.syncwarn > span { flex: 1; min-width: 0; }
+.syncwarn b { color: var(--wc); }
+.syncwarn button {
+    border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text-main);
+    border-radius: 9px; padding: 5px 11px; font-size: 0.78rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.syncwarn button:hover { border-color: var(--wc); }
+.syncwarn button.x { padding: 5px 8px; }
+
+/* B2. 제품리스트 — 확인이 필요한 줄 */
+.it-warn {
+    display: inline-flex; align-items: center; gap: 3px; margin-left: 6px;
+    font-size: 0.66rem; font-weight: 700; font-style: normal;
+    padding: 1px 7px; border-radius: 8px;
+    background: rgba(245, 158, 11, 0.16); color: #f59e0b;
+}
