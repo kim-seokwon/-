@@ -1,4 +1,6 @@
 import { mockData, STAGES } from './mockData.js';
+// 뉴스 칸 규칙 — 수집기(news-sync)와 같은 파일을 쓴다. 고치면 수집과 화면이 같이 바뀐다.
+import { COMPETITORS, customerList, competitionList, oneStoryEach, validCounts } from './supabase/functions/_shared/news-rules.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
     garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
@@ -7,6 +9,9 @@ import {
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
 const __BUILD__ = (typeof __BUILD_TIME__ !== 'undefined') ? __BUILD_TIME__ : '개발';
+
+// 조간 칸마다 며칠 치를 싣나
+const PAPER_WIN = { customer: 14, compete: 21 };
 
 // Supabase 설정 (사용자 정보 입력 필요)
 const SUPABASE_URL = 'https://czaykmmwzlcisozmbxpl.supabase.co';
@@ -230,7 +235,6 @@ class BhasApp {
                     if (r === null) return;
                     this._isInitialLoading = false;
                     this.requestRender();
-                    this._maybeMorning();
                 }).catch(err => {
                     // 데이터 로드 실패
                     this._isInitialLoading = false;
@@ -1087,7 +1091,6 @@ class BhasApp {
                     this.render();
                     this.loadChannelHealth();   // 수집 끊김 띠 — 자동로그인 쪽에만 있어서 빠져 있었다
                     try { await this.loadInitialData(); this.render(); } catch(e) {}
-                    this._maybeMorning();
                     return;
                 }
 
@@ -1604,120 +1607,9 @@ class BhasApp {
         });
     }
 
-    showProjectModal(brandId) {
-        //  셸이 바뀌면서 #modal-container 가 없어졌다. 지금 쓰는 칸을 찾아 쓴다.
-        const modal = document.getElementById('modal-container') || document.getElementById('global-modal-container');
-        if (!modal) { this.showToast('창을 띄울 자리를 찾지 못했습니다'); return; }
-        this._newSeaBrand = brandId || null;     // 브랜드 안에서 눌렀으면 그 브랜드로 고정
-        modal.style.display = 'flex';
-        modal.innerHTML = `
-            <div class="glass modal-content fade-in" style="width: 90%; max-width: 450px; padding: 2rem; border-radius: 30px;">
-                <h2 style="margin-bottom: 1.4rem; display: flex; align-items: center; gap: 8px;"><i class="ph ph-plus-circle"></i> 새 시즌</h2>
-                <div class="login-field">
-                    <label>시즌명</label>
-                    <input type="text" id="modal-p-name" class="login-input" placeholder="예: 26FW 2차">
-                </div>
-                <div class="login-field" style="${this.currentUser.role === 'CLIENT' ? 'display: none;' : ''}">
-                    <label>브랜드</label>
-                    <select id="modal-p-brand" class="login-input" style="background: rgba(0,0,0,0.8); color: white; -webkit-appearance: listbox;">
-                        <option value="">브랜드 선택</option>
-                        ${mockData.brands.map(b => `
-                            <option value="${b.id}"${String(this._newSeaBrand || '') === String(b.id) ? ' selected' : ''}>${b.name}</option>
-                        `).join('')}
-                    </select>
-                </div>
-                <div class="login-field">
-                    <label>오픈일 <span style="font-weight:400;color:var(--text-muted);font-size:.78rem">· 이 날 기준으로 단계 날짜가 잡힙니다</span></label>
-                    <input type="date" id="modal-p-deadline" class="login-input" max="2099-12-31">
-                </div>
-                <div style="display: flex; gap: 1rem; margin-top: 2.5rem;">
-                    <button id="modal-cancel" class="btn-secondary" style="flex: 1; padding: 1rem; border-radius: 12px; border: 1px solid var(--card-border);">취소</button>
-                    <button id="modal-save" class="btn-primary" style="flex: 1; padding: 1rem; border-radius: 12px;">저장하기</button>
-                </div>
-            </div>
-        `;
-
-        document.getElementById('modal-cancel').onclick = (e) => { 
-            e.preventDefault();
-            modal.style.display = 'none'; 
-        };
-        
-        const saveBtn = document.getElementById('modal-save');
-        saveBtn.addEventListener('click', async (e) => {
-            e.preventDefault();
-            
-            const nameInput = document.getElementById('modal-p-name');
-            const deadlineInput = document.getElementById('modal-p-deadline');
-            const brandSelect = document.getElementById('modal-p-brand');
-
-            const name = nameInput ? nameInput.value.trim() : '';
-            const deadline = deadlineInput ? deadlineInput.value : '';
-            const brandId = brandSelect ? brandSelect.value : null;
-
-            if (!name || !deadline || (!brandId && this.currentUser.role !== 'CLIENT')) {
-                return this.showConfirm('모든 필수 항목을 입력해주세요.', '입력 확인');
-            }
-
-            saveBtn.disabled = true;
-            const originalBtnText = saveBtn.innerText;
-            saveBtn.innerText = '저장 중...';
-
-            let company_id = this.currentUser.company_id;
-            if (this.currentUser.role !== 'CLIENT') {
-                //  077: 직원은 '자기 앞으로'만 시즌을 만들 수 있다(브랜드 대표 회사를 적으면 서버가 막는다).
-                //  사장님만 담당자(대표 회사)를 지정할 수 있다.
-                const representativeCompany = this.currentUser?.role === 'MASTER'
-                    ? mockData.companies.find(c => c.brand_id === brandId) : null;
-                company_id = representativeCompany ? representativeCompany.id : this.currentUser.company_id;
-            }
-
-            // UUID 형식 유효성 검사 (강화)
-            const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-            if (brandId && !isUuid(brandId)) {
-                 saveBtn.disabled = false;
-                 saveBtn.innerText = originalBtnText;
-                 return this.showConfirm(`선택된 브랜드 ID(${brandId})가 유효한 UUID 형식이 아닙니다.\n데이터베이스 설정을 확인해주세요.`, '데이터 형식 오류');
-            }
-
-            try {
-                const { data: newId, error } = await this.supabase.rpc('create_product', {
-                    p_company_id: company_id,
-                    p_brand_id: brandId,
-                    p_name: name,
-                    p_deadline: this.formatDateToUI(deadline) || null
-                });
-
-                if (error) throw error;
-
-                // 히스토리 기록 시도 (비차단형)
-                try {
-                    await this.supabase.from('history').insert([{
-                        product_id: newId,
-                        stage_id: 'consulting',
-                        status: '등록',
-                        note: '시즌 생성: ' + name
-                    }]);
-                } catch (hError) {}
-
-                await this.loadInitialData();
-                modal.style.display = 'none';
-                this.showToast('새 시즌이 등록되었습니다.');
-                if (!this._noteLoaded) await this.loadNotes();
-                await this.askSeasonSteps(newId);      // 바로 단계를 깔지 묻는다
-                this.requestRender();
-            } catch (error) {
-                let errorMsg = error.message || '알 수 없는 오류';
-                if (error.code === '42501') errorMsg = '데이터베이스 권한(RLS)이 없습니다.';
-                if (error.code === '22P02') errorMsg = '데이터 형식(UUID 등)이 맞지 않습니다.';
-                if (error.code === '42703') errorMsg = `데이터베이스 컬럼 오류: ${error.details || '필드가 존재하지 않습니다.'}`;
-                
-                await this.showConfirm(`시즌 등록 중 오류가 발생했습니다.\n\n오류 코드: ${error.code || 'N/A'}\n메시지: ${errorMsg}`, '등록 실패');
-            } finally {
-                saveBtn.disabled = false;
-                saveBtn.innerText = originalBtnText;
-            }
-        });
-    }
+    //  새 시즌은 어디서 눌러도 한 창(newSeasonDialog: 이름·브랜드·오픈일·기본 페이지·페이지별 날짜)으로 간다.
+    //  옛 창은 시즌만 만들고 페이지·날짜를 안 깔아 '시즌 추가하면 기본 페이지' 가 빠졌었다(10-14 사장님).
+    showProjectModal(brandId) { return this.newSeasonDialog(brandId); }
 
     showQuickAddTodoModal(isRequest = false) {
         const modal = document.getElementById('modal-container');
@@ -2576,7 +2468,12 @@ class BhasApp {
         const pwTo = new Date(today); pwTo.setDate(pwTo.getDate() - 7);
         const prevWeekSales = sumBetween(localYMD(pwFrom), localYMD(pwTo));
         const weekDelta = prevWeekSales ? Math.round((weekSales - prevWeekSales) / prevWeekSales * 100) : null;
-        const monthOrdersCnt = monthRev.length;
+        //  this.orders 는 최신 500건뿐이라 한 달 주문이 500건을 넘으면 잘린다 → 이번달 전량 집계(_loadNewRepeat)가 있으면 그 수를 쓴다.
+        const nr = (this._newRepeat && this._newRepeat.monthKey === monthKey) ? this._newRepeat : null;
+        const monthOrdersCnt = nr ? nr.total : monthRev.length;
+        const pct = n => monthOrdersCnt ? Math.round(n / monthOrdersCnt * 100) : 0;
+        const nrRows = nr ? [['└ 신규', `${nr.neu.toLocaleString()}건 · ${pct(nr.neu)}%`], ['└ 재구매', `${nr.rep.toLocaleString()}건 · ${pct(nr.rep)}%`], ...(nr.unk ? [['└ 미분류', `${nr.unk.toLocaleString()}건`]] : [])] : [];
+        const nrNote = nr ? '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">신규=첫 주문 · 재구매=이전 주문 이력 있음(전체 기간, 취소·반품 제외) · 고객 구분은 수령인 전화 → 주문자명 → 수령인명</div>' : '';
         const monthDaily = Array(daysIn).fill(0);
         monthRev.forEach(o => { const dt = new Date(o.order_date); if (dt.getMonth() === moIdx) monthDaily[dt.getDate() - 1] += Number(o.pay_amount || 0); });
         const mdMax = Math.max(1, ...monthDaily);
@@ -2628,11 +2525,11 @@ class BhasApp {
         const salesLink = { label: '매출 상세', action: "app.switchView('sales')" };
         const ordersLink = { label: '주문에서 보기', action: "app.switchView('orders')" };
         this._homePops.k_today = { title: '오늘 매출', rows: rowsOf([['오늘', won(todaySales) + '원'], ['어제', won(ydaySales) + '원'], ['이번주(7일)', won(weekSales) + '원'], [`${mm}월 누적`, won(monthSales) + '원']]) + (todayDelta != null ? `<div style="margin-top:7px;font-size:0.76rem;font-weight:700;color:${todayDelta >= 0 ? '#16a34a' : '#dc2626'}">어제 대비 ${todayDelta >= 0 ? '▲' : '▼'} ${Math.abs(todayDelta)}%</div>` : ''), link: salesLink };
-        this._homePops.k_order = { title: '주문금액', rows: rowsOf([[`${mm}월 주문금액`, won(hasFinancial ? monthFinancial.order : monthSales) + '원'], ['오늘 주문금액', won(todayFinancial.order) + '원'], [`${mm}월 주문건수`, monthOrdersCnt.toLocaleString() + '건']]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">결제 전 주문 접수 금액 기준</div>' };
+        this._homePops.k_order = { title: '주문금액', rows: rowsOf([[`${mm}월 주문금액`, won(hasFinancial ? monthFinancial.order : monthSales) + '원'], ['오늘 주문금액', won(todayFinancial.order) + '원'], [`${mm}월 주문건수`, monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">결제 전 주문 접수 금액 기준</div>' + nrNote };
         this._homePops.k_paid = { title: '실결제금액', rows: rowsOf([[`${mm}월 실결제`, won(hasFinancial ? monthFinancial.paid : monthSales) + '원'], ['오늘 실결제', won(todayFinancial.paid) + '원']]) };
         this._homePops.k_refund = { title: '환불금액', rows: rowsOf([[`${mm}월 환불`, won(hasFinancial ? monthFinancial.refund : refundTotal) + '원'], ['환불 건수', stRefund.toLocaleString() + '건']]), link: ordersLink };
-        this._homePops.k_net = { title: `${mm}월 순매출`, rows: rowsOf([['순매출', won(monthSales) + '원'], ['전월 대비', sa.mom != null ? `${sa.mom >= 0 ? '▲' : '▼'} ${Math.abs(sa.mom)}%` : '기준 없음'], ['객단가', acup + '원'], ['주문건수', monthOrdersCnt.toLocaleString() + '건']]), link: salesLink };
-        this._homePops.k_cnt = { title: `${mm}월 주문건수`, rows: rowsOf([['주문건수', monthOrdersCnt.toLocaleString() + '건'], ['객단가', acup + '원'], ['순매출', won(monthSales) + '원']]) };
+        this._homePops.k_net = { title: `${mm}월 순매출`, rows: rowsOf([['순매출', won(monthSales) + '원'], ['전월 대비', sa.mom != null ? `${sa.mom >= 0 ? '▲' : '▼'} ${Math.abs(sa.mom)}%` : '기준 없음'], ['객단가', acup + '원'], ['주문건수', monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + nrNote, link: salesLink };
+        this._homePops.k_cnt = { title: `${mm}월 주문건수`, rows: rowsOf([['주문건수', monthOrdersCnt.toLocaleString() + '건'], ...nrRows, ['객단가', acup + '원'], ['순매출', won(monthSales) + '원']]) + nrNote };
         CHAN_FIXED.forEach(c => {
             const total = chanTot(c);
             const brs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]);
@@ -2677,7 +2574,7 @@ class BhasApp {
                 ${kpiCard('실결제금액', won(hasFinancial ? monthFinancial.paid : monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
                 ${kpiCard('환불금액', won(hasFinancial ? monthFinancial.refund : 0), '원', `${mm}월 환불 기준`, '#a855f7', 'orders')}
                 ${kpiCard(`${mm}월 순매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
-                ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'orders')}
+                ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">${nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}${nr.unk ? ` · 미분류 ${nr.unk}` : ''} · ` : ''}객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'orders')}
             </div>
             <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:stretch">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
@@ -8373,8 +8270,10 @@ class BhasApp {
         //  아직 시즌이 없으면(새로 만드는 중) 시즌부터 만들고 이어서 페이지를 깐다 — 창 하나로 끝낸다
         if (!pk.id) {
             const nm = (pk.name || '').trim();
-            if (!nm) { this.showToast('시즌명을 적어주세요'); return; }
+            if (!nm) { this.showToast('시즌명을 골라주세요'); return; }
             if (!pk.brand) { this.showToast('브랜드를 골라주세요'); return; }
+            if (this._seaNameTaken(pk.brand, nm)) { this.showToast(`이 브랜드에 같은 이름(${nm})이 있습니다 — 차수를 바꿔주세요`); return; }
+            if (!pk.open) { this.showToast('오픈일을 골라주세요 — 이 날 기준으로 페이지 날짜가 잡힙니다'); return; }
             try {
                 //  077: 직원은 자기 앞으로만. 담당자 지정은 사장님만.
                 const rep = this.currentUser?.role === 'MASTER'
@@ -8458,8 +8357,13 @@ class BhasApp {
                 <div class="hk-top"><b>${isNew ? '새 시즌' : `${esc(brand ? brand.name + ' · ' : '')}${esc(sea.name)} 단계 만들기`}</b>
                     <button class="fi-x" onclick="app.closeStepPick()">×</button></div>
                 ${isNew ? `<div class="sp-new">
-                    <input class="sp-nm" placeholder="시즌명 — 예: 26FW 2차" value="${esc(pk.name || '')}"
-                           oninput="app.setSeaName(this.value)" autofocus>
+                    ${(() => { const y0 = new Date().getFullYear() % 100;   // 시즌명은 고르기만 — 연도·시즌·차수로 '26FW 2차' 하나의 꼴(10-14 사장님)
+                        const opt = (v, t, cur) => `<option value="${v}"${String(cur) === String(v) ? ' selected' : ''}>${t}</option>`;
+                        const dup = this._seaNameTaken(pk.brand, pk.name);
+                        return `<select class="sp-yr" onchange="app.setSeaPart('yr', this.value)">${[y0, y0 + 1].map(y => opt(y, `20${y}`, pk.yr)).join('')}</select>
+                        <select class="sp-ss" onchange="app.setSeaPart('ss', this.value)">${['SS', 'FW', '상시'].map(v => opt(v, v, pk.ss)).join('')}</select>
+                        <select class="sp-ord" onchange="app.setSeaPart('ord', this.value)">${Array.from({ length: 9 }, (_, i) => opt(i + 1, `${i + 1}차`, pk.ord)).join('')}</select>
+                        <b class="sp-nm${dup ? ' dup' : ''}" title="${dup ? '이 브랜드에 같은 이름이 있습니다' : '만들어질 시즌명'}">${esc(pk.name)}${dup ? ' · 이미 있음' : ''}</b>`; })()}
                     <select class="sp-br" onchange="app.setSeaBrand(this.value)">
                         <option value="">브랜드</option>
                         ${(mockData.brands || []).map(b => `<option value="${b.id}"${String(pk.brand) === String(b.id) ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}
@@ -8473,8 +8377,8 @@ class BhasApp {
                 <div class="sp-list">${steps.map(row).join('')}</div>
                 <div class="sp-f">
                     <span>${(() => { const c = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
-                        const ni = c.filter(x => x.kind !== 'items').length, it = c.length - ni;
-                        return `${ni}개 페이지를 만듭니다${it ? ' · 샘플·제작은 제품리스트에서 합니다' : ''} · 각 페이지 안에 [ ] 할 일이 들어갑니다`; })()}</span>
+                        const it = c.some(x => x.kind === 'items');   // 샘플·제작도 페이지 1개(안에 제품 표) — 실제 notes 행 수와 같게
+                        return `${c.length}개 페이지를 만듭니다${it ? ' · 샘플·제작 페이지엔 제품리스트 표가 들어갑니다' : ''} · 나머지 페이지 안에 [ ] 할 일이 들어갑니다`; })()}</span>
                     <button class="mbtn pri" onclick="app.makeSeasonSteps()">${isNew ? "시즌 만들기" : "만들기"}</button>
                 </div>
         </div>`;
@@ -8963,9 +8867,9 @@ class BhasApp {
             const col = (this.ITEM_SC || {})[it.status] || '#8e8e93';
             return `<div class="ni-r" data-id="${it.id}">
                 <input class="ni-nm" value="${esc(it.name || '')}" placeholder="제품명"
-                       onchange="app.setItemField('${it.id}','name',this.value)">
+                       onchange="app.setItem('${it.id}','name',this.value)">
                 <input class="ni-pt" value="${esc(it.pattern_no || '')}" placeholder="패턴"
-                       onchange="app.setItemField('${it.id}','pattern_no',this.value)">
+                       onchange="app.setItem('${it.id}','pattern_no',this.value)">
                 <span class="ni-st" style="--c:${col}">${esc(it.status || '요청하기')}</span>
                 ${(() => { const ph = this._itemPhotos(it.id);
                     return ph.length ? `<span class="ni-ph" title="사진 ${ph.length}장" onclick="app.openItemFromNote('${it.id}')">
@@ -9954,11 +9858,75 @@ class BhasApp {
             this.orders = list.map(o => ({ ...o, items: byOrder[o.id] || [] }));
             this._ordersLoaded = true;
             this._dataLoadedAt = Date.now();
+            this._loadNewRepeat();   // 홈 주문건수 신규/재구매 — 기다리지 않음(끝나면 다시 그림)
         } catch (e) {
             this.showToast('주문을 불러오지 못했습니다. (스키마 설치 필요할 수 있음)');
             this.orders = []; this._ordersLoaded = true;
         }
         this._ordersLoading = false;
+        this.requestRender();
+    }
+
+    // 홈 '주문건수' 신규/재구매 분류.
+    //  this.orders(최신 500건)로는 이번달 전량도, 고객의 과거 이력도 없다 → 필요한 칸만 따로 받는다(DB 변경 없음).
+    //  ① 이번달 주문 전량(주문건수와 같은 규칙: pay_amount 있음 · 취소·반품 제외)
+    //  ② 그 고객들의 이번달 이전 주문(①과 같은 규칙) — 있으면 재구매
+    //  고객 구분: 수령인 전화(숫자만) → 주문자명 → 수령인명. 셋 다 없으면 미분류. (주문자 전화 칸은 DB에 없음)
+    async _loadNewRepeat() {
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const COLS = 'id,order_date,pay_amount,op_status,channel,channel_status,receiver_phone,buyer_name,receiver_name';
+        const custKey = o => {
+            const ph = String(o.receiver_phone || '').replace(/\D/g, '');
+            if (ph) return 'p:' + ph;
+            const bn = String(o.buyer_name || '').trim(); if (bn) return 'n:' + bn;
+            const rn = String(o.receiver_name || '').trim(); if (rn) return 'n:' + rn;
+            return null;
+        };
+        try {
+            const cur = [];
+            for (let from = 0; ; from += 1000) {
+                const { data, error } = await this.supabase.from('channel_orders').select(COLS)
+                    .gte('order_date', monthStart.toISOString()).order('order_date', { ascending: true }).range(from, from + 999);
+                if (error) throw error;
+                cur.push(...(data || []));
+                if (!data || data.length < 1000) break;
+            }
+            const month = cur.filter(o => o.order_date && o.pay_amount != null && !this._isCancelled(o));
+            // 이번달 이전 이력 — 전화/이름 값으로 100개씩 끊어 조회
+            const phones = new Set(), names = new Set();
+            month.forEach(o => {
+                if (o.receiver_phone) phones.add(o.receiver_phone);
+                [o.buyer_name, o.receiver_name].forEach(n => { if (n) names.add(n); });
+            });
+            const prior = [];
+            const fetchIn = async (col, vals) => {
+                const arr = [...vals];
+                for (let i = 0; i < arr.length; i += 100) {
+                    for (let from = 0; ; from += 1000) {   // 서버 한 번 최대 1000행 → 끊어 받기
+                        const { data, error } = await this.supabase.from('channel_orders').select(COLS)
+                            .lt('order_date', monthStart.toISOString()).in(col, arr.slice(i, i + 100)).order('id').range(from, from + 999);
+                        if (error) throw error;
+                        prior.push(...(data || []));
+                        if (!data || data.length < 1000) break;
+                    }
+                }
+            };
+            await Promise.all([fetchIn('receiver_phone', phones), fetchIn('buyer_name', names), fetchIn('receiver_name', names)]);
+            const seen = new Set();
+            prior.forEach(o => { if (o.pay_amount != null && !this._isCancelled(o)) { const k = custKey(o); if (k) seen.add(k); } });
+            let neu = 0, rep = 0, unk = 0;
+            month.forEach(o => {   // 오래된 순 — 같은 달 두 번째 주문부터 재구매
+                const k = custKey(o);
+                if (!k) { unk++; return; }
+                if (seen.has(k)) rep++; else { neu++; seen.add(k); }
+            });
+            this._newRepeat = { monthKey, total: month.length, neu, rep, unk };
+        } catch (e) {
+            console.warn('[newRepeat] load fail:', e?.message || e);
+            this._newRepeat = null;
+        }
         this.requestRender();
     }
 
@@ -12147,20 +12115,22 @@ class BhasApp {
     _ymdSeoul() {
         return new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
     }
-    //  로그인 직후 한 번 — 오늘 아직 안 봤으면 펼친다
-    async _maybeMorning() {
-        try {
-            if (localStorage.getItem(this._paperKey()) === this._ymdSeoul()) return;
-        } catch (_e) { /* 저장을 못 하는 브라우저면 그냥 보여준다 */ }
-        await this.openPaper(true);
-    }
+    //  로그인 직후 자동으로 펼치던 것은 껐다(10-14). 뉴스 화면의 '오늘 조간 펼치기'로만 연다.
     async openPaper(auto) {
         this.paper = { loading: true, data: null, auto: !!auto };
         this.requestRender();
         try {
-            const { data, error } = await this.supabase.rpc('morning_brief', { p_days: 7 });
+            const [{ data, error }, cols] = await Promise.all([
+                this.supabase.rpc('morning_brief', { p_days: 7 }),   // 날짜·새 소식 수·중고 칸은 그대로 쓴다
+                this._newsColumns(),
+            ]);
             if (error) throw error;
-            this.paper.data = data;
+            const atOf = x => ({ ...x, at_ts: x.published_at || x.created_at, no_date: !x.published_at });
+            const since = days => Date.now() - days * 864e5;
+            const inWin = days => x => new Date(x.at_ts).getTime() >= since(days);
+            this.paper.data = { ...data,
+                customer: cols.customer.map(atOf).filter(inWin(PAPER_WIN.customer)),
+                compete: cols.compete.map(atOf).filter(inWin(PAPER_WIN.compete)) };
         } catch (e) { this.paper.err = e.message || String(e); }
         this.paper.loading = false;
         this.requestRender();
@@ -12176,25 +12146,7 @@ class BhasApp {
     }
     //  같은 사건을 매체마다 다르게 적어 목록이 그 이야기 하나로 덮인다.
     //  제목이 쓰는 낱말이 절반 넘게 겹치면 같은 이야기로 보고 맨 처음 것만 남긴다.
-    _oneStoryEach(list) {
-        //  한국어는 조사가 붙어 '핼러윈' 과 '핼러윈에' 가 다른 낱말로 세어진다. 끝 조사를 뗀다.
-        const stem = w => w.replace(/(에서|에게|으로|에|의|은|는|이|가|을|를|로|와|과|도|만|까지|부터)$/, '') || w;
-        const toks = t => new Set(String(t || '').toLowerCase()
-            .replace(/[^0-9a-z가-힣]+/g, ' ').split(' ')
-            .map(stem).filter(w => w.length >= 2));
-        const kept = [];
-        for (const x of list) {
-            const a = toks(x.title);
-            if (!a.size) { kept.push(x); continue; }
-            const dup = kept.some(y => {
-                const b = y._tk || (y._tk = toks(y.title));
-                let hit = 0; a.forEach(w => { if (b.has(w)) hit++; });
-                return hit / Math.min(a.size, b.size) >= 0.5;
-            });
-            if (!dup) { x._tk = a; kept.push(x); }
-        }
-        return kept;
-    }
+    _oneStoryEach(list) { return oneStoryEach(list); }
     _paperHTML() {
         const P = this.paper; if (!P) return '';
         const esc = s => this._vesc(s);
@@ -12230,16 +12182,15 @@ class BhasApp {
         const by = (x) => [SRC[x.source] || x.source || '', x.author ? esc(x.author) : '', when(x)]
             .filter(Boolean).join(' · ');
 
-        const ours = this._oneStoryEach(d.ours || []),
-              industry = this._oneStoryEach(d.industry || []),
-              trend = this._oneStoryEach(d.trend || []);
+        const customer = d.customer || [],
+              compete = this._oneStoryEach(d.compete || []);
 
-        //  1면은 사진이 있는 우리 글을 먼저 본다. 없으면 가장 최근 소식.
-        const leadPool = [ours[0], industry[0], trend[0]].filter(Boolean);
-        const lead = ours.find(x => x.thumb) || leadPool.sort((a, b) => ageOf(a) - ageOf(b))[0] || null;
-        const leadFrom = ours.includes(lead) ? '우리 이야기' : (industry.includes(lead) ? '아동복 소식' : '트렌드');
+        //  1면은 사진이 있는 고객 글을 먼저 본다. 없으면 가장 최근 소식.
+        const leadPool = [customer[0], compete[0]].filter(Boolean);
+        const lead = customer.find(x => x.thumb) || leadPool.sort((a, b) => ageOf(a) - ageOf(b))[0] || null;
+        const leadFrom = customer.includes(lead) ? '고객 반응' : '경쟁·유통';
         const drop = (arr) => arr.filter(x => x !== lead);
-        const ours2 = drop(ours), ind2 = drop(industry), tre2 = drop(trend);
+        const cus2 = drop(customer), com2 = drop(compete);
 
         //  칸 안의 첫 기사는 사진을 달고 크게, 나머지는 제목 줄로 — 신문 지면의 결
         const bigItem = (x) => `<a class="pp-art" href="${esc(x.url)}" target="_blank" rel="noopener">
@@ -12251,7 +12202,10 @@ class BhasApp {
         const item = (x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">
             <span>${esc(noEmo(x.title) || '제목 없음')}${ageOf(x) <= 1 && !x.no_date ? '<em class="pp-new">NEW</em>' : ''}</span>
             <em>${by(x)}</em>${react(x)}</a></li>`;
-        const WIN = { '우리 이야기': '최근 7일', '아동복 소식': '최근 3주', '트렌드': '최근 두 달' };
+        const WIN = { '고객 반응': '최근 2주', '경쟁·유통': '최근 3주', '중고로 올라온 우리 옷': '최근 7일' };
+        const won = v => v ? `${Number(v).toLocaleString()}원` : '';
+        const resale = (d.resale || []).map(x => ({ ...x, thumb: (x.meta || {}).thumb,
+            snippet: [won((x.meta || {}).price), x.snippet].filter(Boolean).join(' · ') }));
         const col = (kick, list) => `<section class="pp-c">
             <div class="pp-kick">${kick}<em>${WIN[kick] || ''}</em></div>
             ${list.length ? `${bigItem(list[0])}${list.length > 1
@@ -12288,30 +12242,13 @@ class BhasApp {
 
                 <div class="pp-rule thin"></div>
                 <div class="pp-cols">
-                    ${col('우리 이야기', ours2)}
-                    ${col('아동복 소식', ind2)}
-                    ${col('트렌드', tre2)}
+                    ${col('고객 반응', cus2)}
+                    ${col('경쟁·유통', com2)}
+                    ${col('중고로 올라온 우리 옷', resale)}
                 </div>
-                ${(() => {
-                    //  중고로 돌아다니는 우리 옷 — 신문 아래쪽 박스 기사 자리
-                    const rs = d.resale || [];
-                    if (!rs.length) return '';
-                    const won = v => v ? `${Number(v).toLocaleString()}원` : '';
-                    return `<div class="pp-rule thin"></div>
-                    <section class="pp-box">
-                        <div class="pp-kick">중고로 올라온 우리 옷<em>${rs.length}</em></div>
-                        <div class="pp-used">${rs.map(x => `<a href="${esc(x.url)}" target="_blank" rel="noopener">
-                            ${(x.meta || {}).thumb ? `<img src="${esc((x.meta || {}).thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer"
-                                onerror="this.remove()">` : ''}
-                            <b>${esc(noEmo(x.title))}</b>
-                            <span>${won((x.meta || {}).price)}${x.author ? ` · ${esc(x.author)}` : ''}
-                                · ${SRC[x.source] || x.source}${when(x) ? ` · ${when(x)}` : ''}</span>
-                        </a>`).join('')}</div>
-                    </section>`;
-                })()}
                 <div class="pp-rule thin"></div>
                 <div class="pp-foot">
-                    <span>우리 글은 최근 7일, 소식은 3주, 트렌드는 두 달 치를 싣습니다 · 매일 아침 한 번 · 뉴스 화면에서 다시 볼 수 있습니다</span>
+                    <span>고객 반응은 2주, 경쟁·유통은 3주 치를 싣습니다 · 우리 계정 글·중복·무관 기사는 뺍니다</span>
                     <button class="pp-done" onclick="app.closePaper()">다 봤습니다 — 업무 시작</button>
                 </div>
             </div>
@@ -12320,20 +12257,46 @@ class BhasApp {
 
     // ── 뉴스 (분류 / 목록 / 상세) ─────────────────────────────
     //  바깥에서 보는 기준을 모은다. 수집은 서버(Actions)가 하고 여기선 읽기만 한다.
+    //  고객 반응 · 경쟁·유통 — 조간과 뉴스 화면이 같이 쓴다. 이미 쌓인 옛 데이터도 여기서 거른다.
+    //   우리 계정 = SNS 탭 ig_accounts + 우리 계정이 올린 글 주소(kind='own'), 브랜드 = brands
+    async _newsColumns() {
+        const sel = (kinds, n) => this.supabase.from('news_items').select('*').in('kind', kinds)
+            .order('published_at', { ascending: false, nullsFirst: false }).limit(n);
+        //  경쟁·유통은 경쟁사 이름이 든 것만 서버에서 먼저 고른다 — 안 그러면 최근 800건이
+        //   옛 '아동복 소식' 해시태그 글로 차서 경쟁사 기사가 밀려난다. 띄어쓰기('무신사 키즈')도 잡게 글자 사이를 연다.
+        const like = COMPETITORS.map(c => `%${[...c].join('%')}%`)
+            .flatMap(p => [`title.ilike.${p}`, `snippet.ilike.${p}`]).join(',');
+        const [rv, tr, ig, ownRows] = await Promise.all([
+            sel(['review'], 300), sel(['trend', 'news'], 800).or(like),
+            this.supabase.from('ig_accounts').select('username'),
+            this.supabase.from('news_items').select('url').eq('kind', 'own').limit(3000),
+        ]);
+        const own = {
+            handles: (ig.data || []).map(x => x.username).filter(Boolean),
+            brands: (mockData.brands || []).filter(b => b.status !== 'closed').map(b => b.name).filter(Boolean),
+            urls: new Set((ownRows.data || []).map(x => x.url)),
+        };
+        return { customer: customerList(rv.data || [], own), compete: competitionList(tr.data || []) };
+    }
     async loadNews() {
         this._newsLoading = true;
         try {
-            const [items, comps, snaps] = await Promise.all([
-                this.supabase.from('news_items').select('*').order('published_at', { ascending: false, nullsFirst: false }).limit(400),
+            const [cols, items, comps, snaps] = await Promise.all([
+                this._newsColumns(),
+                this.supabase.from('news_items').select('*').in('kind', ['resale', 'competitor_post'])
+                    .order('published_at', { ascending: false, nullsFirst: false }).limit(400),
                 this.supabase.from('competitors').select('*').order('name'),
                 this.supabase.from('competitor_snapshots').select('*').order('snap_date', { ascending: false }).limit(600),
             ]);
             this.newsItems = items.data || [];
+            this.newsCols = { review: cols.customer, trend: cols.compete,
+                resale: this.newsItems.filter(i => i.kind === 'resale'),
+                competitor: this.newsItems.filter(i => i.kind === 'competitor_post') };
             this.competitors = comps.data || [];
             this.compSnaps = snaps.data || [];
             this._newsLoaded = true;
         } catch (e) {
-            this.newsItems = []; this.competitors = []; this.compSnaps = []; this._newsLoaded = true;
+            this.newsItems = []; this.newsCols = null; this.competitors = []; this.compSnaps = []; this._newsLoaded = true;
             this.showToast('뉴스를 불러오지 못했습니다 (039_news.sql 실행 필요)');
         }
         this._newsLoading = false; this.requestRender();
@@ -12341,21 +12304,24 @@ class BhasApp {
     renderNews() {
         if (!this._newsLoaded) return this._loadingSkeleton('뉴스');
         const esc = s => this._vesc(s);
-        const items = this.newsItems || [];
+        const C = this.newsCols || { review: [], trend: [], resale: [], competitor: [] };
         const comps = this.competitors || [];
-        const n_ = (k) => items.filter(i => k === 'trend' ? (i.kind === 'trend' || i.kind === 'news') : i.kind === (k === 'competitor' ? 'competitor_post' : 'review')).length;
+        //  칸 셋: 고객 반응 · 경쟁·유통(지켜보는 경쟁사 인스타 글 포함) · 중고로 올라온 우리 옷
+        //  경쟁·유통은 같은 보도자료를 매체마다 다시 쓴 것을 한 건으로 접는다
+        const colOf = k => k === 'trend' ? [...C.competitor, ...oneStoryEach(C.trend)] : (C[k] || []);
+        const n_ = (k) => colOf(k).length;
+        const LABEL = { review: '고객 반응', trend: '경쟁·유통', resale: '중고로 올라온 우리 옷' };
         //  빈 칸을 먼저 보여주지 않는다 — 들어온 게 있는 칸으로 연다
-        const cur = this.newsTab || ['competitor', 'review', 'trend'].find(k => n_(k)) || 'competitor';
+        const cur = LABEL[this.newsTab] ? this.newsTab : (['review', 'trend', 'resale'].find(k => n_(k)) || 'review');
+        //  10-28 판정용 — 최근 14일 칸별 유효 건수
+        const vc = validCounts({ review: C.review, trend: colOf('trend'), resale: C.resale }, 14);
         const q = (this.newsQ || '').trim().toLowerCase();
         const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스',
                       google: '구글', google_news: '구글 뉴스', instagram: '인스타그램', datalab: '데이터랩' };
         const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '';
         const brandOf = id => (mockData.brands || []).find(b => b.id === id)?.name || '';
 
-        let list;
-        if (cur === 'competitor') list = items.filter(i => i.kind === 'competitor_post');
-        else if (cur === 'review') list = items.filter(i => i.kind === 'review');
-        else list = items.filter(i => i.kind === 'trend' || i.kind === 'news');
+        let list = colOf(cur);
         if (q) list = list.filter(i => [i.title, i.snippet, i.author].some(x => String(x || '').toLowerCase().includes(q)));
         const sel = list.find(i => i.id === this.newsSel) || list[0];
 
@@ -12384,9 +12350,11 @@ class BhasApp {
                 <div class="m3-h">뉴스</div>
                 <button class="nt-newsea" style="margin:2px 8px 8px" onclick="app.openPaper()">
                     <i class="ph ph-newspaper"></i> 오늘 조간 펼치기</button>
-                ${side('competitor', '경쟁사 소식', 'ph-users-three', n_('competitor'))}
-                ${side('review', '우리 후기', 'ph-chat-circle-text', n_('review'))}
-                ${side('trend', '업계 뉴스', 'ph-trend-up', n_('trend'))}
+                ${side('review', LABEL.review, 'ph-chat-circle-text', n_('review'))}
+                ${side('trend', LABEL.trend, 'ph-users-three', n_('trend'))}
+                ${side('resale', LABEL.resale, 'ph-recycle', n_('resale'))}
+                <div class="nw-valid" title="10-28 판정용 · 우리 계정 글·중복·무관 기사를 뺀 건수">최근 14일 유효 ·
+                    고객 반응 ${vc.review} · 경쟁·유통 ${vc.trend} · 중고 ${vc.resale}</div>
                 <div class="m3-h">지켜보는 곳
                     <button class="nt-add" title="경쟁사 추가" onclick="app.addCompetitor()">＋</button></div>
                 ${comps.length ? comps.map(c => `<div class="m3-s" oncontextmenu="app.compMenu(event,'${c.id}')">
@@ -12394,12 +12362,12 @@ class BhasApp {
                   : '<div style="padding:6px 10px;font-size:12px;color:var(--text-muted)">＋로 경쟁사를 넣으세요</div>'}
             </aside>
             <section class="m3-list">
-                <div class="m3-lbar"><div><b>${cur === 'competitor' ? '경쟁사 소식' : (cur === 'review' ? '우리 후기' : '업계 뉴스')}</b>
+                <div class="m3-lbar"><div><b>${LABEL[cur]}</b>
                     <span>${list.length}건</span></div></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
                     <input placeholder="찾기" value="${esc(this.newsQ || '')}" oninput="app.newsQ=this.value;app.requestRender()"></div>
                 <div class="m3-rows">
-                    ${cur === 'competitor' && comps.length ? `<div class="nw-comps">${comps.map(compCard).join('')}</div>` : ''}
+                    ${cur === 'trend' && comps.length ? `<div class="nw-comps">${comps.map(compCard).join('')}</div>` : ''}
                     ${list.map(i => `<div class="m3-r${sel && i.id === sel.id ? ' on' : ''}" onclick="app.selectNews('${i.id}')">
                         <b>${esc(i.title || '제목 없음')}</b>
                         <div class="sub"><span>${esc(SRC[i.source] || i.source)}</span>
@@ -12571,21 +12539,50 @@ class BhasApp {
                 this.seasonSteps = data || [];
             } catch (_e) { this.seasonSteps = []; }
         }
+        //  거래처(CLIENT) 계정은 브랜드 칸을 고를 수 없으니 자기 회사 브랜드로 잡는다
+        if (!brandId && this.currentUser?.role === 'CLIENT') {
+            const co = (mockData.companies || []).find(c => String(c.id) === String(this.currentUser.company_id));
+            brandId = co ? co.brand_id : '';
+        }
         const steps = this._stepsFor(brandId);
         this.stepPick = {
             id: null,                     // 아직 시즌이 없다 — 만들기 누를 때 같이 만든다
             brand: brandId || '',
             name: '',
+            yr: new Date().getFullYear() % 100,
+            ss: new Date().getMonth() < 6 ? 'SS' : 'FW',   // 1~6월 SS · 7~12월 FW
+            ord: 1,
             open: '',
             on: new Set(steps.filter(x => x.on_default !== false).map(x => x.id)),
             dates: {},
         };
+        this._seaNextOrd();
         this._paintStepPick();
     }
-    setSeaName(v) { if (this.stepPick) this.stepPick.name = v; }
+    //  시즌명 = 연도 두 자리 + SS/FW/상시 + ' n차'. 바꾸는 건 이 세 칸뿐이라 손으로 적은 이름이 섞이지 않는다
+    _seaNameOf(pk) { return `${pk.yr}${pk.ss} ${pk.ord}차`; }
+    //  같은 브랜드에 같은 이름이 있나 — 띄어쓰기만 다른 옛 이름('26 FW2차')도 같은 것으로 본다
+    _seaNameTaken(brandId, name) {
+        const k = s => String(s || '').replace(/\s/g, '').toUpperCase();
+        return !!brandId && (mockData.products || []).some(p => String(p.brand_id) === String(brandId) && k(p.name) === k(name));
+    }
+    //  연도·시즌이 정해지면 그 브랜드에서 아직 안 쓴 첫 차수로 맞춘다
+    _seaNextOrd() {
+        const pk = this.stepPick; if (!pk) return;
+        pk.ord = 1;
+        while (pk.ord < 9 && this._seaNameTaken(pk.brand, this._seaNameOf(pk))) pk.ord++;
+        pk.name = this._seaNameOf(pk);
+    }
+    setSeaPart(k, v) {
+        const pk = this.stepPick; if (!pk) return;
+        pk[k] = k === 'ss' ? v : Number(v);
+        if (k === 'ord') pk.name = this._seaNameOf(pk); else this._seaNextOrd();
+        this._paintStepPick();
+    }
     setSeaBrand(v) {
         if (!this.stepPick) return;
         this.stepPick.brand = v;
+        this._seaNextOrd();
         const steps = this._stepsFor(v);
         this.stepPick.on = new Set(steps.filter(x => x.on_default !== false).map(x => x.id));
         this.stepPick.dates = {};

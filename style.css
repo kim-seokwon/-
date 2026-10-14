@@ -4492,6 +4492,7 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .nt-addsea{margin-left:6px;width:20px;height:20px;border:0;border-radius:6px;background:transparent;
   color:var(--text-muted);cursor:pointer;display:none;place-items:center;font-size:.8rem}
 .nt-f:hover .nt-addsea{display:grid}
+@media (hover:none){.nt-addsea{display:grid}}   /* 터치 기기엔 마우스 올림이 없다 — 늘 보이게 */
 .nt-addsea:hover{background:rgba(var(--tint),.14);color:var(--primary)}
 /* 하위(시즌) 칸 — 세로 안내선 + 한 단 작은 글씨로 상위 폴더와 가른다 */
 .nt-kids{position:relative;margin:1px 0 3px 17px;padding-left:11px}
@@ -4508,9 +4509,13 @@ body:not(.light) .nb-due.late{color:#ff8080}
 .nt-sea2 em{margin-left:auto;font-style:normal;font-size:.72rem;color:var(--text-muted)}
 .nt-sea2.on em{color:rgba(255,255,255,.8)}
 /* 새 시즌 — 이름·브랜드를 같은 창에서 */
-.sp-new{display:flex;gap:8px;padding:11px 12px 0}
+.sp-new{display:flex;flex-wrap:wrap;gap:8px;padding:11px 12px 0}
 .sp-nm{flex:1;border:1px solid var(--card-border);border-radius:8px;padding:9px 11px;font-size:.9rem;
   background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit}
+.sp-yr,.sp-ss,.sp-ord{border:1px solid var(--card-border);border-radius:8px;padding:9px 6px;font-size:.86rem;
+  background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit}
+b.sp-nm{display:flex;align-items:center;background:none;border-color:transparent;font-weight:700;white-space:nowrap}
+b.sp-nm.dup{color:#ff453a}
 .sp-br{width:150px;border:1px solid var(--card-border);border-radius:8px;padding:9px 10px;font-size:.86rem;
   background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit}
 
@@ -4739,3 +4744,5 @@ body:not(.light) .nb-due.late{color:#ff8080}
     padding: 1px 7px; border-radius: 8px;
     background: rgba(245, 158, 11, 0.16); color: #f59e0b;
 }
+/* 뉴스 — 14일 유효 건수 (10-28 판정용) */
+.nw-valid{margin:6px 10px 10px;font-size:11px;line-height:1.5;color:var(--text-muted)}
