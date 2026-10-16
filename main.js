@@ -1,4 +1,5 @@
 import { mockData, STAGES } from './mockData.js';
+import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx } from './hometaxExcel.js';
 // 뉴스 칸 규칙 — 수집기(news-sync)와 같은 파일을 쓴다. 고치면 수집과 화면이 같이 바뀐다.
 import { COMPETITORS, customerList, competitionList, oneStoryEach, validCounts } from './supabase/functions/_shared/news-rules.js';
 import {
@@ -15009,7 +15010,7 @@ class BhasApp {
         return `
         <div class="mp">
             ${this._mpTop('견적서', `${qs.length}건 · 엑셀 대체`,
-                `<button id="q-new-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 견적</button>`)}
+                `<button id="q-hometax-btn" class="mbtn"><i class="ph ph-microsoft-excel-logo"></i> 홈택스 엑셀</button><button id="q-new-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 견적</button>`)}
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>
                     ${this._thead('quotes', [['quote_date', '견적일'], ['client_name', '고객사'], ['item', '제품'],
@@ -15020,6 +15021,7 @@ class BhasApp {
     }
     bindQuotesEvents() {
         const n = document.getElementById('q-new-btn'); if (n) n.onclick = () => this.showQuoteModal();
+        const hx = document.getElementById('q-hometax-btn'); if (hx) hx.onclick = () => this.showHometaxExcelModal();
         this.appContainer.querySelectorAll('.q-row').forEach(r => r.onclick = (e) => { if (e.target.closest('.q-print')) return; this.showQuoteModal(r.dataset.id); });
         this.appContainer.querySelectorAll('.q-print').forEach(b => b.onclick = (e) => { e.stopPropagation(); const q = (this.quotes || []).find(x => x.id === b.dataset.id); if (q) this.printQuote(q); });
     }
@@ -15249,6 +15251,61 @@ class BhasApp {
             this.showToast('이미지 저장됨');
         } catch (e) { this.showToast('이미지 생성 실패: ' + (e.message || e)); }
         finally { holder.remove(); }
+    }
+    // 홈택스 일괄발급 엑셀 — 확정·미발행 견적을 골라 홈택스 [전자(세금)계산서 일괄발급]에 올릴 파일로 받는다(발행은 홈택스에서).
+    _hometaxCandidates(month) {
+        return (this.quotes || []).filter(q => q.tax_status !== 'issued' && (q.status || 'draft') === 'confirmed'
+            && (!month || String(q.tax_supply_date || q.quote_date || '').slice(0, 7) === month));
+    }
+    showHometaxExcelModal() {
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const st = this._hx || (this._hx = { month: kstYMD().slice(0, 7), purpose: '02', off: {} });
+        const qs = this._hometaxCandidates(st.month);
+        const emailOf = q => q.client_email || ((this.clients || []).find(x => x.name === q.client_name) || {}).email || '';
+        const { skipped } = hometaxRows(qs, { purpose: st.purpose });
+        const bad = new Map(skipped.map(s => [s.q.id, s.errors]));
+        const rows = qs.map(q => {
+            const err = bad.get(q.id);
+            const on = !err && !st.off[q.id];
+            return `<tr><td><input type="checkbox" class="hx-chk" data-id="${q.id}" ${on ? 'checked' : ''} ${err ? 'disabled' : ''}></td>
+                <td class="nw">${this._vesc(q.tax_supply_date || q.quote_date || '')}</td><td class="bd">${this._vesc(q.client_name || '')}</td>
+                <td class="nw">${this._vesc(q.client_biz_no || '')}</td><td>${(q.items || []).length}개</td>
+                <td class="num">${this._won(q.supply_amount)}</td><td class="num">${this._won(q.tax_amount)}</td>
+                <td style="font-size:0.74rem;color:${err ? '#ef4444' : 'var(--text-muted)'}">${err ? this._vesc(err.join(' · ')) : this._vesc(emailOf(q) || '이메일 없음')}</td></tr>`;
+        }).join('') || `<tr><td colspan="8" class="it-none">이 달 확정·미발행 견적이 없습니다</td></tr>`;
+        const okN = qs.filter(q => !bad.has(q.id) && !st.off[q.id]).length;
+        c.innerHTML = `
+        <div class="glass modal-content fade-in vmodal" style="width:94%;max-width:860px;padding:1.6rem;border-radius:20px">
+            <h2 style="margin:0 0 .6rem;font-size:1.15rem"><i class="ph ph-microsoft-excel-logo"></i> 홈택스 일괄발급 엑셀</h2>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:0.85rem">
+                <label>작성월 <input id="hx-month" type="month" class="login-input" style="width:auto;display:inline-block" value="${st.month}"></label>
+                <label><input type="radio" name="hx-p" value="02" ${st.purpose === '02' ? 'checked' : ''}> 청구</label>
+                <label><input type="radio" name="hx-p" value="01" ${st.purpose === '01' ? 'checked' : ''}> 영수</label>
+                <span style="color:var(--text-muted)">확정 · 미발행 견적만 · 1행 = 계산서 1건</span>
+            </div>
+            <div class="it-scroll" style="max-height:50vh"><table class="it-tbl"><thead><tr><th></th><th>작성일자</th><th>공급받는자</th><th>사업자번호</th><th>품목</th><th class="num">공급가액</th><th class="num">세액</th><th>이메일 / 확인</th></tr></thead><tbody>${rows}</tbody></table></div>
+            <div style="font-size:0.76rem;color:var(--text-muted);margin-top:10px;line-height:1.55">홈택스 › 전자(세금)계산서 › 발급 › 일괄발급 › [엑셀파일 변환] 에 올리면 홈택스 화면에서 한 번 더 확인 후 발급됩니다. 빨간 줄은 고친 뒤 받으세요. 작성일자 기준 다음 달 10일까지 발급.</div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:1.1rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">닫기</button>
+                <button id="hx-dl" class="btn-primary" style="padding:9px 18px;border-radius:10px" ${okN ? '' : 'disabled'}>${okN}건 엑셀 받기</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        const re = () => this.showHometaxExcelModal();
+        document.getElementById('hx-month').onchange = e => { st.month = e.target.value; re(); };
+        c.querySelectorAll('input[name="hx-p"]').forEach(r => r.onchange = () => { st.purpose = r.value; re(); });
+        c.querySelectorAll('.hx-chk').forEach(b => b.onchange = () => { if (b.checked) delete st.off[b.dataset.id]; else st.off[b.dataset.id] = 1; re(); });
+        document.getElementById('hx-dl').onclick = () => {
+            const pick = qs.filter(q => !bad.has(q.id) && !st.off[q.id]);
+            const emails = Object.fromEntries(pick.map(q => [q.id, emailOf(q)]));
+            const { rows: out } = hometaxRows(pick, { purpose: st.purpose, emails });
+            if (!out.length) return;
+            const blob = new Blob([hometaxXlsx(out)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = `홈택스_일괄발급_${st.month}_${out.length}건.xlsx`; document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+            this.showToast(`${out.length}건 엑셀을 받았습니다 — 홈택스 일괄발급에 올리세요`);
+        };
     }
     showTaxInvoiceModal(q) {
         if (q.tax_status === 'issued') { this.showToast('이미 발행됨 (관리번호 ' + (q.tax_mgtkey || '') + ')'); return; }

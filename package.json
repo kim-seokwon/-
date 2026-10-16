@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test:note-todo": "node --test tests/note-todo-line.test.mjs",
     "test:new-repeat": "node --test tests/new-repeat.test.mjs",
-    "test:cust-profile": "node --test tests/cust-profile.test.mjs"
+    "test:cust-profile": "node --test tests/cust-profile.test.mjs",
+    "test:hometax-excel": "node --test tests/hometax-excel.test.mjs"
   },
   "devDependencies": {
     "vite": "^5.0.0"
