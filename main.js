@@ -1,5 +1,5 @@
 import { mockData, STAGES } from './mockData.js';
-import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx } from './hometaxExcel.js';
+import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx, MAX_PER_BATCH as HX_MAX } from './hometaxExcel.js';
 // 뉴스 칸 규칙 — 수집기(news-sync)와 같은 파일을 쓴다. 고치면 수집과 화면이 같이 바뀐다.
 import { COMPETITORS, customerList, competitionList, oneStoryEach, validCounts } from './supabase/functions/_shared/news-rules.js';
 import {
@@ -15263,17 +15263,20 @@ class BhasApp {
         const qs = this._hometaxCandidates(st.month);
         const emailOf = q => q.client_email || ((this.clients || []).find(x => x.name === q.client_name) || {}).email || '';
         const { skipped } = hometaxRows(qs, { purpose: st.purpose });
-        const bad = new Map(skipped.map(s => [s.q.id, s.errors]));
+        // 검증 오류만 막는다(50건 초과는 선택 단계에서 따로 처리)
+        const bad = new Map(skipped.map(s => [s.q.id, s.errors.filter(e => !e.startsWith('회당'))]).filter(([, e]) => e.length));
+        const sel = new Set(qs.filter(q => !bad.has(q.id) && !st.off[q.id]).slice(0, HX_MAX).map(q => q.id));
         const rows = qs.map(q => {
             const err = bad.get(q.id);
-            const on = !err && !st.off[q.id];
-            return `<tr><td><input type="checkbox" class="hx-chk" data-id="${q.id}" ${on ? 'checked' : ''} ${err ? 'disabled' : ''}></td>
+            const on = sel.has(q.id);
+            const over = !err && !st.off[q.id] && !on;
+            return `<tr${over ? ' style="opacity:.55"' : ''}><td><input type="checkbox" class="hx-chk" data-id="${q.id}" ${on ? 'checked' : ''} ${err ? 'disabled' : ''}></td>
                 <td class="nw">${this._vesc(q.tax_supply_date || q.quote_date || '')}</td><td class="bd">${this._vesc(q.client_name || '')}</td>
                 <td class="nw">${this._vesc(q.client_biz_no || '')}</td><td>${(q.items || []).length}개</td>
                 <td class="num">${this._won(q.supply_amount)}</td><td class="num">${this._won(q.tax_amount)}</td>
-                <td style="font-size:0.74rem;color:${err ? '#ef4444' : 'var(--text-muted)'}">${err ? this._vesc(err.join(' · ')) : this._vesc(emailOf(q) || '이메일 없음')}</td></tr>`;
+                <td style="font-size:0.74rem;color:${err ? '#ef4444' : over ? '#f59e0b' : 'var(--text-muted)'}">${err ? this._vesc(err.join(' · ')) : over ? `회당 ${HX_MAX}건 초과 — 다음 파일로` : this._vesc(emailOf(q) || '이메일 없음')}</td></tr>`;
         }).join('') || `<tr><td colspan="8" class="it-none">이 달 확정·미발행 견적이 없습니다</td></tr>`;
-        const okN = qs.filter(q => !bad.has(q.id) && !st.off[q.id]).length;
+        const okN = sel.size;
         c.innerHTML = `
         <div class="glass modal-content fade-in vmodal" style="width:94%;max-width:860px;padding:1.6rem;border-radius:20px">
             <h2 style="margin:0 0 .6rem;font-size:1.15rem"><i class="ph ph-microsoft-excel-logo"></i> 홈택스 일괄발급 엑셀</h2>
@@ -15282,9 +15285,10 @@ class BhasApp {
                 <label><input type="radio" name="hx-p" value="02" ${st.purpose === '02' ? 'checked' : ''}> 청구</label>
                 <label><input type="radio" name="hx-p" value="01" ${st.purpose === '01' ? 'checked' : ''}> 영수</label>
                 <span style="color:var(--text-muted)">확정 · 미발행 견적만 · 1행 = 계산서 1건</span>
+                <span id="hx-count" style="margin-left:auto;font-weight:600;color:${okN >= HX_MAX ? '#f59e0b' : 'inherit'}">선택 ${okN}/${HX_MAX}</span>
             </div>
             <div class="it-scroll" style="max-height:50vh"><table class="it-tbl"><thead><tr><th></th><th>작성일자</th><th>공급받는자</th><th>사업자번호</th><th>품목</th><th class="num">공급가액</th><th class="num">세액</th><th>이메일 / 확인</th></tr></thead><tbody>${rows}</tbody></table></div>
-            <div style="font-size:0.76rem;color:var(--text-muted);margin-top:10px;line-height:1.55">홈택스 › 전자(세금)계산서 › 발급 › 일괄발급 › [엑셀파일 변환] 에 올리면 홈택스 화면에서 한 번 더 확인 후 발급됩니다. 빨간 줄은 고친 뒤 받으세요. 작성일자 기준 다음 달 10일까지 발급.</div>
+            <div style="font-size:0.76rem;color:var(--text-muted);margin-top:10px;line-height:1.55">홈택스 › 전자(세금)계산서 › 발급 › 일괄발급 › [엑셀파일 변환] 에 올리면 홈택스 화면에서 한 번 더 확인 후 발급됩니다. 빨간 줄은 고친 뒤 받으세요. 홈택스 일괄발급은 회당 ${HX_MAX}건까지 — 넘으면 나눠 받으세요. 거래 유형별 법정 발급기한을 확인하세요. 월합계 등은 공급월 다음 달 10일까지.</div>
             <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:1.1rem">
                 <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">닫기</button>
                 <button id="hx-dl" class="btn-primary" style="padding:9px 18px;border-radius:10px" ${okN ? '' : 'disabled'}>${okN}건 엑셀 받기</button>
@@ -15294,9 +15298,13 @@ class BhasApp {
         const re = () => this.showHometaxExcelModal();
         document.getElementById('hx-month').onchange = e => { st.month = e.target.value; re(); };
         c.querySelectorAll('input[name="hx-p"]').forEach(r => r.onchange = () => { st.purpose = r.value; re(); });
-        c.querySelectorAll('.hx-chk').forEach(b => b.onchange = () => { if (b.checked) delete st.off[b.dataset.id]; else st.off[b.dataset.id] = 1; re(); });
+        c.querySelectorAll('.hx-chk').forEach(b => b.onchange = () => {
+            if (b.checked && sel.size >= HX_MAX) { b.checked = false; this.showToast(`회당 ${HX_MAX}건까지 — 다른 건을 해제한 뒤 선택하세요`); return; }
+            if (b.checked) delete st.off[b.dataset.id]; else st.off[b.dataset.id] = 1; re();
+        });
         document.getElementById('hx-dl').onclick = () => {
-            const pick = qs.filter(q => !bad.has(q.id) && !st.off[q.id]);
+            const pick = qs.filter(q => sel.has(q.id));
+            if (pick.length > HX_MAX) return;
             const emails = Object.fromEntries(pick.map(q => [q.id, emailOf(q)]));
             const { rows: out } = hometaxRows(pick, { purpose: st.purpose, emails });
             if (!out.length) return;

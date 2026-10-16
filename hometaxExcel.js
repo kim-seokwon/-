@@ -1,6 +1,6 @@
 // 홈택스 전자(세금)계산서 일괄발급용 엑셀 만들기 (견적 → 1행 = 계산서 1건)
 // - 홈택스 양식(일반 세금계산서): 데이터는 7행부터, 열 59개(A~BG). 건당 품목 최대 4개.
-// - ⚠ 열 순서는 홈택스 '일괄작성 양식' 실물과 1회 대조 전까지 미확인. HOMETAX_COLS 만 고치면 된다.
+// - 열 순서는 공개 홈택스 일반 세금계산서 양식과 대조됨(코덱스 10-17). 홈택스 [엑셀파일 변환] 실업로드는 미확인 — 바뀌면 HOMETAX_COLS 만 고친다.
 // - 외부 라이브러리 없이 xlsx(무압축 zip)를 직접 만든다.
 
 export const SUPPLIER = {
@@ -19,6 +19,7 @@ export const HOMETAX_COLS = [
 ];
 export const DATA_START_ROW = 7;
 export const MAX_ITEMS = 4;
+export const MAX_PER_BATCH = 50; // 홈택스 일반/영세율 일괄작성은 회당 50건
 
 const digits = s => String(s || '').replace(/[^0-9]/g, '');
 const num = v => Math.round(Number(v) || 0);
@@ -57,11 +58,12 @@ export function quoteToRow(q, { supplier = SUPPLIER, writeDate, email = '', purp
     return { row, errors };
 }
 
-// 견적 여러 건 → { rows, skipped:[{q, errors}] }
+// 견적 여러 건 → { rows, skipped:[{q, errors}] }. 정상 건이 50건을 넘으면 51번째부터 skipped('회당 50건 초과').
 export function buildRows(quotes, opt = {}) {
     const rows = [], skipped = [];
     for (const q of quotes) {
         const { row, errors } = quoteToRow(q, { ...opt, email: (opt.emails || {})[q.id] || '' });
+        if (!errors.length && rows.length >= MAX_PER_BATCH) errors.push(`회당 ${MAX_PER_BATCH}건 초과 — 다음 파일로`);
         if (errors.length) skipped.push({ q, errors }); else rows.push(row);
     }
     return { rows, skipped };
