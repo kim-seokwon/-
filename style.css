@@ -3852,6 +3852,9 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   outline:none;cursor:default;margin-left:auto}
 .macwin .nt-sea{padding:3px 6px !important;font-size:11.5px !important}
 .nt-sea option{background:#1c1c1e;color:#fff}
+.test-season{color:#8e8e93 !important;filter:grayscale(1);opacity:.68}
+.nt-sea2.test-season.on{background:#636366;color:#fff;opacity:.82}
+.nt-sea option.test-season{color:#8e8e93}
 
 /* ── 3단 구조 공용 — 가운데 칸은 표다 ─────────────────────── */
 /* 표 안의 작은 꼬리표 (유형·분류) */

@@ -7382,7 +7382,7 @@ class BhasApp {
     selectNote(id) { this.saveNote(); this._nbDrop(); this.noteSel = id; this.notePreview = false; this.requestRender(); }
     togglePrivFolders() { this.notePrivOpen = this.notePrivOpen === false; this.requestRender(); }
     toggleNoteSeasons() { this.noteSeaOpen = !this.noteSeaOpen; this.requestRender(); }
-    setNoteSea(v) { this.noteSea = v; this.noteSel = null; this.requestRender(); }
+    setNoteSea(v) { this.noteMulti = new Set(); this.noteSea = v; this.noteSel = null; this.requestRender(); }
     //  폴더가 브랜드면 그 브랜드 시즌만 보여준다 — 브랜드와 시즌은 늘 붙어 다닌다.
     //  브랜드를 아직 안 정한 시즌은 어디서나 보인다(다 정해지면 저절로 사라진다).
     _seasonsFor(folderKey) {
@@ -7392,7 +7392,7 @@ class BhasApp {
         if (!b) return all;
         return all.filter(p => !p.brand_id || String(p.brand_id) === String(b.id));
     }
-    setNoteFolder(f) { this.saveNote(); this._nbDrop(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
+    setNoteFolder(f) { this.saveNote(); this._nbDrop(); this.noteMulti = new Set(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
     async deleteNote() {
         const n = this._curNote(); if (!n) return;
         if (!await this.showConfirm(`"${n.title || '제목 없음'}" 메모를 삭제할까요?`, '삭제')) return;
@@ -7623,7 +7623,7 @@ class BhasApp {
                 <button class="fi-x" onclick="app.toggleNoteProducts()">×</button></div>
             <div class="npv-b">
                 ${!this._itemsLoaded ? '<div class="np-none">제품을 불러오는 중…</div>' : `
-                ${seasons.map(p => `<div class="npv-fdw">
+                ${seasons.map(p => `<div class="npv-fdw${this._isTestSeason(p) ? ' test-season' : ''}">
                     <button class="npv-fd" onclick="app.npOpen('${p.id}')">
                         <i class="ph-fill ph-folder" style="color:${((mockData.brands || []).find(b => b.id === p.brand_id) || {}).brand_color || '#5ac8fa'}"></i>
                         <span>${esc(p.name)}${p.access === 'members' ? ' <i class="ph-fill ph-lock-simple" title="담당자만"></i>' : ''}</span><em>${cnt(p.id)}</em>
@@ -8655,13 +8655,17 @@ class BhasApp {
         const ids = [...this._picked()]; if (!ids.length) return;
         if (!await this.showConfirm(`메모 ${ids.length}개를 지울까요? 되돌릴 수 없습니다.`, '삭제')) return;
         try {
-            const { error } = await this.supabase.from('notes').delete().in('id', ids);
+            const { data, error } = await this.supabase.from('notes').delete().in('id', ids).select('id');
             if (error) throw error;
-            this.noteList = (this.noteList || []).filter(n => !ids.includes(String(n.id)));
-            if (ids.includes(String(this.noteSel))) { this.noteSel = null; this._nbDrop(); }
-            this.noteMulti = new Set();
+            const deleted = new Set((data || []).map(r => String(r.id)));
+            const failed = ids.filter(id => !deleted.has(String(id)));
+            this.noteList = (this.noteList || []).filter(n => !deleted.has(String(n.id)));
+            if (deleted.has(String(this.noteSel))) { this.noteSel = null; this._nbDrop(); }
+            this.noteMulti = new Set(failed);
             this.requestRender();
-            this.showToast(`메모 ${ids.length}개를 지웠습니다`);
+            if (!deleted.size) this.showToast(`메모를 지우지 못했습니다 · 실패 ${failed.length}개 (권한을 확인하세요)`);
+            else if (failed.length) this.showToast(`메모 ${deleted.size}개 삭제 · ${failed.length}개 실패`);
+            else this.showToast(`메모 ${deleted.size}개를 지웠습니다`);
         } catch (e) { this.showToast('지우지 못했습니다: ' + (e.message || e)); }
     }
     async bulkMoveNotes() {
@@ -8899,7 +8903,7 @@ class BhasApp {
                 ${brand && seas.length ? `<button class="nt-car${open ? ' on' : ''}" onclick="event.stopPropagation();app.toggleBrandSeasons('${brand.id}')" title="시즌 펼치기"><i class="ph ph-caret-right"></i></button>` : '<button class="nt-car sp" tabindex="-1" aria-hidden="true"></button>'}
                 <i class="ph ${icon}" style="color:${color || '#e0a800'}"></i><span>${esc(label)}</span><em>${n}</em>
                 ${brand ? `<button class="nt-addsea" title="${esc(label)}에 새 시즌" onclick="event.stopPropagation();app.newSeasonIn('${brand.id}')"><i class="ph ph-plus"></i></button>` : ''}</div>`;
-            const kids = (brand && open) ? `<div class="nt-kids">` + seas.map(p => `<div class="nt-sea2${this.noteSea === String(p.id) ? ' on' : ''}"
+            const kids = (brand && open) ? `<div class="nt-kids">` + seas.map(p => `<div class="nt-sea2${this.noteSea === String(p.id) ? ' on' : ''}${this._isTestSeason(p) ? ' test-season' : ''}"
                 onclick="app.pickBrandSeason('${key}','${p.id}')" oncontextmenu="app.projectMenu(event,'${p.id}')">
                 <i class="ph ph-calendar-blank"></i><span>${esc(p.name)}</span>
                 <em>${all.filter(n2 => String(n2.product_id) === String(p.id)).length}</em></div>`).join('') + `</div>` : '';
@@ -8944,7 +8948,7 @@ class BhasApp {
                         <span>${list.length}개의 메모</span></div>
                     <select class="nt-sea" onchange="app.setNoteSea(this.value)" title="시즌으로 거르기">
                         <option value="ALL"${seaF === 'ALL' ? ' selected' : ''}>모든 시즌</option>
-                        ${projects.map(pr => `<option value="${pr.id}"${String(seaF) === String(pr.id) ? ' selected' : ''}>${esc(pr.name)}</option>`).join('')}
+                        ${projects.map(pr => `<option class="${this._isTestSeason(pr) ? 'test-season' : ''}" value="${pr.id}"${String(seaF) === String(pr.id) ? ' selected' : ''}>${esc(pr.name)}</option>`).join('')}
                         <option value="NONE"${seaF === 'NONE' ? ' selected' : ''}>시즌 없음</option>
                     </select>
                     <button class="nt-new" onclick="app.addNote()" title="새 메모"><i class="ph ph-note-pencil"></i></button>
@@ -13380,7 +13384,7 @@ class BhasApp {
     }
     //  브랜드 아래 시즌을 고르면 그 폴더 + 그 시즌으로 걸러 본다
     pickBrandSeason(folderKey, seaId) {
-        this.noteFolder = folderKey; this.noteSea = String(seaId); this.noteSel = null; this.requestRender();
+        this.noteMulti = new Set(); this.noteFolder = folderKey; this.noteSea = String(seaId); this.noteSel = null; this.requestRender();
     }
     _vendorCategoryWritable(name) {
         const c = this._vendorCategories().find(x => x.name === name);
@@ -13913,6 +13917,7 @@ class BhasApp {
     }
 
     _seasons() { return (mockData.products || []).filter(p => this._canSeeProject(p)); }
+    _isTestSeason(p) { return String(p?.name || '').includes('[테스트]'); }
 
     // 표의 칸을 고치면 바로 저장한다. redraw=1 은 색·집계가 바뀌는 칸(상태·체크·날짜·고르기)만.
     async setItem(id, field, value, redraw) {
@@ -14529,7 +14534,7 @@ class BhasApp {
                     ${this.ITEM_STATUSES.map(s2 => `<option value="${esc(s2)}">${esc(s2)}</option>`).join('')}</select>
                 <select class="it-sel" onchange="app.bulkItems('product_id',this.value);this.selectedIndex=0">
                     <option value="">시즌 옮기기…</option>
-                    ${seasons.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+                    ${seasons.map(p => `<option class="${this._isTestSeason(p) ? 'test-season' : ''}" value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
                 <select class="it-sel" onchange="app.bulkItems('vendor_id',this.value);this.selectedIndex=0">
                     <option value="">공장 정하기…</option>
                     ${vendors.map(v => `<option value="${v.id}">${esc(v.name)}</option>`).join('')}</select>
