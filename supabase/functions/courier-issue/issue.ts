@@ -43,6 +43,7 @@ export interface IssueDeps {
   insertOrder(providerOrderNo: string): Promise<Issued>;
   saveIssued(regiNo: string, providerOrderNo: string, attempt: number): Promise<boolean>;
   saveFailed(message: string, attempt: number): Promise<boolean>;
+  precheck?(): string[];   // 발송 전 검사(fields.checkOrder). 걸리면 새 접수를 할 수 있는 run·retry 는 DB·우체국을 건드리지 않는다
 }
 
 export type IssueResult = { ok: boolean; regiNo?: string | null; idempotent?: boolean; recovered?: boolean; message?: string; reqNo?: string | null; manual?: boolean; unknown?: boolean; checkedNone?: boolean };
@@ -76,6 +77,10 @@ async function adopt(d: IssueDeps, hit: ResInfo, providerOrderNo: string, attemp
 }
 
 export async function issueOne(d: IssueDeps, mallKey: string, orderNo: string, mode: Mode = "run"): Promise<IssueResult> {
+  if (mode !== "confirm" && d.precheck) {   // confirm 은 조회만 해서 검사하지 않는다
+    const bad = d.precheck();
+    if (bad.length) return { ok: false, message: `보내기 전 확인: ${bad.join(" · ")}` };
+  }
   const providerOrderNo = epostOrderNo(mallKey, orderNo);
   const before = await d.getJob();
   if (before?.invoice_no) return { ok: true, regiNo: before.invoice_no, idempotent: true };

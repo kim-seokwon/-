@@ -22,17 +22,23 @@ export function plain(f: Record<string, unknown>): string {
 //  길이는 매뉴얼 '길이' 칸(단위 표기 없음 → 글자 수로 본다. 바이트 기준이면 우체국이 거절하고 그 오류가 그대로 보인다).
 const REQUIRED = ["custNo", "apprNo", "payType", "reqType", "officeSer", "microYn", "orderNo", "ordCompNm", "recNm", "recZip", "recAddr1", "recAddr2", "contCd", "goodsNm"];
 const MAX_LEN: Record<string, number> = { orderNo: 50, ordCompNm: 100, inqTelCn: 100, ordNm: 40, ordZip: 5, ordAddr1: 60, ordAddr2: 100, ordTel: 12, ordMob: 12,
-  recNm: 40, recZip: 5, recAddr1: 150, recAddr2: 300, recTel: 12, recMob: 12, goodsNm: 400, goodsCd: 400, goodsMdl: 400, goodsSize: 30, goodsColor: 40, qty: 5, delivMsg: 200 };
+  recNm: 40, recAddr1: 150, recAddr2: 300, recTel: 12, recMob: 12, goodsNm: 400, goodsCd: 400, goodsMdl: 400, goodsSize: 30, goodsColor: 40, qty: 5, delivMsg: 200 };
+// regData = SEED128 ECB hex. 0-패딩으로 16바이트 블록 단위(seed128.ts) → 길이는 키와 무관하게 평문 UTF-8 바이트로 정해진다.
+export const REGDATA_MAX = 4000;   // 매뉴얼: regData 최대 4000자 (= 평문 2000바이트)
+export const regDataLen = (p: string) => Math.max(1, Math.ceil(new TextEncoder().encode(p).length / 16)) * 32;
 export function checkOrder(f: Record<string, unknown>): string[] {
-  const has = (k: string) => f[k] !== undefined && f[k] !== null && String(f[k]) !== "";
+  const has = (k: string) => f[k] !== undefined && f[k] !== null && String(f[k]).trim() !== "";   // 공백만 = 없음
   const e: string[] = [];
   for (const k of REQUIRED) if (!has(k)) e.push(`${k} 없음`);
   if (!has("recTel") && !has("recMob")) e.push("수취인 전화·휴대폰 둘 다 없음");
+  if (has("recZip") && !/^\d{5}$/.test(String(f.recZip))) e.push(`recZip ${String(f.recZip).length}자 — 숫자 5자리만`);
   for (const [k, n] of Object.entries(MAX_LEN)) if (has(k) && String(f[k]).length > n) e.push(`${k} ${String(f[k]).length}자(최대 ${n})`);
   const int = (k: string, lo: number, hi: number) => {
     if (has(k) && !(Number.isInteger(Number(f[k])) && Number(f[k]) >= lo && Number(f[k]) <= hi)) e.push(`${k} ${f[k]} — ${lo}~${hi} 정수만`);
   };
   int("weight", 1, 30); int("volume", 1, 160);
+  const n = regDataLen(plain(f));   // 항목마다 한도 안이어도 합치면 넘을 수 있다(한글 3바이트)
+  if (n > REGDATA_MAX) e.push(`전체 ${n}자(최대 ${REGDATA_MAX}) — 주소·상품명·배송메시지를 줄여주세요`);
   return e;
 }
 

@@ -240,3 +240,32 @@ Deno.test("우체국 확인 조회가 225 외 오류면 새로 접수하지 않�
   await assertRejects(() => issueOne(d, "hiheiho", "C1"), Error, "중복 접수 방지");
   assertEquals(w.inserts, 0);
 });
+
+// 발송 전 검사에 걸리면 run·retry 모두 DB(getJob·claim…)·우체국(GetResInfo·InsertOrder) 0회. confirm 은 검사 없이 조회만
+Deno.test("발송 전 검사: run·retry 불량 주문은 DB·우체국 0회, confirm 은 그대로 조회", async () => {
+  const w = world(); w.timeoutNotReceived();
+  assertEquals((await issueOne(w.deps("tovee", "B1"), "tovee", "B1")).unknown, true);   // 확인필요 상태 만들기
+  w.tick(CONFIRM_WAIT_MS);
+  assertEquals((await issueOne(w.deps("tovee", "B1"), "tovee", "B1", "confirm")).checkedNone, true);
+  const snap = JSON.stringify(w.jobs.get("tovee|B1")); const ins = w.inserts, res = w.resInfo;
+  let db = 0;
+  const bad = (mall: string, no: string): IssueDeps => {
+    const d = w.deps(mall, no);
+    const wrapped = Object.fromEntries(Object.entries(d).map(([k, f]) => [k, (...a: unknown[]) => { if (k !== "now") db++; return (f as (...x: unknown[]) => unknown)(...a); }])) as unknown as IssueDeps;
+    return { ...wrapped, precheck: () => ["recZip 4자 — 숫자 5자리만"] };
+  };
+  const r = await issueOne(bad("tovee", "B1"), "tovee", "B1", "retry");
+  assertEquals(r, { ok: false, message: "보내기 전 확인: recZip 4자 — 숫자 5자리만" });
+  const n = await issueOne(bad("tovee", "B2"), "tovee", "B2");   // 새 주문 run
+  assertEquals(n.ok, false);
+  assertEquals(db, 0); assertEquals(w.inserts, ins); assertEquals(w.resInfo, res);
+  assertEquals(JSON.stringify(w.jobs.get("tovee|B1")), snap); assertEquals(w.jobs.has("tovee|B2"), false);
+  // 고친 뒤(precheck 통과) retry 는 정상 접수
+  const ok = await issueOne({ ...w.deps("tovee", "B1"), precheck: () => [] }, "tovee", "B1", "retry");
+  assertEquals(ok.ok, true); assertEquals(w.inserts, ins + 1);
+  // confirm 은 검사에 걸려도 조회는 한다(새 접수 아님)
+  const w2 = world(); w2.timeoutNotReceived();
+  await issueOne(w2.deps("tovee", "C1"), "tovee", "C1"); w2.tick(CONFIRM_WAIT_MS);
+  const c = await issueOne({ ...w2.deps("tovee", "C1"), precheck: () => ["x"] }, "tovee", "C1", "confirm");
+  assertEquals(c.checkedNone, true); assertEquals(w2.inserts, 1);
+});

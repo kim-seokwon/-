@@ -186,13 +186,14 @@ Deno.serve(async (req) => {
       const mallKey = String(o.mallKey || "");
       const orderNo = String(o.orderNo || "");
       if (!mallKey || !orderNo) { results.push({ ok: false, orderNo, message: "mallKey/orderNo 필요" }); continue; }
-      if (mode === "run") {   // 발송 전 검사 — 걸리면 우체국·DB 를 건드리지 않는다
-        let bad: string[];
-        try { bad = checkOrder(orderFields({ ...o, orderNo: epostOrderNo(mallKey, orderNo) }, { custNo: CUSTNO, apprNo: APPRNO, officeSer: OFFICESER }, testYn)); }
-        catch (e) { bad = [String(e)]; }   // 우체국 주문번호 50자 초과 — 한 건 때문에 묶음 전체가 멈추지 않게
-        if (bad.length) { results.push({ ok: false, mallKey, orderNo, message: `보내기 전 확인: ${bad.join(" · ")}` }); continue; }
-      }
+      // 발송 전 검사 — run·retry(새 접수 가능) 모두. 걸리면 DB·우체국을 건드리지 않는다
+      const precheck = () => {
+        try { return checkOrder(orderFields({ ...o, orderNo: epostOrderNo(mallKey, orderNo) }, { custNo: CUSTNO, apprNo: APPRNO, officeSer: OFFICESER }, testYn)); }
+        catch (e) { return [String(e)]; }   // 우체국 주문번호 50자 초과 — 한 건 때문에 묶음 전체가 멈추지 않게
+      };
       if (body.test) {   // testYn=Y: DB·재시도 복구 없이 우체국 응답만 본다
+        const bad = precheck();
+        if (bad.length) { results.push({ ok: false, mallKey, orderNo, message: `보내기 전 확인: ${bad.join(" · ")}` }); continue; }
         const issued = await insertOrder({ ...o, orderNo: epostOrderNo(mallKey, orderNo) }, testYn);
         results.push({ ...issued, mallKey, orderNo });
         continue;
@@ -227,6 +228,7 @@ Deno.serve(async (req) => {
           insertOrder: (no) => insertOrder({ ...o, orderNo: no }, testYn),
           saveIssued: (regiNo, no, attempt) => fenced(attempt, { invoice_no: regiNo, provider_request_id: no, status: "issued", issued_at: new Date().toISOString() }),
           saveFailed: (message, attempt) => fenced(attempt, { status: "failed", last_error: message }),
+          precheck,
         }, mallKey, orderNo, mode);
         results.push({ ...r, mallKey, orderNo });
       } catch (e) {

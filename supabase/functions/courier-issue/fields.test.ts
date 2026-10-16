@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { checkOrder, orderFields, plain } from "./fields.ts";
+import { checkOrder, orderFields, plain, REGDATA_MAX, regDataLen } from "./fields.ts";
+import { seedEncryptEcbHex } from "./seed128.ts";
 import { courierCodeOf } from "../cafe24-shipping/couriers.ts";
 
 const creds = { custNo: "C1", apprNo: "A1", officeSer: "O1" };
@@ -58,4 +59,34 @@ Deno.test("발송 전 검사: 정상은 통과, 빠짐·길이·범위는 사유
   assertEquals(/weight 31/.test(e({ weight: 31 })), true);
   assertEquals(/volume 161/.test(e({ volume: 161 })), true);
   assertEquals(e({ weight: 30, volume: 160, recNm: "가".repeat(40) }), "");
+});
+
+Deno.test("공백만인 필수값은 없음, 우편번호는 숫자 정확히 5자리", () => {
+  const e = (o: Record<string, unknown>) => checkOrder(orderFields({ ...order, ...o }, creds)).join(" | ");
+  assertEquals(/recNm 없음/.test(e({ recNm: "   " })), true);
+  assertEquals(/recAddr2 없음/.test(e({ recAddr2: " \t" })), true);
+  assertEquals(/recZip 4자 — 숫자 5자리만/.test(e({ recZip: "1234" })), true);
+  assertEquals(e({ recZip: "12345" }), "");
+});
+
+Deno.test("regData 4000자 경계: 실제 암호문 길이 = regDataLen, 4000 통과 · 4032 차단", () => {
+  const base = orderFields({ ...order, delivMsg: "" }, creds);
+  const room = 2000 - new TextEncoder().encode(plain(base)).length - "&delivMsg=".length;   // 평문 2000바이트 = hex 4000자
+  const at = (n: number) => orderFields({ ...order, delivMsg: "a".repeat(n) }, creds);
+  // delivMsg 는 200자 한도라 영문만으론 못 채운다 → 한글(3바이트)+영문으로 맞춘다
+  const fill = (bytes: number) => { const k = Math.min(66, Math.floor(bytes / 3)); return "가".repeat(k) + "a".repeat(bytes - k * 3); };
+  const big = { recAddr2: "나".repeat(300), goodsNm: "다".repeat(Math.floor((room - 900) / 3) - 70) };
+  const roomBig = 2000 - new TextEncoder().encode(plain(orderFields({ ...order, ...big }, creds))).length - "&delivMsg=".length;
+  const ok = orderFields({ ...order, ...big, delivMsg: fill(roomBig) }, creds);
+  const over = orderFields({ ...order, ...big, delivMsg: fill(roomBig) + "a" }, creds);
+  assertEquals(new TextEncoder().encode(plain(ok)).length, 2000);
+  for (const f of [ok, over, at(0)]) assertEquals(seedEncryptEcbHex("1234567890abcdefghijkl", plain(f)).length, regDataLen(plain(f)));
+  assertEquals(regDataLen(plain(ok)), REGDATA_MAX);
+  assertEquals(checkOrder(ok), []);
+  assertEquals(regDataLen(plain(over)), 4032);
+  assertEquals(checkOrder(over), ["전체 4032자(최대 4000) — 주소·상품명·배송메시지를 줄여주세요"]);
+  // 코덱스 재현형: 항목별 한도 안(주소 150+300·상품명 400 한글)인데 합치면 초과
+  const each = orderFields({ ...order, recAddr1: "가".repeat(150), recAddr2: "나".repeat(300), goodsNm: "다".repeat(400) }, creds);
+  assertEquals(checkOrder(each).length, 1);
+  assertEquals(/^전체 \d+자\(최대 4000\)/.test(checkOrder(each)[0]), true);
 });
