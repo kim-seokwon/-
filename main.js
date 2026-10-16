@@ -3616,7 +3616,7 @@ class BhasApp {
         (this.orders || []).forEach(o => {
             if (hit(o.order_id, o.receiver_name, o.buyer_name, (o.items || []).map(x => x.product_name).join(' '))) {
                 add('주문', 'ph-shopping-bag-open', '#30d158', o.receiver_name || o.buyer_name || o.order_id,
-                    [o.order_id, o.order_date].filter(Boolean).join(' · '), `app.findGo('orders','${o.order_id}')`);
+                    [o.order_id, o.order_date].filter(Boolean).join(' · '), `app.findGo('orders','${this._vesc(this._ordKey(o))}')`);
             }
         });
         (this.csList || []).forEach(t => {
@@ -3942,24 +3942,23 @@ class BhasApp {
                 <button class="mbtn" onclick="app.delItem('${it.id}')">삭제</button>`);
         }
         if (view === 'orders') {
-            const o = ((this.opage && this.opage.rows) || []).find(x => String(x.order_id) === String(this.orderSel))
-                   || (this.orders || []).find(x => String(x.order_id) === String(this.orderSel));
+            const o = this._findOrderBySel(this.orderSel);
             if (!o) return empty();
             const items = o.items || [];
-            const cs = (this.csList || []).filter(t => String(t.order_no) === String(o.order_id));
+            const cs = (this.csList || []).filter(t => t.channel_order_id ? String(t.channel_order_id) === String(o.id) : String(t.order_no) === String(o.order_id));
             return wrap(o.receiver_name || o.buyer_name || '주문', o.order_id, `
                 ${f('주문일', o.order_date)}
                 ${f('채널', o.mall_key || o.channel)}
-                ${f('상태', this._opLabel(this._orderState(o)) + (this._orderState(o) === 'pre' && o.status === 'ready' ? ' (송장 등록대기)' : ''))}
+                ${f('상태', this._opLabel(this._orderState(o)) + (this._orderState(o) === 'pre' && o.status === 'ready' ? (this._isCafe24Order(o) ? ' (카페24 배송대기)' : ' (송장 등록대기)') : ''))}
                 ${f('받는분', o.receiver_name)}
                 ${f('연락처', o.receiver_phone)}
-                ${f('주소', o.receiver_addr || o.address)}
+                ${f('주소', [o.receiver_zipcode && `(${o.receiver_zipcode})`, o.receiver_address].filter(Boolean).join(' '))}
                 ${f('송장', o.invoice_no ? `${o.courier || ''} ${o.invoice_no}` : '')}
                 ${items.length ? `<div class="dt-sec">상품 ${items.length}</div>
-                    ${items.map(i => `<div class="dt-li"><span>${esc(i.product_name || '-')}</span><b>${esc(String(i.qty || 1))}</b></div>`).join('')}` : ''}
+                    ${items.map(i => `<div class="dt-li"><span>${esc(i.product_name || '-')}</span><b>${esc(String(i.quantity || 1))}</b></div>`).join('')}` : ''}
                 ${cs.length ? `<div class="dt-sec">CS ${cs.length}건</div>
                     ${cs.map(t => `<div class="dt-li"><span>${esc(t.kind)}</span><b>${esc(t.status)}</b></div>`).join('')}` : ''}
-            `, `<button class="mbtn pri" onclick="app.csFromOrder('${esc(String(o.order_id))}')">CS 접수</button>`);
+            `, `<button class="mbtn pri" onclick="app.csFromOrder('${esc(String(o.order_id))}','${esc(String(o.mall_key || ''))}')">CS 접수</button>`);
         }
         if (view === 'cs') {
             const t = (this.csList || []).find(x => String(x.id) === String(this.csSel));
@@ -4008,6 +4007,14 @@ class BhasApp {
         return '';
     }
     selectOrder(id) { this.orderSel = id; this.requestRender(); }
+    // 주문 선택 키 = 몰|주문번호. 몰끼리 주문번호가 겹친다(운영 49건) — 주문번호만으로 찾으면 다른 몰 주문이 열린다.
+    _ordKey(o) { return `${o?.mall_key || ''}|${o?.order_id}`; }
+    _findOrderBySel(sel) {
+        if (sel == null) return null;
+        const k = String(sel);
+        const hit = x => k.includes('|') ? this._ordKey(x) === k : String(x.order_id) === k;   // 옛 키(주문번호만)도 받는다
+        return ((this.opage && this.opage.rows) || []).find(hit) || (this.orders || []).find(hit) || null;
+    }
     selectCS(id) { if (String(this.csSel) === String(id)) return; this.csSel = id; this.requestRender(); }
     selectInv(id) { if (String(this.invSel) === String(id)) return; this.invSel = id; this.requestRender(); }
     // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
@@ -9285,12 +9292,14 @@ class BhasApp {
         this._csLoading = false; this.requestRender();
     }
     // 주문번호로 기존 주문을 찾아 상품명·구매처·브랜드를 자동으로 채운다.
-    async _csLookupOrder(orderNo) {
+    async _csLookupOrder(orderNo, mallKey = '') {
         const no = (orderNo || '').trim();
         if (!no) return null;
         try {
-            const { data } = await this.supabase.from('channel_orders')
-                .select('id, mall_key, channel, receiver_name, buyer_name').eq('order_id', no).limit(1);
+            let q = this.supabase.from('channel_orders')
+                .select('id, mall_key, channel, receiver_name, buyer_name').eq('order_id', no);
+            if (mallKey) q = q.eq('mall_key', mallKey);   // 몰끼리 같은 주문번호가 있다
+            const { data } = await q.limit(1);
             const o = (data || [])[0];
             if (!o) return null;
             const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
@@ -9306,19 +9315,19 @@ class BhasApp {
         } catch (e) { return null; }
     }
     // 주문 화면에서 그 주문으로 바로 교환·반품을 올린다
-    csFromOrder(orderNo) {
+    csFromOrder(orderNo, mallKey = '') {
         const esc = s => this._vesc(s);
         const c = document.getElementById('global-modal-container'); if (!c) return;
         c.innerHTML = `
         <div class="glass modal-content fade-in" style="width:92%;max-width:400px;padding:1.6rem;border-radius:18px">
             <h2 style="margin:0 0 .4rem;font-size:1.1rem">CS 접수</h2>
             <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.1rem">
-                주문번호 <b style="font-family:monospace;color:var(--text-main)">${esc(orderNo)}</b><br>
+                ${mallKey ? `${esc(this._mallLabel(mallKey))} · ` : ''}주문번호 <b style="font-family:monospace;color:var(--text-main)">${esc(orderNo)}</b><br>
                 고객·상품·구매처는 주문에서 자동으로 끌어옵니다.
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:8px">
                 ${this.CS_KINDS.map(k => `<button class="btn-secondary cs-kind" style="padding:9px 16px;border-radius:10px"
-                    onclick="app.addCSForOrder('${esc(orderNo)}','${k}')">${k}</button>`).join('')}
+                    onclick="app.addCSForOrder('${esc(orderNo)}','${k}','${esc(mallKey)}')">${k}</button>`).join('')}
             </div>
             <div style="text-align:right;margin-top:1.3rem">
                 <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:8px 16px;border-radius:10px">취소</button>
@@ -9326,9 +9335,9 @@ class BhasApp {
         </div>`;
         c.style.display = 'flex';
     }
-    async addCSForOrder(orderNo, kind) {
+    async addCSForOrder(orderNo, kind, mallKey = '') {
         this.closeGlobalModal();
-        const found = await this._csLookupOrder(orderNo);
+        const found = await this._csLookupOrder(orderNo, mallKey);
         try {
             const { error } = await this.supabase.from('cs_tickets').insert([{
                 customer_name: found?.customer_name || '(이름없음)',
@@ -9805,6 +9814,7 @@ class BhasApp {
             items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
             pg.rows = list.map(o => ({ ...o, items: byOrder[o.id] || [] }));
             pg.total = count ?? pg.rows.length;
+            pg.unknown = await this._loadShipUnknown(pg.rows);
             //  탭 숫자는 따로 센다 — 지금 쪽에 없는 건까지 포함한 진짜 숫자여야 한다
             const [{ data: cts }, { data: mcs }] = await Promise.all([
                 this.supabase.rpc('order_tab_counts', { p_mall: mall === 'ALL' ? null : mall, p_q: q || null }),
@@ -10035,15 +10045,15 @@ class BhasApp {
             const items = o.items || [];
             const multi = items.length > 1;
             const prodCell = multi
-                ? `<button class="oms-expand" data-id="${o.order_id}" style="background:none;border:none;color:var(--text-main);cursor:pointer;text-align:left;font-size:0.88rem;display:inline-flex;align-items:center;gap:6px;padding:0"><i class="ph ph-caret-right oms-caret" style="font-size:0.9rem;color:var(--primary);transition:transform .2s"></i>${this._orderItemsSummary(o)}</button>`
+                ? `<button class="oms-expand" data-id="${this._vesc(this._ordKey(o))}" style="background:none;border:none;color:var(--text-main);cursor:pointer;text-align:left;font-size:0.88rem;display:inline-flex;align-items:center;gap:6px;padding:0"><i class="ph ph-caret-right oms-caret" style="font-size:0.9rem;color:var(--primary);transition:transform .2s"></i>${this._orderItemsSummary(o)}</button>`
                 : this._orderItemsSummary(o);
-            const detail = multi ? `<tr class="oms-detail" data-for="${o.order_id}" style="display:none"><td colspan="9" style="padding:2px 10px 12px 42px;background:rgba(var(--tint),0.04)"><div style="display:flex;flex-direction:column;gap:5px;padding:6px 0">${items.map(it => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:0.83rem"><span style="color:var(--text-muted)">${this._vesc(it.product_name || it.variant_code || '상품')}${it.option_name ? ` · ${this._vesc(it.option_name)}` : ''}</span><span style="color:var(--text-main);font-weight:600;white-space:nowrap">${it.quantity || 1}개</span></div>`).join('')}</div></td></tr>` : '';
+            const detail = multi ? `<tr class="oms-detail" data-for="${this._vesc(this._ordKey(o))}" style="display:none"><td colspan="9" style="padding:2px 10px 12px 42px;background:rgba(var(--tint),0.04)"><div style="display:flex;flex-direction:column;gap:5px;padding:6px 0">${items.map(it => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:0.83rem"><span style="color:var(--text-muted)">${this._vesc(it.product_name || it.variant_code || '상품')}${it.option_name ? ` · ${this._vesc(it.option_name)}` : ''}</span><span style="color:var(--text-main);font-weight:600;white-space:nowrap">${it.quantity || 1}개</span></div>`).join('')}</div></td></tr>` : '';
             return `
-            <tr class="ordrow${String(this.orderSel) === String(o.order_id) ? ' on' : ''}"
-                onclick="app.selectOrder('${o.order_id}')" style="border-bottom:1px solid var(--card-border)">
-                <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" style="accent-color:var(--primary)" onclick="event.stopPropagation()"></td>
+            <tr class="ordrow${String(this.orderSel) === this._ordKey(o) ? ' on' : ''}"
+                onclick="app.selectOrder('${this._vesc(this._ordKey(o))}')" style="border-bottom:1px solid var(--card-border)">
+                <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" data-mall="${this._vesc(String(o.mall_key || ''))}" style="accent-color:var(--primary)" onclick="event.stopPropagation()"></td>
                 <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}
-                    <button class="ord-cs" title="이 주문으로 CS 접수" onclick="event.stopPropagation();app.csFromOrder('${o.order_id}')">CS</button></td>
+                    <button class="ord-cs" title="이 주문으로 CS 접수" onclick="event.stopPropagation();app.csFromOrder('${this._vesc(String(o.order_id))}','${this._vesc(String(o.mall_key || ''))}')">CS</button></td>
                 <td style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1'; return `<span style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._mallLabel(o.mall_key)}</span>`; })()}</td>
                 <td style="padding:10px;color:var(--text-muted);font-size:0.82rem">${o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : '-'}</td>
                 <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
@@ -10055,8 +10065,8 @@ class BhasApp {
                                 done: ['rgba(148,163,184,0.18)', '#94a3b8'], cancel: ['rgba(239,68,68,0.18)', '#ef4444'],
                                 return: ['rgba(239,68,68,0.18)', '#ef4444'], exchange: ['rgba(99,102,241,0.18)', '#6366f1'] }[s] || ['rgba(148,163,184,0.18)', '#94a3b8'];
                     //  송장까지 찍어 둔 건은 따로 표시한다 — 채널엔 아직 반영 전이다.
-                    const wait = s === 'pre' && o.status === 'ready' ? '<span style="font-size:0.66rem;color:var(--text-muted);margin-left:4px">등록대기</span>' : '';
-                    return `<span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${C[0]};color:${C[1]}">${this._opLabel(s)}</span>${wait}`;
+                    const wait = s === 'pre' && o.status === 'ready' ? `<span style="font-size:0.66rem;color:var(--text-muted);margin-left:4px">${this._isCafe24Order(o) ? '배송대기' : '등록대기'}</span>` : '';
+                    return `<span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${C[0]};color:${C[1]}">${this._opLabel(s)}</span>${wait}${this._shipUnknownCell(o)}`;
                 })()}</td>
                 <td style="padding:10px;font-size:0.8rem;color:var(--text-muted)">${o.invoice_no ? `${o.courier || ''} ${o.invoice_no}` : '-'}</td>
             </tr>${detail}`;
@@ -10072,7 +10082,7 @@ class BhasApp {
             ${this._mpTop('주문 · 배송', `배송대상 ${counts.target} · 배송중 ${counts.shipping} · 완료 ${counts.done}`, `
                 <button class="mbtn" id="oms-sync-btn"><i class="ph ph-arrows-clockwise"></i> 주문 수집</button>
                 <button class="mbtn" id="oms-export-btn"><i class="ph ph-download-simple"></i> 송장양식</button>
-                <button class="mbtn pri" id="oms-epost-btn"><i class="ph ph-package"></i> 우체국 발번+등록</button>
+                <button class="mbtn pri" id="oms-epost-btn" disabled title="발번할 주문을 먼저 체크하세요"><i class="ph ph-package"></i> 우체국 발번+등록 <span class="oms-epost-n"></span></button>
                 <button class="mbtn" id="oms-upload-btn"><i class="ph ph-upload-simple"></i> 송장 업로드</button>
                 <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">`)}
             <div class="mp-body">
@@ -10105,7 +10115,7 @@ class BhasApp {
             </div>
             <div style="margin-top:1rem;padding:1rem;background:rgba(var(--tint),0.03);border-radius:12px;font-size:0.82rem;color:var(--text-muted);line-height:1.7">
                 <b style="color:#e2e8f0">송장 처리 흐름</b><br>
-                <b style="color:#fb7185">■ 자동(권장):</b> 주문 체크(또는 배송대상 전체) → <b>우체국 발번+송장등록</b> 한 번이면 → 우체국 계약택배 발번(운송장번호) → 카페24 등 채널에 배송중+송장 자동 입력까지 끝.<br>
+                <b style="color:#fb7185">■ 자동(권장):</b> 주문 체크(체크한 것만 · 미입금·프리오더 제외) → <b>우체국 발번+송장등록</b> 한 번이면 → 우체국 계약택배 발번(운송장번호) → 카페24 등 채널에 배송중+송장 자동 입력까지 끝.<br>
                 <b style="color:#94a3b8">■ 수동(택배사 직접):</b> ① 송장양식 다운로드 → 택배사 프로그램 출력 → ② 송장번호 업로드(CSV) → ③ 카페24 자동 등록 ${ls && ls.result === 'dry_run' ? '<span style="color:#f59e0b">(현재 dry-run)</span>' : ''}
             </div>
         </div></div>`;
@@ -10154,18 +10164,19 @@ class BhasApp {
             if (pg && (pg.page + 1) * pg.size < pg.total) { pg.page++; this.loadOrderPage(true); }
         };
         this.appContainer.querySelectorAll('.oms-expand').forEach(b => b.onclick = () => {
-            const dr = this.appContainer.querySelector(`.oms-detail[data-for="${b.dataset.id}"]`);
+            const dr = [...this.appContainer.querySelectorAll('.oms-detail')].find(r => r.dataset.for === b.dataset.id);
             const caret = b.querySelector('.oms-caret');
             if (dr) { const show = dr.style.display === 'none'; dr.style.display = show ? 'table-row' : 'none'; if (caret) caret.style.transform = show ? 'rotate(90deg)' : ''; }
         });
         const chkAll = document.getElementById('oms-chk-all');
-        if (chkAll) chkAll.onclick = () => this.appContainer.querySelectorAll('.oms-chk').forEach(c => { c.checked = chkAll.checked; });
+        if (chkAll) chkAll.onclick = () => { this.appContainer.querySelectorAll('.oms-chk').forEach(c => { c.checked = chkAll.checked; }); this._syncEpostBtn(); };
+        this.appContainer.querySelectorAll('.oms-chk').forEach(c => c.addEventListener('change', () => this._syncEpostBtn()));
         const syncBtn = document.getElementById('oms-sync-btn');
         if (syncBtn) syncBtn.onclick = () => this.runCafe24Sync();
         const exportBtn = document.getElementById('oms-export-btn');
         if (exportBtn) exportBtn.onclick = () => this.exportInvoiceTemplate();
         const epostBtn = document.getElementById('oms-epost-btn');
-        if (epostBtn) epostBtn.onclick = () => this.issueEpostWaybills();
+        if (epostBtn) { epostBtn.onclick = () => this.issueEpostWaybills(); this._syncEpostBtn(); }
         const upBtn = document.getElementById('oms-upload-btn');
         const fileEl = document.getElementById('oms-invoice-file');
         if (upBtn && fileEl) {
@@ -10198,57 +10209,84 @@ class BhasApp {
         this.showToast(`${targets.length}건 송장양식을 내려받았습니다.`);
     }
 
-    async issueEpostWaybills() {
-        // 선택된 주문(체크) 없으면 배송대상 전체, 이미 송장 있는 건 제외
-        const checked = [...this.appContainer.querySelectorAll('.oms-chk:checked')].map(c => String(c.dataset.id));
-        let targets = await this._loadAllShipTargets();
-        if (checked.length) targets = targets.filter(o => checked.includes(String(o.order_id)));
-        targets = targets.filter(o => !o.invoice_no);
-        if (!targets.length) { this.showToast('발번할 배송대상 주문이 없습니다. (체크 없으면 배송대상 전체 대상)'); return; }
+    // 체크한 주문 키(몰|주문번호). 몰끼리 주문번호가 겹칠 수 있어 몰까지 묶는다.
+    _epostCheckedKeys() {
+        return [...this.appContainer.querySelectorAll('.oms-chk:checked')].map(c => `${c.dataset.mall || ''}|${c.dataset.id}`);
+    }
 
-        const ok = await this.showConfirm(`${targets.length}건을 우체국 계약택배로 <b>실제 발번</b>하고, 받은 운송장번호를 채널(카페24 등)에 자동 등록합니다. 계속할까요?`, '우체국 발번 + 송장등록');
-        if (!ok) return;
-        this.showToast(`${targets.length}건 우체국 발번 중...`);
+    _syncEpostBtn() {
+        const btn = document.getElementById('oms-epost-btn'); if (!btn) return;
+        const n = this._epostCheckedKeys().length;
+        btn.disabled = !n;
+        btn.title = n ? `체크한 ${n}건만 발번합니다` : '발번할 주문을 먼저 체크하세요';
+        const sp = btn.querySelector('.oms-epost-n'); if (sp) sp.textContent = n ? `(${n})` : '';
+    }
 
+    // 발번하면 안 되는 주문: 미입금(카페24 paid≠T 또는 실결제 0) · 프리오더(상품/옵션명 — brand_order_types 와 같은 규칙)
+    _epostSkipReason(o) {
+        const raw = o.raw || {};
+        if ((raw.paid != null && raw.paid !== 'T') || Number(o.actual_paid_amount ?? o.pay_amount ?? 0) <= 0) return '미입금';
+        if ((o.items || []).some(i => /프리오더|pre-?order/i.test(`${i.product_name || ''} ${i.option_name || ''}`))) return '프리오더';
+        return '';
+    }
+
+    // 발번 대상에서 빼는 사유 전체: 송장있음 · dry-run 몰(카페24 미전송 몰 — 발번하면 송장이 고객에게 안 붙는다) · 미입금 · 프리오더
+    _epostExcludeReason(o) {
+        if (o.invoice_no) return '송장있음';
+        if (this._isCafe24Order(o)) {
+            const m = (this.malls || []).find(x => x.mall_key === o.mall_key);
+            if (!m || m.dry_run == null) return '몰 상태 미확인';
+            if (m.dry_run) return 'dry-run';
+        }
+        return this._epostSkipReason(o);
+    }
+
+    _downloadEpostResult(rows) {
+        const header = ['몰', '주문번호', '받는분', '운송장번호', '결과'];
+        const lines = [header, ...rows].map(r => r.map(v => this._csvCell(v)).join(','));
+        const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `우체국발번_${kstYMD()}_${rows.length}건.csv`;
+        document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    // 우체국 발번 본문(courier-issue orders[])
+    _epostOrderPayload(o) {
         const digits = s => String(s || '').replace(/[^0-9]/g, '');
-        const orders = targets.map(o => ({
+        return {
             mallKey: String(o.mall_key || ''),
             orderNo: String(o.order_id),
             ordCompNm: this._mallLabel(o.mall_key) || '브하스',
             recNm: o.receiver_name || o.buyer_name || '수취인',
             recZip: digits(o.receiver_zipcode),
-            recAddr1: o.receiver_address || '', recAddr2: o.receiver_address_detail || '.',
+            recAddr1: o.receiver_address || '', recAddr2: '.',   // 상세주소는 receiver_address 에 합쳐 저장된다(cafe24-sync)
             recMob: digits(o.receiver_phone),
             goodsNm: this._orderItemsSummary(o) || '상품',
-            qty: this._orderQtySum(o) || 1, weight: 1, volume: 60, contCd: '021',
-        }));
+            qty: this._orderQtySum(o) || 1, weight: 1, volume: 60, contCd: '025',   // 025 의류/패션잡화
+        };
+    }
 
-        let results = [];
-        try {
-            const { data, error } = await this.supabase.functions.invoke('courier-issue', { body: { test: false, orders } });
-            if (error) throw error;
-            results = data?.results || [];
-        } catch (e) { this.showToast('발번 실패: ' + (e.message || e)); return; }
-
-        const issued = {}; const fails = [];
-        results.forEach(r => { if (r.ok && r.regiNo) issued[String(r.orderNo)] = r.regiNo; else fails.push(`${r.orderNo}: ${r.message || '실패'}`); });
-        const issuedIds = Object.keys(issued);
-        if (!issuedIds.length) { this.showToast(`발번 0건. ${fails[0] || ''}`); return; }
-        this.showToast(`${issuedIds.length}건 발번 완료 → 채널에 송장 등록 중...`);
-
-        // 채널 write-back: 카페24만 API 등록. 다른 채널은 송장번호를 보존하되
-        // 실제 채널 반영 전이므로 배송중으로 속이지 않고 '채널등록대기'로 둔다.
+    // 송장 받은 주문을 채널에 붙인다. 카페24만 API 등록. 다른 채널은 송장번호를 보존하되
+    // 실제 채널 반영 전이므로 배송중으로 속이지 않고 '채널등록대기'로 둔다.
+    //  list: [{ o, regi }]
+    async _epostWriteBack(list) {
         const byCafe = {}; const others = [];
-        targets.forEach(o => {
-            const regi = issued[String(o.order_id)]; if (!regi) return;
-            const isCafe = this._isCafe24Order(o);
-            if (isCafe) (byCafe[o.mall_key] = byCafe[o.mall_key] || []).push({ order_id: o.order_id, invoice_no: regi, courier_name: '우체국택배' });
+        list.forEach(({ o, regi }) => {
+            if (this._isCafe24Order(o)) (byCafe[o.mall_key] = byCafe[o.mall_key] || []).push({ order_id: o.order_id, invoice_no: regi, courier_name: '우체국택배' });
             else others.push({ mall_key: o.mall_key, order_id: o.order_id, regi });
         });
-        let backOk = 0, pending = 0;
+        let backOk = 0, pending = 0, unknown = 0;
         for (const mk of Object.keys(byCafe)) {
-            try { const { data, error } = await this.supabase.functions.invoke('cafe24-shipping', { body: { mall: mk, orders: byCafe[mk] } }); if (error) throw error; backOk += (data?.success || 0); }
-            catch (e) { this.showToast(`[${this._mallLabel(mk)}] 송장등록 실패: ${e.message || e}`); }
+            try {
+                const res = await this.supabase.functions.invoke('cafe24-shipping', { body: { mall: mk, orders: byCafe[mk] } });
+                const data = await this._invokeData(res);
+                if (!data?.results) throw new Error(data?.error || res.error?.message || '응답 없음');
+                backOk += (data.success || 0);
+                unknown += data.results.filter(r => r.unknown).length;
+                const bad = data.results.filter(r => !r.ok && !r.unknown && !r.dry_run);
+                if (bad.length) this.showToast(`[${this._mallLabel(mk)}] 송장등록 실패 ${bad.length}건: ${bad[0].error || ''}`);
+            } catch (e) { this.showToast(`[${this._mallLabel(mk)}] 송장등록 실패: ${e.message || e}`); }
         }
         for (const x of others) {
             try {
@@ -10259,7 +10297,151 @@ class BhasApp {
                 pending++;
             } catch (e) { this.showToast(`[${this._mallLabel(x.mall_key)}] 송장 저장 실패: ${e.message || e}`); }
         }
-        this.showToast(`발번 ${issuedIds.length}건 / 채널등록 ${backOk}건${pending ? ` / 등록대기 ${pending}건` : ''}${fails.length ? ` · 발번실패 ${fails.length}건` : ''}`);
+        return { backOk, pending, unknown };
+    }
+
+    // 확인필요(타임아웃·네트워크 오류로 접수 여부를 모르는 건) — shipment_jobs: status=failed + last_error 'timeout_unknown:' 접두어.
+    //  서버(_shared/ship-unknown.ts)와 같은 규칙. 자동·일반 재발번은 서버가 막고, 화면은 [접수 확인]/[다시 시도]만 연다.
+    async _loadShipUnknown(rows) {
+        const out = {};
+        const ids = [...new Set((rows || []).map(o => String(o.order_id)))];
+        for (let i = 0; i < ids.length; i += 100) {
+            const { data, error } = await this.supabase.from('shipment_jobs')
+                .select('mall_key, order_id, courier, invoice_no, last_error, updated_at')
+                .eq('status', 'failed').like('last_error', 'timeout_unknown:%')
+                .in('order_id', ids.slice(i, i + 100));
+            if (error) { this.showToast('확인필요 건을 불러오지 못했습니다: ' + error.message); break; }
+            (data || []).forEach(j => { out[`${j.mall_key || ''}|${j.order_id}`] = j; });
+        }
+        return out;
+    }
+
+    _shipUnknownCell(o) {
+        const key = this._ordKey(o);
+        const j = this.opage?.unknown?.[key]; if (!j) return '';
+        const none = String(j.last_error || '').startsWith('timeout_unknown:checked_none:');
+        const where = j.invoice_no ? '카페24' : '우체국 시스템';
+        const k = this._vesc(key);
+        const btn = (mode, label) => `<button class="mbtn" style="font-size:0.7rem;padding:2px 8px" onclick="event.stopPropagation();app.shipUnknownAction('${k}','${mode}')">${label}</button>`;
+        return `<div class="ship-unknown" data-key="${k}" title="${this._vesc(j.last_error || '')}" style="margin-top:5px;display:flex;flex-direction:column;align-items:center;gap:4px">
+            <span style="font-size:0.68rem;padding:2px 8px;border-radius:10px;background:rgba(239,68,68,0.15);color:#ef4444;white-space:nowrap">${none ? `확인필요 — ${where}에 없음 확인됨` : '확인필요 — 우체국 시스템/카페24에서 접수 여부 확인'}</span>
+            <span style="display:flex;gap:4px">${btn('confirm', '접수 확인')}${none ? btn('retry', '다시 시도') : ''}</span></div>`;
+    }
+
+    // [접수 확인](confirm) / [다시 시도](retry). 우체국 단계(job 에 송장 없음)면 courier-issue, 카페24 단계면 cafe24-shipping.
+    async shipUnknownAction(key, mode) {
+        const o = (this.opage?.rows || []).find(x => this._ordKey(x) === key);
+        const j = this.opage?.unknown?.[key];
+        if (!o || !j) { this.showToast('확인필요 건을 찾지 못했습니다. 새로고침 후 다시 해 보세요.'); return; }
+        const courierStep = !j.invoice_no;
+        if (mode === 'retry') {
+            const ok = await this.showConfirm(`${this._vesc(o.order_id)} — [접수 확인]에서 ${courierStep ? '우체국 접수' : '카페24 등록'}가 없다고 나왔습니다.<br>${courierStep ? '우체국 시스템' : '카페24 관리자'}에서도 없는 걸 확인했나요? <b>다시 ${courierStep ? '발번' : '등록'}</b>합니다.`, '다시 시도');
+            if (!ok) return;
+        }
+        this.showToast(mode === 'confirm' ? '접수 여부 확인 중...' : '다시 시도 중...');
+        try {
+            const res = courierStep
+                ? await this.supabase.functions.invoke('courier-issue', { body: { mode, orders: [this._epostOrderPayload(o)] } })
+                : await this.supabase.functions.invoke('cafe24-shipping', { body: { mall: o.mall_key, mode, orders: [{ order_id: o.order_id, invoice_no: j.invoice_no, courier_name: j.courier || '우체국택배' }] } });
+            const data = await this._invokeData(res);
+            const r = (data?.results || [])[0];
+            if (!r) throw new Error(data?.error || res.error?.message || '응답 없음');
+            await this._shipUnknownToast(r, o, courierStep);
+        } catch (e) {
+            this.showToast(`${mode === 'confirm' ? '접수 확인' : '다시 시도'} 실패: ${e.message || e}`);
+        } finally {
+            // 성공·실패 상관없이 서버가 바꾼 상태(없음 확인 → [다시 시도] 등)를 다시 읽는다
+            this._ordersLoaded = false;
+            await this.loadOrderPage(true);
+        }
+    }
+
+    // functions.invoke 결과의 본문. 비-2xx(FunctionsHttpError)여도 JSON 본문이 있으면 읽는다.
+    async _invokeData({ data, error }) {
+        if (!error) return data;
+        try { const ctx = error.context; if (ctx && typeof ctx.json === 'function') return await ctx.clone().json(); } catch (_) { /* 본문 없음 */ }
+        return null;
+    }
+
+    async _shipUnknownToast(r, o, courierStep) {
+        const msg = r?.message || r?.error || '응답 없음';
+        if (r?.ok && courierStep && r.regiNo) {
+            // 우체국 송장을 채택(또는 다시 발번)했으면 원래 흐름대로 채널에 붙인다
+            const wb = await this._epostWriteBack([{ o, regi: r.regiNo }]);
+            this.showToast(`${r.recovered ? '접수 확인 — 기존 송장 채택' : '발번'} ${r.regiNo}${wb.unknown ? ' · 카페24 확인필요' : wb.backOk ? ' · 카페24 배송대기' : wb.pending ? ' · 등록대기' : ''}`);
+        } else if (r?.ok) {
+            this.showToast(r.recovered ? '접수 확인 — 카페24에 이미 등록돼 있어 채택했습니다.' : '카페24 배송대기 등록');
+        } else if (r?.checkedNone) {
+            this.showToast(`없음 확인 — ${courierStep ? '우체국 시스템' : '카페24 관리자'}에서도 확인한 뒤 [다시 시도]`);
+        } else {
+            this.showToast(msg);
+        }
+    }
+
+    async issueEpostWaybills() {
+        // 체크한 주문만 발번한다. 체크 0이면 아무것도 하지 않는다(예전엔 배송대상 전체 최대 2000건을 실발번했다).
+        const checked = this._epostCheckedKeys();
+        if (!checked.length) { this.showToast('발번할 주문을 먼저 체크하세요.'); return; }
+        const keyOf = (mk, no) => `${mk}|${no}`;
+        const picked = (await this._loadAllShipTargets())
+            .filter(o => checked.includes(keyOf(String(o.mall_key || ''), String(o.order_id))));
+        // 체크했지만 빠지는 주문은 사유와 함께 결과 CSV 에 남긴다
+        const excluded = [];   // { o, why }
+        const pickedKeys = new Set(picked.map(o => keyOf(String(o.mall_key || ''), String(o.order_id))));
+        checked.filter(k => !pickedKeys.has(k)).forEach(k => {
+            const [mk, ...rest] = k.split('|'); const id = rest.join('|');
+            const o = ((this.opage && this.opage.rows) || []).find(x => String(x.mall_key || '') === mk && String(x.order_id) === id) || { mall_key: mk, order_id: id };
+            excluded.push({ o, why: '배송대상아님' });
+        });
+        const targets = picked.filter(o => {
+            const why = this._epostExcludeReason(o);
+            if (why) { excluded.push({ o, why }); return false; }
+            return true;
+        });
+        const cnt = {}; excluded.forEach(x => { cnt[x.why] = (cnt[x.why] || 0) + 1; });
+        const skipTxt = Object.entries(cnt).map(([k, n]) => `${k} 제외 ${n}`).join(' · ');
+        const exRow = x => [this._mallLabel(x.o.mall_key) || x.o.mall_key || '', x.o.order_id, x.o.receiver_name || x.o.buyer_name || '', '', `${x.why} 제외`];
+        if (!targets.length) {
+            this.showToast(`발번할 주문이 없습니다.${skipTxt ? ` (${skipTxt})` : ''}`);
+            if (excluded.length) this._downloadEpostResult(excluded.map(exRow));
+            return;
+        }
+
+        const esc = s => this._vesc(String(s));
+        const head = targets.slice(0, 5).map(o => `${esc(this._mallLabel(o.mall_key) || o.mall_key || '')} ${esc(o.order_id)} · ${esc(o.receiver_name || o.buyer_name || '')}`).join('<br>');
+        const more = targets.length > 5 ? `<br>외 ${targets.length - 5}건` : '';
+        const ok = await this.showConfirm(`<b>${targets.length}건</b>을 우체국 계약택배로 <b>실제 발번</b>하고, 받은 운송장번호를 채널(카페24 등)에 자동 등록합니다.<br><br>${head}${more}${skipTxt ? `<br><br>${skipTxt}` : ''}<br><br>계속할까요?`, `우체국 발번 ${targets.length}건`);
+        if (!ok) return;
+        this.showToast(`${targets.length}건 우체국 발번 중...`);
+
+        const orders = targets.map(o => this._epostOrderPayload(o));
+
+        let results = [];
+        try {
+            const { data, error } = await this.supabase.functions.invoke('courier-issue', { body: { test: false, orders } });
+            if (error) throw error;
+            results = data?.results || [];
+        } catch (e) { this.showToast('발번 실패: ' + (e.message || e)); return; }
+
+        const issued = {}; const fails = [];
+        results.forEach(r => { if (r.ok && r.regiNo) issued[keyOf(r.mallKey, r.orderNo)] = r.regiNo; else fails.push(`${r.orderNo}: ${r.message || '실패'}`); });
+        // 결과 CSV — 성공·실패 모두 (라벨 출력·대조용)
+        const failBy = {}; results.forEach(r => { if (!(r.ok && r.regiNo)) failBy[keyOf(r.mallKey, r.orderNo)] = r.unknown ? `확인필요 — ${r.message || '우체국 시스템에서 접수 여부 확인'}` : (r.message || '실패'); });
+        const unknownN = results.filter(r => r.unknown).length;
+        this._downloadEpostResult([
+            ...targets.map(o => { const k = keyOf(String(o.mall_key || ''), String(o.order_id)); return [this._mallLabel(o.mall_key) || o.mall_key || '', o.order_id, o.receiver_name || o.buyer_name || '', issued[k] || '', issued[k] ? (results.find(r => keyOf(r.mallKey, r.orderNo) === k)?.recovered ? '발번(기접수 채택)' : '발번') : (failBy[k] || '응답 없음')]; }),
+            ...excluded.map(exRow),
+        ]);
+        const issuedIds = Object.keys(issued);
+        if (!issuedIds.length) {
+            this.showToast(`발번 0건.${unknownN ? ` 확인필요 ${unknownN}건 — 목록의 [접수 확인]으로 확인하세요.` : ''} ${fails[0] || ''}`);
+            if (unknownN) await this.loadOrderPage(true);
+            return;
+        }
+        this.showToast(`${issuedIds.length}건 발번 완료 → 채널에 송장 등록 중...`);
+
+        const { backOk, pending, unknown: regUnknown } = await this._epostWriteBack(targets.map(o => ({ o, regi: issued[keyOf(String(o.mall_key || ''), String(o.order_id))] })).filter(x => x.regi));
+        this.showToast(`발번 ${issuedIds.length}건 / 카페24 배송대기 ${backOk}건${pending ? ` / 등록대기 ${pending}건` : ''}${regUnknown ? ` · 카페24 확인필요 ${regUnknown}건` : ''}${fails.length - unknownN ? ` · 발번실패 ${fails.length - unknownN}건` : ''}${unknownN ? ` · 우체국 확인필요 ${unknownN}건` : ''}`);
         this._ordersLoaded = false;
         await this.loadOrders();
         await this.loadOrderPage(true);
@@ -10331,16 +10513,20 @@ class BhasApp {
         const mallKeys = Object.keys(byMall);
         if (!mallKeys.length && !localOnly.length) { this.showToast('업로드한 주문번호가 수집된 주문과 매칭되지 않습니다. (먼저 주문 수집)'); return; }
 
-        const ok = await this.showConfirm(`${orders.length - unmatched}건의 운송장을 카페24에 배송중으로 등록합니다.${unmatched ? ` (미매칭 ${unmatched}건 제외)` : ''} 계속할까요?`, '송장 일괄 등록');
+        const ok = await this.showConfirm(`${orders.length - unmatched}건의 운송장을 카페24에 배송대기로 등록합니다(택배사 집하 뒤 배송중).${unmatched ? ` (미매칭 ${unmatched}건 제외)` : ''} 계속할까요?`, '송장 일괄 등록');
         if (!ok) return;
         this.showToast(`${mallKeys.length}개 몰 / 총 ${orders.length - unmatched}건 등록 중...`);
         let totalOk = 0, dry = false;
         for (const mk of mallKeys) {
             try {
-                const { data, error } = await this.supabase.functions.invoke('cafe24-shipping', { body: { mall: mk, orders: byMall[mk] } });
-                if (error) throw error;
-                totalOk += (data?.success || 0);
-                dry = dry || !!data?.dry_run;
+                const res = await this.supabase.functions.invoke('cafe24-shipping', { body: { mall: mk, orders: byMall[mk] } });
+                const data = await this._invokeData(res);
+                if (!data?.results) throw new Error(data?.error || res.error?.message || '응답 없음');
+                totalOk += (data.success || 0);
+                dry = dry || !!data.dry_run;
+                const unk = data.results.filter(r => r.unknown).length;
+                const bad = data.results.filter(r => !r.ok && !r.unknown && !r.dry_run);
+                if (unk || bad.length) this.showToast(`[${this._mallLabel(mk)}] ${unk ? `확인필요 ${unk}건 ` : ''}${bad.length ? `실패 ${bad.length}건: ${bad[0].error || ''}` : ''}`);
             } catch (e) {
                 this.showToast(`[${this._mallLabel(mk)}] 등록 실패: ` + (e.message || e));
             }
@@ -10354,7 +10540,7 @@ class BhasApp {
         }
         this.showToast(dry
             ? `${totalOk}건 미리보기 완료(카페24·2179 데이터 변경 없음)`
-            : `${totalOk}건 배송중 등록${pending ? ` / 비카페24 채널등록대기 ${pending}건` : ''}`);
+            : `${totalOk}건 배송대기 등록${pending ? ` / 비카페24 채널등록대기 ${pending}건` : ''}`);
         this._ordersLoaded = false;
         await this.loadOrders();
         await this.loadOrderPage(true);

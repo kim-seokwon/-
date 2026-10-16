@@ -11,6 +11,9 @@
 //    EPOST_CUSTNO  : 고객번호   EPOST_APPRNO : 계약승인번호   EPOST_OFFICESER : 공급지코드
 // ============================================================
 import { seedEncryptEcbHex } from "./seed128.ts";
+import { orderFields, plain } from "./fields.ts";
+import { epostOrderNo, EXT_TIMEOUT_MS, issueOne, type ResInfo } from "./issue.ts";
+import type { Mode } from "../_shared/ship-unknown.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -27,20 +30,13 @@ const cors = (extra: Record<string, string> = {}) => ({
   ...extra,
 });
 
-// 평문 조립: key=val&key=val (빈값 제외)
-function plain(f: Record<string, unknown>): string {
-  return Object.entries(f)
-    .filter(([, v]) => v !== undefined && v !== null && String(v) !== "")
-    .map(([k, v]) => `${k}=${v}`)
-    .join("&");
-}
-
 // 우체국 API 호출: 평문 → SEED128 암호화 → GET → XML 텍스트
 async function epostCall(msgName: string, fields: Record<string, unknown>, option?: string): Promise<string> {
   const regData = seedEncryptEcbHex(SECKEY, plain(fields));
   const qs = `key=${encodeURIComponent(REGKEY)}&regData=${encodeURIComponent(regData)}` + (option ? `&option=${option}` : "");
   const res = await fetch(`${BASE}/${msgName}?${qs}`, {
     headers: { "Connection": "keep-alive", "Host": "biz.epost.go.kr", "User-Agent": "brhas/1.0" },
+    signal: AbortSignal.timeout(EXT_TIMEOUT_MS),   // 응답이 늦어도 잠금(lease) 안에서 반드시 끝나게
   });
   return await res.text();
 }
@@ -57,31 +53,7 @@ function xerr(xml: string): { code: string; message: string } | null {
 
 // ── 소포신청(발번) : 주문 1건 → 운송장번호 ──────────────────
 async function insertOrder(o: Record<string, unknown>, testYn = "N") {
-  const fields: Record<string, unknown> = {
-    custNo: CUSTNO,
-    apprNo: APPRNO,
-    officeSer: OFFICESER,
-    payType: o.payType ?? "1",     // 1:일반(즉납/후납), 2:수취인부담
-    reqType: o.reqType ?? "1",     // 1:일반소포, 2:반품소포
-    microYn: o.microYn ?? "N",     // 초소형 여부(필수)
-    weight: o.weight,              // kg (정수)
-    volume: o.volume,              // cm (정수)
-    orderNo: o.orderNo,            // 채널 주문번호(필수)
-    ordCompNm: o.ordCompNm,        // 주문처명=몰/브랜드(필수)
-    inqTelCn: o.inqTelCn,          // 문의처
-    ordNm: o.ordNm, ordZip: o.ordZip, ordAddr1: o.ordAddr1, ordAddr2: o.ordAddr2, ordTel: o.ordTel, ordMob: o.ordMob,
-    recNm: o.recNm,                // 수취인명(필수)
-    recZip: o.recZip,              // 수취인 우편번호(필수)
-    recAddr1: o.recAddr1,          // 수취인 주소(필수)
-    recAddr2: o.recAddr2,          // 수취인 상세주소(필수)
-    recTel: o.recTel, recMob: o.recMob, // recTel/recMob 중 하나 필수
-    contCd: o.contCd ?? "021",     // 주요 내용품코드(필수) — 021 등, 실제 코드는 계약별 확인
-    goodsNm: o.goodsNm,            // 상품명(필수)
-    goodsCd: o.goodsCd, goodsMdl: o.goodsMdl, goodsSize: o.goodsSize, goodsColor: o.goodsColor, qty: o.qty,
-    delivMsg: o.delivMsg,          // 배송 메시지
-    printYn: o.printYn ?? "N",
-    testYn,                        // Y면 테스트 접수(실발송 없음)
-  };
+  const fields = orderFields(o, { custNo: CUSTNO, apprNo: APPRNO, officeSer: OFFICESER }, testYn);
   const xml = await epostCall("api.InsertOrder.jparcel", fields);
   const err = xerr(xml);
   if (err) return { ok: false, orderNo: o.orderNo, ...err };
@@ -94,6 +66,15 @@ async function insertOrder(o: Record<string, unknown>, testYn = "N") {
     delivPoNm: xf(xml, "delivPoNm"),  // 배달우체국
     refineAddr: xf(xml, "refineAddr"),
   };
+}
+
+// ── 소포신청 확인 : 우체국 orderNo + 신청일자 → 이미 접수된 운송장 ─────
+async function getResInfo(orderNo: string, reqYmd: string): Promise<{ found: ResInfo[] } | { code: string; message: string }> {
+  const xml = await epostCall("api.GetResInfo.jparcel", { custNo: CUSTNO, reqType: "1", orderNo, reqYmd });
+  const err = xerr(xml);
+  if (err) return err;
+  const blocks = xml.match(/<resInfo>[\s\S]*?<\/resInfo>/g) ?? [xml];
+  return { found: blocks.map((b) => ({ regiNo: xf(b, "regiNo"), reqNo: xf(b, "reqNo"), treatStusCd: xf(b, "treatStusCd") })) };
 }
 
 // ── 셋업용: 고객번호/승인번호/공급지등록 ─────────────────────
@@ -197,44 +178,55 @@ Deno.serve(async (req) => {
     // 기본: 발번(여러 주문 일괄). body.test=true 면 testYn=Y
     const testYn = body.test ? "Y" : "N";
     const orders = Array.isArray(body.orders) ? body.orders.slice(0, 200) : [];
+    // run: 발번 / confirm: 확인필요 건 [접수 확인](GetResInfo 만) / retry: 확인 결과 없음인 건 [다시 시도]
+    const mode: Mode = body.mode === "confirm" || body.mode === "retry" ? body.mode : "run";
+    if (body.test && mode !== "run") return j({ ok: false, error: "test 는 run 만" }, 400);
     const results = [];
     for (const o of orders) {
       const mallKey = String(o.mallKey || "");
       const orderNo = String(o.orderNo || "");
       if (!mallKey || !orderNo) { results.push({ ok: false, orderNo, message: "mallKey/orderNo 필요" }); continue; }
-      const { data: existing } = await db.from("shipment_jobs").select("*")
-        .eq("mall_key", mallKey).eq("order_id", orderNo).maybeSingle();
-      if (existing?.invoice_no) {
-        results.push({ ok: true, orderNo, regiNo: existing.invoice_no, idempotent: true });
+      if (body.test) {   // testYn=Y: DB·재시도 복구 없이 우체국 응답만 본다
+        const issued = await insertOrder({ ...o, orderNo: epostOrderNo(mallKey, orderNo) }, testYn);
+        results.push({ ...issued, mallKey, orderNo });
         continue;
       }
-      if (!body.test) {
-        const { data: claimed, error: lockErr } = await db.rpc("claim_shipment_job", {
-          p_mall_key: mallKey, p_order_id: orderNo, p_courier: "우체국택배", p_actor: auth.id,
-        });
-        if (lockErr) { results.push({ ok: false, orderNo, message: lockErr.message }); continue; }
-        if (!claimed) {
-          const { data: current } = await db.from("shipment_jobs").select("invoice_no,status")
-            .eq("mall_key", mallKey).eq("order_id", orderNo).maybeSingle();
-          if (current?.invoice_no) results.push({ ok: true, orderNo, regiNo: current.invoice_no, idempotent: true });
-          else results.push({ ok: false, orderNo, message: `이미 처리 중 (${current?.status || "pending"})` });
-          continue;
-        }
+      const job = () => db.from("shipment_jobs").select("status,invoice_no,attempts,last_error,created_at,updated_at")
+        .eq("mall_key", mallKey).eq("order_id", orderNo);
+      // 내 시도(attempt)가 아직 잠금을 쥐고 있을 때만 바꾼다. 오래된 시도는 덮어쓰지 못한다
+      const fenced = async (attempt: number, patch: Record<string, unknown>, cutoff?: string) => {
+        let q = db.from("shipment_jobs").update({ ...patch, updated_at: new Date().toISOString() })
+          .eq("mall_key", mallKey).eq("order_id", orderNo).eq("attempts", attempt).eq("status", "pending").is("invoice_no", null);
+        if (cutoff) q = q.lt("updated_at", cutoff);
+        const { data, error } = await q.select("id");
+        if (error) throw error;
+        return (data?.length ?? 0) > 0;
+      };
+      try {
+        const r = await issueOne({
+          now: () => Date.now(),
+          getJob: async () => {
+            const { data, error } = await job().maybeSingle();
+            if (error) throw error;
+            return data;
+          },
+          claim: async () => {
+            const { data, error } = await db.rpc("claim_shipment_job", { p_mall_key: mallKey, p_order_id: orderNo, p_courier: "우체국택배", p_actor: auth.id });
+            if (error) throw error;
+            return !!data;
+          },
+          releaseStale: (cutoff, attempt, message) => fenced(attempt, { status: "failed", last_error: message }, cutoff),
+          setProviderOrderNo: (no, attempt) => fenced(attempt, { provider_request_id: no }),
+          getResInfo,
+          insertOrder: (no) => insertOrder({ ...o, orderNo: no }, testYn),
+          saveIssued: (regiNo, no, attempt) => fenced(attempt, { invoice_no: regiNo, provider_request_id: no, status: "issued", issued_at: new Date().toISOString() }),
+          saveFailed: (message, attempt) => fenced(attempt, { status: "failed", last_error: message }),
+        }, mallKey, orderNo, mode);
+        results.push({ ...r, mallKey, orderNo });
+      } catch (e) {
+        // 선점한 시도의 실패 처리는 issueOne 안에서 attempt 조건부로 끝냈다
+        results.push({ ok: false, mallKey, orderNo, message: String(e) });
       }
-      const issued = await insertOrder(o, testYn);
-      if (!body.test) {
-        if (issued.ok && issued.regiNo) {
-          await db.from("shipment_jobs").update({
-            invoice_no: issued.regiNo, provider_request_id: issued.reqNo || null,
-            status: "issued", issued_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-          }).eq("mall_key", mallKey).eq("order_id", orderNo);
-        } else {
-          const issueMessage = "message" in issued ? issued.message : "발번 실패";
-          await db.from("shipment_jobs").update({ status: "failed", last_error: issueMessage || "발번 실패", updated_at: new Date().toISOString() })
-            .eq("mall_key", mallKey).eq("order_id", orderNo);
-        }
-      }
-      results.push(issued);
     }
     return j({ ok: true, testYn, results });
   } catch (e) {

@@ -3099,6 +3099,7 @@ body:not(.light) .mac-deskboard .glass{
 .mbtn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
 .mbtn.pri:hover{filter:brightness(1.08);background:var(--primary)}
 .mbtn.danger{color:#ef4444}
+.mbtn:disabled,.mbtn:disabled:hover{opacity:.45;cursor:not-allowed;filter:none}
 .mbtn.danger:hover{background:rgba(239,68,68,.12)}
 .mbtn.icon{padding:4px 7px;font-size:13px}
 .mrow-add{display:flex;align-items:center;gap:7px;padding:10px 15px;font-size:13px;color:var(--primary);
