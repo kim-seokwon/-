@@ -2324,14 +2324,27 @@ class BhasApp {
         const syncBadge = `<span style="font-size:0.72rem;color:${syncColor};font-weight:600"><i class="ph ph-arrows-clockwise"></i> ${syncAgoTxt}</span>`;
 
         // ── 금액: 서버 재무집계 우선. 주문/실결제/환불/순매출을 한 금액으로 섞지 않는다. ──
+        // 정의(10-16 사장님 확정, 084): 주문금액 = 취소·미입금 포함 최초 주문액 / 매출 = 실결제(카페24가 취소·반품을 이미 빼서 줌 —
+        //  환불을 또 빼면 이중 차감) / 환불 = 결제·입금 후 취소 전부(배송 전 취소 + 반품). 입금 전 취소는 환불 아님(주문금액에만).
+        // 084 가 아직 안 깔린 DB(net_sales_amount = 실결제 − 환불)여도 매출이 같게 실결제로 직접 센다.
         const financialDaily = this.salesAggData?.financialDaily || [];
+        const hasRefundSplit = financialDaily.some(r => r.cancel_amount != null);   // 078 칸: 취소 / 반품환불
         const financialFor = (from, to) => financialDaily.filter(r => r.d >= from && r.d <= to).reduce((a, r) => ({
             order: a.order + (Number(r.order_amount) || 0),
             paid: a.paid + (Number(r.actual_paid_amount) || 0),
+            gross: a.gross + (r.gross_paid_amount != null ? Number(r.gross_paid_amount) || 0 : (Number(r.actual_paid_amount) || 0) + (Number(r.refund_amount) || 0)),
             refund: a.refund + (Number(r.refund_amount) || 0),
-            net: a.net + (Number(r.net_sales_amount) || 0),
+            refundN: a.refundN + (Number(r.refund_count) || 0),
+            unpaidN: a.unpaidN + (Number(r.unpaid_order_count) || 0),
+            unpaid: a.unpaid + (Number(r.unpaid_order_amount) || 0),
+            cancel: a.cancel + (Number(r.cancel_amount) || 0),
+            cancelN: a.cancelN + (Number(r.cancel_count) || 0),
+            ret: a.ret + (Number(r.return_refund_amount) || 0),
+            retN: a.retN + (Number(r.return_count) || 0),
+            retPend: a.retPend + (Number(r.return_pending_count) || 0),
+            net: a.net + (Number(r.actual_paid_amount) || 0),
             count: a.count + (Number(r.order_count) || 0),
-        }), { order: 0, paid: 0, refund: 0, net: 0, count: 0 });
+        }), { order: 0, paid: 0, gross: 0, refund: 0, refundN: 0, unpaidN: 0, unpaid: 0, cancel: 0, cancelN: 0, ret: 0, retN: 0, retPend: 0, net: 0, count: 0 });
         const revOrders = (this.orders || []).filter(o => o.order_date && o.pay_amount != null && notCancelled(o));
         const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
         const sumBetween = (from, to) => revOrders.filter(o => { const d = localYMD(o.order_date); return d >= from && d <= to; }).reduce((s, o) => s + Number(o.pay_amount || 0), 0);
@@ -2386,7 +2399,7 @@ class BhasApp {
             const mo = agg.monthly.filter(r => r.ym === monthKey);
             stExchange = mo.filter(r => r.state === 'exchange').reduce((s, r) => s + (r.cnt || 0), 0);
             const ref = mo.filter(r => r.state === 'cancel' || r.state === 'return');
-            stRefund = ref.reduce((s, r) => s + (r.cnt || 0), 0);
+            stRefund = hasRefundSplit ? monthFinancial.refundN : ref.reduce((s, r) => s + (r.cnt || 0), 0);   // 084: 입금 전 취소 제외
             refundTotal = hasFinancial ? monthFinancial.refund : ref.reduce((s, r) => s + (Number(r.refund_amount) || 0), 0);
         } else {
             const allO = (this.salesOrders && this.salesOrders.length) ? this.salesOrders : (this.orders || []);
@@ -2564,10 +2577,12 @@ class BhasApp {
         const salesLink = { label: '매출 상세', action: "app.switchView('sales')" };
         const ordersLink = { label: '주문에서 보기', action: "app.switchView('orders')" };
         this._homePops.k_today = { title: '오늘 매출', rows: rowsOf([['오늘', won(todaySales) + '원'], ['어제', won(ydaySales) + '원'], ['이번주(7일)', won(weekSales) + '원'], [`${mm}월 누적`, won(monthSales) + '원']]) + (todayDelta != null ? `<div style="margin-top:7px;font-size:0.76rem;font-weight:700;color:${todayDelta >= 0 ? '#16a34a' : '#dc2626'}">어제 대비 ${todayDelta >= 0 ? '▲' : '▼'} ${Math.abs(todayDelta)}%</div>` : ''), link: salesLink };
-        this._homePops.k_order = { title: '주문금액', rows: rowsOf([[`${mm}월 주문금액`, won(hasFinancial ? monthFinancial.order : monthSales) + '원'], ['오늘 주문금액', won(todayFinancial.order) + '원'], [`${mm}월 주문건수`, monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">결제 전 주문 접수 금액 기준</div>' + nrNote };
-        this._homePops.k_paid = { title: '실결제금액', rows: rowsOf([[`${mm}월 실결제`, won(hasFinancial ? monthFinancial.paid : monthSales) + '원'], ['오늘 실결제', won(todayFinancial.paid) + '원']]) };
-        this._homePops.k_refund = { title: '환불금액', rows: rowsOf([[`${mm}월 환불`, won(hasFinancial ? monthFinancial.refund : refundTotal) + '원'], ['환불 건수', stRefund.toLocaleString() + '건']]), link: ordersLink };
-        this._homePops.k_net = { title: `${mm}월 순매출`, rows: rowsOf([['순매출', won(monthSales) + '원'], ['전월 대비', sa.mom != null ? `${sa.mom >= 0 ? '▲' : '▼'} ${Math.abs(sa.mom)}%` : '기준 없음'], ['객단가', acup + '원'], ['주문건수', monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + nrNote, link: salesLink };
+        this._homePops.k_order = { title: '주문금액', rows: rowsOf([[`${mm}월 주문금액`, won(hasFinancial ? monthFinancial.order : monthSales) + '원'], ['오늘 주문금액', won(todayFinancial.order) + '원'], ...(monthFinancial.unpaidN ? [['└ 입금 전 취소', `${monthFinancial.unpaidN.toLocaleString()}건 · ${won(monthFinancial.unpaid)}원`]] : []), [`${mm}월 주문건수`, monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">취소·입금 전 주문까지 포함한 최초 주문액 · 매출엔 안 들어감</div>' + nrNote };
+        this._homePops.k_paid = { title: '결제금액', rows: rowsOf([[`${mm}월 결제(취소 전)`, won(hasFinancial ? monthFinancial.gross : monthSales) + '원'], ['오늘 결제(취소 전)', won(todayFinancial.gross) + '원'], [`${mm}월 실결제(취소 후)`, won(hasFinancial ? monthFinancial.paid : monthSales) + '원']]) };
+        this._homePops.k_refund = { title: '환불', rows: rowsOf([[`${mm}월 환불`, won(hasFinancial ? monthFinancial.refund : refundTotal) + '원'], ['환불 건수', stRefund.toLocaleString() + '건'],
+            ...(hasRefundSplit ? [['└ 배송 전 취소', `${won(monthFinancial.cancel)}원 · ${monthFinancial.cancelN}건`], ['└ 반품', `${won(monthFinancial.ret)}원 · ${monthFinancial.retN}건${monthFinancial.retPend ? ` (처리중 ${monthFinancial.retPend})` : ''}`]] : [])])
+            + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">결제·입금 후 취소한 금액(환불일 기준). 입금 전 취소는 환불 아님</div>', link: ordersLink };
+        this._homePops.k_net = { title: `${mm}월 매출`, rows: rowsOf([['매출(실결제)', won(monthSales) + '원'], ['전월 대비', sa.mom != null ? `${sa.mom >= 0 ? '▲' : '▼'} ${Math.abs(sa.mom)}%` : '기준 없음'], ['객단가', acup + '원'], ['주문건수', monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + nrNote, link: salesLink };
         this._homePops.k_cnt = { title: `${mm}월 주문건수`, rows: rowsOf([['주문건수', monthOrdersCnt.toLocaleString() + '건'], ...nrRows, ['객단가', acup + '원'], ['순매출', won(monthSales) + '원']]) + nrNote };
         CHAN_FIXED.forEach(c => {
             const total = chanTot(c);
@@ -2593,7 +2608,7 @@ class BhasApp {
         this._homePops.st_pre = listPop('배송전 (미출고)', stOrder, o => this._orderState(o) === 'pre', '아직 출고 전 · 송장 발번 대상');
         this._homePops.st_ship = listPop('배송중', stShip, o => this._orderState(o) === 'shipping', '송장 등록 후 배송 진행 중');
         this._homePops.st_exchange = listPop(`교환 · ${mm}월`, stExchange, o => this._orderState(o) === 'exchange' && localYMD(o.order_date).startsWith(monthKey), '');
-        this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => { const s = this._orderState(o); return (s === 'cancel' || s === 'return') && localYMD(o.order_date).startsWith(monthKey); }, `환불총액 ${won(refundTotal)}원`);
+        this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => Number(o.refund_amount) > 0 && o.raw?.paid !== 'F' && localYMD(o.refunded_at || o.order_date).startsWith(monthKey), `입금 전 취소 제외 · 환불총액 ${won(refundTotal)}원`);
 
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
@@ -2610,9 +2625,13 @@ class BhasApp {
             ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.7rem;margin-bottom:0.9rem">
                 ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
-                ${kpiCard('실결제금액', won(hasFinancial ? monthFinancial.paid : monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
-                ${kpiCard('환불금액', won(hasFinancial ? monthFinancial.refund : 0), '원', `${mm}월 환불 기준`, '#a855f7', 'orders')}
-                ${kpiCard(`${mm}월 순매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
+                ${hasFinancial
+                    ? kpiCard('주문금액', won(monthFinancial.order), '원', `<span style="font-size:0.68rem;color:var(--text-muted)">${mm}월 · 취소${monthFinancial.unpaidN ? `·입금 전 ${monthFinancial.unpaidN.toLocaleString()}건` : ''} 포함</span>`, '#3b82f6', 'sales')
+                    : kpiCard('실결제금액', won(monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
+                ${kpiCard('환불', won(hasFinancial ? monthFinancial.refund : 0), '원', hasRefundSplit
+                    ? `<span style="font-size:0.68rem;color:var(--text-muted)">${monthFinancial.refundN.toLocaleString()}건 · 취소 ${won(monthFinancial.cancel)} · 반품 ${won(monthFinancial.ret)}${monthFinancial.retPend ? `(처리중 ${monthFinancial.retPend})` : ''}</span>`
+                    : `${mm}월 환불 기준`, '#a855f7', 'orders')}
+                ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">${nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}${nr.unk ? ` · 미분류 ${nr.unk}` : ''} · ` : ''}객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'orders')}
             </div>
             <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:stretch">
