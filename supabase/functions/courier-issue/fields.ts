@@ -10,11 +10,30 @@ export const digits = (v: unknown): string | undefined => {
 };
 
 // 평문 조립: key=val&key=val (빈값 제외)
+//  값 안의 '&'·'=' 는 구분자와 겹쳐 뒤 항목이 깨진다(이스케이프 규칙 없음, 매뉴얼 2023.12) → 전각 '＆'·'＝' 로 바꿔 보낸다.
 export function plain(f: Record<string, unknown>): string {
   return Object.entries(f)
     .filter(([, v]) => v !== undefined && v !== null && String(v) !== "")
-    .map(([k, v]) => `${k}=${v}`)
+    .map(([k, v]) => `${k}=${String(v).replace(/&/g, "＆").replace(/=/g, "＝")}`)
     .join("&");
+}
+
+// 발송 전 검사 — 우체국에 보내기 전에 걸러 오류 사유를 바로 보여준다(우체국 오류코드보다 알아보기 쉽게).
+//  길이는 매뉴얼 '길이' 칸(단위 표기 없음 → 글자 수로 본다. 바이트 기준이면 우체국이 거절하고 그 오류가 그대로 보인다).
+const REQUIRED = ["custNo", "apprNo", "payType", "reqType", "officeSer", "microYn", "orderNo", "ordCompNm", "recNm", "recZip", "recAddr1", "recAddr2", "contCd", "goodsNm"];
+const MAX_LEN: Record<string, number> = { orderNo: 50, ordCompNm: 100, inqTelCn: 100, ordNm: 40, ordZip: 5, ordAddr1: 60, ordAddr2: 100, ordTel: 12, ordMob: 12,
+  recNm: 40, recZip: 5, recAddr1: 150, recAddr2: 300, recTel: 12, recMob: 12, goodsNm: 400, goodsCd: 400, goodsMdl: 400, goodsSize: 30, goodsColor: 40, qty: 5, delivMsg: 200 };
+export function checkOrder(f: Record<string, unknown>): string[] {
+  const has = (k: string) => f[k] !== undefined && f[k] !== null && String(f[k]) !== "";
+  const e: string[] = [];
+  for (const k of REQUIRED) if (!has(k)) e.push(`${k} 없음`);
+  if (!has("recTel") && !has("recMob")) e.push("수취인 전화·휴대폰 둘 다 없음");
+  for (const [k, n] of Object.entries(MAX_LEN)) if (has(k) && String(f[k]).length > n) e.push(`${k} ${String(f[k]).length}자(최대 ${n})`);
+  const int = (k: string, lo: number, hi: number) => {
+    if (has(k) && !(Number.isInteger(Number(f[k])) && Number(f[k]) >= lo && Number(f[k]) <= hi)) e.push(`${k} ${f[k]} — ${lo}~${hi} 정수만`);
+  };
+  int("weight", 1, 30); int("volume", 1, 160);
+  return e;
 }
 
 export type EpostCreds = { custNo: string; apprNo: string; officeSer: string };

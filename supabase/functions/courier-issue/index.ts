@@ -11,7 +11,7 @@
 //    EPOST_CUSTNO  : 고객번호   EPOST_APPRNO : 계약승인번호   EPOST_OFFICESER : 공급지코드
 // ============================================================
 import { seedEncryptEcbHex } from "./seed128.ts";
-import { orderFields, plain } from "./fields.ts";
+import { checkOrder, orderFields, plain } from "./fields.ts";
 import { epostOrderNo, EXT_TIMEOUT_MS, issueOne, type ResInfo } from "./issue.ts";
 import type { Mode } from "../_shared/ship-unknown.ts";
 import { requireUser } from "../_shared/auth.ts";
@@ -186,6 +186,12 @@ Deno.serve(async (req) => {
       const mallKey = String(o.mallKey || "");
       const orderNo = String(o.orderNo || "");
       if (!mallKey || !orderNo) { results.push({ ok: false, orderNo, message: "mallKey/orderNo 필요" }); continue; }
+      if (mode === "run") {   // 발송 전 검사 — 걸리면 우체국·DB 를 건드리지 않는다
+        let bad: string[];
+        try { bad = checkOrder(orderFields({ ...o, orderNo: epostOrderNo(mallKey, orderNo) }, { custNo: CUSTNO, apprNo: APPRNO, officeSer: OFFICESER }, testYn)); }
+        catch (e) { bad = [String(e)]; }   // 우체국 주문번호 50자 초과 — 한 건 때문에 묶음 전체가 멈추지 않게
+        if (bad.length) { results.push({ ok: false, mallKey, orderNo, message: `보내기 전 확인: ${bad.join(" · ")}` }); continue; }
+      }
       if (body.test) {   // testYn=Y: DB·재시도 복구 없이 우체국 응답만 본다
         const issued = await insertOrder({ ...o, orderNo: epostOrderNo(mallKey, orderNo) }, testYn);
         results.push({ ...issued, mallKey, orderNo });

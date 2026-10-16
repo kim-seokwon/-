@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { orderFields, plain } from "./fields.ts";
+import { checkOrder, orderFields, plain } from "./fields.ts";
 import { courierCodeOf } from "../cafe24-shipping/couriers.ts";
 
 const creds = { custNo: "C1", apprNo: "A1", officeSer: "O1" };
@@ -37,4 +37,25 @@ Deno.test("카페24 우체국택배 코드는 0012 (10-15 /carriers 확인)", ()
   assertEquals(courierCodeOf("우체국"), "0012");
   assertEquals(courierCodeOf("CJ대한통운"), undefined); // 확인 안 된 코드는 보내지 않는다
   assertEquals(courierCodeOf("우체국택배", "9999"), "9999");
+});
+
+Deno.test("값 안의 & = 는 전각으로 바꿔 평문 구분자와 안 겹친다", () => {
+  const p = plain(orderFields({ ...order, recAddr2: "A&B빌딩 3층", goodsNm: "니트=2" }, creds));
+  assertEquals(p.includes("recAddr2=A＆B빌딩 3층&"), true);
+  assertEquals(p.includes("goodsNm=니트＝2&"), true);
+  assertEquals(p.split("&").every((kv) => /^[A-Za-z0-9]+=/.test(kv)), true);
+});
+
+Deno.test("발송 전 검사: 정상은 통과, 빠짐·길이·범위는 사유로", () => {
+  assertEquals(checkOrder(orderFields(order, creds)), []);
+  const e = (o: Record<string, unknown>) => checkOrder(orderFields({ ...order, ...o }, creds)).join(" | ");
+  assertEquals(/수취인 전화·휴대폰/.test(e({ recMob: "", recTel: "-" })), true);
+  assertEquals(/recAddr2 없음/.test(e({ recAddr2: "" })), true);
+  assertEquals(/recNm 41자/.test(e({ recNm: "가".repeat(41) })), true);
+  assertEquals(/recZip 6자/.test(e({ recZip: "123-456" })), true);
+  assertEquals(/goodsNm 401자/.test(e({ goodsNm: "가".repeat(401) })), true);
+  assertEquals(/weight 0/.test(e({ weight: 0 })), true);
+  assertEquals(/weight 31/.test(e({ weight: 31 })), true);
+  assertEquals(/volume 161/.test(e({ volume: 161 })), true);
+  assertEquals(e({ weight: 30, volume: 160, recNm: "가".repeat(40) }), "");
 });
