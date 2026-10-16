@@ -179,6 +179,48 @@ class BhasApp {
             this.requestRender();
             return;
         }
+        // 로컬 화면 검수용. 운영 빌드에서는 절대 켜지지 않는다.
+        const devPreview = import.meta.env.DEV && ['localhost', '127.0.0.1'].includes(location.hostname)
+            ? new URLSearchParams(location.search).get('dev-preview') : null;
+        if (devPreview === 'contacts') {
+            this._devPreviewContacts = true; this._prefetched = true;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            this.currentView = 'contacts'; this._isInitialLoading = false; this._vendorsLoaded = true;
+            this.vendorCategories = this._defaultVendorCategories().map((c, i) => ({ ...c, id: `preview-cat-${i}` }));
+            this.vendors = [
+                { id: 'preview-1', status: '거래중', name: '성수봉제', category: '봉제', contact_name: '김미영', phone: '02-123-4567', fax: '02-123-4568', email: 'sample@bhas.kr', address: '서울 성동구', memo: '월말 정산', ceo_name: '김대표', biz_no: '123-45-67890', jobs: [] },
+                { id: 'preview-2', status: '보류', name: '동대문 원단', category: '원단', contact_name: '박지현', phone: '010-2345-6789', fax: '02-222-3333', email: 'fabric@example.com', address: '서울 중구', memo: '신규 샘플 확인 중', jobs: [] },
+                { id: 'preview-3', status: '거래중단', name: '올드 부자재', category: '부자재', contact_name: '이수진', phone: '02-987-6543', fax: '', email: 'trim@example.com', address: '서울 종로구', memo: '대체처 확인', jobs: [] },
+            ];
+            this.wins = [{ id: 'preview-contacts', view: 'contacts', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
+        if (devPreview === 'calendar') {
+            const now = new Date(), yy = now.getFullYear(), mm = String(now.getMonth() + 1).padStart(2, '0');
+            let previewPeople = (mockData.companies || []).filter(c => ['MASTER','STAFF'].includes(c.role));
+            if (!previewPeople.length) {
+                previewPeople = [{ id: 'preview-master', name: '김석원', role: 'MASTER' }, { id: 'preview-staff', name: '김보경', role: 'STAFF' }];
+                mockData.companies = [...(mockData.companies || []), ...previewPeople];
+            }
+            this._devPreviewCalendar = true; this._prefetched = true; this._routinesLoaded = true; this._routineSchemaMissing = false;
+            this._cardsLoaded = true; this._remLoaded = true; this._noteLoaded = true; this._vendorsLoaded = true;
+            this.currentUser = { id: 'preview-user', name: '화면 검수', role: 'MASTER', company_id: previewPeople[0].id };
+            this.currentView = 'calendar'; this._isInitialLoading = false; this.cards = []; this.remList = []; this.noteList = [];
+            this.vendors = [{ id: 'preview-vendor', name: '성수봉제', category: '봉제', jobs: [] }];
+            const common = { active: true, starts_on: `${yy}-01-01`, ends_on: null, visibility: 'all', assignee_ids: [this.currentUser.company_id], creator_user_id: 'preview-user', created_by: '화면 검수' };
+            this.calendarRoutines = [
+                { ...common, id: 'rt-daily', title: '오전 주문 확인', kind: 'general', recurrence_type: 'daily', weekdays: [], time_of_day: '09:00:00' },
+                { ...common, id: 'rt-weekly', title: '주간 재고 점검', kind: 'general', recurrence_type: 'weekly', weekdays: [1, 4], time_of_day: '16:00:00' },
+                { ...common, id: 'rt-pay', title: '성수봉제 정산', kind: 'vendor_settlement', recurrence_type: 'monthly', month_day: 15, use_month_end: false, vendor_id: 'preview-vendor', vendor: { id: 'preview-vendor', name: '성수봉제' }, settlement_direction: 'pay', amount: 1250000 },
+                { ...common, id: 'rt-receive', title: '사입돌 수금', kind: 'vendor_settlement', recurrence_type: 'monthly', month_day: 25, use_month_end: false, vendor_id: 'preview-vendor', vendor: { id: 'preview-vendor', name: '사입돌' }, settlement_direction: 'receive', amount: 2100000 },
+                { ...common, id: 'rt-sub', title: '어도비 구독', kind: 'subscription', recurrence_type: 'monthly', month_day: 10, use_month_end: false, service_name: 'Adobe CC', billing_cycle: 'monthly', payment_day: 10, payment_method_name: '신한카드', payment_last4: '2179', amount: 78900 },
+                { ...common, id: 'rt-year', title: '보험 갱신', kind: 'general', recurrence_type: 'yearly', year_month: now.getMonth() + 1, year_day: Math.min(28, now.getDate() + 2) },
+            ];
+            this.routineOccurrences = [{ id: 'occ-preview', routine_id: 'rt-sub', occurrence_date: `${yy}-${mm}-10`, status: 'done', override_data: {}, completed_at: new Date().toISOString(), actual_amount: 78900 }];
+            this._calCursor = `${yy}-${mm}-15`; this.calDay = `${yy}-${mm}-15`;
+            this.wins = [{ id: 'preview-calendar', view: 'calendar', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
         // ====================================================================
         try {
             // 모든 모달 초기화 (숨김)
@@ -586,10 +628,7 @@ class BhasApp {
             const hasPhotos = project?.photos && project.photos.length > 0;
             const hasDocs = project?.documents && project.documents.length > 0;
             const hasMemos = project?.memos && project.memos.length > 0;
-
-            if (hasPhotos || hasDocs || hasMemos) {
-                confirmMsg = `[주의] 이 시즌에는 업로드된 사진, 문서 또는 메모가 포함되어 있습니다.\n삭제 시 연동된 모든 데이터가 함께 영구히 삭제됩니다.\n\n정말 삭제하시겠습니까?`;
-            }
+            confirmMsg = `${hasPhotos || hasDocs || hasMemos ? '[주의] 이 시즌에는 업로드된 사진, 문서 또는 메모가 포함되어 있습니다.\n' : ''}기본 페이지는 99_아카이브에 보관하고 나머지 연동 데이터는 삭제합니다.\n\n정말 삭제하시겠습니까?`;
         }
         if (type === 'brand') {
             const brand = mockData.brands.find(b => b.id === id);
@@ -643,7 +682,7 @@ class BhasApp {
                         this.showToast(`시즌 삭제 실패: ${rpcErr.message}`);
                         return;
                     }
-                    this.showToast('시즌이 삭제되었습니다.');
+                    this.showToast('시즌이 삭제되고 기본 페이지는 99_아카이브에 보관되었습니다.');
                     await this.loadInitialData();
                     if (this.activeProjectId === String(id)) {
                         this.setState({ currentView: 'dashboard', activeProjectId: null });
@@ -2674,7 +2713,7 @@ class BhasApp {
         this.notify({
             id: 'upd', kind: '업데이트', icon: 'ph-arrow-circle-down', col: '#0a84ff', sticky: true,
             title: '새 버전이 나왔습니다',
-            sub: '지금 쓰던 건 그대로 둬도 됩니다. 눌러야 바뀝니다.',
+            sub: '제품리스트 제작현황을 표에서 바로 바꿀 수 있습니다. 눌러야 새 버전으로 바뀝니다.',
             actions: [{ t: '업데이트', run: () => this.applyUpdate() },
                       { t: '나중에', run: () => this.snoozeUpdate() }],
         });
@@ -2939,12 +2978,12 @@ class BhasApp {
         if (view === 'vendors') {
             const all = this.vendors || [];
             const cur = this.venCat || 'ALL';
-            const CATS = ['봉제', '원단', '부자재', '프린트', '기타'];
+            const CATS = this._vendorCategories().map(c => c.name);
             const n = c2 => all.filter(v => (v.category || '기타') === c2).length;
             return `<div class="m3-h">보기</div>
                 ${R(cur === 'ALL', '전체', all.length, `app.navPick('vendors','cat','ALL')`, 0, 'ph-tray')}
                 ${S('분류별', 'vcat', CATS.filter(c2 => n(c2)).map(c2 => R(cur === c2, c2, n(c2),
-                    `app.navPick('vendors','cat','${esc(c2)}')`, 1)).join(''))}`;
+                    `app.navPick('vendors','cat',decodeURIComponent('${encodeURIComponent(c2)}'))`, 1, this._vendorCatColor(c2))).join(''))}`;
         }
         if (view === 'orders') {
             const all = this.orders || [];
@@ -2958,7 +2997,9 @@ class BhasApp {
                                    : [...new Set(all.map(o => o.mall_key).filter(Boolean))];
             const mallCnt = k => srvMalls ? (srvMalls.find(r => r.mall_key === k) || {}).cnt || 0
                                           : all.filter(o => o.mall_key === k).length;
-            const mallName = k => ((this._mallBrand(k) || {}).name) || this._mallLabel(k) || k;
+            // 몰별 목록은 브랜드명이 아니라 실제 몰 label을 쓴다.
+            // kidikidi도 하이헤이호 브랜드라 브랜드명을 우선하면 12,661/737 두 줄이 모두 '하이헤이호'로 보인다.
+            const mallName = k => this._mallLabel(k) || ((this._mallBrand(k) || {}).name) || k;
             return `<div class="m3-h">보기</div>
                 ${R(m === 'ALL' && f === 'target', '배송대상', sc ? sc.target : n(o => this._orderState(o) === 'pre'), `app.navPick('orders','st','target')`, 0, 'ph-package')}
                 ${R(m === 'ALL' && f === 'shipping', '배송중', sc ? sc.shipping : n(o => this._orderState(o) === 'shipping'), `app.navPick('orders','st','shipping')`, 0, 'ph-truck')}
@@ -3428,7 +3469,7 @@ class BhasApp {
         const out = [];
         // 0) 새 버전 — 누를 때까지 남는다
         if (this._updReady) out.push({ id: 'upd:' + __BUILD__, kind: '업데이트', icon: 'ph-arrow-circle-down',
-            col: '#0a84ff', title: '새 버전이 나왔습니다', sub: '눌러서 업데이트', when: '', view: '__update' });
+            col: '#0a84ff', title: '새 버전이 나왔습니다', sub: '제작현황을 제품표에서 바로 변경 · 눌러서 업데이트', when: '', view: '__update' });
         // 1) 나에게 배정된 할일
         (mockData.products || []).forEach(p => (p.todos || []).forEach(t => {
             if (t.completed) return;
@@ -3629,7 +3670,7 @@ class BhasApp {
             if (hit(n.title, n.body)) add('메모', 'ph-note', '#e0a800', n.title || '새 메모',
                 (this._noteText(n) || '').replace(/\s+/g, ' ').trim().slice(0, 40), `app.findGo('notes','${n.id}')`);
         });
-        (this.reminders || []).forEach(r => {
+        (this.remList || []).forEach(r => {
             if (hit(r.title, r.memo)) add('할 일', 'ph-list-checks', '#ff453a', r.title,
                 [r.list_name, r.due_date].filter(Boolean).join(' · '), `app.findGo('reminders','${r.id}')`);
         });
@@ -3643,8 +3684,8 @@ class BhasApp {
                 `app.findGo('quotes','${x.id}')`);
         });
         (this.vendors || []).forEach(v => {
-            if (hit(v.name, v.address, v.phone)) add('거래처', 'ph-factory', '#a2845e', v.name,
-                [v.category, v.address].filter(Boolean).join(' · '), `app.findGo('vendors','${v.id}')`);
+            if (hit(v.name, v.contact_name, v.address, v.phone, v.fax, v.email)) add('거래처', 'ph-factory', '#a2845e', v.name,
+                [v.category, v.contact_name, v.phone].filter(Boolean).join(' · '), `app.findGo('vendors','${v.id}')`);
         });
         (this.clients || []).forEach(c => {
             if (hit(c.name, c.contact, c.tel)) add('고객사', 'ph-address-book', '#bf5af2', c.name,
@@ -3689,7 +3730,7 @@ class BhasApp {
         body.innerHTML = html;
     }
     //  찾은 줄을 누르면 그 화면을 열고 그 줄을 골라 놓는다
-    findGo(what, id) {
+    findGo(what, id, line) {
         this.closeFind();
         const open = (v) => { if (this.macMode) this.macOpen(v); else this.switchView(v); };
         if (what === 'view') { open(id); return; }
@@ -3698,8 +3739,19 @@ class BhasApp {
             items: () => { this.itemSel = id; this.itemSeason = 'ALL'; this.itemStatus = 'ALL'; this.itemQ = ''; open('items'); },
             orders: () => { this.orderSel = id; open('orders'); },
             cs: () => { this.csSel = id; this.csFilter = '전체'; this.csQuery = ''; open('cs'); },
-            notes: () => { this.noteSel = id; this.noteFolder = 'all'; this.noteSea = 'ALL'; open('notes'); },
-            reminders: () => open('reminders'),
+            notes: () => {
+                const n = (this.noteList || []).find(x => String(x.id) === String(id));
+                if (n?.item_id) { this.findGo('items', n.item_id); return; }
+                if (String(this.noteSel) !== String(id)) { this.saveNote(); this._nbDrop(); }
+                this.noteSel = n ? n.id : id; this.noteFolder = 'all'; this.noteSea = 'ALL'; this.notePreview = false;
+                open('notes');
+                if (line != null) this._flashWhenReady(`.nt-live .nb-row[data-i="${Number(line)}"], .nt-body [data-i="${Number(line)}"]`);
+            },
+            reminders: () => {
+                this.remList2 = 'all'; this.remQ = '';
+                open('reminders');
+                if (id) this._flashWhenReady(`.rm-item[data-src="rem"][data-id="${this._vesc(String(id))}"]`);
+            },
             tech_packs: () => { this.tpSel = id; open('tech_packs'); },
             quotes: () => { open('quotes'); setTimeout(() => this.showQuoteModal(id), 350); },
             vendors: () => open('vendors'),
@@ -3708,6 +3760,14 @@ class BhasApp {
         };
         (pick[what] || (() => open('home')))();
         this.requestRender();
+    }
+    _flashWhenReady(sel, tries = 20, first = true) {
+        if (first) { setTimeout(() => this._flashWhenReady(sel, tries, false), 120); return; }
+        const el = document.querySelector(sel);
+        if (!el) { if (tries > 0) setTimeout(() => this._flashWhenReady(sel, tries - 1, false), 80); return; }
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        el.classList.remove('go-flash'); void el.offsetWidth; el.classList.add('go-flash');
+        setTimeout(() => el.classList.remove('go-flash'), 2200);
     }
 
     openLauncher() {
@@ -3832,14 +3892,14 @@ class BhasApp {
             const isNew = this.venSel === '__new';
             const v = isNew ? {} : (this.vendors || []).find(x => String(x.id) === String(this.venSel));
             if (!v) return empty();
-            const CATS = ['봉제', '원단', '부자재', '프린트', '기타'];
+            const CATS = this._vendorCategories();
             const jobs = (v.jobs || []);
             const act = jobs.filter(j => j.status !== 'done');
             if (this.venEdit || isNew) {
                 return wrap(isNew ? '새 생산처' : (v.name || '생산처'), isNew ? '' : '고치는 중', `
                     <div class="fi-r"><span>상호</span><input id="vd-name" class="nw-f" value="${esc(v.name || '')}" placeholder="예: 성수봉제"></div>
                     <div class="fi-r"><span>분류</span><select id="vd-cat" class="nw-f">
-                        ${CATS.map(k => `<option value="${k}"${v.category === k ? ' selected' : ''}>${k}</option>`).join('')}</select></div>
+                        ${CATS.map(k => `<option value="${esc(k.name)}"${v.category === k.name ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div>
                     <div class="fi-r"><span>주소</span><input id="vd-addr" class="nw-f" value="${esc(v.address || '')}"></div>
                     <div class="fi-r"><span>전화</span><input id="vd-phone" class="nw-f" value="${esc(v.phone || '')}"></div>
                     <div class="fi-r"><span>사업자</span><input id="vd-biz" class="nw-f" value="${esc(v.biz_no || '')}"></div>
@@ -4070,7 +4130,6 @@ class BhasApp {
                 return last ? last.label : '시작 전';
             };
             const match = p => !sq || [p.name, (brandOf(p) || {}).name].some(v => String(v || '').toLowerCase().includes(sq));
-
             const tile = p => {
                 const b = brandOf(p), col = (b && b.brand_color) || '#0a84ff', n = itemsOf(p);
                 const lock = (p.access === 'members');
@@ -5429,21 +5488,48 @@ class BhasApp {
         } catch (e) { this.analysisScoped = { orders: [] }; this._analysisScopeKey = key; }
         this._analysisScopeLoading = false; this.requestRender();
     }
-    // 재구매율·누적금액 — 서버 RPC(전체기간, 전화번호 기준)
+    _vipKey(r) { return String(r?.phone || r?.name || r?.nm || '').replace(/\D/g, '') || String(r?.name || r?.nm || '').trim(); }
+    _vipRows(nowRows, startRows) {
+        const ranked = rows => {
+            let lastSpend = null, rank = 0;
+            return (rows || []).map((r, i) => {
+                const spend = Number(r.spend || 0);
+                if (lastSpend === null || spend !== lastSpend) rank = i + 1;
+                lastSpend = spend;
+                return { ...r, rank };
+            });
+        };
+        const before = new Map(ranked(startRows).map(r => [this._vipKey(r), r.rank]));
+        const hasBase = Array.isArray(startRows);
+        return ranked(nowRows).map(r => {
+            const rank = r.rank, old = before.get(this._vipKey(r));
+            return { ...r, rank, rank_move: !hasBase ? 'same' : (old == null ? 'new' : (old > rank ? 'up' : (old < rank ? 'down' : 'same'))), rank_delta: old == null ? null : Math.abs(old - rank) };
+        });
+    }
+    _vipMoveHTML(r) {
+        const move = r?.rank_move || 'same', n = Number(r?.rank_delta || 0);
+        if (move === 'new') return '<span class="vip-move new">NEW</span>';
+        if (move === 'up') return `<span class="vip-move up">▲${n}</span>`;
+        if (move === 'down') return `<span class="vip-move down">▼${n}</span>`;
+        return '<span class="vip-move same">–</span>';
+    }
+    // 재구매율·누적금액 + VIP 현재 누적순위/선택기간 시작일 누적순위
     async _loadAnalysisRepeat(brand, fromISO, toISO) {
         const key = `${brand}|${fromISO}|${toISO}`;
         if (!brand || this._analysisRepeatKey === key || this._analysisRepeatLoading) return;
         this._analysisRepeatLoading = true; this.requestRender();
         try {
-            const [rep, ot] = await Promise.all([
+            const [rep, ot, vip] = await Promise.all([
                 this.supabase.rpc('brand_repurchase', { p_brand: brand, p_from: fromISO, p_to: toISO }),
                 this.supabase.rpc('brand_order_types', { p_brand: brand, p_from: fromISO, p_to: toISO }),
+                this.supabase.rpc('brand_vip_rank_changes', { p_brand: brand, p_start: fromISO || null, p_limit: 10 }),
             ]);
             if (rep.error) throw rep.error;
             this.analysisRepeat = { [brand]: rep.data };
             this.analysisOrderTypes = { [brand]: ot.error ? null : ot.data };
+            this.analysisVip = { [brand]: vip.error ? [] : (vip.data || []) };
             this._analysisRepeatKey = key;
-        } catch (e) { this.analysisRepeat = { [brand]: null }; this.analysisOrderTypes = { [brand]: null }; this._analysisRepeatKey = key; }
+        } catch (e) { this.analysisRepeat = { [brand]: null }; this.analysisOrderTypes = { [brand]: null }; this.analysisVip = { [brand]: [] }; this._analysisRepeatKey = key; }
         this._analysisRepeatLoading = false; this.requestRender();
     }
     // 사이즈·색상 고객군 HTML (items 배열 → 분포)
@@ -5517,12 +5603,20 @@ class BhasApp {
         this.cust = { kind, label, days: days || 90, brand: bf, rows: null, loading: true, q: '' };
         this.requestRender();
         try {
-            const { data, error } = await this.supabase.rpc('brand_customers', {
-                p_brand: bf, p_from: r.from || null, p_to: r.to || null,
-                p_kind: kind, p_days: days || 90, p_limit: 300,
-            });
-            if (error) throw error;
-            this.cust.rows = data || [];
+            if (kind === 'vip') {
+                const { data, error } = await this.supabase.rpc('brand_vip_rank_changes', {
+                    p_brand: bf, p_start: r.from || null, p_limit: 1000,
+                });
+                if (error) throw error;
+                this.cust.rows = data || [];
+            } else {
+                const { data, error } = await this.supabase.rpc('brand_customers', {
+                    p_brand: bf, p_from: r.from || null, p_to: r.to || null,
+                    p_kind: kind, p_days: days || 90, p_limit: 300,
+                });
+                if (error) throw error;
+                this.cust.rows = data || [];
+            }
         } catch (e) { this.cust.rows = []; this.cust.err = e.message || String(e); }
         this.cust.loading = false; this.requestRender();
     }
@@ -5535,11 +5629,13 @@ class BhasApp {
         const q = (c.q || '').trim();
         let rows = c.rows || [];
         if (q) rows = rows.filter(r => String(r.name || '').includes(q) || String(r.phone || '').includes(q));
-        const head = `<tr><th>고객</th><th>구매</th><th>누적 구매액</th><th>처음</th><th>마지막</th><th>경과</th><th>CS</th><th>마지막에 산 것</th></tr>`;
-        const body = rows.map(r => {
+        const vip = c.kind === 'vip';
+        const head = `<tr>${vip ? '<th>순위</th><th>변동</th>' : ''}<th>고객</th><th>구매</th><th>누적 구매액</th><th>처음</th><th>마지막</th><th>경과</th><th>CS</th><th>마지막에 산 것</th></tr>`;
+        const body = rows.map((r, i) => {
             const gone = r.gone_days == null ? '' : (r.gone_days >= 365 ? `${Math.floor(r.gone_days / 365)}년 ${r.gone_days % 365}일` : `${r.gone_days}일`);
             const warn = (r.cs || 0) > 0;
             return `<tr>
+                ${vip ? `<td class="num"><b>${r.rank || i + 1}</b></td><td class="num">${this._vipMoveHTML(r)}</td>` : ''}
                 <td><b>${esc(r.name || '-')}</b><div class="cu-sub">${esc(r.phone || '')}</div></td>
                 <td class="num">${(r.orders || 0).toLocaleString()}회</td>
                 <td class="num"><b>${won(r.spend || 0)}</b></td>
@@ -5559,6 +5655,7 @@ class BhasApp {
                     <button class="cu-x" onclick="app.closeCust()"><i class="ph ph-x"></i></button>
                 </div>
                 ${c.kind === 'gone' ? `<div class="cu-note">CS가 있던 분은 빨갛게 표시했습니다 — 교환·반품을 겪고 발길이 끊겼다면 그게 떠난 이유일 수 있습니다.</div>` : ''}
+                ${vip ? `<div class="cu-note">${this._analysisRange().from ? '선택기간 시작일 누적 순위와 현재 누적 순위를 비교합니다.' : '전체기간은 비교 시작일이 없어 변동을 – 로 표시합니다.'}</div>` : ''}
                 <div class="cu-body">${c.loading ? '<div class="cu-none">불러오는 중…</div>'
                     : (!rows.length ? '<div class="cu-none">해당하는 고객이 없습니다</div>'
                     : `<table class="cu-t"><thead>${head}</thead><tbody>${body}</tbody></table>`)}</div>
@@ -5630,6 +5727,7 @@ class BhasApp {
         const won = n => this._won(n);
         // 재구매율·누적금액(전체기간, RPC)
         const rep = (this.analysisRepeat && this.analysisRepeat[bf]) || null;
+        const vip = (this.analysisVip && this.analysisVip[bf]) || [];
         const repLoading = this._analysisRepeatLoading && this._analysisRepeatKey !== bf;
         const distBar = (label, v, tot, color) => { const pct = tot ? Math.round(v / tot * 100) : 0; return `<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:2px"><span>${label}</span><b>${v.toLocaleString()}명 <span style="color:var(--text-muted);font-weight:500;font-size:0.68rem">${pct}%</span></b></div><div style="height:7px;border-radius:4px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(2, pct)}%;background:${color};border-radius:4px"></div></div></div>`; };
         const repeatCard = bf ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem">
@@ -5641,8 +5739,8 @@ class BhasApp {
                 ${this._repeatDistHTML(rep)}`}
             </div>
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-                <div onclick="app.openCust('vip','누적 구매액 순')" style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem;cursor:pointer"><i class="ph ph-crown-simple" style="color:#6366f1"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">누적 구매액 TOP</span> <i class="ph ph-caret-right" style="font-size:0.7rem;color:var(--text-muted)"></i></div>
-                ${!rep || !(rep.top && rep.top.length) ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : rep.top.map((t, i) => { const last = t.last ? new Date(t.last).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '—'; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"><b style="color:${i < 3 ? '#4338ca' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vesc(t.nm || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.n}회</span></span><span style="text-align:right;white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${won(t.spend || 0)}원</b><div style="font-size:0.66rem;color:var(--text-muted)">마지막 ${last}</div></span></div>`; }).join('')}
+                <div onclick="app.openCust('vip','현재 누적 구매액 순')" style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem;cursor:pointer"><i class="ph ph-crown-simple" style="color:#6366f1"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">현재 누적 TOP · ${range.from ? '기간 시작일 대비' : '비교 시작일 없음'}</span> <i class="ph ph-caret-right" style="font-size:0.7rem;color:var(--text-muted)"></i></div>
+                ${!vip.length ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : vip.slice(0, 10).map((t, i) => { const last = t.last ? new Date(t.last).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '—'; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"><b style="color:${i < 3 ? '#4338ca' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vipMoveHTML(t)} ${this._vesc(t.name || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.orders || 0}회</span></span><span style="text-align:right;white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${won(t.spend || 0)}원</b><div style="font-size:0.66rem;color:var(--text-muted)">마지막 ${last}</div></span></div>`; }).join('')}
             </div>
             ${this._goneCardHTML(rep)}
         </div>` : '';
@@ -6140,6 +6238,9 @@ class BhasApp {
         if (v === 'inventory' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'pages' && !this._pagesLoaded && !this._pagesLoading) this.loadPages();
         if ((v === 'kanban' || v === 'table' || v === 'calendar') && !this._cardsLoaded && !this._cardsLoading) this.loadCards();
+        if (v === 'calendar' && !this._routinesLoaded && !this._routinesLoading) this.loadCalendarRoutines();
+        if (v === 'calendar' && !this._remLoaded && !this._remLoading) this.loadReminders();
+        if (v === 'calendar' && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
         if ((v === 'vendors' || v === 'contacts' || v === 'inventory') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
         if (v === 'news' && !this._newsLoaded && !this._newsLoading) this.loadNews();
         if (v === 'vendors' && !this._invLoaded && !this._invLoading) this.loadInventory();
@@ -6944,7 +7045,7 @@ class BhasApp {
         this.currentView = prevView;
         // 바탕화면 = 홈 대시보드. 여기 블록을 누르면 switchView 를 타고 창이 열린다.
         let deskboard = '';
-        try { deskboard = this.renderHome(products) || ''; }
+        try { deskboard = this._devPreviewContacts ? '' : (this.renderHome(products) || ''); }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
         const dock = this.MAC_DOCK.filter(d => !d.tool).map(d => {
             const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this.wins.find(w => w.view === d.id));
@@ -7015,7 +7116,7 @@ class BhasApp {
     }
     _macEnsureData() {
         const prev = this.currentView;
-        const views = [...new Set(['home', ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
+        const views = [...new Set([...(this._devPreviewContacts ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
         views.forEach(v => { this.currentView = v; try { this.ensureViewData(); } catch (_e) {} });
         this.currentView = prev;
     }
@@ -7710,35 +7811,57 @@ class BhasApp {
     //  본문 줄머리에 [] / [x] 를 쓰면 할 일이 된다(노션의 to-do 블록).
     //  @이름 을 쓰면 담당자, #말머리 는 꼬리표. 체크한 것은 할 일에도 뜬다.
     NOTE_TODO_RE = /^(\s*)\[( |x|X)?\]\s?(.*)$/;
-    _noteTodos(n) {
-        const out = [];
-        this._noteText(n).split('\n').forEach((line, i) => {
+    _lineTodos(text, src) {
+        const out = [], seen = {};
+        String(text || '').split('\n').forEach((line, i) => {
             const m = line.match(this.NOTE_TODO_RE);
             if (!m) return;
             const raw = (m[3] || '').trim();
             if (!raw) return;             // 아직 아무것도 안 적은 줄은 할 일이 아니다
+            const key = raw.replace(/\s+/g, ' ');
+            const occ = seen[key] = (seen[key] || 0) + 1;
             //  날짜는 한 군데(_splitDue)에서만 떼어낸다 — '까지' 같은 꼬리말도 같이 떨어진다
             const sp = this._splitDue(raw);
             out.push({
-                src: 'note', id: `${n.id}#${i}`, noteId: n.id, line: i,
+                src: src.kind, id: `${src.id}#${i}`, srcId: src.id, noteId: src.id, line: i, raw: key, occ,
                 title: sp.text.replace(/[@#][^\s]+/g, '').replace(/\s{2,}/g, ' ').trim() || '(내용 없음)',
                 done: (m[2] || ' ').toLowerCase() === 'x',
                 at: (raw.match(/@([^\s]+)/g) || []).map(x => x.slice(1)),
                 tags: (raw.match(/#([^\s]+)/g) || []).map(x => x.slice(1)),
-                due: sp.due || n.due_date || null,
-                from: n.title || '메모',
+                due: sp.due || src.due || null,
+                from: src.from,
             });
         });
         return out;
     }
-    _allNoteTodos() { return (this.noteList || []).flatMap(n => this._noteTodos(n)); }
+    _noteTodos(n) { return this._lineTodos(this._noteText(n), { kind: 'note', id: n.id, from: n.title || '메모', due: n.due_date }); }
+    _allNoteTodos() {
+        const all = (this.noteList || []).flatMap(n => this._noteTodos(n));
+        this._todoSnap = new Map(all.map(t => [String(t.id), { raw: t.raw, occ: t.occ }]));
+        return all;
+    }
+    _locateTodoLine(lines, line, snap) {
+        if (!snap) return line;
+        const keyOf = l => { const m = String(l || '').match(this.NOTE_TODO_RE); return m ? (m[3] || '').trim().replace(/\s+/g, ' ') : null; };
+        let c = 0;
+        for (let i = 0; i < lines.length; i++) {
+            if (keyOf(lines[i]) !== snap.raw) continue;
+            if (++c === snap.occ) return i;
+        }
+        return -1;
+    }
     // 날짜가 붙은 모든 것 한 벌 — 홈의 할 일 칸과 통합 캘린더가 같이 쓴다
     _allDated() {
+        if (this._devPreviewCalendar) {
+            const center = this._dateLocal(this._calCursor || new Date().toISOString().slice(0, 10)) || new Date();
+            return this._expandedRoutines(this._dateKey(new Date(center.getFullYear(), center.getMonth() - 1, 1)), this._dateKey(new Date(center.getFullYear(), center.getMonth() + 2, 0)));
+        }
         const out = [];
         (this.remList || []).forEach(r => out.push({
             //  기본 분류면 이름을 또 적지 않는다 — 칸 이름이 이미 '할 일' 이다
             date: r.due_date, title: r.title, sub: /^(기본|미리\s*알림)$/.test(r.list_name || '') ? '' : (r.list_name || ''),
             done: !!r.done, color: '#ff9f0a', kind: 'rem', view: 'reminders', tag: '할 일',
+            go: `app.findGo('reminders','${r.id}')`,
         }));
         (mockData.products || []).forEach(p => {
             (p.todos || []).forEach(t => out.push({
@@ -7770,7 +7893,7 @@ class BhasApp {
             out.push({
                 date: t.due, title: t.title, sub: t.from,
                 done: t.done, color: '#30d158', kind: 'note', view: 'notes', tag: '메모',
-                go: `app.findGo('notes','${t.noteId}')`,
+                go: `app.findGo('notes','${t.noteId}',${t.line})`,
             });
         });
         (this.vendors || []).forEach(v => (v.jobs || []).forEach(j => out.push({
@@ -7778,15 +7901,23 @@ class BhasApp {
             done: j.status === 'done', color: '#6366f1', kind: 'job', view: 'vendors', tag: '생산',
             go: `app.goVendorJob('${v.id}')`,
         })));
+        const center = this._dateLocal(this._calCursor || new Date().toISOString().slice(0, 10)) || new Date();
+        const from = new Date(center.getFullYear(), center.getMonth() - 1, 1);
+        const to = new Date(center.getFullYear(), center.getMonth() + 2, 0);
+        out.push(...this._expandedRoutines(this._dateKey(from), this._dateKey(to)));
         return out;
     }
     // 메모 본문의 그 줄만 [ ] ↔ [x] 로 뒤집고 저장한다
-    async toggleNoteTodo(noteId, line) {
+    async toggleNoteTodo(noteId, line, snap) {
         const n = (this.noteList || []).find(x => String(x.id) === String(noteId)); if (!n) return;
         const lines = this._noteText(n).split('\n');
+        line = this._locateTodoLine(lines, line, snap);
+        if (line < 0) { this.showToast('메모 내용이 바뀌어 그 줄을 못 찾았습니다 — 다시 확인해 주세요'); this.requestRender(); return; }
         const m = (lines[line] || '').match(this.NOTE_TODO_RE); if (!m) return;
         const now = (m[2] || ' ').toLowerCase() === 'x';
+        const old = lines[line];
         lines[line] = `${m[1]}[${now ? ' ' : 'x'}] ${m[3]}`;
+        if (String(this._nbFor) === String(n.id) && this._nbLines && this._nbLines[line] === old) this._nbLines[line] = lines[line];
         n.body = this._joinNote(this._noteMeta(n), lines.join('\n'));
         this.requestRender();
         try {
@@ -7803,7 +7934,7 @@ class BhasApp {
                 const done = (m[2] || ' ').toLowerCase() === 'x';
                 const body = esc(m[3]).replace(/@([^\s]+)/g, '<b class="nb-at">@$1</b>')
                                       .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
-                return `<div class="nb-todo${done ? ' done' : ''}">
+                return `<div class="nb-todo${done ? ' done' : ''}" data-i="${i}">
                     <button class="nb-ck${done ? ' on' : ''}" onclick="app.toggleNoteTodo('${n.id}',${i})"></button>
                     <span>${body}</span></div>`;
             }
@@ -7995,6 +8126,8 @@ class BhasApp {
                                  .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
         const lines = this._nbLoad(n);
         const body = lines.map((line, i) => {
+            const embed = line.match(/^\{\{(제품리스트|할일|자료)\s+시즌=([^}]+)\}\}$/);
+            if (embed) return `<div class="nb-row nb-embed">${this._seasonEmbedHTML(embed[1], embed[2], n)}</div>`;
             const img = line.match(/^!\[[^\]]*\]\((.+?)\)\s*$/);
             if (img) return `<div class="nb-row"><span class="nb-ph">
                 <img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
@@ -8011,13 +8144,32 @@ class BhasApp {
                 ? `<textarea id="note-body" class="nb-in" rows="1" spellcheck="false" data-i="${i}"
                      oninput="app.nbInput(event)" onkeydown="app.nbKey(event)" onblur="app.nbBlur()">${esc(raw)}</textarea>`
                 : `<span class="nb-t">${sp.text.trim() ? paint(sp.text) : '<i class="nb-e"></i>'}</span>`;
-            if (m) return `<div class="nb-row nb-todo${done ? ' done' : ''}" onclick="app.nbPick(${i})">
+            if (m) return `<div class="nb-row nb-todo${done ? ' done' : ''}" data-i="${i}" onclick="app.nbPick(${i})">
                 <button class="nb-ck${done ? ' on' : ''}" onclick="event.stopPropagation();app.nbToggle(${i})"></button>${inner}
                 ${this._dueChip(i, sp.due, live)}</div>`;
-            return `<div class="nb-row nb-l" onclick="app.nbPick(${i})">${inner}</div>`;
+            return `<div class="nb-row nb-l" data-i="${i}" onclick="app.nbPick(${i})">${inner}</div>`;
         }).join('');
         return `<div class="nt-live" onclick="app.nbBlank(event)">${body}
             ${lines.length === 1 && !lines[0] && this.nbLine == null ? '<div class="nb-hint">내용을 적어주세요 · [ ] 를 치면 할 일이 됩니다</div>' : ''}</div>`;
+    }
+    _seasonEmbedHTML(kind, seaId, currentNote) {
+        const esc = s => this._vesc(s);
+        if (kind === '제품리스트') return '<span class="nb-embed-note">아래 제품표와 실시간으로 연결됩니다.</span>';
+        if (kind === '할일') {
+            const todos = (this.noteList || [])
+                .filter(n => String(n.product_id || this._noteMeta(n).proj || '') === String(seaId) && String(n.id) !== String(currentNote?.id))
+                .flatMap(n => this._noteTodos(n));
+            return `<section class="season-embed"><b><i class="ph ph-check-square"></i> 이 시즌 할 일</b>${todos.length
+                ? todos.map(t => { const snap = encodeURIComponent(JSON.stringify({ raw: t.raw, occ: t.occ })); return `<button class="season-embed-row${t.done ? ' done' : ''}" onclick="event.stopPropagation();app.toggleNoteTodo('${t.noteId}',${t.line},JSON.parse(decodeURIComponent('${snap}')))"><i></i><span>${esc(t.title)}</span><em>${esc(t.from)}</em></button>`; }).join('')
+                : '<span class="season-embed-empty">단계 페이지에 [ ] 로 할 일을 적으면 여기에 모입니다.</span>'}</section>`;
+        }
+        const docs = [
+            ...((mockData.products || []).find(p => String(p.id) === String(seaId))?.documents || []),
+            ...(mockData.globalDocuments || []).filter(d => String(d.productId || d.product_id || '') === String(seaId)),
+        ];
+        return `<section class="season-embed"><b><i class="ph ph-folder-open"></i> 이 시즌 자료</b>${docs.length
+            ? docs.map(d => `<span class="season-embed-row"><i class="ph ph-file"></i><span>${esc(d.name || d.title || '자료')}</span></span>`).join('')
+            : '<span class="season-embed-empty">이 시즌에 올린 자료가 여기에 모입니다.</span>'}</section>`;
     }
 
     //  .nt-live 만 다시 그린다 — 줄 하나 옮길 때마다 화면 전체를 그리면 손이 느려진다
@@ -8233,7 +8385,9 @@ class BhasApp {
         if (!steps.length) { this.showToast('단계 모듈이 없습니다 (048_season_steps.sql)'); return; }
         this.stepPick = {
             id: seasonId,
+            homeMade: true,
             on: new Set(steps.filter(x => x.on_default !== false).map(x => x.id)),
+            start: this._toYmd(sea.start_date),
             //  마감일은 '2026.11.20' 처럼 점으로 저장돼 있다. 날짜 칸은 2026-11-20 만 받으므로 맞춰 준다.
             open: this._toYmd(sea.deadline),
             dates: {},                 // 단계별로 날짜를 직접 고치면 여기 담긴다
@@ -8246,6 +8400,7 @@ class BhasApp {
         this._paintStepPick();
     }
     setStepOpen(v) { if (this.stepPick) { this.stepPick.open = v; this.stepPick.dates = {}; this._paintStepPick(); } }
+    setStepStart(v) { if (this.stepPick) this.stepPick.start = v; }
     //  단계 한 줄의 날짜를 직접 고친다(오픈일 계산값을 덮어쓴다)
     setStepDate(id, v) { if (this.stepPick) { this.stepPick.dates[id] = v || null; this._paintStepPick(); } }
     //  단계의 최종 날짜 — 직접 고친 값이 있으면 그걸, 없으면 오픈일 기준 계산값
@@ -8274,13 +8429,14 @@ class BhasApp {
     //  고른 단계를 메모로 깐다 — 폴더는 브랜드, 시즌 속성이 붙고, 본문엔 할 일이 들어간다
     async makeSeasonSteps() {
         const pk = this.stepPick; if (!pk) return;
+        const creating = !pk.id;
+        const makeHome = creating || pk.homeMade === false;
         //  아직 시즌이 없으면(새로 만드는 중) 시즌부터 만들고 이어서 페이지를 깐다 — 창 하나로 끝낸다
         if (!pk.id) {
             const nm = (pk.name || '').trim();
-            if (!nm) { this.showToast('시즌명을 골라주세요'); return; }
+            if (!nm) { this.showToast('시즌명을 적어주세요'); return; }
             if (!pk.brand) { this.showToast('브랜드를 골라주세요'); return; }
             if (this._seaNameTaken(pk.brand, nm)) { this.showToast(`이 브랜드에 같은 이름(${nm})이 있습니다 — 차수를 바꿔주세요`); return; }
-            if (!pk.open) { this.showToast('오픈일을 골라주세요 — 이 날 기준으로 페이지 날짜가 잡힙니다'); return; }
             try {
                 //  077: 직원은 자기 앞으로만. 담당자 지정은 사장님만.
                 const rep = this.currentUser?.role === 'MASTER'
@@ -8290,16 +8446,20 @@ class BhasApp {
                     p_brand_id: pk.brand,
                     p_name: nm,
                     p_deadline: pk.open ? this.formatDateToUI(pk.open) : null,
+                    p_start_date: pk.start || null,
                 });
                 if (error) throw error;
-                await this.loadInitialData();
+                // 이후 새로고침/페이지 생성이 실패해도 재클릭으로 같은 시즌을 또 만들지 않는다.
                 pk.id = newId;
+                await this.loadInitialData();
             } catch (e) { this.showToast('시즌을 만들지 못했습니다: ' + (e.message || e)); return; }
         }
-        const sea = this._seasons().find(p => String(p.id) === String(pk.id)); if (!sea) return;
+        let sea = this._seasons().find(p => String(p.id) === String(pk.id));
+        if (!sea && pk.id) { await this.loadInitialData(); sea = this._seasons().find(p => String(p.id) === String(pk.id)); }
+        if (!sea) return;
         const brand = (mockData.brands || []).find(b => String(b.id) === String(sea.brand_id));
         const chosen = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
-        if (!chosen.length) { this.showToast('고른 단계가 없습니다'); return; }
+        if (!chosen.length && !makeHome) { this.showToast('고른 단계가 없습니다'); return; }
         //  '샘플·제작' 처럼 kind='items' 인 단계는 메모가 아니라 제품리스트에서 하는 일이다.
         //  메모를 만들지 않고, 만들기가 끝나면 그 시즌의 제품리스트를 열어 준다.
         const steps = chosen;          // 샘플·제작도 페이지를 만든다. 그 페이지 안에 제품리스트가 붙는다.
@@ -8319,6 +8479,19 @@ class BhasApp {
                 owner: this._me(), created_by: me,
             };
         });
+        if (makeHome) {
+            const homeMeta = { proj: String(sea.id), status: '요청', embed: 'season-home' };
+            if (pk.start) homeMeta.start = pk.start;
+            if (pk.open) homeMeta.due = pk.open;
+            const schedule = [pk.start ? `시작 ${pk.start}` : '', pk.open ? `마감 ${pk.open}` : ''].filter(Boolean).join(' → ') || '날짜 미정';
+            rows.unshift({
+                title: `${sea.name} · 기본 페이지`,
+                body: this._joinNote(homeMeta,
+                    `## 일정\n${schedule}\n\n{{제품리스트 시즌=${sea.id}}}\n\n{{할일 시즌=${sea.id}}}\n\n{{자료 시즌=${sea.id}}}\n\n## 자유 메모\n여기에 [ ] 로 할 일을 적으세요`),
+                folder, scope: 'shared', product_id: sea.id,
+                owner: this._me(), created_by: me,
+            });
+        }
         try {
             let data = [];
             if (rows.length) {
@@ -8326,11 +8499,12 @@ class BhasApp {
                 if (r.error) throw r.error;
                 data = r.data || [];
             }
+            if (makeHome) pk.homeMade = true;
             this.noteList = [...(data || []), ...(this.noteList || [])];
             this.stepPick = null;
             this.noteFolder = 'f:' + folder; this.noteSea = String(sea.id);
             this.closeStepPick();
-            this.showToast(`${sea.name} · 페이지 ${rows.length}개를 만들었습니다`);
+            this.showToast(`${sea.name} · 기본 페이지와 단계 ${Math.max(0, rows.length - (makeHome ? 1 : 0))}개를 만들었습니다`);
             this.switchView('notes');
         } catch (e) { this.showToast('만들지 못했습니다: ' + (e.message || e)); }
     }
@@ -8377,15 +8551,17 @@ class BhasApp {
                     </select>
                 </div>` : ''}
                 <div class="sp-when">
-                    <label>오픈일</label>
+                    ${isNew ? `<label>시작일</label>
+                    <input type="date" value="${esc(pk.start || '')}" onchange="app.setStepStart(this.value)">` : ''}
+                    <label>${isNew ? '마감일' : '오픈일'}</label>
                     <input type="date" value="${esc(pk.open || '')}" onchange="app.setStepOpen(this.value)">
-                    <span>이 날을 기준으로 앞뒤 날짜가 잡힙니다</span>
+                    <span>${isNew ? '마감일' : '이 날'}을 기준으로 단계 날짜가 잡힙니다</span>
                 </div>
                 <div class="sp-list">${steps.map(row).join('')}</div>
                 <div class="sp-f">
                     <span>${(() => { const c = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
-                        const it = c.some(x => x.kind === 'items');   // 샘플·제작도 페이지 1개(안에 제품 표) — 실제 notes 행 수와 같게
-                        return `${c.length}개 페이지를 만듭니다${it ? ' · 샘플·제작 페이지엔 제품리스트 표가 들어갑니다' : ''} · 나머지 페이지 안에 [ ] 할 일이 들어갑니다`; })()}</span>
+                        const ni = c.filter(x => x.kind !== 'items').length, it = c.length - ni;
+                        return `${ni}개 페이지를 만듭니다${it ? ' · 샘플·제작은 제품리스트에서 합니다' : ''} · 각 페이지 안에 [ ] 할 일이 들어갑니다`; })()}</span>
                     <button class="mbtn pri" onclick="app.makeSeasonSteps()">${isNew ? "시즌 만들기" : "만들기"}</button>
                 </div>
         </div>`;
@@ -8860,37 +9036,101 @@ class BhasApp {
         try { await this.saveItemNote(id, text); } catch (e) { this.showToast('기록 저장 실패: ' + (e.message || e)); }
     }
 
+    // 제품리스트·시즌 기본 페이지·메모 임베드가 함께 쓰는 단 하나의 표 렌더러.
+    // el을 주면 그 자리에 그리고, 없으면 HTML을 돌려준다.
+    renderItemTable(el, { season = null, filter = {}, compact = false } = {}) {
+        const esc = s => this._vesc(s);
+        const seasons = this._seasons();
+        const vendors = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+        const packs = this._techPacks || [];
+        let rows = Array.isArray(filter.rows) ? [...filter.rows] : (this.pItems || []).filter(it =>
+            !season || String(it.product_id) === String(season));
+        if (!Array.isArray(filter.rows)) {
+            if (filter.status && filter.status !== 'ALL') rows = rows.filter(it => it.status === filter.status);
+        }
+        rows = this._sortItemRows(rows);
+        const srt = this.itemSort || { k: '', dir: 1 };
+        const cols = [['brand_id', '브랜드'], ['name', '판매명'], ['pattern_no', '패턴명'],
+            ['status', '제작현황'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
+            ['checked', '확인', 'it-c'], ['vendor_id', '공장'], ['product_id', '시즌']];
+        const mu = v => v ? esc(v) : '<span class="it-mu">—</span>';
+        const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''}
+            onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','${f}',this.checked,1)">`;
+        const row = it => {
+            const sc = this.ITEM_SC[it.status] || '#8e8e93';
+            const tp = packs.find(p => String(p.id) === String(it.tech_pack_id));
+            const sn = it.sale_names || [];
+            const sp = sn.length ? this._saleParts(sn[0]) : null;
+            const sold = this._itemSold(it);
+            const vn = (vendors.find(v => String(v.id) === String(it.vendor_id)) || {}).name || '';
+            const se = (seasons.find(p => String(p.id) === String(it.product_id)) || {}).name || '';
+            const open = compact ? `app.openItemFromNote('${it.id}')` : `app.openItemPage('${it.id}')`;
+            const photos = compact ? this._itemPhotos(it.id) : [];
+            return `<tr class="it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}"
+                onclick="app.rowPick(event,'${it.id}')" ondblclick="${open}">
+                <td class="it-c"><input class="it-ck" type="checkbox" ${this._itemPicked?.has(it.id) ? 'checked' : ''}
+                    onclick="event.stopPropagation()" onchange="app.pickRow('${it.id}',this.checked)"></td>
+                <td class="it-mu">${mu(this._brandNameById(it.brand_id) === '-' ? '' : this._brandNameById(it.brand_id))}</td>
+                <td>${compact ? `<input class="ni-nm" data-f="name" value="${esc(it.name || '')}" placeholder="제품명"
+                    onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','name',this.value,1)">` : `<button class="it-nameb" onclick="event.stopPropagation();${open}"
+                    title="${sn.length ? esc(sn.join(' · ')) : '눌러서 제품 페이지 열기'}">${esc(this._itemLabel(it) || '이름 없는 제품')}</button>
+                    ${sp?.tag ? `<em class="it-evt">${esc(sp.tag)}</em>` : ''}
+                    ${sold ? `<em class="it-sold">${sold.qty.toLocaleString()}개</em>` : ''}
+                    ${!sn.length ? '<em class="it-nolink" title="카페24 판매명이 안 붙었습니다">미연동</em>' : ''}
+                    ${(() => { const issues = this._itemIssues(it); return issues.length
+                        ? `<em class="it-warn" title="${esc(issues.join(' · '))}"><i class="ph ph-warning-circle"></i>확인</em>` : ''; })()}`}</td>
+                <td class="it-mu">${compact ? `<input class="ni-pt" data-f="pattern_no" value="${esc(it.pattern_no || '')}" placeholder="패턴"
+                    onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','pattern_no',this.value,1)">` : mu(it.pattern_no)}</td>
+                <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}55;background:${sc}12"
+                    onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','status',this.value,1)">
+                    ${this.ITEM_STATUSES.map(s => `<option value="${esc(s)}"${s === it.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
+                <td class="it-memo" title="${esc(it.memo || '')}">${mu(it.memo)}</td>
+                <td class="it-c">${chk(it, 'trims')}</td><td class="it-c">${chk(it, 'checked')}</td>
+                <td class="it-mu">${mu(vn)}</td><td class="it-mu">${mu(se)}</td>
+                <td class="it-lk">
+                    ${compact ? `${photos.length ? `<button class="ni-ph" title="사진 ${photos.length}장" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><img src="${esc(photos[0])}" alt=""><em>${photos.length}</em></button>` : ''}<button class="it-ib" title="사진 올리기" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><i class="ph ph-camera"></i></button>` : ''}
+                    ${tp ? `<button class="it-ib on" title="작업지시서: ${esc(tp.style_name || '')}" onclick="event.stopPropagation();app.openTechPack('${tp.id}')"><i class="ph ph-clipboard-text"></i></button>`
+                         : `<button class="it-ib" title="작업지시서 만들기" onclick="event.stopPropagation();app.itemNewTechPack('${it.id}')"><i class="ph ph-clipboard-text"></i></button>`}
+                    ${it.quote_id ? `<button class="it-ib on" title="견적 보기" onclick="event.stopPropagation();app.itemOpenQuote('${it.id}')"><i class="ph ph-receipt"></i></button>`
+                         : `<button class="it-ib" title="견적 만들기" onclick="event.stopPropagation();app.itemNewQuote('${it.id}')"><i class="ph ph-receipt"></i></button>`}
+                    <button class="it-ib" title="생산 투입" onclick="event.stopPropagation();app.itemToVendor('${it.id}')"><i class="ph ph-factory"></i></button>
+                    <button class="it-ib del" title="삭제" onclick="event.stopPropagation();app.delItem('${it.id}')"><i class="ph ph-trash"></i></button>
+                </td>
+            </tr>`;
+        };
+        const more = Number(filter.more || 0);
+        const html = `<div class="it-scroll shared-item-table${compact ? ' compact' : ''}">
+            <table class="it-tbl"><thead><tr><th class="it-c" title="골라서 한꺼번에 바꾸기"><input type="checkbox" class="it-ck"
+                ${rows.length && rows.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''} onchange="app.pickItemTableRows(this,this.checked)"></th>
+                ${cols.map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${(this.itemColF || {})[k] ? ' flt' : ''}"
+                    onclick="app.sortItems('${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
+                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${(this.itemColF || {})[k] ? '-fill' : ''}"></i></button></th>`).join('')}<th>연동</th>
+            </tr></thead><tbody>${rows.length ? rows.map(row).join('')
+                : `<tr><td colspan="11" class="it-none">${filter.empty || '제품이 없습니다'}</td></tr>`}
+                ${more > 0 ? `<tr><td colspan="11" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}
+            </tbody></table></div>`;
+        if (el) {
+            const node = typeof el === 'string' ? document.querySelector(el) : el;
+            if (node) node.innerHTML = html;
+        }
+        return html;
+    }
+
     // ── 샘플·제작 페이지 안의 제품리스트 ─────────────────────
-    //  제품리스트 창을 따로 띄우지 않는다. 이 표에서 더하고 고치면 제품리스트(product_items)가 바로 바뀌고,
-    //  제품리스트에서 바꾼 것도 여기에 그대로 보인다. 같은 표를 두 군데서 보는 것뿐이다.
+    //  제품리스트 창을 따로 띄우지 않는다. 세 화면이 위 공용 렌더러를 그대로 쓴다.
     _noteItemsHTML(n) {
-        if (!n || this._noteMeta(n).embed !== 'items') return '';
+        if (!n || !['items', 'season-home'].includes(this._noteMeta(n).embed)) return '';
         const esc = s => this._vesc(s);
         const seaId = n.product_id || this._noteMeta(n).proj;
         const sea = this._seasons().find(p => String(p.id) === String(seaId));
+        const archived = !sea;
         if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
         const items = (this.pItems || []).filter(x => String(x.product_id) === String(seaId));
-        const row = (it) => {
-            const col = (this.ITEM_SC || {})[it.status] || '#8e8e93';
-            return `<div class="ni-r" data-id="${it.id}">
-                <input class="ni-nm" value="${esc(it.name || '')}" placeholder="제품명"
-                       onchange="app.setItem('${it.id}','name',this.value)">
-                <input class="ni-pt" value="${esc(it.pattern_no || '')}" placeholder="패턴"
-                       onchange="app.setItem('${it.id}','pattern_no',this.value)">
-                <span class="ni-st" style="--c:${col}">${esc(it.status || '요청하기')}</span>
-                ${(() => { const ph = this._itemPhotos(it.id);
-                    return ph.length ? `<span class="ni-ph" title="사진 ${ph.length}장" onclick="app.openItemFromNote('${it.id}')">
-                        <img src="${esc(ph[0])}" alt="">${ph.length > 1 ? `<em>${ph.length}</em>` : ''}</span>` : ''; })()}
-                <button class="ni-cam" title="사진 올리기" onclick="app.pickItemPhoto('${it.id}')"><i class="ph ph-image"></i></button>
-                <button class="ni-go" title="제품 페이지 열기" onclick="app.openItemFromNote('${it.id}')"><i class="ph ph-arrow-square-out"></i></button>
-                <button class="ni-x" title="제품리스트에서 지우기" onclick="app.delItem('${it.id}')"><i class="ph ph-trash"></i></button>
-            </div>`;
-        };
         return `<div class="ni">
             <div class="ni-h"><b><i class="ph ph-t-shirt"></i> 이 시즌 제품</b>
-                <span>${items.length}개 · 제품리스트와 같은 표입니다</span>
-                <button class="ni-add" onclick="app.addItemHere('${seaId}')"><i class="ph ph-plus"></i> 제품 추가</button></div>
-            ${items.length ? items.map(row).join('') : `<div class="ni-none">아직 올린 제품이 없습니다. ‘제품 추가’ 로 ${esc(sea ? sea.name : '이 시즌')} 제품을 올리세요.</div>`}
+                <span>${archived ? '보관된 기본 페이지 · 제품 변경 불가' : `${items.length}개 · 제품리스트와 같은 칸·정렬·원본입니다`}</span>
+                ${archived ? '' : `<button class="ni-add" onclick="app.addItemHere('${seaId}')"><i class="ph ph-plus"></i> 제품 추가</button>`}</div>
+            ${this.renderItemTable(null, { season: seaId, filter: { status: 'ALL', empty: `아직 올린 제품이 없습니다. ‘제품 추가’ 로 ${esc(sea ? sea.name : '이 시즌')} 제품을 올리세요.` }, compact: true })}
         </div>`;
     }
     //  이 페이지에서 바로 제품 올리기 — 시즌·브랜드가 자동으로 붙는다
@@ -8903,7 +9143,7 @@ class BhasApp {
         if (error) { this.showToast('추가 실패: ' + error.message); return; }
         this.pItems = [data, ...(this.pItems || [])];
         this.requestRender();
-        setTimeout(() => { const el = this.appContainer.querySelector(`.ni-r[data-id="${data.id}"] .ni-nm`); if (el) el.focus(); }, 60);
+        setTimeout(() => { const el = this.appContainer.querySelector(`.it-row[data-id="${data.id}"] .ni-nm`); if (el) el.focus(); }, 60);
     }
 
     //  제품 사진 — 작업지시서를 만들 필요 없이 제품에 바로 붙인다.
@@ -9085,7 +9325,7 @@ class BhasApp {
                         <div class="rm-tt" onclick="app.editRemTitle(event,'${x.src}','${x.id}')" title="눌러서 고치기">${esc(x.title)}</div>
                         ${(x.memo || x.project || x.assignee || x.from || x.atName || (x.tags || []).length) ? `<div class="rm-meta">
                             ${x.project ? `<span class="rm-tag"><i class="ph ph-folder"></i>${esc(x.project)}</span>` : ''}
-                            ${x.from ? `<span class="rm-tag"><i class="ph ph-note"></i>${esc(x.from)}</span>` : ''}
+                            ${x.from ? `<span class="rm-tag rm-go" title="그 메모 그 줄로" onclick="event.stopPropagation();app.findGo('notes','${esc(String(x.noteId))}',${Number(x.line)})"><i class="ph ph-note"></i>${esc(x.from)}</span>` : ''}
                             ${(x.assignee || x.atName) ? `<span class="rm-tag"><i class="ph ph-user"></i>${esc(nameOf(x.assignee) || x.atName || '담당')}</span>` : ''}
                             ${(x.tags || []).map(t => `<span class="rm-tag">#${esc(t)}</span>`).join('')}
                             ${x.memo ? `<span>${esc(x.memo)}</span>` : ''}
@@ -9224,6 +9464,8 @@ class BhasApp {
     async _replaceNoteLine(noteId, line, fn) {
         const n = (this.noteList || []).find(x => String(x.id) === String(noteId)); if (!n) return;
         const lines = this._noteText(n).split('\n');
+        line = this._locateTodoLine(lines, line, this._todoSnap?.get(`${noteId}#${line}`));
+        if (line < 0) throw new Error('메모 내용이 바뀌어 그 줄을 못 찾았습니다');
         const m = (lines[line] || '').match(this.NOTE_TODO_RE); if (!m) return;
         if (fn) lines[line] = fn(m); else lines.splice(line, 1);
         n.body = this._joinNote(this._noteMeta(n), lines.join('\n'));
@@ -9245,7 +9487,7 @@ class BhasApp {
     }
     toggleRemItem(src, id) {
         if (src === 'rem') return this.toggleReminder(id);
-        if (src === 'note') { const [nid, line] = String(id).split('#'); return this.toggleNoteTodo(nid, Number(line)); }
+        if (src === 'note') { const [nid, line] = String(id).split('#'); return this.toggleNoteTodo(nid, Number(line), this._todoSnap?.get(String(id))); }
         return this.toggleTodoFromReminders(id);
     }
     // 할 일 화면에서 기존 할일을 끄고 켠다 — todos 테이블을 그대로 쓴다
@@ -9885,36 +10127,52 @@ class BhasApp {
     async _loadNewRepeat() {
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
         const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         const COLS = 'id,order_date,pay_amount,op_status,channel,channel_status,receiver_phone,buyer_name,receiver_name';
+        const digits = v => String(v || '').replace(/\D/g, '');
         const custKey = o => {
-            const ph = String(o.receiver_phone || '').replace(/\D/g, '');
-            if (ph) return 'p:' + ph;
-            const bn = String(o.buyer_name || '').trim(); if (bn) return 'n:' + bn;
-            const rn = String(o.receiver_name || '').trim(); if (rn) return 'n:' + rn;
+            const ph = digits(o.receiver_phone); if (ph) return 'p:' + ph;
+            const bn = String(o.buyer_name || '').trim(); if (bn) return 'b:' + bn;
+            const rn = String(o.receiver_name || '').trim(); if (rn) return 'r:' + rn;
             return null;
+        };
+        const marks = o => {
+            const out = [], ph = digits(o.receiver_phone), bn = String(o.buyer_name || '').trim(), rn = String(o.receiver_name || '').trim();
+            if (ph) out.push('p:' + ph); if (bn) out.push('b:' + bn); if (rn) out.push('r:' + rn);
+            return out;
+        };
+        const phoneForms = v => {
+            const d = digits(v); if (!d) return [];
+            const f = new Set([String(v).trim(), d]);
+            if (d.length === 11) f.add(`${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`);
+            if (d.length === 10) { f.add(`${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`); f.add(`${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}`); }
+            if (d.length === 9) f.add(`${d.slice(0, 2)}-${d.slice(2, 5)}-${d.slice(5)}`);
+            return [...f];
         };
         try {
             const cur = [];
             for (let from = 0; ; from += 1000) {
                 const { data, error } = await this.supabase.from('channel_orders').select(COLS)
-                    .gte('order_date', monthStart.toISOString()).order('order_date', { ascending: true }).range(from, from + 999);
+                    .gte('order_date', monthStart.toISOString()).lt('order_date', monthEnd.toISOString())
+                    .order('order_date', { ascending: true }).order('id').range(from, from + 999);
                 if (error) throw error;
                 cur.push(...(data || []));
                 if (!data || data.length < 1000) break;
             }
             const month = cur.filter(o => o.order_date && o.pay_amount != null && !this._isCancelled(o));
-            // 이번달 이전 이력 — 전화/이름 값으로 100개씩 끊어 조회
-            const phones = new Set(), names = new Set();
+            const phones = new Set(), buyers = new Set(), receivers = new Set();
             month.forEach(o => {
-                if (o.receiver_phone) phones.add(o.receiver_phone);
-                [o.buyer_name, o.receiver_name].forEach(n => { if (n) names.add(n); });
+                const k = custKey(o); if (!k) return;
+                if (k.startsWith('p:')) phoneForms(o.receiver_phone).forEach(f => phones.add(f));
+                else if (k.startsWith('b:')) buyers.add(k.slice(2));
+                else receivers.add(k.slice(2));
             });
             const prior = [];
             const fetchIn = async (col, vals) => {
                 const arr = [...vals];
                 for (let i = 0; i < arr.length; i += 100) {
-                    for (let from = 0; ; from += 1000) {   // 서버 한 번 최대 1000행 → 끊어 받기
+                    for (let from = 0; ; from += 1000) {
                         const { data, error } = await this.supabase.from('channel_orders').select(COLS)
                             .lt('order_date', monthStart.toISOString()).in(col, arr.slice(i, i + 100)).order('id').range(from, from + 999);
                         if (error) throw error;
@@ -9923,14 +10181,15 @@ class BhasApp {
                     }
                 }
             };
-            await Promise.all([fetchIn('receiver_phone', phones), fetchIn('buyer_name', names), fetchIn('receiver_name', names)]);
+            await Promise.all([fetchIn('receiver_phone', phones), fetchIn('buyer_name', buyers), fetchIn('receiver_name', receivers)]);
             const seen = new Set();
-            prior.forEach(o => { if (o.pay_amount != null && !this._isCancelled(o)) { const k = custKey(o); if (k) seen.add(k); } });
+            prior.forEach(o => { if (o.pay_amount != null && !this._isCancelled(o)) marks(o).forEach(m => seen.add(m)); });
             let neu = 0, rep = 0, unk = 0;
-            month.forEach(o => {   // 오래된 순 — 같은 달 두 번째 주문부터 재구매
+            month.forEach(o => {
                 const k = custKey(o);
                 if (!k) { unk++; return; }
-                if (seen.has(k)) rep++; else { neu++; seen.add(k); }
+                if (seen.has(k)) rep++; else neu++;
+                marks(o).forEach(m => seen.add(m));
             });
             this._newRepeat = { monthKey, total: month.length, neu, rep, unk };
         } catch (e) {
@@ -11487,6 +11746,7 @@ class BhasApp {
 
     // ── 캘린더 (맥 캘린더 그대로 · 분류 / 달력 / 그날 일정) ─────
     CAL_SRC = [
+        { k: 'routine', t: '고정 루틴', c: '#0a84ff' },
         { k: 'rem',  t: '할 일',      c: '#ff9f0a' },
         { k: 'step', t: '시즌 단계',   c: '#bf5af2' },
         { k: 'todo', t: '시즌 할 일',  c: '#0a84ff' },
@@ -11494,6 +11754,95 @@ class BhasApp {
         { k: 'job',  t: '생산 작업',   c: '#6366f1' },
         { k: 'proj', t: '시즌 마감', c: '#bf5af2' },
     ];
+    _routineKind(kind) {
+        return ({
+            general: { label: '일반', color: '#0a84ff', icon: 'ph-repeat' },
+            vendor_settlement: { label: '거래처 정산', color: '#ff9f0a', icon: 'ph-hand-coins' },
+            subscription: { label: '구독', color: '#bf5af2', icon: 'ph-credit-card' },
+        })[kind] || { label: '일반', color: '#0a84ff', icon: 'ph-repeat' };
+    }
+    async loadCalendarRoutines() {
+        this._routinesLoading = true;
+        try {
+            const [rr, oo] = await Promise.all([
+                this.supabase.from('calendar_routines').select('*,vendor:vendors(id,name)').order('created_at', { ascending: false }).limit(300),
+                this.supabase.from('calendar_routine_occurrences').select('*').order('occurrence_date', { ascending: false }).limit(1200),
+            ]);
+            if (rr.error) throw rr.error;
+            this.calendarRoutines = rr.data || [];
+            this.routineOccurrences = oo.error ? [] : (oo.data || []);
+            this._routinesLoaded = true; this._routineSchemaMissing = false;
+        } catch (e) {
+            this.calendarRoutines = []; this.routineOccurrences = [];
+            this._routinesLoaded = true; this._routineSchemaMissing = true;
+        }
+        this._routinesLoading = false; this.requestRender();
+    }
+    _dateLocal(s) {
+        const [y, m, d] = String(s || '').slice(0, 10).split('-').map(Number);
+        return y && m && d ? new Date(y, m - 1, d) : null;
+    }
+    _dateKey(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+    _routineDates(r, from, to) {
+        const lo = this._dateLocal(from), hi = this._dateLocal(to), start = this._dateLocal(r.starts_on);
+        const end = [r.ends_on, r.cancel_on].map(x => this._dateLocal(x)).filter(Boolean)
+            .reduce((min, d) => !min || d < min ? d : min, null) || hi;
+        if (!lo || !hi || !start || start > hi || end < lo || !r.active) return [];
+        const out = [], push = d => { if (d >= lo && d <= hi && d >= start && d <= end) out.push(this._dateKey(d)); };
+        if (r.recurrence_type === 'daily' || r.recurrence_type === 'weekly') {
+            const d = new Date(Math.max(lo.getTime(), start.getTime()));
+            const days = new Set((r.weekdays || []).map(Number));
+            while (d <= hi && d <= end && out.length < 500) {
+                if (r.recurrence_type === 'daily' || days.has(d.getDay())) push(new Date(d));
+                d.setDate(d.getDate() + 1);
+            }
+        } else if (r.recurrence_type === 'monthly') {
+            let y = Math.max(lo.getFullYear(), start.getFullYear()), m = (y === start.getFullYear() ? Math.max(lo.getMonth(), start.getMonth()) : 0);
+            while (new Date(y, m, 1) <= hi && out.length < 120) {
+                const last = new Date(y, m + 1, 0).getDate();
+                const day = r.use_month_end ? last : Math.min(Number(r.month_day || start.getDate()), last);
+                push(new Date(y, m, day)); m++; if (m > 11) { m = 0; y++; }
+            }
+        } else {
+            for (let y = Math.max(lo.getFullYear(), start.getFullYear()); y <= hi.getFullYear(); y++) {
+                const m = Math.max(1, Math.min(12, Number(r.year_month || start.getMonth() + 1))) - 1;
+                const last = new Date(y, m + 1, 0).getDate();
+                push(new Date(y, m, Math.min(Number(r.year_day || start.getDate()), last)));
+            }
+        }
+        return out;
+    }
+    _expandedRoutines(from, to) {
+        const occ = new Map((this.routineOccurrences || []).map(o => [`${o.routine_id}:${o.occurrence_date}`, o]));
+        return (this.calendarRoutines || []).flatMap(r => {
+            const dates = new Set(this._routineDates(r, from, to));
+            // 중지된 규칙은 새 회차를 만들지 않되 이미 완료·건너뛴 기록은 계속 보여 준다.
+            if (!r.active) (this.routineOccurrences || []).forEach(o => {
+                if (String(o.routine_id) === String(r.id) && ['done', 'skipped'].includes(o.status)
+                    && o.occurrence_date >= from && o.occurrence_date <= to) dates.add(o.occurrence_date);
+            });
+            return [...dates].sort().map(date => {
+            const o = occ.get(`${r.id}:${date}`), over = o?.override_data || {}, meta = this._routineKind(r.kind);
+            const vendor = r.vendor?.name || (this.vendors || []).find(v => v.id === r.vendor_id)?.name || '';
+            const amount = o?.actual_amount ?? r.amount;
+            const sub = [r.time_of_day ? String(over.time_of_day || r.time_of_day).slice(0, 5) : '', vendor || r.service_name || '', amount != null ? `${Number(amount).toLocaleString('ko-KR')}원` : '', o?.status === 'skipped' ? '이번만 건너뜀' : ''].filter(Boolean).join(' · ');
+            return { date, title: over.title || r.title, sub, done: o?.status === 'done' || o?.status === 'skipped', skipped: o?.status === 'skipped',
+                color: o?.status === 'skipped' ? '#94a3b8' : meta.color, kind: 'routine', view: 'calendar', tag: meta.label,
+                routine: r, occurrence: o, go: `app.openRoutineOccurrence('${r.id}','${date}')` };
+            });
+        });
+    }
+    _routineMonthMoney(yy, mo) {
+        const from = `${yy}-${String(mo + 1).padStart(2, '0')}-01`;
+        const to = this._dateKey(new Date(yy, mo + 1, 0));
+        return this._expandedRoutines(from, to).reduce((a, x) => {
+            if (x.skipped) return a;
+            const r = x.routine, n = Number(x.occurrence?.actual_amount ?? r.amount ?? 0);
+            if (r.kind === 'subscription' || (r.kind === 'vendor_settlement' && r.settlement_direction === 'pay')) a.out += n;
+            if (r.kind === 'vendor_settlement' && r.settlement_direction === 'receive') a.in += n;
+            return a;
+        }, { out: 0, in: 0 });
+    }
     _calOn(k) { const off = this.calOff || {}; return !off[k]; }
     toggleCalSrc(k) { this.calOff = { ...(this.calOff || {}) }; this.calOff[k] = this._calOn(k); this.requestRender(); }
     calMove(n) {
@@ -11535,7 +11884,8 @@ class BhasApp {
                     return `<div class="cal-cell${c.out ? ' out' : ''}${c.key === todayS ? ' today' : ''}${c.key === sel ? ' on' : ''}"
                             onclick="app.selectCalDay('${c.key}')">
                         <span class="cal-d">${c.key === todayS ? `<i>${c.d}</i>` : c.d}${c.d === 1 && !c.out ? `<em>${mo + 1}월</em>` : ''}</span>
-                        ${list.slice(0, 3).map(x => `<span class="cal-chip" style="background:${x.color}" title="${esc(x.title)}">${esc(x.title)}</span>`).join('')}
+                        ${list.slice(0, 3).map(x => `<span class="cal-chip" style="background:${x.color}" title="${esc(x.title)}"
+                            ${x.go ? `onclick="event.stopPropagation();${x.go}"` : ''}>${esc(x.title)}</span>`).join('')}
                         ${list.length > 3 ? `<span class="cal-more">+${list.length - 3}</span>` : ''}
                     </div>`;
                 }).join('')}</div>`;
@@ -11550,7 +11900,7 @@ class BhasApp {
                     const d = new Date(k);
                     return `<div class="cal-col${k === todayS ? ' today' : ''}" onclick="app.selectCalDay('${k}')">
                         <div class="cal-colh">${dow[d.getDay()]} <b>${d.getDate()}</b></div>
-                        ${list.map(x => `<div class="cal-ev" style="border-left-color:${x.color}">
+                        ${list.map(x => `<div class="cal-ev" style="border-left-color:${x.color}" ${x.go ? `onclick="event.stopPropagation();${x.go}"` : ''}>
                             <b>${esc(x.title)}</b><span>${esc(x.sub || '')}</span></div>`).join('')
                           || '<div class="cal-empty">없음</div>'}
                     </div>`;
@@ -11568,6 +11918,8 @@ class BhasApp {
         }
 
         const selList = (byDate[sel] || []).slice().sort((a, b) => a.kind.localeCompare(b.kind));
+        const money = this._routineMonthMoney(yy, mo);
+        const subscriptions = (this.calendarRoutines || []).filter(r => r.active && r.kind === 'subscription');
         return `
         <div class="cal">
             <aside class="cal-side">
@@ -11582,10 +11934,20 @@ class BhasApp {
                     <div class="cal-mdow">${dow.map(x => `<span>${x}</span>`).join('')}</div>
                     <div class="cal-mgrid">${mini}</div>
                 </div>
+                <div style="margin:16px 10px 0;padding:12px;border-radius:12px;background:rgba(var(--tint),.05);font-size:12px">
+                    <b style="display:block;margin-bottom:8px">이번 달 자금</b>
+                    <div style="display:flex;justify-content:space-between;color:#ff453a"><span>나갈 돈</span><b>${money.out.toLocaleString('ko-KR')}원</b></div>
+                    <div style="display:flex;justify-content:space-between;color:#30d158;margin-top:5px"><span>들어올 돈</span><b>${money.in.toLocaleString('ko-KR')}원</b></div>
+                </div>
+                <div style="margin:14px 10px 0;font-size:12px"><b>구독 ${subscriptions.length}</b>
+                    ${subscriptions.slice(0, 8).map(r => `<div style="display:flex;justify-content:space-between;padding:5px 0;color:var(--text-muted);cursor:pointer" onclick="app.openRoutineEditor('${r.id}')">
+                        <span>${esc(r.service_name || r.title)}</span><span>${Number(r.amount || 0).toLocaleString('ko-KR')}원</span></div>`).join('') || `<div style="padding:7px 0;color:var(--text-muted)">등록된 구독 없음</div>`}
+                </div>
             </aside>
             <section class="cal-main">
                 <div class="cal-top">
-                    <button class="cal-add" onclick="app.quickAddFromCalendar()" title="새 할 일"><i class="ph ph-plus"></i></button>
+                    <button class="cal-add" onclick="app.openRoutineEditor()" title="새 고정 루틴"><i class="ph ph-repeat"></i></button>
+                    <button class="mbtn" onclick="app.quickAddFromCalendar()" title="일회 할 일"><i class="ph ph-plus"></i> 할 일</button>
                     <div class="cal-seg">
                         ${[['day', '일'], ['week', '주'], ['month', '월']].map(([k, t]) =>
                             `<button class="${view === k ? 'on' : ''}" onclick="app.setCalView('${k}')">${t}</button>`).join('')}
@@ -11602,13 +11964,194 @@ class BhasApp {
                     <span>${selList.length}건</span></div>
                 <div class="dt-b">
                     ${selList.length ? selList.map(x => `<div class="cal-ev" style="border-left-color:${x.color}"
-                            onclick="app.macOpen('${x.view}')">
+                            onclick="${x.go || `app.macOpen('${x.view}')`}" title="눌러서 열기">
                         <b${x.done ? ' class="done"' : ''}>${esc(x.title)}</b><span>${esc(x.sub || '')}</span></div>`).join('')
                       : `<div class="m3-none">이 날은 비어 있습니다</div>`}
                 </div>
                 <div class="dt-a"><button class="mbtn pri" onclick="app.quickAddFromCalendar()">이 날에 추가</button></div>
             </aside>
         </div>`;
+    }
+    //  캘린더에서 더하기 — 할 일 목록에 넣거나, 메모 폴더에 [ ] 로 적는다.
+    //  메모에 적으면 그 메모에서도 보이고 체크하면 여기서도 지워진다(양방향).
+    _routineRecurrenceLabel(r) {
+        if (r.recurrence_type === 'daily') return '매일';
+        if (r.recurrence_type === 'weekly') return `매주 ${(r.weekdays || []).map(n => ['일','월','화','수','목','금','토'][n]).join('·')}`;
+        if (r.recurrence_type === 'monthly') return r.use_month_end ? '매월 말일' : `매월 ${r.month_day}일`;
+        return `매년 ${r.year_month}월 ${r.year_day}일`;
+    }
+    _canManageRoutine(r) { return this.currentUser?.role === 'MASTER' || String(r.creator_user_id || '') === String(this.currentUser?.id || ''); }
+    _canCompleteRoutine(r) {
+        return this.currentUser?.role === 'MASTER' || (r.assignee_ids || []).map(String).includes(String(this._myId() || ''));
+    }
+    openRoutineEditor(id) {
+        if (this._routineSchemaMissing && !this._devPreviewCalendar) {
+            this.showToast('고정 루틴은 081_calendar_routines.sql 적용 후 사용할 수 있습니다.'); return;
+        }
+        const r = id ? (this.calendarRoutines || []).find(x => String(x.id) === String(id)) : null;
+        if (r && !this._canManageRoutine(r)) { this.showToast('수정은 만든 사람과 관리자만 할 수 있습니다.'); return; }
+        const esc = x => this._vesc(x), today = this._dateKey(new Date());
+        const staff = (mockData.companies || []).filter(c => ['MASTER','STAFF'].includes(c.role));
+        const picked = new Set((r?.assignee_ids || []).map(String));
+        const vendors = this.vendors || [];
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:680px;max-height:92vh;overflow:auto">
+            <div class="hk-top"><b>${r ? '고정 루틴 수정' : '새 고정 루틴'}</b><button class="fi-x" onclick="app.closeGlobalModal()">×</button></div>
+            <div class="fi-r" style="margin-top:12px"><span>이름</span><input id="rt-title" class="nw-f" value="${esc(r?.title || '')}" placeholder="예: 매월 정산"></div>
+            <div class="fi-r"><span>종류</span><select id="rt-kind" class="nw-f" onchange="app.syncRoutineForm()">
+                ${[['general','일반'],['vendor_settlement','거래처 정산'],['subscription','구독']].map(([v,t]) => `<option value="${v}"${(r?.kind||'general')===v?' selected':''}>${t}</option>`).join('')}</select></div>
+            <div class="fi-r"><span>반복</span><select id="rt-repeat" class="nw-f" onchange="app.syncRoutineForm()">
+                ${[['daily','매일'],['weekly','매주'],['monthly','매월'],['yearly','매년']].map(([v,t]) => `<option value="${v}"${(r?.recurrence_type||'monthly')===v?' selected':''}>${t}</option>`).join('')}</select></div>
+            <div id="rt-weekly" style="display:flex;gap:7px;margin:8px 0 8px 120px">${['일','월','화','수','목','금','토'].map((d,i) => `<label style="font-size:12px"><input type="checkbox" name="rt-weekday" value="${i}" ${(r?.weekdays||[]).includes(i)?'checked':''}>${d}</label>`).join('')}</div>
+            <div id="rt-monthly" class="fi-r"><span>매월</span><input id="rt-month-day" type="number" min="1" max="31" class="nw-f" value="${r?.month_day || new Date().getDate()}">
+                <label style="white-space:nowrap"><input id="rt-month-end" type="checkbox" ${r?.use_month_end?'checked':''}> 말일</label></div>
+            <div id="rt-yearly" class="fi-r"><span>매년</span><input id="rt-year-month" type="number" min="1" max="12" class="nw-f" value="${r?.year_month || new Date().getMonth()+1}">
+                <em>월</em><input id="rt-year-day" type="number" min="1" max="31" class="nw-f" value="${r?.year_day || new Date().getDate()}"><em>일</em></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <div class="fi-r"><span>시작</span><input id="rt-start" type="date" class="nw-f" value="${esc(r?.starts_on || today)}"></div>
+                <div class="fi-r"><span>종료</span><input id="rt-end" type="date" class="nw-f" value="${esc(r?.ends_on || '')}"></div>
+            </div>
+            <div class="fi-r"><span>시간</span><input id="rt-time" type="time" class="nw-f" value="${esc(String(r?.time_of_day || '').slice(0,5))}"></div>
+            <div id="rt-settlement" style="padding:10px;border:1px solid rgba(var(--tint),.08);border-radius:12px">
+                <div class="fi-r"><span>거래처</span><select id="rt-vendor" class="nw-f"><option value="">선택</option>${vendors.map(v => `<option value="${v.id}"${r?.vendor_id===v.id?' selected':''}>${esc(v.name)}</option>`).join('')}</select></div>
+                <div class="fi-r"><span>구분</span><select id="rt-direction" class="nw-f"><option value="pay"${r?.settlement_direction==='pay'?' selected':''}>지급</option><option value="receive"${r?.settlement_direction==='receive'?' selected':''}>수금</option></select></div>
+                <div class="fi-r"><span>예정 금액</span><input id="rt-amount" type="number" min="0" class="nw-f" value="${r?.amount ?? ''}"></div>
+            </div>
+            <div id="rt-subscription" style="padding:10px;border:1px solid rgba(var(--tint),.08);border-radius:12px">
+                <div class="fi-r"><span>서비스</span><input id="rt-service" class="nw-f" value="${esc(r?.service_name || '')}"></div>
+                <div class="fi-r"><span>금액 주기</span><select id="rt-billing" class="nw-f"><option value="monthly"${r?.billing_cycle!=='yearly'?' selected':''}>월</option><option value="yearly"${r?.billing_cycle==='yearly'?' selected':''}>연</option></select>
+                    <input id="rt-sub-amount" type="number" min="0" class="nw-f" value="${r?.amount ?? ''}"></div>
+                <div class="fi-r"><span>결제일</span><input id="rt-payment-day" type="number" min="1" max="31" class="nw-f" value="${r?.payment_day || ''}"></div>
+                <div class="fi-r"><span>결제수단</span><input id="rt-payment-name" class="nw-f" placeholder="예: 신한카드" value="${esc(r?.payment_method_name || '')}">
+                    <input id="rt-last4" class="nw-f" inputmode="numeric" placeholder="카드번호 또는 끝 4자리" value="${esc(r?.payment_last4 || '')}"></div>
+                <div class="fi-r"><span>해지 예정일</span><input id="rt-cancel" type="date" class="nw-f" value="${esc(r?.cancel_on || '')}"></div>
+            </div>
+            <div class="fi-r"><span>담당자</span><div style="display:flex;flex-wrap:wrap;gap:8px;flex:1">${staff.map(u => `<label style="font-size:12px"><input type="checkbox" name="rt-assignee" value="${u.id}" ${picked.has(String(u.id))?'checked':''}> ${esc(u.name)}</label>`).join('') || '<em>등록된 담당자 없음</em>'}</div></div>
+            <div class="fi-r"><span>공개 범위</span><select id="rt-visibility" class="nw-f">${[['all','전체'],['assignees','담당자만'],['admins','관리자만']].map(([v,t])=>`<option value="${v}"${(r?.visibility||'all')===v?' selected':''}>${t}</option>`).join('')}</select></div>
+            <div class="fi-r"><span>메모</span><textarea id="rt-memo" class="dt-ta">${esc(r?.memo || '')}</textarea></div>
+            <div class="fi-act"><button class="mbtn" onclick="app.closeGlobalModal()">취소</button><button class="mbtn pri" onclick="app.saveRoutine('${r?.id || ''}')">저장</button></div>
+        </div>`;
+        c.style.display = 'flex'; this.syncRoutineForm(); setTimeout(() => c.querySelector('#rt-title')?.focus(), 30);
+    }
+    syncRoutineForm() {
+        const repeat = document.getElementById('rt-repeat')?.value, kind = document.getElementById('rt-kind')?.value;
+        const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? (id === 'rt-weekly' ? 'flex' : '') : 'none'; };
+        show('rt-weekly', repeat === 'weekly'); show('rt-monthly', repeat === 'monthly'); show('rt-yearly', repeat === 'yearly');
+        show('rt-settlement', kind === 'vendor_settlement'); show('rt-subscription', kind === 'subscription');
+    }
+    async saveRoutine(id) {
+        const el = x => document.getElementById(x), val = x => (el(x)?.value || '').trim() || null;
+        const title = val('rt-title'), kind = val('rt-kind'); let recurrence_type = val('rt-repeat');
+        if (kind === 'subscription') recurrence_type = val('rt-billing') === 'yearly' ? 'yearly' : 'monthly';
+        if (!title) { this.showToast('루틴 이름을 적어주세요.'); return; }
+        const weekdays = [...document.querySelectorAll('input[name="rt-weekday"]:checked')].map(x => Number(x.value));
+        if (recurrence_type === 'weekly' && !weekdays.length) { this.showToast('매주 반복할 요일을 고르세요.'); return; }
+        const assignee_ids = [...document.querySelectorAll('input[name="rt-assignee"]:checked')].map(x => x.value);
+        const amountRaw = kind === 'subscription' ? val('rt-sub-amount') : val('rt-amount');
+        const amount = amountRaw == null ? null : Number(amountRaw);
+        const paymentName = kind === 'subscription' ? val('rt-payment-name') : null;
+        const last4Raw = kind === 'subscription' ? (val('rt-last4') || '') : '';
+        const last4Digits = last4Raw.replace(/\D/g, '');
+        const row = { title, kind, recurrence_type, weekdays, starts_on: val('rt-start'), ends_on: val('rt-end'), time_of_day: val('rt-time'), memo: val('rt-memo'),
+            month_day: recurrence_type === 'monthly' ? Number(val('rt-month-day')) : null, use_month_end: recurrence_type === 'monthly' && !!el('rt-month-end')?.checked,
+            year_month: recurrence_type === 'yearly' ? Number(val('rt-year-month')) : null, year_day: recurrence_type === 'yearly' ? Number(val('rt-year-day')) : null,
+            assignee_ids, visibility: val('rt-visibility'), created_by: this.currentUser?.name || null,
+            vendor_id: kind === 'vendor_settlement' ? val('rt-vendor') : null, settlement_direction: kind === 'vendor_settlement' ? val('rt-direction') : null,
+            amount: amount != null && Number.isFinite(amount) && amount >= 0 ? amount : null, service_name: kind === 'subscription' ? val('rt-service') : null,
+            billing_cycle: kind === 'subscription' ? val('rt-billing') : null, payment_day: kind === 'subscription' ? Number(val('rt-payment-day')) || null : null,
+            payment_method_name: paymentName, payment_last4: last4Digits ? last4Digits.slice(-4) : null,
+            cancel_on: kind === 'subscription' ? val('rt-cancel') : null };
+        if (!row.starts_on) { this.showToast('시작일을 고르세요.'); return; }
+        if (kind === 'vendor_settlement' && !row.vendor_id) { this.showToast('거래처를 고르세요.'); return; }
+        if (kind === 'subscription' && !row.service_name) { this.showToast('구독 서비스명을 적어주세요.'); return; }
+        if (kind === 'subscription' && !row.payment_day) { this.showToast('구독 결제일을 적어주세요.'); return; }
+        if (kind === 'subscription') {
+            recurrence_type = row.billing_cycle === 'yearly' ? 'yearly' : 'monthly'; row.recurrence_type = recurrence_type;
+            if (recurrence_type === 'monthly') { row.month_day = row.payment_day; row.use_month_end = false; row.year_month = null; row.year_day = null; }
+            else { const start = this._dateLocal(row.starts_on); row.year_month = start.getMonth() + 1; row.year_day = row.payment_day; row.month_day = null; row.use_month_end = false; }
+        }
+        if (last4Raw && last4Digits.length < 4) { this.showToast('카드번호는 숫자 4자리 이상 적어주세요.'); return; }
+        if (row.payment_method_name && /\d{6,}/.test(row.payment_method_name)) { this.showToast('결제수단 이름에는 카드번호를 적을 수 없습니다.'); return; }
+        let res;
+        if (id) res = await this.supabase.from('calendar_routines').update(row).eq('id', id);
+        else res = await this.supabase.from('calendar_routines').insert([row]);
+        if (res.error) { this.showToast('루틴 저장 실패: ' + res.error.message); return; }
+        this.closeGlobalModal(); await this.loadCalendarRoutines(); this.showToast('고정 루틴을 저장했습니다.');
+    }
+    openRoutineOccurrence(id, date) {
+        const r = (this.calendarRoutines || []).find(x => String(x.id) === String(id)); if (!r) return;
+        const o = (this.routineOccurrences || []).find(x => String(x.routine_id) === String(id) && x.occurrence_date === date);
+        const over = o?.override_data || {}, esc = x => this._vesc(x), meta = this._routineKind(r.kind);
+        const canManage = this._canManageRoutine(r), canComplete = this._canCompleteRoutine(r);
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        c.innerHTML = `<div class="modal-content vmodal fi" style="width:94%;max-width:500px">
+            <div class="hk-top"><b><i class="ph ${meta.icon}" style="color:${meta.color}"></i> ${esc(over.title || r.title)}</b><button class="fi-x" onclick="app.closeGlobalModal()">×</button></div>
+            <p style="color:var(--text-muted);font-size:12px">${esc(date)} · ${esc(this._routineRecurrenceLabel(r))} · ${esc(meta.label)}${o?.status === 'done' ? ' · 완료' : o?.status === 'skipped' ? ' · 건너뜀' : ''}</p>
+            <div class="fi-r"><span>이번 이름</span><input id="ro-title" class="nw-f" value="${esc(over.title || r.title)}" ${canManage?'':'disabled'}></div>
+            <div class="fi-r"><span>시간</span><input id="ro-time" type="time" class="nw-f" value="${esc(String(over.time_of_day || r.time_of_day || '').slice(0,5))}" ${canManage?'':'disabled'}></div>
+            <div class="fi-r"><span>메모</span><textarea id="ro-memo" class="dt-ta" ${canManage?'':'disabled'}>${esc(over.memo ?? r.memo ?? '')}</textarea></div>
+            ${r.kind === 'vendor_settlement' ? `<div class="fi-r"><span>처리일</span><input id="ro-processed" type="date" class="nw-f" value="${esc(o?.processed_on || date)}"></div>
+                <div class="fi-r"><span>실금액</span><input id="ro-actual" type="number" min="0" class="nw-f" value="${o?.actual_amount ?? r.amount ?? ''}"></div>` : ''}
+            <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:14px">
+                ${canComplete ? `<button class="mbtn pri" onclick="app.setRoutineOccurrence('${id}','${date}','done')"><i class="ph ph-check"></i> ${o?.status==='done'?'완료 취소':'완료'}</button>` : ''}
+                ${canManage ? `<button class="mbtn" onclick="app.saveRoutineOccurrenceOverride('${id}','${date}')">이번만 수정</button>
+                    <button class="mbtn" onclick="app.setRoutineOccurrence('${id}','${date}','skipped')">${o?.status==='skipped'?'건너뛰 취소':'이번만 건너뛰'}</button>
+                    <button class="mbtn" onclick="app.closeGlobalModal();app.openRoutineEditor('${id}')">규칙 수정</button>
+                    <button class="mbtn" onclick="app.stopRoutine('${id}')">중지</button>
+                    <button class="mbtn danger" onclick="app.deleteRoutine('${id}')">삭제</button>` : ''}
+            </div>
+            ${!canManage && !canComplete ? `<p class="fi-note">보기만 가능한 루틴입니다.</p>` : ''}
+        </div>`;
+        c.style.display = 'flex';
+    }
+    async _upsertRoutineOccurrence(routineId, date, patch) {
+        const old = (this.routineOccurrences || []).find(x => String(x.routine_id) === String(routineId) && x.occurrence_date === date);
+        let query;
+        if (old) {
+            // 기존 행은 바뀐 열만 보낸다. 전체 행 upsert는 ON CONFLICT 전 INSERT 트리거가
+            // 기존 override/완료값까지 새 변경으로 오인해 관리·완료 권한을 동시에 요구한다.
+            query = this.supabase.from('calendar_routine_occurrences').update(patch)
+                .eq('routine_id', routineId).eq('occurrence_date', date);
+        } else {
+            query = this.supabase.from('calendar_routine_occurrences').insert([{
+                routine_id: routineId, occurrence_date: date, ...patch,
+            }]);
+        }
+        const { data, error } = await query.select('*').single();
+        if (error) throw error;
+        this.routineOccurrences = [...(this.routineOccurrences || []).filter(x => !(String(x.routine_id) === String(routineId) && x.occurrence_date === date)), data];
+    }
+    async setRoutineOccurrence(id, date, status) {
+        const old = (this.routineOccurrences || []).find(x => String(x.routine_id) === String(id) && x.occurrence_date === date);
+        const next = old?.status === status ? 'open' : status;
+        try {
+            await this._upsertRoutineOccurrence(id, date, {
+                status: next, completed_at: next === 'done' ? new Date().toISOString() : null,
+                processed_on: next === 'done' ? (document.getElementById('ro-processed')?.value || null) : null,
+                actual_amount: next === 'done' ? (Number(document.getElementById('ro-actual')?.value) || null) : null,
+            });
+            this.closeGlobalModal(); this.requestRender();
+        } catch (e) { this.showToast('회차 저장 실패: ' + (e.message || e)); }
+    }
+    async saveRoutineOccurrenceOverride(id, date) {
+        const override_data = { title: document.getElementById('ro-title')?.value.trim() || null,
+            time_of_day: document.getElementById('ro-time')?.value || null, memo: document.getElementById('ro-memo')?.value.trim() || null };
+        try { await this._upsertRoutineOccurrence(id, date, { override_data }); this.closeGlobalModal(); this.requestRender(); this.showToast('이 회차만 바꾸었습니다.'); }
+        catch (e) { this.showToast('회차 수정 실패: ' + (e.message || e)); }
+    }
+    async stopRoutine(id) {
+        const r = (this.calendarRoutines || []).find(x => String(x.id) === String(id)); if (!r) return;
+        if (!await this.showConfirm(`'${r.title}' 루틴을 중지할까요?\n지난 완료 기록은 남습니다.`, '중지')) return;
+        const { error } = await this.supabase.from('calendar_routines').update({ active: false }).eq('id', id);
+        if (error) { this.showToast('중지 실패: ' + error.message); return; }
+        this.closeGlobalModal(); await this.loadCalendarRoutines();
+    }
+    async deleteRoutine(id) {
+        const r = (this.calendarRoutines || []).find(x => String(x.id) === String(id)); if (!r) return;
+        if (!await this.showConfirm(`'${r.title}' 루틴과 회차 기록을 모두 지울까요?`, '삭제')) return;
+        const { error } = await this.supabase.from('calendar_routines').delete().eq('id', id);
+        if (error) { this.showToast('루틴 삭제 실패: ' + error.message); return; }
+        this.closeGlobalModal(); await this.loadCalendarRoutines();
     }
     //  캘린더에서 더하기 — 할 일 목록에 넣거나, 메모 폴더에 [ ] 로 적는다.
     //  메모에 적으면 그 메모에서도 보이고 체크하면 여기서도 지워진다(양방향).
@@ -12167,22 +12710,37 @@ class BhasApp {
     //  거래처 물품 현황 (동대문 공장 등) + 지도(Leaflet)
     // ============================================================
     _vesc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-    _vendorCatColor(c){ return ({ '봉제':'#3b82f6','원단':'#8b5cf6','부자재':'#f59e0b','프린트':'#10b981' })[c] || '#64748b'; }
+    _defaultVendorCategories() { return [
+        { name: '봉제', color: '#3b82f6', sort_order: 10 },
+        { name: '원단', color: '#8b5cf6', sort_order: 20 },
+        { name: '부자재', color: '#f59e0b', sort_order: 30 },
+        { name: '프린트', color: '#10b981', sort_order: 40 },
+        { name: '기타', color: '#64748b', sort_order: 9990 },
+    ]; }
+    _vendorCategories() {
+        const rows = this.vendorCategories?.length ? this.vendorCategories : this._defaultVendorCategories();
+        return [...rows].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name), 'ko'));
+    }
+    _vendorCatColor(c){ return (this._vendorCategories().find(x => x.name === c) || {}).color || '#64748b'; }
 
     async loadVendors() {
         this._vendorsLoading = true;
         try {
             // 작업은 진행 중 + 최근 끝난 것만. 전부 긁으면 몇 천 줄이 온다.
             const since = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
-            const [vRes, jRes] = await Promise.all([
+            const [vRes, jRes, cRes] = await Promise.all([
                 this.supabase.from('vendors').select('*').order('name', { ascending: true }).limit(300),
                 this.supabase.from('vendor_jobs').select('*')
                     .or(`status.neq.done,due_date.gte.${since},due_date.is.null`)
-                    .order('due_date', { ascending: true }).limit(600)
+                    .order('due_date', { ascending: true }).limit(600),
+                this.supabase.from('vendor_categories').select('*').order('sort_order', { ascending: true })
             ]);
+            if (vRes.error) throw vRes.error;
             const byVendor = {};
             (jRes.data || []).forEach(j => { (byVendor[j.vendor_id] = byVendor[j.vendor_id] || []).push(j); });
             this.vendors = (vRes.data || []).map(v => ({ ...v, jobs: byVendor[v.id] || [] }));
+            this.vendorCategories = cRes.error ? this._defaultVendorCategories() : (cRes.data || this._defaultVendorCategories());
+            this._vendorCategoriesSchemaMissing = !!cRes.error;
             this._vendorsLoaded = true;
         } catch (e) {
             this.showToast('생산처를 불러오지 못했습니다. (007_vendors.sql 설치 필요)');
@@ -12630,79 +13188,98 @@ class BhasApp {
         const esc = s => this._vesc(s);
         if (!this._vendorsLoaded) return this._loadingSkeleton('연락처');
         const q = (this.contactQ || '').trim().toLowerCase();
-        const cats = ['봉제', '원단', '부자재', '프린트', '기타'];
+        const cats = this._vendorCategories();
         const cur = this.contactCat || '전체';
+        const status = this.contactStatus || '전체';
         const all = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
         let list = all;
         if (cur !== '전체') list = list.filter(v => (v.category || '기타') === cur);
-        if (q) list = list.filter(v => [v.name, v.phone, v.address, v.ceo_name, v.biz_no, v.memo]
+        if (status !== '전체') list = list.filter(v => (v.status || '거래중') === status);
+        if (q) list = list.filter(v => [v.name, v.contact_name, v.phone, v.fax, v.email, v.address, v.ceo_name, v.biz_no, v.memo]
             .some(x => String(x || '').toLowerCase().includes(q)));
         const sel = list.find(v => v.id === this.contactSel) || list[0];
         const cnt = c => all.filter(v => (v.category || '기타') === c).length;
         const tel = p => String(p || '').replace(/[^0-9+]/g, '');
         const initial = n => (String(n || '?').trim()[0] || '?');
-        const side = (key, label, icon, n) => `<div class="m3-s${cur === key ? ' on' : ''}"
-            onclick="app.setContactCat('${key}')"><i class="ph ${icon}" style="color:#0a84ff"></i><span>${esc(label)}</span><em>${n}</em></div>`;
+        const statusColor = s => ({ '거래중': '#22c55e', '보류': '#f59e0b', '거래중단': '#94a3b8' })[s] || '#94a3b8';
+        const badge = s => `<span style="font-size:10px;font-weight:800;color:${statusColor(s)};background:${statusColor(s)}18;padding:2px 6px;border-radius:999px">${esc(s || '거래중')}</span>`;
+        const side = (key, label, icon, n, color, editable) => `<div class="m3-s${cur === key ? ' on' : ''}"
+            onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(key)}'))"
+            ${editable ? `oncontextmenu="app.vendorCategoryMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))" title="우클릭: 이름·순서·삭제"` : ''}>
+            <i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
         const f = (icon, k, v, href) => v ? `<div class="m3-f"><i class="ph ${icon}"></i><span class="k">${esc(k)}</span>
             <span class="v">${href ? `<a href="${esc(href)}" style="color:var(--primary);text-decoration:none">${esc(v)}</a>` : esc(v)}</span></div>` : '';
+        const doc = this.contactNew ? {} : sel;
         return `
         <div class="m3">
             <aside class="m3-side">
-                <div class="m3-h">분류</div>
+                <div class="m3-h" style="display:flex;align-items:center;justify-content:space-between">분류
+                    <button onclick="app.addVendorCategory()" title="새 분류" style="border:0;background:none;color:var(--primary);cursor:pointer"><i class="ph ph-plus"></i></button></div>
                 ${side('전체', '모든 연락처', 'ph-address-book', all.length)}
-                ${cats.map(c => side(c, c, 'ph-folder-simple', cnt(c))).join('')}
+                ${cats.map(c => side(c.name, c.name, 'ph-folder-simple-fill', cnt(c.name), c.color, true)).join('')}
+                <div style="padding:8px 12px;font-size:10px;color:var(--text-muted)">분류를 우클릭해 관리</div>
             </aside>
             <section class="m3-list">
                 <div class="m3-lbar"><div><b>${esc(cur === '전체' ? '모든 연락처' : cur)}</b><span>${list.length}곳</span></div>
+                    <select aria-label="거래 상태" onchange="app.contactStatus=this.value;app.contactSel=null;app.requestRender()" style="max-width:92px;border:0;background:transparent;color:var(--text-muted)">
+                        ${['전체','거래중','보류','거래중단'].map(s => `<option value="${s}"${status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>
                     <button class="m3-new" onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
-                    <input placeholder="상호·전화·주소" value="${esc(this.contactQ || '')}" oninput="app.contactQ=this.value;app.requestRender()"></div>
+                    <input placeholder="상호·담당자·전화·팩스·이메일" value="${esc(this.contactQ || '')}" oninput="app.contactQ=this.value;app.requestRender()"></div>
                 <div class="m3-rows">
                     ${list.map(v => `<div class="m3-r${sel && v.id === sel.id ? ' on' : ''}" onclick="app.selectContact('${v.id}')"
                             oncontextmenu="app.contactMenu(event,'${v.id}')">
-                        <b><span class="ct-face" style="width:22px;height:22px;font-size:11px">${esc(initial(v.name))}</span>${esc(v.name)}</b>
-                        <div class="sub">${cur === '전체' ? `<span>${esc(v.category || '기타')}</span>` : ''}<span>${esc(v.phone || v.address || '')}</span></div>
-                    </div>`).join('') || `<div class="m3-none">${q || cur !== '전체' ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다'}</div>`}
+                        <b><span class="ct-face" style="width:22px;height:22px;font-size:11px">${esc(initial(v.name))}</span>${esc(v.name)} ${badge(v.status)}</b>
+                        <div class="sub">${cur === '전체' ? `<span>${esc(v.category || '기타')}</span>` : ''}<span>${esc(v.contact_name || v.phone || v.address || '')}</span></div>
+                    </div>`).join('') || `<div class="m3-none">${q || cur !== '전체' || status !== '전체' ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다'}</div>`}
                 </div>
             </section>
             <section class="m3-doc">
-                ${sel ? `
+                ${doc || this.contactNew ? `
                 <div class="m3-tools">
-                    ${sel.phone ? `<a class="mbtn" href="tel:${esc(tel(sel.phone))}" style="text-decoration:none"><i class="ph ph-phone"></i> 전화</a>` : ''}
-                    ${sel.email ? `<a class="mbtn" href="mailto:${esc(sel.email)}" style="text-decoration:none"><i class="ph ph-envelope-simple"></i> 메일</a>` : ''}
+                    ${doc.phone ? `<a class="mbtn" href="tel:${esc(tel(doc.phone))}" style="text-decoration:none"><i class="ph ph-phone"></i> 전화</a>` : ''}
+                    ${doc.email ? `<a class="mbtn" href="mailto:${esc(doc.email)}" style="text-decoration:none"><i class="ph ph-envelope-simple"></i> 메일</a>` : ''}
                     <span class="sp"></span>
-                    <button class="${this.contactEdit ? 'on' : ''}" onclick="app.toggleContactEdit()" title="고치기"><i class="ph ph-pencil-simple"></i></button>
+                    ${this.contactNew ? '' : `<button class="${this.contactEdit ? 'on' : ''}" onclick="app.toggleContactEdit()" title="고치기"><i class="ph ph-pencil-simple"></i></button>`}
                 </div>
                 <div class="m3-page">
                     ${(this.contactEdit || this.contactNew) ? `
-                    <h2 class="m3-big">${this.contactNew ? '새 연락처' : esc(sel.name)}</h2>
+                    <h2 class="m3-big">${this.contactNew ? '새 연락처' : esc(doc.name)}</h2>
                     <div class="m3-sub">${this.contactNew ? '빈칸은 비워 둬도 됩니다' : '고치는 중'}</div>
-                    <div class="fi-r"><span>상호</span><input id="vd-name" class="nw-f" value="${this.contactNew ? '' : esc(sel.name || '')}"></div>
+                    <div class="fi-r"><span>상태</span><select id="vd-status" class="nw-f">${['거래중','보류','거래중단'].map(s => `<option value="${s}"${(doc.status || '거래중') === s ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
+                    <div class="fi-r"><span>상호</span><input id="vd-name" class="nw-f" value="${esc(doc.name || '')}"></div>
                     <div class="fi-r"><span>분류</span><select id="vd-cat" class="nw-f">
-                        ${cats.map(k => `<option value="${k}"${(!this.contactNew && sel.category === k) ? ' selected' : ''}>${k}</option>`).join('')}</select></div>
-                    <div class="fi-r"><span>전화</span><input id="vd-phone" class="nw-f" value="${this.contactNew ? '' : esc(sel.phone || '')}"></div>
-                    <div class="fi-r"><span>주소</span><input id="vd-addr" class="nw-f" value="${this.contactNew ? '' : esc(sel.address || '')}"></div>
-                    <div class="fi-r"><span>사업자</span><input id="vd-biz" class="nw-f" value="${this.contactNew ? '' : esc(sel.biz_no || '')}"></div>
+                        ${cats.map(k => `<option value="${esc(k.name)}"${(doc.category || '기타') === k.name ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div>
+                    <div class="fi-r"><span>담당자</span><input id="vd-contact" class="nw-f" value="${esc(doc.contact_name || '')}"></div>
+                    <div class="fi-r"><span>연락처</span><input id="vd-phone" class="nw-f" value="${esc(doc.phone || '')}"></div>
+                    <div class="fi-r"><span>팩스</span><input id="vd-fax" class="nw-f" value="${esc(doc.fax || '')}"></div>
+                    <div class="fi-r"><span>이메일</span><input id="vd-email" type="email" class="nw-f" value="${esc(doc.email || '')}"></div>
+                    <div class="fi-r"><span>주소</span><input id="vd-addr" class="nw-f" value="${esc(doc.address || '')}"></div>
                     <div class="m3-f" style="flex-direction:column;align-items:stretch">
                         <span class="k" style="width:auto;margin-bottom:5px">메모</span>
-                        <textarea id="vd-memo" class="dt-ta">${this.contactNew ? '' : esc(sel.memo || '')}</textarea></div>
+                        <textarea id="vd-memo" class="dt-ta">${esc(doc.memo || '')}</textarea></div>
+                    <details style="margin-top:12px"><summary style="cursor:pointer;color:var(--text-muted);font-size:12px">기존 사업자 정보</summary>
+                        <div class="fi-r"><span>대표자</span><input id="vd-ceo" class="nw-f" value="${esc(doc.ceo_name || '')}"></div>
+                        <div class="fi-r"><span>사업자번호</span><input id="vd-biz" class="nw-f" value="${esc(doc.biz_no || '')}"></div></details>
                     <div class="fi-act">
                         <button class="mbtn" onclick="app.cancelContactEdit()">취소</button>
-                        <button class="mbtn pri" onclick="app.saveVendor('${this.contactNew ? '' : sel.id}')">저장</button>
+                        <button class="mbtn pri" onclick="app.saveVendor('${this.contactNew ? '' : doc.id}')">저장</button>
                     </div>` : `
                     <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
-                        <span class="ct-face" style="width:54px;height:54px;font-size:22px">${esc(initial(sel.name))}</span>
-                        <div><h2 class="m3-big">${esc(sel.name)}</h2>
-                            <div class="m3-sub" style="margin:0">${esc(sel.category || '기타')}</div></div>
+                        <span class="ct-face" style="width:54px;height:54px;font-size:22px">${esc(initial(doc.name))}</span>
+                        <div><h2 class="m3-big">${esc(doc.name)}</h2>
+                            <div class="m3-sub" style="margin:0">${esc(doc.category || '기타')} · ${badge(doc.status)}</div></div>
                     </div>
-                    ${f('ph-phone', '전화', sel.phone, sel.phone ? 'tel:' + tel(sel.phone) : null)}
-                    ${f('ph-envelope-simple', '메일', sel.email, sel.email ? 'mailto:' + sel.email : null)}
-                    ${f('ph-map-pin', '주소', sel.address)}
-                    ${f('ph-user', '대표자', sel.ceo_name)}
-                    ${f('ph-identification-card', '사업자번호', sel.biz_no)}
-                    ${f('ph-note', '메모', sel.memo)}
+                    ${f('ph-user-circle', '담당자', doc.contact_name)}
+                    ${f('ph-phone', '연락처', doc.phone, doc.phone ? 'tel:' + tel(doc.phone) : null)}
+                    ${f('ph-printer', '팩스', doc.fax)}
+                    ${f('ph-envelope-simple', '이메일', doc.email, doc.email ? 'mailto:' + doc.email : null)}
+                    ${f('ph-map-pin', '주소', doc.address)}
+                    ${f('ph-note', '메모', doc.memo)}
+                    ${(doc.ceo_name || doc.biz_no) ? `<details style="margin-top:14px"><summary style="cursor:pointer;color:var(--text-muted);font-size:12px">기존 사업자 정보</summary>
+                        ${f('ph-user', '대표자', doc.ceo_name)}${f('ph-identification-card', '사업자번호', doc.biz_no)}</details>` : ''}
                     ${(() => {
-                        const jobs = (sel.jobs || []).filter(j => j.status !== 'done');
+                        const jobs = (doc.jobs || []).filter(j => j.status !== 'done');
                         return jobs.length ? `<div class="m3-f" style="flex-direction:column;align-items:stretch">
                             <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:6px">진행 중 ${jobs.length}건</div>
                             ${jobs.slice(0, 6).map(j => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0">
@@ -12733,11 +13310,13 @@ class BhasApp {
         const steps = this._stepsFor(brandId);
         this.stepPick = {
             id: null,                     // 아직 시즌이 없다 — 만들기 누를 때 같이 만든다
+            homeMade: false,
             brand: brandId || '',
             name: '',
             yr: new Date().getFullYear() % 100,
             ss: new Date().getMonth() < 6 ? 'SS' : 'FW',   // 1~6월 SS · 7~12월 FW
             ord: 1,
+            start: '',
             open: '',
             on: new Set(steps.filter(x => x.on_default !== false).map(x => x.id)),
             dates: {},
@@ -12745,6 +13324,7 @@ class BhasApp {
         this._seaNextOrd();
         this._paintStepPick();
     }
+    setSeaName(v) { if (this.stepPick) this.stepPick.name = v; }
     //  시즌명 = 연도 두 자리 + SS/FW/상시 + ' n차'. 바꾸는 건 이 세 칸뿐이라 손으로 적은 이름이 섞이지 않는다
     _seaNameOf(pk) { return `${pk.yr}${pk.ss} ${pk.ord}차`; }
     //  같은 브랜드에 같은 이름이 있나 — 띄어쓰기만 다른 옛 이름('26 FW2차')도 같은 것으로 본다
@@ -12783,6 +13363,71 @@ class BhasApp {
     pickBrandSeason(folderKey, seaId) {
         this.noteFolder = folderKey; this.noteSea = String(seaId); this.noteSel = null; this.requestRender();
     }
+    _vendorCategoryWritable(name) {
+        const c = this._vendorCategories().find(x => x.name === name);
+        if (!c?.id || this._vendorCategoriesSchemaMissing) {
+            this.showToast('분류 관리는 080_vendor_contacts.sql 적용 후 사용할 수 있습니다.');
+            return null;
+        }
+        return c;
+    }
+    async addVendorCategory() {
+        if (this._vendorCategoriesSchemaMissing) { this._vendorCategoryWritable(''); return; }
+        const v = await this.showPrompt('새 분류 이름', '', '연락처 분류 추가');
+        const name = (v || '').trim(); if (!name) return;
+        if (this._vendorCategories().some(c => c.name === name)) { this.showToast('이미 있는 분류입니다.'); return; }
+        const palette = ['#0a84ff','#bf5af2','#ff375f','#30d158','#ff9f0a','#64d2ff'];
+        const normal = this._vendorCategories().filter(c => c.name !== '기타');
+        const row = { name, color: palette[normal.length % palette.length], sort_order: (Math.max(0, ...normal.map(c => c.sort_order || 0)) + 10) };
+        const { error } = await this.supabase.from('vendor_categories').insert([row]);
+        if (error) { this.showToast('분류 추가 실패: ' + error.message); return; }
+        await this.loadVendors(); this.contactCat = name; this.showToast(`'${name}' 분류를 만들었습니다.`);
+    }
+    vendorCategoryMenu(ev, name) {
+        ev.preventDefault(); ev.stopPropagation();
+        const cats = this._vendorCategories(), i = cats.findIndex(c => c.name === name);
+        this.ctxMenu(ev, [
+            { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameVendorCategory(name) },
+            ...(i > 0 ? [{ t: '위로 옮기기', icon: 'ph-arrow-up', run: () => this.moveVendorCategory(name, -1) }] : []),
+            ...(i >= 0 && i < cats.length - 1 ? [{ t: '아래로 옮기기', icon: 'ph-arrow-down', run: () => this.moveVendorCategory(name, 1) }] : []),
+            { sep: true },
+            { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.deleteVendorCategory(name) },
+        ]);
+    }
+    async renameVendorCategory(name) {
+        const c = this._vendorCategoryWritable(name); if (!c) return;
+        if (name === '기타') { this.showToast(`'기타'는 삭제나 이름 변경할 수 없습니다.`); return; }
+        const v = await this.showPrompt('분류 이름', name, '분류 이름 바꾸기');
+        const next = (v || '').trim(); if (!next || next === name) return;
+        const { error } = await this.supabase.from('vendor_categories').update({ name: next }).eq('id', c.id);
+        if (error) { this.showToast('이름 변경 실패: ' + error.message); return; }
+        if (this.contactCat === name) this.contactCat = next;
+        if (this.venCat === name) this.venCat = next;
+        await this.loadVendors(); this.showToast('분류와 소속 연락처를 함께 바꾸었습니다.');
+    }
+    async moveVendorCategory(name, dir) {
+        const c = this._vendorCategoryWritable(name); if (!c) return;
+        const cats = this._vendorCategories(), i = cats.findIndex(x => x.id === c.id), other = cats[i + dir];
+        if (!other?.id) return;
+        const a = c.sort_order || i * 10, b = other.sort_order || (i + dir) * 10;
+        const [r1, r2] = await Promise.all([
+            this.supabase.from('vendor_categories').update({ sort_order: b }).eq('id', c.id),
+            this.supabase.from('vendor_categories').update({ sort_order: a }).eq('id', other.id),
+        ]);
+        if (r1.error || r2.error) { this.showToast('순서 변경 실패: ' + (r1.error || r2.error).message); return; }
+        await this.loadVendors();
+    }
+    async deleteVendorCategory(name) {
+        const c = this._vendorCategoryWritable(name); if (!c) return;
+        if (name === '기타') { this.showToast(`'기타'는 기본 분류라 삭제할 수 없습니다.`); return; }
+        const n = (this.vendors || []).filter(v => (v.category || '기타') === name).length;
+        if (!await this.showConfirm(`'${name}' 분류를 삭제할까요?\n소속 연락처 ${n}곳은 '기타'로 옮겨집니다.`, '삭제')) return;
+        const { error } = await this.supabase.from('vendor_categories').delete().eq('id', c.id);
+        if (error) { this.showToast('분류 삭제 실패: ' + error.message); return; }
+        if (this.contactCat === name) this.contactCat = '전체';
+        if (this.venCat === name) this.venCat = 'ALL';
+        await this.loadVendors(); this.showToast(`분류를 삭제하고 ${n}곳을 '기타'로 옮겼습니다.`);
+    }
     toggleContactEdit() { this.contactEdit = !this.contactEdit; this.contactNew = false; this.requestRender(); }
     newContact() { this.contactNew = true; this.contactEdit = false; this._vendorPick = null; this.requestRender(); }
     cancelContactEdit() { this.contactEdit = false; this.contactNew = false; this.requestRender(); }
@@ -12812,7 +13457,7 @@ class BhasApp {
     showVendorModal(id) {
         const v = id ? (this.vendors||[]).find(x=>x.id===id) : null;
         this._vendorPick = (v && v.lat && v.lng) ? { lat:v.lat, lng:v.lng } : null;
-        const cats = ['봉제','원단','부자재','프린트','기타'];
+        const cats = this._vendorCategories();
         const c = document.getElementById('global-modal-container');
         if (!c) return;
         c.innerHTML = `
@@ -12820,12 +13465,20 @@ class BhasApp {
             <h2 style="margin:0 0 1.3rem;font-size:1.2rem"><i class="ph ph-storefront"></i> ${v?'생산처 수정':'생산처 등록'}</h2>
             <div style="display:flex;flex-direction:column;gap:10px">
                 <input id="vd-name" class="login-input" placeholder="상호 (예: 성수봉제)" value="${v?this._vesc(v.name):''}">
-                <select id="vd-cat" class="login-input">${cats.map(k=>`<option value="${k}" ${v&&v.category===k?'selected':''}>${k}</option>`).join('')}</select>
+                <div style="display:flex;gap:8px">
+                    <select id="vd-status" class="login-input">${['거래중','보류','거래중단'].map(s=>`<option value="${s}" ${(v?.status||'거래중')===s?'selected':''}>${s}</option>`).join('')}</select>
+                    <select id="vd-cat" class="login-input">${cats.map(k=>`<option value="${this._vesc(k.name)}" ${v&&v.category===k.name?'selected':''}>${this._vesc(k.name)}</option>`).join('')}</select>
+                </div>
+                <input id="vd-contact" class="login-input" placeholder="담당자" value="${v?this._vesc(v.contact_name||''):''}">
                 <input id="vd-addr" class="login-input" placeholder="주소" value="${v?this._vesc(v.address||''):''}">
                 <div style="display:flex;gap:8px">
-                    <input id="vd-phone" class="login-input" placeholder="전화번호" value="${v?this._vesc(v.phone||''):''}">
-                    <input id="vd-biz" class="login-input" placeholder="사업자등록번호" value="${v?this._vesc(v.biz_no||''):''}">
+                    <input id="vd-phone" class="login-input" placeholder="연락처" value="${v?this._vesc(v.phone||''):''}">
+                    <input id="vd-fax" class="login-input" placeholder="팩스" value="${v?this._vesc(v.fax||''):''}">
                 </div>
+                <input id="vd-email" type="email" class="login-input" placeholder="이메일" value="${v?this._vesc(v.email||''):''}">
+                <details><summary style="cursor:pointer;color:var(--text-muted);font-size:12px">기존 사업자 정보</summary>
+                    <div style="display:flex;gap:8px;margin-top:8px"><input id="vd-ceo" class="login-input" placeholder="대표자" value="${v?this._vesc(v.ceo_name||''):''}">
+                    <input id="vd-biz" class="login-input" placeholder="사업자등록번호" value="${v?this._vesc(v.biz_no||''):''}"></div></details>
                 <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px"><i class="ph ph-hand-tap"></i> 지도를 클릭해 위치를 찍으세요</div>
                 <div id="vd-pickmap" style="height:200px;border-radius:12px;overflow:hidden;background:rgba(148,163,184,0.1);z-index:0"></div>
                 <textarea id="vd-memo" class="login-input" placeholder="메모" style="min-height:52px;resize:vertical">${v?this._vesc(v.memo||''):''}</textarea>
@@ -12867,15 +13520,28 @@ class BhasApp {
     async saveVendor(id) {
         const name = (document.getElementById('vd-name') || {}).value?.trim();
         if (!name) { this.showToast('상호는 필수입니다.'); return; }
+        const current = id ? (this.vendors || []).find(v => String(v.id) === String(id)) : null;
+        const val = (key, prop) => {
+            const el = document.getElementById(key);
+            return el ? (el.value || '').trim() || null : (current?.[prop] ?? null);
+        };
+        const hasPickMap = !!document.getElementById('vd-pickmap');
         const row = {
             name,
-            category: document.getElementById('vd-cat').value,
-            address: document.getElementById('vd-addr').value.trim() || null,
-            phone: document.getElementById('vd-phone').value.trim() || null,
-            biz_no: document.getElementById('vd-biz').value.trim() || null,
-            memo: document.getElementById('vd-memo').value.trim() || null,
-            lat: this._vendorPick ? this._vendorPick.lat : null,
-            lng: this._vendorPick ? this._vendorPick.lng : null,
+            status: val('vd-status', 'status') || '거래중',
+            category: val('vd-cat', 'category') || '기타',
+            contact_name: val('vd-contact', 'contact_name'),
+            address: val('vd-addr', 'address'),
+            phone: val('vd-phone', 'phone'),
+            fax: val('vd-fax', 'fax'),
+            email: val('vd-email', 'email'),
+            ceo_name: val('vd-ceo', 'ceo_name'),
+            biz_no: val('vd-biz', 'biz_no'),
+            memo: val('vd-memo', 'memo'),
+            // 연락처 화면에는 지도가 없다. 그 화면에서 저장할 때는 기존 좌표를 보존하고,
+            // 지도 편집 화면에서만 새로 찍은 좌표를 반영한다.
+            lat: hasPickMap ? (this._vendorPick?.lat ?? current?.lat ?? null) : (current?.lat ?? null),
+            lng: hasPickMap ? (this._vendorPick?.lng ?? current?.lng ?? null) : (current?.lng ?? null),
         };
         let error;
         if (id) ({ error } = await this.supabase.from('vendors').update(row).eq('id', id));
@@ -12884,7 +13550,7 @@ class BhasApp {
         this.closeGlobalModal();
         this.venEdit = false; this.contactEdit = false; this.contactNew = false;
         await this.loadVendors();
-        if (!id) { const made = (this.vendors || []).find(x => x.name === name); if (made) this.venSel = made.id; }
+        if (!id) { const made = (this.vendors || []).find(x => x.name === name); if (made) { this.venSel = made.id; this.contactSel = made.id; } }
         this.showToast('저장되었습니다.');
     }
 
@@ -13467,6 +14133,11 @@ class BhasApp {
         if (on) (this._lastItemRows || []).forEach(i => this._itemPicked.add(i.id));
         this.requestRender();
     }
+    pickItemTableRows(input, on) {
+        const ids = [...(input?.closest('table')?.querySelectorAll('tbody .it-row') || [])].map(r => r.dataset.id);
+        this._itemPicked = new Set(on ? ids : []);
+        this.requestRender();
+    }
     //  고른 줄을 한꺼번에 — 제작현황 · 시즌 · 공장
     async bulkItems(field, value) {
         const ids = [...(this._itemPicked || [])];
@@ -13515,6 +14186,20 @@ class BhasApp {
             vendor_id: V(i.vendor_id), product_id: S(i.product_id),
             ship_date: i.ship_date || '', open_date: i.open_date || '',
         })[k] ?? '';
+    }
+    _sortItemRows(rows) {
+        const srt = this.itemSort || { k: '', dir: 1 };
+        if (!srt.k) return [...rows];
+        return [...rows].sort((a, b) => {
+            let A = this._itemColVal(a, srt.k), B = this._itemColVal(b, srt.k);
+            if (srt.k === 'status') {
+                A = this.ITEM_STATUSES.indexOf(a.status);
+                B = this.ITEM_STATUSES.indexOf(b.status);
+                A = A < 0 ? 99 : A; B = B < 0 ? 99 : B;
+            }
+            if (typeof A === 'number' && typeof B === 'number') return (A - B) * srt.dir;
+            return String(A).localeCompare(String(B), 'ko', { numeric: true }) * srt.dir;
+        });
     }
     openColFilter(ev, k, label) {
         ev && ev.stopPropagation();
@@ -13726,8 +14411,9 @@ class BhasApp {
             if (vn) {
                 let ven = byName(vendors, vn);
                 if (!ven) {
+                    const importCategory = this._vendorCategories().some(c => c.name === '봉제') ? '봉제' : '기타';
                     const { data, error } = await this.supabase.from('vendors')
-                        .insert([{ name: vn, category: '봉제' }]).select().single();
+                        .insert([{ name: vn, category: importCategory }]).select().single();
                     if (!error && data) { ven = { ...data, jobs: [] }; vendors.push(ven); made.vendor++; }
                 }
                 if (ven) row.vendor_id = ven.id;
@@ -13769,7 +14455,6 @@ class BhasApp {
         const seasons = this._seasons();
         const brands = mockData.brands || [];
         const vendors = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
-        const packs = this._techPacks || [];
         const all = this.pItems || [];
 
         //  A5. 103건을 통째로 그리면 들어가는 것도 찾는 것도 느리다.
@@ -13791,69 +14476,8 @@ class BhasApp {
             rows = rows.filter(i => keep.has(this._itemColVal(i, k)));
         });
 
-        //  줄 세우기 — 머리글을 누르면 그 칸 기준. 한 번 더 누르면 거꾸로.
-        const srt = this.itemSort || { k: '', dir: 1 };
-        if (srt.k) {
-            const nameOfB = id => (brands.find(b => b.id === id) || {}).name || '';
-            const nameOfV = id => (vendors.find(v => v.id === id) || {}).name || '';
-            const nameOfS = id => (seasons.find(p => String(p.id) === String(id)) || {}).name || '';
-            const val = (i) => ({
-                checked: i.checked ? 1 : 0, brand_id: nameOfB(i.brand_id), name: this._itemLabel(i),
-                sale: (i.sale_names || [])[0] || '', pattern_no: i.pattern_no || '',
-                status: this.ITEM_STATUSES.indexOf(i.status) + 1 || 99, memo: i.memo || '',
-                trims: i.trims ? 1 : 0, vendor_id: nameOfV(i.vendor_id), product_id: nameOfS(i.product_id),
-                ship_date: i.ship_date || '', open_date: i.open_date || '',
-            })[srt.k];
-            rows = [...rows].sort((a, b) => {
-                const A = val(a), B = val(b);
-                if (typeof A === 'number' && typeof B === 'number') return (A - B) * srt.dir;
-                return String(A).localeCompare(String(B), 'ko') * srt.dir;
-            });
-        }
-
-        const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''}
-            onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','${f}',this.checked,1)">`;
-
-        //  표는 '보는 곳'이다 — 칸마다 드롭다운을 깔면 눈이 어지럽고 잘못 누르기도 쉽다.
-        //  고치는 건 이름을 눌러 들어가는 제품 페이지에서 한다.
-        const mu = v => v ? esc(v) : '<span class="it-mu">—</span>';
-        const tr = it => {
-            const sc = this.ITEM_SC[it.status] || '#8e8e93';
-            const tp = packs.find(p => String(p.id) === String(it.tech_pack_id));
-            const sn = (it.sale_names || []);
-            const sp = sn.length ? this._saleParts(sn[0]) : null;
-            const sold = this._itemSold(it);
-            const vn = (vendors.find(v => String(v.id) === String(it.vendor_id)) || {}).name || '';
-            const se = (seasons.find(p => String(p.id) === String(it.product_id)) || {}).name || '';
-            return `<tr class="it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}"
-                onclick="app.rowPick(event,'${it.id}')" ondblclick="app.openItemPage('${it.id}')">
-                <td class="it-c"><input class="it-ck" type="checkbox" ${this._itemPicked?.has(it.id) ? 'checked' : ''}
-                    onclick="event.stopPropagation()" onchange="app.pickRow('${it.id}',this.checked)"></td>
-                <td class="it-mu">${mu(this._brandNameById(it.brand_id) === '-' ? '' : this._brandNameById(it.brand_id))}</td>
-                <td><button class="it-nameb" onclick="event.stopPropagation();app.openItemPage('${it.id}')"
-                    title="${sn.length ? esc(sn.join(' · ')) : '눌러서 제품 페이지 열기'}">${esc(this._itemLabel(it) || '이름 없는 제품')}</button>
-                    ${sp && sp.tag ? `<em class="it-evt">${esc(sp.tag)}</em>` : ''}
-                    ${sold ? `<em class="it-sold">${sold.qty.toLocaleString()}개</em>` : ''}
-                    ${!sn.length ? `<em class="it-nolink" title="카페24 판매명이 안 붙었습니다">미연동</em>` : ''}
-                    ${(() => { const is = this._itemIssues(it); return is.length
-                        ? `<em class="it-warn" title="${esc(is.join(' · '))}"><i class="ph ph-warning-circle"></i>확인</em>` : ''; })()}</td>
-                <td class="it-mu">${mu(it.pattern_no)}</td>
-                <td><span class="it-stt" style="color:${sc};background:${sc}1a">${esc(it.status || '—')}</span></td>
-                <td class="it-memo" title="${esc(it.memo || '')}">${mu(it.memo)}</td>
-                <td class="it-c">${chk(it, 'trims')}</td>
-                <td class="it-c">${chk(it, 'checked')}</td>
-                <td class="it-mu">${mu(vn)}</td>
-                <td class="it-mu">${mu(se)}</td>
-                <td class="it-lk">
-                    ${tp ? `<button class="it-ib on" title="작업지시서: ${esc(tp.style_name || '')}" onclick="event.stopPropagation();app.openTechPack('${tp.id}')"><i class="ph ph-clipboard-text"></i></button>`
-                         : `<button class="it-ib" title="작업지시서 만들기" onclick="event.stopPropagation();app.itemNewTechPack('${it.id}')"><i class="ph ph-clipboard-text"></i></button>`}
-                    ${it.quote_id ? `<button class="it-ib on" title="견적 보기" onclick="event.stopPropagation();app.itemOpenQuote('${it.id}')"><i class="ph ph-receipt"></i></button>`
-                         : `<button class="it-ib" title="견적 만들기" onclick="event.stopPropagation();app.itemNewQuote('${it.id}')"><i class="ph ph-receipt"></i></button>`}
-                    <button class="it-ib" title="생산 투입" onclick="event.stopPropagation();app.itemToVendor('${it.id}')"><i class="ph ph-factory"></i></button>
-                    <button class="it-ib del" title="삭제" onclick="event.stopPropagation();app.delItem('${it.id}')"><i class="ph ph-trash"></i></button>
-                </td>
-            </tr>`;
-        };
+        // 표 렌더러가 본표·임베드 모두 같은 비교 함수로 정렬한다.
+        rows = this._sortItemRows(rows);
 
         //  A5. 한 번에 다 그리지 않는다. 50줄씩 늘린다.
         const LIM = this.itemLimit || 50;
@@ -13897,25 +14521,8 @@ class BhasApp {
             <div class="it-pills">
                 ${sp('ACTIVE', '진행 중', activeCnt)}${sp('ALL', '전체', all.length)}${sp('출고완료', '출고완료', all.filter(i => i.status === '출고완료').length)}${checkCnt ? sp('CHECK', '확인 필요', checkCnt, '#f59e0b') : ''}
             </div>
-            <div class="it-scroll">
-                <table class="it-tbl"><thead><tr>
-                    <th class="it-c" title="골라서 한꺼번에 바꾸기"><input type="checkbox" class="it-ck"
-                        ${shown.length && shown.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''}
-                        onchange="app.pickAllRows(this.checked)"></th>
-                    ${[['brand_id', '브랜드'], ['name', '판매명'],
-                       ['pattern_no', '패턴명'], ['status', '제작현황'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
-                       ['checked', '확인', 'it-c'],
-                       ['vendor_id', '공장'], ['product_id', '시즌']]
-                      .map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${(this.itemColF || {})[k] ? ' flt' : ''}"
-                        onclick="app.sortItems('${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
-                        onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${(this.itemColF || {})[k] ? '-fill' : ''}"></i></button></th>`).join('')}
-                    <th>연동</th>
-                </tr></thead>
-                <tbody>${shown.length ? shown.map(tr).join('')
-                    : `<tr><td colspan="11" class="it-none">${all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 <b>제품 추가</b>로 한 줄 만드세요'}</td></tr>`}
-                ${more > 0 ? `<tr><td colspan="11" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}</tbody>
-                </table>
-            </div>
+            ${this.renderItemTable(null, { filter: { rows: shown, more,
+                empty: all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 제품 추가로 한 줄 만드세요' } })}
         </div>`;
     }
 

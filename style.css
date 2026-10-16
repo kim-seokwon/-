@@ -2979,6 +2979,10 @@ body:not(.light) .mac-deskboard .glass{
 .rm-item.done .rm-tt{color:var(--text-muted);text-decoration:line-through}
 .rm-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:3px;font-size:11.5px;color:var(--text-muted)}
 .rm-tag{display:inline-flex;align-items:center;gap:3px;background:rgba(127,127,127,.16);padding:1px 7px;border-radius:99px}
+.rm-go{cursor:pointer}
+.rm-go:hover{background:rgba(59,130,246,.22)}
+.go-flash{animation:goFlash 2.2s ease-out}
+@keyframes goFlash{0%,30%{background:rgba(250,204,21,.45);box-shadow:0 0 0 2px rgba(250,204,21,.6)}100%{background:transparent;box-shadow:none}}
 .rm-due{font-size:12px;color:var(--text-muted);flex:0 0 auto;margin-top:2px}
 .rm-due.now{color:#0a84ff;font-weight:700}
 .rm-due.over{color:#ff453a;font-weight:700}
@@ -4528,6 +4532,9 @@ b.sp-nm.dup{color:#ff453a}
 .ni-add{margin-left:auto;border:1px solid var(--card-border);background:transparent;color:var(--primary);
   border-radius:8px;padding:6px 12px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
 .ni-add:hover{background:rgba(var(--tint),.08)}
+.shared-item-table.compact{max-height:360px;border:1px solid var(--card-border);border-radius:10px;background:var(--card-bg)}
+.shared-item-table.compact .it-tbl{min-width:980px}
+.shared-item-table.compact .it-tbl th{top:0}
 .ni-r{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--card-border)}
 .ni-nm{flex:1;min-width:0;border:0;background:transparent;color:var(--text-main);font-size:.88rem;font-family:inherit;padding:4px 2px}
 .ni-pt{width:110px;border:0;background:transparent;color:var(--text-muted);font-size:.8rem;font-family:inherit;padding:4px 2px}
@@ -4543,6 +4550,22 @@ b.sp-nm.dup{color:#ff453a}
 .ni-cam:hover,.ni-go:hover{background:rgba(var(--tint),.1);color:var(--primary)}
 .ni-x:hover{background:rgba(239,68,68,.12);color:#ef4444}
 .ni-none{font-size:.82rem;color:var(--text-muted);padding:10px 0}
+
+/* VIP 순위 — 선택기간 시작일 누적 순위와 현재 누적 순위 비교 */
+.vip-move{display:inline-flex;align-items:center;justify-content:center;min-width:28px;margin-right:5px;
+  padding:1px 5px;border-radius:6px;font-size:.62rem;font-weight:800;font-variant-numeric:tabular-nums}
+.vip-move.up{color:#dc2626;background:rgba(220,38,38,.1)}
+.vip-move.down{color:#2563eb;background:rgba(37,99,235,.1)}
+.vip-move.new{color:#7c3aed;background:rgba(124,58,237,.11)}
+.vip-move.same{color:var(--text-muted);background:rgba(127,127,127,.1)}
+.nb-embed{padding:6px 0!important}
+.nb-embed-note,.season-embed-empty{display:block;color:var(--text-muted);font-size:.78rem;padding:7px 2px}
+.season-embed{width:100%;border:1px solid var(--card-border);border-radius:10px;padding:10px;background:rgba(127,127,127,.04)}
+.season-embed>b{display:flex;align-items:center;gap:6px;font-size:.82rem;margin-bottom:5px}
+.season-embed-row{width:100%;border:0;background:transparent;color:var(--text-main);display:flex;align-items:center;gap:7px;padding:6px 2px;text-align:left;font:inherit;font-size:.8rem;cursor:pointer}
+.season-embed-row>i:not(.ph){width:13px;height:13px;border:1.5px solid var(--text-muted);border-radius:4px;flex:0 0 auto}
+.season-embed-row>span{flex:1;min-width:0}.season-embed-row>em{font-style:normal;color:var(--text-muted);font-size:.7rem}
+.season-embed-row.done>span{text-decoration:line-through;color:var(--text-muted)}
 
 /* 제품 페이지 — 리스트에서 이름 누르면 넓게 */
 .it-nameb{border:0;background:transparent;color:var(--text-main);font-size:.88rem;font-weight:700;
