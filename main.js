@@ -5735,6 +5735,161 @@ class BhasApp {
         </div>`;
     }
 
+    // ── 고객 구성(11): 고객수·신규 구매고객 추이·지역·결제수단 — channel_orders.raw 에서 필요한 칸만 뽑아 브랜드별 전체기간 1회 로드
+    //  고객 = cafe24 member_id(외부몰은 loginId). 비회원은 고객수에서 빼고 주문수로 따로 센다.
+    //  유효 주문 = op_status 가 취소·반품이 아닌 것(_isCancelled 와 같은 기준).
+    //  신규 = 그 브랜드 첫 유효 주문월. 가입일·탈퇴는 카페24 회원 조회 권한(mall.read_customer) 연결 뒤에 붙인다.
+    // 브랜드별 로드(서로 다른 브랜드는 따로 돈다). 상태: loading / ok / error — 오류는 캐시하지 않고 [다시 시도]로만 재조회.
+    // 동기화(refreshData)가 _custGen 을 올리면, 그 전에 시작한 로드 결과는 버린다.
+    async _loadCustProfile(brand, force) {
+        if (!brand || !this._mallsLoaded) return;
+        this._custLoads = this._custLoads || {}; this.custState = this.custState || {};
+        if (this._custLoads[brand]) return this._custLoads[brand];
+        if (!force && ((this.custProfile && this.custProfile[brand]) || this.custState[brand] === 'error')) return;
+        const gen = this._custGen || 0;
+        this.custState = { ...this.custState, [brand]: 'loading' }; this.requestRender();
+        const p = (async () => {
+            let rows = null, members = null, err = null;
+            try {
+                const malls = (this.malls || []).filter(m => { const b = (mockData.brands || []).find(x => x.id === m.brand_id); return (b ? b.name : (m.label || m.mall_key)) === brand; });
+                const mallKeys = malls.map(m => m.mall_key);
+                const out = [];
+                for (let from = 0; mallKeys.length; from += 1000) {
+                    // slim 뷰는 raw 를 잘라 둬서(072) 원본 표에서 필요한 칸만 뽑는다. RLS 로 볼 수 있는 브랜드만 온다.
+                    const { data, error } = await this.supabase.from('channel_orders')
+                        .select('id,order_date,op_status,mem:raw->>member_id,lid:raw->>loginId,pm:raw->payment_method_name,addr:raw->receivers->0->>address1')
+                        .in('mall_key', mallKeys).order('id').range(from, from + 999);
+                    if (error) throw error;
+                    (data || []).forEach(r => { if (r.op_status !== 'cancel' && r.op_status !== 'return') out.push(r); });
+                    if (!data || data.length < 1000) break;
+                }
+                rows = out;
+                // 회원수 일별 스냅샷(085 cafe24_member_counts). 대상 = 이 브랜드의 사용 중 카페24 몰 전부.
+                const c24 = malls.filter(m => (m.channel || 'cafe24') === 'cafe24' && m.active !== false).map(m => m.mall_key);
+                members = { rows: [], malls: c24 };
+                if (c24.length) {
+                    const { data: mc, error: me } = await this.supabase.from('cafe24_member_counts').select('mall_key,snap_date,total')
+                        .in('mall_key', c24).gte('snap_date', new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10)).order('snap_date');
+                    // 표가 아직 없으면(085 적용 전) 연결 전 안내, 그 밖의 오류는 오류로 보인다.
+                    if (me) members = /42P01|PGRST205/.test(String(me.code || '')) ? members : { error: String(me.message || me) };
+                    else members.rows = mc || [];
+                }
+            } catch (e) { err = e; console.warn('[고객구성]', e); }
+            if (gen !== (this._custGen || 0)) return;
+            if (err) {
+                this.custState = { ...this.custState, [brand]: 'error' };
+                this.custErr = { ...(this.custErr || {}), [brand]: String(err.message || err) };
+            } else {
+                this.custProfile = { ...(this.custProfile || {}), [brand]: rows };
+                this.custMembers = { ...(this.custMembers || {}), [brand]: members };
+                this.custState = { ...this.custState, [brand]: 'ok' };
+            }
+        })().finally(() => { if (this._custLoads[brand] === p) delete this._custLoads[brand]; this.requestRender(); });
+        this._custLoads[brand] = p;
+        return p;
+    }
+    _retryCustProfile(brand) { this._loadCustProfile(brand, true); }
+    // 동기화 뒤: 고객분석 캐시를 비우고 진행 중 로드 결과는 버린다(화면이 다시 부른다).
+    _invalidateCust() { this._custGen = (this._custGen || 0) + 1; this.custProfile = {}; this.custMembers = {}; this.custState = {}; this._custLoads = {}; }
+    _custRegion(addr) {
+        const s = String(addr || '').trim().split(/\s+/)[0] || '';
+        const t = [['서울', '서울'], ['부산', '부산'], ['대구', '대구'], ['인천', '인천'], ['전남광주', '광주·전남'], ['광주', '광주·전남'], ['대전', '대전'], ['울산', '울산'], ['세종', '세종'], ['경기', '경기'], ['강원', '강원'],
+            ['충청북', '충북'], ['충북', '충북'], ['충청남', '충남'], ['충남', '충남'], ['전라북', '전북'], ['전북', '전북'], ['전라남', '광주·전남'], ['전남', '광주·전남'], ['경상북', '경북'], ['경북', '경북'], ['경상남', '경남'], ['경남', '경남'], ['제주', '제주']];
+        const hit = t.find(([p]) => s.startsWith(p));
+        return hit ? hit[1] : (s ? '기타' : '');
+    }
+    // 결제수단: 주 결제(적립금·쿠폰 제외 첫 수단, 없으면 '적립금·쿠폰만') + 적립금/쿠폰 동시 사용 여부
+    _custPay(pm) {
+        const a = Array.isArray(pm) ? pm.map(String) : [];
+        if (!a.length) return null;
+        const main = a.find(x => x !== '적립금' && x !== '쿠폰') || '적립금·쿠폰만';
+        return { main, point: a.includes('적립금'), coupon: a.includes('쿠폰') };
+    }
+    _custProfileAgg(brand, fromISO, toISO) {
+        const rows = (this.custProfile && this.custProfile[brand]) || null;
+        if (!rows) return null;
+        const key = r => r.mem || r.lid || '';
+        const first = new Map();
+        rows.forEach(r => { const k = key(r); if (!k) return; const d = String(r.order_date || '').slice(0, 10); if (!first.has(k) || d < first.get(k)) first.set(k, d); });
+        const inR = d => (!fromISO || d >= fromISO) && (!toISO || d < toISO);
+        const cur = rows.filter(r => inR(String(r.order_date || '').slice(0, 10)));
+        const custs = new Set(), region = {}, pay = {};
+        let guest = 0, point = 0, coupon = 0, payN = 0, regN = 0;
+        cur.forEach(r => {
+            const k = key(r);
+            if (k) custs.add(k); else guest++;
+            const g = this._custRegion(r.addr); if (g) { region[g] = (region[g] || 0) + 1; regN++; }
+            const p = this._custPay(r.pm); if (p) { pay[p.main] = (pay[p.main] || 0) + 1; payN++; if (p.point) point++; if (p.coupon) coupon++; }
+        });
+        let newC = 0; custs.forEach(k => { if (inR(first.get(k))) newC++; });
+        // 최근 12개월 월별: 신규(첫 구매월) vs 기존 구매고객
+        const now = new Date(), months = [];
+        for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+        const mBuy = {}; months.forEach(m => { mBuy[m] = new Set(); });
+        rows.forEach(r => { const k = key(r); const m = String(r.order_date || '').slice(0, 7); if (k && mBuy[m]) mBuy[m].add(k); });
+        const trend = months.map(m => { let n = 0; mBuy[m].forEach(k => { if (first.get(k).slice(0, 7) === m) n++; }); return { m, total: mBuy[m].size, neu: n }; });
+        const members = this._custMembersAgg(this.custMembers && this.custMembers[brand]);
+        return { orders: cur.length, customers: custs.size, newC, guest, region, regN, pay, payN, point, coupon, trend, members };
+    }
+    // 회원수 합계: 대상 카페24 몰이 모두 수집된 날만 쓴다(한 몰만 빠진 날을 감소로 오인하지 않게).
+    // 전일 대비 = 정확히 전날도 모두 수집됐을 때만, 30일 전 대비 = 정확히 30일 전도 모두 수집됐을 때만. 아니면 —.
+    _custMembersAgg(M) {
+        if (!M) return null;
+        if (M.error) return { error: M.error };
+        if (!M.rows || !M.rows.length || !M.malls || !M.malls.length) return null;
+        const by = {};
+        M.rows.forEach(r => { const d = String(r.snap_date).slice(0, 10); (by[d] = by[d] || {})[r.mall_key] = Number(r.total || 0); });
+        const need = M.malls, days = Object.keys(by).sort(), latest = days[days.length - 1];
+        const full = d => !!by[d] && need.every(k => by[d][k] != null);
+        const sum = d => need.reduce((t, k) => t + by[d][k], 0);
+        const shift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+        const got = d => need.filter(k => by[d] && by[d][k] != null).length;
+        const comp = days.filter(full);
+        if (!comp.length) return { incomplete: true, latest, got: got(latest), need: need.length };
+        const last = comp[comp.length - 1], p1 = shift(last, -1), p30 = shift(last, -30);
+        return { date: last, total: sum(last), dPrev: full(p1) ? sum(last) - sum(p1) : null, dMonth: full(p30) ? sum(last) - sum(p30) : null,
+            series: comp.filter(d => d >= shift(last, -59)).map(sum), stale: latest !== last ? { date: latest, got: got(latest), need: need.length } : null };
+    }
+    // 회원수(카페24 전체 회원) — 전일·30일 전 대비 증감. 탈퇴는 따로 안 세고 증감으로 본다(10-16 사장님).
+    _custMembersHTML(m, retry) {
+        if (!m) return `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.7rem;border-top:1px solid var(--card-border);padding-top:0.6rem">전체 회원수 추이는 카페24 회원 권한 연결 후 매일 기록됩니다</div>`;
+        const note = t => `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.7rem;border-top:1px solid var(--card-border);padding-top:0.6rem">${t}</div>`;
+        if (m.error) return note(`<span style="color:#ef4444">회원수를 불러오지 못했습니다</span>${retry || ''}`);
+        if (m.incomplete) return note(`회원수: ${m.latest} 일부 몰만 수집됨(${m.got}/${m.need}) — 모든 몰이 수집된 날부터 합계를 보여줍니다`);
+        const diff = (d, label) => { if (d == null) return `<span>${label} <b style="color:var(--text-main)">—</b></span>`; return `<span>${label} <b style="color:${d > 0 ? '#10b981' : d < 0 ? '#ef4444' : 'var(--text-main)'}">${d > 0 ? '+' : ''}${d.toLocaleString()}명</b></span>`; };
+        const s = m.series, lo = Math.min(...s), hi = Math.max(...s), w = 100, h = 24;
+        const pts = s.length > 1 ? s.map((v, i) => `${(i / (s.length - 1) * w).toFixed(1)},${(hi === lo ? h / 2 : h - (v - lo) / (hi - lo) * h).toFixed(1)}`).join(' ') : '';
+        return `<div style="margin-top:0.7rem;border-top:1px solid var(--card-border);padding-top:0.6rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:0.78rem;font-weight:700">전체 회원수 <b style="font-size:1rem;color:#6366f1">${m.total.toLocaleString()}명</b> <span style="font-size:0.66rem;color:var(--text-muted);font-weight:500">${m.date}${m.stale ? ` · ${m.stale.date} 일부 몰 미수집(${m.stale.got}/${m.stale.need})` : ''}</span></div>
+            ${pts ? `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:90px;height:24px"><polyline points="${pts}" fill="none" stroke="#6366f1" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>` : ''}</div>
+            <div style="display:flex;gap:14px;font-size:0.76rem;color:var(--text-muted);margin-top:4px">${diff(m.dPrev, '전일 대비')}${diff(m.dMonth, '30일 전 대비')}</div></div>`;
+    }
+    _custProfileHTML(brand, range, fromISO, toISO) {
+        const a = this._custProfileAgg(brand, fromISO, toISO);
+        const card = (icon, title, sub, body) => `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem"><i class="ph ${icon}" style="color:#6366f1"></i> ${title} <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">${sub}</span></div>${body}</div>`;
+        const empty = t => `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${t}</div>`;
+        const st = (this.custState || {})[brand];
+        const retry = `<button onclick="app._retryCustProfile('${this._vesc(brand).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="margin-left:8px;padding:3px 10px;border-radius:7px;border:1px solid var(--primary);background:transparent;color:var(--primary);font-size:0.74rem;font-weight:700;cursor:pointer">다시 시도</button>`;
+        if (st === 'error') return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem;margin-top:1.3rem">${card('ph-users-three', '고객 구성', range.label, empty(`<span style="color:#ef4444">불러오지 못했습니다</span> (${this._vesc((this.custErr || {})[brand] || '')})${retry}`))}</div>`;
+        if (!a) return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem;margin-top:1.3rem">${card('ph-users-three', '고객 구성', range.label, empty('불러오는 중…'))}</div>`;
+        const bar = (label, v, tot, color = '#6366f1') => { const pct = tot ? Math.round(v / tot * 1000) / 10 : 0; return `<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:2px"><span>${this._vesc(label)}</span><b>${v.toLocaleString()}건 <span style="color:var(--text-muted);font-weight:500;font-size:0.68rem">${pct}%</span></b></div><div style="height:7px;border-radius:4px;background:rgba(148,163,184,0.18);overflow:hidden"><div style="height:100%;width:${pct}%;background:${color};border-radius:4px"></div></div></div>`; };
+        const maxT = Math.max(1, ...a.trend.map(t => t.total));
+        const trend = `<div style="display:flex;align-items:flex-end;gap:4px;height:110px;margin-top:0.4rem">${a.trend.map(t => `<div title="${t.m} 구매고객 ${t.total.toLocaleString()}명 · 신규 ${t.neu.toLocaleString()}명" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%">
+            <div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:${Math.round(t.total / maxT * 90)}px;border-radius:4px 4px 0 0;overflow:hidden;background:rgba(99,102,241,0.25)"><div style="height:${t.total ? Math.round(t.neu / t.total * 100) : 0}%;background:#6366f1"></div></div>
+            <div style="font-size:0.6rem;color:var(--text-muted);margin-top:3px">${+t.m.slice(5)}월</div></div>`).join('')}</div>
+            <div style="display:flex;gap:12px;font-size:0.7rem;color:var(--text-muted);margin-top:6px"><span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#6366f1"></span> 신규(첫 구매)</span><span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(99,102,241,0.25)"></span> 기존 고객</span></div>`;
+        const regs = Object.entries(a.region).sort((x, y) => y[1] - x[1]);
+        const pays = Object.entries(a.pay).sort((x, y) => y[1] - x[1]);
+        return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem;margin-top:1.3rem">
+            ${card('ph-users-three', '고객 구성', `${range.label} · 회원ID 기준`, `
+                <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:0.6rem"><span style="font-size:2rem;font-weight:900;color:#6366f1;line-height:1">${a.customers.toLocaleString()}명</span><span style="font-size:0.78rem;color:var(--text-muted)">구매고객 · 주문 ${a.orders.toLocaleString()}건</span></div>
+                <div style="display:flex;gap:14px;font-size:0.76rem;color:var(--text-muted);margin-bottom:0.6rem;flex-wrap:wrap"><span>신규 구매 <b style="color:var(--text-main)">${a.newC.toLocaleString()}명</b></span><span>기존 <b style="color:var(--text-main)">${(a.customers - a.newC).toLocaleString()}명</b></span><span>비회원 주문 <b style="color:var(--text-main)">${a.guest.toLocaleString()}건</b></span></div>
+                <div style="font-size:0.78rem;font-weight:700;margin-top:0.4rem">최근 12개월 구매고객</div>${trend}
+                ${this._custMembersHTML(a.members, retry)}`)}
+            ${card('ph-map-pin', '지역', `${range.label} · 배송지 시도 · 주문 기준`, regs.length ? regs.map(([k, v]) => bar(k, v, a.regN)).join('') : empty('주소 정보 없음(외부몰)'))}
+            ${card('ph-credit-card', '결제수단', `${range.label} · 주문 기준`, pays.length ? pays.map(([k, v]) => bar(k, v, a.payN, '#10b981')).join('') + `<div style="display:flex;gap:14px;font-size:0.76rem;color:var(--text-muted);margin-top:0.5rem"><span>적립금 함께 사용 <b style="color:var(--text-main)">${a.point.toLocaleString()}건</b></span><span>쿠폰 함께 사용 <b style="color:var(--text-main)">${a.coupon.toLocaleString()}건</b></span></div>` : empty('결제수단 정보 없음(외부몰)'))}
+        </div>`;
+    }
     renderAnalysis() {
         const names = this._analysisBrandNames();
         const bf = (this.analysisBrand && names.includes(this.analysisBrand)) ? this.analysisBrand : (names[0] || null);
@@ -5778,7 +5933,7 @@ class BhasApp {
             <div class="mp-body">
             <div class="analysis-layout" style="display:block">
                 <div class="analysis-content" style="min-width:0">
-                    ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
+                    ${bf ? `${repeatCard}${this._orderTypesHTML((this.analysisOrderTypes && this.analysisOrderTypes[bf]) || null, range.label)}${this._custProfileHTML(bf, range, range.from, range.to)}<div style="margin-top:1.3rem">${this._customerAnalysisHTML(items, this._analysisScopeLoading)}</div>` : '<div class="glass" style="padding:2rem;border-radius:18px;color:var(--text-muted)">연동된 판매 브랜드가 없습니다.</div>'}
                 </div>
             </div>
         </div>${this._custHTML()}</div>`;
@@ -6218,7 +6373,7 @@ class BhasApp {
             const r = this._analysisRange();
             const from = r.from || '2000-01-01';
             const to = r.to || new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-            if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); this._loadGone(bf, from, to); }
+            if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); this._loadGone(bf, from, to); this._loadCustProfile(bf); }
         }
         if (v === 'feedback' && !this._fbLoaded && !this._fbLoading) this.loadFeedback();
         if ((v === 'cs' || v === 'orders') && !this._csLoaded && !this._csLoading) this.loadCS();
@@ -10026,6 +10181,7 @@ class BhasApp {
             this._ordersLoaded = false; this._ordersLoading = false;
             this._mallsLoaded = false; this._mallsLoading = false;
             await Promise.all([this.loadOrders(), this.loadMalls(), this.loadOrderPage(true)]);
+            this._invalidateCust(); this.ensureViewData();
             this.showToast('최신 데이터로 동기화됐어요');
         } catch (e) { this.showToast('동기화 실패: ' + (e?.message || e)); }
         this._refreshing = false; this.requestRender();

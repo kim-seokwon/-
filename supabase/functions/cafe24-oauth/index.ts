@@ -12,7 +12,9 @@ import { admin, baseOf, cors, getMall, log, saveMall } from "../_shared/cafe24.t
 
 // ⚠️ 앱(개발자센터)에 설정한 권한과 정확히 일치해야 함. 불일치 시 authorize가 튕겨 무한루프(ERR_TOO_MANY_REDIRECTS) 발생.
 // 현재 BHAS OMS 필요권한: 주문조회 + 배송조회/등록.
-const SCOPE = "mall.read_order,mall.read_shipping,mall.write_shipping";
+// 10-16: 배포본(v17)은 write_order 포함 4개였다(저장소만 뒤처짐). 회원수 스냅샷(085·cafe24-members)용 read_privacy 추가.
+//  ⚠ 카페24 개발자센터 앱 권한에 '회원 개인정보 읽기'를 먼저 켠 뒤에 배포 — 순서가 바뀌면 authorize 무한루프.
+const SCOPE = "mall.read_order,mall.write_order,mall.read_shipping,mall.write_shipping,mall.read_privacy";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
