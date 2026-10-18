@@ -3507,7 +3507,8 @@ class BhasApp {
         this._allNoteTodos().forEach(t => {
             if (t.done || !t.at.includes(myName)) return;
             out.push({ id: 'note:' + t.id, kind: '메모에서 호출', icon: 'ph-at', col: '#bf5af2',
-                title: t.title, sub: t.from, when: t.due, view: 'notes' });
+                title: t.title, sub: t.from, when: t.due,
+                view: ({ item: 'items', vendor: 'contacts', season: 'detail' })[t.src] || 'notes' });
         });
         // 3) 오늘까지인 할 일 · 지난 것
         (this.remList || []).forEach(r => {
@@ -3571,6 +3572,7 @@ class BhasApp {
         if (view === '__update') { this.applyUpdate(); return; }
         const read = this._readSet(); read.add(id); this._saveRead(read);
         this.closeNotifCenter();
+        if (String(id).startsWith('note:')) { this.openTodoSource(String(id).slice(5)); return; }
         if (view) this.macOpen(view);
     }
     readAllNotifs() {
@@ -4715,6 +4717,7 @@ class BhasApp {
                             </div>
                         </div>
                     </div>
+                    ${this._connectedHTML('season', product.id)}
                 </div>
             `;
         } else if (this.currentView === 'user_management') {
@@ -7986,6 +7989,41 @@ class BhasApp {
     //  본문 줄머리에 [] / [x] 를 쓰면 할 일이 된다(노션의 to-do 블록).
     //  @이름 을 쓰면 담당자, #말머리 는 꼬리표. 체크한 것은 할 일에도 뜬다.
     NOTE_TODO_RE = /^(\s*)\[( |x|X)?\]\s?(.*)$/;
+    MENTION_RE = /@\[(item|season|vendor):([\w-]+)\]/g;
+    _mentionTargets(text) {
+        const out = [], seen = new Set();
+        for (const m of String(text || '').matchAll(this.MENTION_RE)) {
+            const key = `${m[1]}:${m[2]}`;
+            if (!seen.has(key)) { seen.add(key); out.push({ kind: m[1], id: m[2], token: m[0] }); }
+        }
+        return out;
+    }
+    _mentionInfo(kind, id) {
+        if (kind === 'item') {
+            const x = (this.pItems || []).find(v => String(v.id) === String(id));
+            return { label: x?.name || '제품', icon: 'ph-t-shirt' };
+        }
+        if (kind === 'season') {
+            const x = this._seasons().find(v => String(v.id) === String(id));
+            return { label: x?.name || '시즌', icon: 'ph-calendar-blank' };
+        }
+        const x = (this.vendors || []).find(v => String(v.id) === String(id));
+        return { label: x?.name || '거래처', icon: 'ph-factory' };
+    }
+    _noteInlineHTML(text) {
+        const esc = s => this._vesc(s);
+        const re = /@\[(item|season|vendor):([\w-]+)\]/g;
+        let out = '', at = 0, m;
+        const plain = s => esc(s).replace(/@(?!\[)([^\s]+)/g, '<b class="nb-at">@$1</b>')
+            .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
+        while ((m = re.exec(String(text || '')))) {
+            out += plain(String(text || '').slice(at, m.index));
+            const info = this._mentionInfo(m[1], m[2]);
+            out += `<button class="mention-chip ${m[1]}" data-mention-kind="${m[1]}" data-mention-id="${esc(m[2])}"><i class="ph ${info.icon}"></i>${esc(info.label)}</button>`;
+            at = m.index + m[0].length;
+        }
+        return out + plain(String(text || '').slice(at));
+    }
     _lineTodos(text, src) {
         const out = [], seen = {};
         String(text || '').split('\n').forEach((line, i) => {
@@ -7997,11 +8035,15 @@ class BhasApp {
             const occ = seen[key] = (seen[key] || 0) + 1;
             //  날짜는 한 군데(_splitDue)에서만 떼어낸다 — '까지' 같은 꼬리말도 같이 떨어진다
             const sp = this._splitDue(raw);
+            const bare = sp.text.replace(/@\[(?:item|season|vendor):[\w-]+\]/g, '')
+                .replace(/@(?!\[)[^\s]+|#[^\s]+/g, '').replace(/\s{2,}/g, ' ').trim();
             out.push({
-                src: src.kind, id: `${src.id}#${i}`, srcId: src.id, noteId: src.id, line: i, raw: key, occ,
-                title: sp.text.replace(/[@#][^\s]+/g, '').replace(/\s{2,}/g, ' ').trim() || '(내용 없음)',
+                src: src.kind, id: `${src.key || src.id}#${i}`, srcId: src.id,
+                recordId: src.recordId || src.id, noteId: src.noteId || null, line: i, raw: key, occ,
+                seasonId: src.seasonId || null,
+                title: bare || '(내용 없음)', mentions: this._mentionTargets(raw),
                 done: (m[2] || ' ').toLowerCase() === 'x',
-                at: (raw.match(/@([^\s]+)/g) || []).map(x => x.slice(1)),
+                at: (raw.match(/@(?!\[)([^\s]+)/g) || []).map(x => x.slice(1)),
                 tags: (raw.match(/#([^\s]+)/g) || []).map(x => x.slice(1)),
                 due: sp.due || src.due || null,
                 from: src.from,
@@ -8009,10 +8051,28 @@ class BhasApp {
         });
         return out;
     }
-    _noteTodos(n) { return this._lineTodos(this._noteText(n), { kind: 'note', id: n.id, from: n.title || '메모', due: n.due_date }); }
+    _noteTodos(n) {
+        if (n.item_id) {
+            const it = (this.pItems || []).find(x => String(x.id) === String(n.item_id));
+            return this._lineTodos(this._noteText(n), { kind: 'item', id: n.item_id, key: `item:${n.item_id}:${n.id}`,
+                recordId: n.id, noteId: n.id, seasonId: n.product_id || this._noteMeta(n).proj || null,
+                from: it?.name || n.title || '제품', due: n.due_date });
+        }
+        const seasonId = n.product_id || this._noteMeta(n).proj;
+        return this._lineTodos(this._noteText(n), { kind: 'note', id: n.id, recordId: n.id, noteId: n.id,
+            seasonId, from: n.title || '메모', due: n.due_date });
+    }
+    _vendorTodos(v) {
+        return this._lineTodos(v.memo, { kind: 'vendor', id: v.id, key: `vendor:${v.id}`,
+            recordId: v.id, from: v.name || '거래처' });
+    }
     _allNoteTodos() {
-        const all = (this.noteList || []).flatMap(n => this._noteTodos(n));
+        const all = [
+            ...(this.noteList || []).flatMap(n => this._noteTodos(n)),
+            ...(this.vendors || []).flatMap(v => this._vendorTodos(v)),
+        ];
         this._todoSnap = new Map(all.map(t => [String(t.id), { raw: t.raw, occ: t.occ }]));
+        this._todoRef = new Map(all.map(t => [String(t.id), t]));
         return all;
     }
     _locateTodoLine(lines, line, snap) {
@@ -8064,11 +8124,12 @@ class BhasApp {
         //  단계 메모는 위에서 한 줄로 넣었다 — 그 안의 세부까지 또 늘어놓지 않는다
         const stepNotes = new Set((this.noteList || []).filter(n => this._noteMeta(n).due).map(n => String(n.id)));
         this._allNoteTodos().forEach(t => {
-            if (stepNotes.has(String(t.noteId))) return;
+            if (t.noteId && stepNotes.has(String(t.noteId))) return;
             out.push({
                 date: t.due, title: t.title, sub: t.from,
-                done: t.done, color: '#30d158', kind: 'note', view: 'notes', tag: '메모',
-                go: `app.findGo('notes','${t.noteId}',${t.line})`,
+                done: t.done, color: '#30d158', kind: t.src, view: t.src === 'note' ? 'notes' : (t.src === 'item' ? 'items' : (t.src === 'vendor' ? 'contacts' : 'detail')),
+                tag: ({ item: '제품', vendor: '거래처', season: '시즌' })[t.src] || '메모',
+                go: `app.openTodoSource('${t.id}')`,
             });
         });
         (this.vendors || []).forEach(v => (v.jobs || []).forEach(j => out.push({
@@ -8082,23 +8143,40 @@ class BhasApp {
         out.push(...this._expandedRoutines(this._dateKey(from), this._dateKey(to)));
         return out;
     }
-    // 메모 본문의 그 줄만 [ ] ↔ [x] 로 뒤집고 저장한다
-    async toggleNoteTodo(noteId, line, snap) {
-        const n = (this.noteList || []).find(x => String(x.id) === String(noteId)); if (!n) return;
-        const lines = this._noteText(n).split('\n');
+    _todoSource(kind, recordId) {
+        if (kind === 'vendor') {
+            const row = (this.vendors || []).find(x => String(x.id) === String(recordId));
+            return row ? { row, table: 'vendors', field: 'memo', text: String(row.memo || '') } : null;
+        }
+        const row = (this.noteList || []).find(x => String(x.id) === String(recordId));
+        return row ? { row, table: 'notes', field: 'body', text: this._noteText(row), note: true } : null;
+    }
+    // 메모·제품 기록·거래처 메모의 그 줄만 [ ] ↔ [x] 로 뒤집고 원본 칸에 저장한다
+    async toggleSourceTodo(kind, recordId, line, snap) {
+        const src = this._todoSource(kind, recordId); if (!src) return;
+        const lines = src.text.split('\n');
         line = this._locateTodoLine(lines, line, snap);
-        if (line < 0) { this.showToast('메모 내용이 바뀌어 그 줄을 못 찾았습니다 — 다시 확인해 주세요'); this.requestRender(); return; }
+        if (line < 0) { this.showToast('원본 내용이 바뀌어 그 줄을 못 찾았습니다 — 다시 확인해 주세요'); this.requestRender(); return; }
         const m = (lines[line] || '').match(this.NOTE_TODO_RE); if (!m) return;
         const now = (m[2] || ' ').toLowerCase() === 'x';
         const old = lines[line];
         lines[line] = `${m[1]}[${now ? ' ' : 'x'}] ${m[3]}`;
-        if (String(this._nbFor) === String(n.id) && this._nbLines && this._nbLines[line] === old) this._nbLines[line] = lines[line];
-        n.body = this._joinNote(this._noteMeta(n), lines.join('\n'));
+        if (src.note && String(this._nbFor) === String(src.row.id) && this._nbLines && this._nbLines[line] === old) this._nbLines[line] = lines[line];
+        const value = src.note ? this._joinNote(this._noteMeta(src.row), lines.join('\n')) : lines.join('\n');
+        src.row[src.field] = value;
         this.requestRender();
         try {
-            const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
+            const { error } = await this.supabase.from(src.table).update({ [src.field]: value }).eq('id', src.row.id);
             if (error) throw error;
-        } catch (e) { this.showToast('메모 저장 실패: ' + (e.message || e)); }
+        } catch (e) { this.showToast('원본 저장 실패: ' + (e.message || e)); }
+    }
+    async toggleNoteTodo(noteId, line, snap) {
+        return this.toggleSourceTodo('note', noteId, line, snap);
+    }
+    toggleLinkedTodo(id) {
+        const t = this._todoRef?.get(String(id)) || this._allNoteTodos().find(x => String(x.id) === String(id));
+        if (!t) return;
+        return this.toggleSourceTodo(t.src, t.recordId, t.line, this._todoSnap?.get(String(id)));
     }
     // 본문을 읽기 좋게 — 할 일은 체크박스로, @는 담당자, #는 꼬리표로 칠한다
     _noteBodyHTML(n) {
@@ -8107,8 +8185,7 @@ class BhasApp {
             const m = line.match(this.NOTE_TODO_RE);
             if (m) {
                 const done = (m[2] || ' ').toLowerCase() === 'x';
-                const body = esc(m[3]).replace(/@([^\s]+)/g, '<b class="nb-at">@$1</b>')
-                                      .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
+                const body = this._noteInlineHTML(m[3]);
                 return `<div class="nb-todo${done ? ' done' : ''}" data-i="${i}">
                     <button class="nb-ck${done ? ' on' : ''}" onclick="app.toggleNoteTodo('${n.id}',${i})"></button>
                     <span>${body}</span></div>`;
@@ -8119,8 +8196,7 @@ class BhasApp {
                 <button class="nb-ph-x" title="사진 지우기" onclick="event.stopPropagation();app.removeNotePhoto(${i})"><i class="ph ph-x"></i></button>
             </span>`;
             if (!line.trim()) return '<div class="nb-sp"></div>';
-            const body = esc(line).replace(/@([^\s]+)/g, '<b class="nb-at">@$1</b>')
-                                  .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
+            const body = this._noteInlineHTML(line);
             return `<div class="nb-l">${body}</div>`;
         }).join('');
     }
@@ -8297,8 +8373,7 @@ class BhasApp {
     //  본문을 그린다 — 고르는 줄만 글칸, 나머지는 읽기 좋은 모습
     _noteLiveHTML(n) {
         const esc = s => this._vesc(s);
-        const paint = t => esc(t).replace(/@([^\s]+)/g, '<b class="nb-at">@$1</b>')
-                                 .replace(/#([^\s]+)/g, '<b class="nb-tag">#$1</b>');
+        const paint = t => this._noteInlineHTML(t);
         const lines = this._nbLoad(n);
         const body = lines.map((line, i) => {
             const embed = line.match(/^\{\{(제품리스트|할일|자료)\s+시즌=([^}]+)\}\}$/);
@@ -8353,6 +8428,7 @@ class BhasApp {
         const el = document.querySelector('.nt-live');
         if (!el) { this.requestRender(); return; }
         el.outerHTML = this._noteLiveHTML(n);
+        this._bindMentionChips(document.querySelector('.nt-live'));
         const mt = document.querySelector('.nt-meta-slot');
         if (mt) mt.innerHTML = this.noteProps ? this._noteMetaChips(n) : '';
         this._nbFocusNow();
@@ -8878,9 +8954,14 @@ class BhasApp {
         }
     }
     // ── @ 자동완성 ────────────────────────────────────────────
-    //  본문에서 @ 를 치면 계정 목록이 뜬다. ↑↓ 로 고르고 Enter·Tab 으로 넣는다.
+    //  사람은 @이름, 제품·시즌·거래처는 안정적인 @[종류:id] 토큰으로 저장한다.
     _atPool() {
-        return (mockData.companies || []).filter(c => c.username).map(c => ({ n: c.name, u: c.username }));
+        return [
+            ...(mockData.companies || []).filter(c => c.username).map(c => ({ n: c.name, u: c.username, type: '사람', token: '@' + c.name, icon: 'ph-user' })),
+            ...(this.pItems || []).filter(x => x.name).map(x => ({ n: x.name, u: this._brandNameById(x.brand_id), type: '제품', token: `@[item:${x.id}]`, icon: 'ph-t-shirt' })),
+            ...this._seasons().filter(x => x.name).map(x => ({ n: x.name, u: this._brandNameById(x.brand_id), type: '시즌', token: `@[season:${x.id}]`, icon: 'ph-calendar-blank' })),
+            ...(this.vendors || []).filter(x => x.name).map(x => ({ n: x.name, u: x.category || '', type: '거래처', token: `@[vendor:${x.id}]`, icon: 'ph-factory' })),
+        ];
     }
     noteTyping() {
         const ta = this._nbTA(); if (!ta) return;
@@ -8888,7 +8969,7 @@ class BhasApp {
         const m = upto.match(/@([^\s@]*)$/);
         if (!m) { this.closeAtPop(); return; }
         const q = (m[1] || '').toLowerCase();
-        const hits = this._atPool().filter(x => !q || x.n.toLowerCase().includes(q) || x.u.toLowerCase().includes(q)).slice(0, 6);
+        const hits = this._atPool().filter(x => !q || [x.n, x.u, x.type].some(v => String(v || '').toLowerCase().includes(q))).slice(0, 8);
         if (!hits.length) { this.closeAtPop(); return; }
         this._atHits = hits; this._atSel = 0; this._atStart = ta.selectionStart - m[0].length;
         this.showAtPop(ta);
@@ -8898,8 +8979,8 @@ class BhasApp {
         let el = document.getElementById('at-pop');
         if (!el) { el = document.createElement('div'); el.className = 'stmenu atpop lg nocaret'; el.id = 'at-pop'; document.body.appendChild(el); }
         el.innerHTML = this._atHits.map((h, i) => `<button class="stm-item${i === this._atSel ? ' sel' : ''}" data-i="${i}">
-            <span class="at-face">${esc((h.n || '?')[0])}</span><span class="stm-txt">${esc(h.n)}</span>
-            <span class="stm-side">${esc(h.u)}</span></button>`).join('');
+            <span class="at-face"><i class="ph ${h.icon || 'ph-user'}"></i></span><span class="stm-txt">${esc(h.n)}<em>${esc(h.type || '')}</em></span>
+            <span class="stm-side">${esc(h.u || '')}</span></button>`).join('');
         el.querySelectorAll('.stm-item').forEach(b => b.onmousedown = (e) => { e.preventDefault(); this.pickAt(Number(b.dataset.i)); });
         // 글자 자리 근처에 띄운다(대략치 — 줄 높이로 계산)
         const r = ta.getBoundingClientRect();
@@ -8914,10 +8995,54 @@ class BhasApp {
         const ta = this._nbTA(); if (!ta || !this._atHits) return;
         const h = this._atHits[i] || this._atHits[0]; if (!h) return;
         const end = ta.selectionStart;
-        ta.value = ta.value.slice(0, this._atStart) + '@' + h.n + ' ' + ta.value.slice(end);
-        const np = this._atStart + h.n.length + 2;
+        const token = h.token || ('@' + h.n);
+        ta.value = ta.value.slice(0, this._atStart) + token + ' ' + ta.value.slice(end);
+        const np = this._atStart + token.length + 1;
         ta.focus(); ta.setSelectionRange(np, np);
         this.closeAtPop(); this.saveNote();
+    }
+    openMentionTarget(kind, id) {
+        this.closeAtPop();
+        if (kind === 'item') { this.itemPage = id; this.switchView('items'); return; }
+        if (kind === 'season') { this.activeProjectId = id; this.switchView('detail'); return; }
+        if (kind === 'vendor') { this.contactSel = id; this.contactNew = false; this.contactEdit = false; this.switchView('contacts'); }
+    }
+    _bindMentionChips(root = this.appContainer) {
+        if (!root) return;
+        root.querySelectorAll('.mention-chip[data-mention-kind][data-mention-id]').forEach(chip => {
+            chip.onclick = (event) => {
+                event.stopPropagation();
+                this.openMentionTarget(chip.dataset.mentionKind, chip.dataset.mentionId);
+            };
+        });
+    }
+    _linkedThings(kind, id) {
+        const token = `@[${kind}:${id}]`;
+        const notes = (this.noteList || []).filter(n => this._noteText(n).includes(token));
+        const noteIds = new Set(notes.map(n => String(n.id)));
+        const todos = this._allNoteTodos().filter(t =>
+            (t.src === kind && String(t.srcId) === String(id))
+            || (kind === 'season' && String(t.seasonId || '') === String(id))
+            || (t.noteId && noteIds.has(String(t.noteId)))
+            || (t.mentions || []).some(m => m.kind === kind && String(m.id) === String(id)));
+        return { notes, todos };
+    }
+    _connectedHTML(kind, id) {
+        const esc = s => this._vesc(s);
+        const linked = this._linkedThings(kind, id);
+        const total = linked.notes.length + linked.todos.length;
+        const noteRows = linked.notes.map(n => `<button class="conn-row" onclick="app.findGo('notes','${esc(String(n.id))}')">
+            <i class="ph ph-note"></i><span><b>${esc(n.title || '메모')}</b><em>${esc(this._noteText(n).replace(/@\[(?:item|season|vendor):[\w-]+\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 58) || '내용 없음')}</em></span><i class="ph ph-caret-right"></i></button>`).join('');
+        const todoRows = linked.todos.map(t => `<button class="conn-row todo${t.done ? ' done' : ''}" onclick="app.openTodoSource('${esc(String(t.id))}')">
+            <i class="ph ph-check-square"></i><span><b>${esc(t.title)}</b><em>${esc(t.from || '할 일')}${t.due ? ` · ${esc(t.due)}` : ''}</em></span><i class="ph ph-caret-right"></i></button>`).join('');
+        return `<section class="connected"><div class="connected-h"><div><i class="ph ph-link-simple"></i><b>연결된 것</b></div><span>${total}개</span></div>
+            ${total ? `<div class="connected-list">${noteRows}${todoRows}</div>` : '<div class="connected-empty">메모에서 @로 연결하거나 이곳에 [ ] 할 일을 적으면 모입니다.</div>'}</section>`;
+    }
+    openTodoSource(id) {
+        const t = this._todoRef?.get(String(id)) || this._allNoteTodos().find(x => String(x.id) === String(id));
+        if (!t) return;
+        if (t.src === 'note') { this.findGo('notes', t.noteId, t.line); return; }
+        this.openMentionTarget(t.src, t.srcId);
     }
     noteKey(ev) {
         if (!this._atHits) {
@@ -9120,7 +9245,7 @@ class BhasApp {
                 <div class="nt-tools">
                     <button onclick="app.noteInsert('todo')" title="할 일 [ ]"><i class="ph ph-check-square"></i></button>
                     <button onclick="app.noteInsert('bullet')" title="글머리"><i class="ph ph-list-bullets"></i></button>
-                    <button onclick="app.noteInsert('at')" title="담당자 @"><i class="ph ph-at"></i></button>
+                    <button onclick="app.noteInsert('at')" title="사람·제품·시즌·거래처 @"><i class="ph ph-at"></i></button>
                     <button onclick="app.noteInsert('tag')" title="꼬리표 #"><i class="ph ph-hash"></i></button>
                     <button onclick="app.noteInsert('date')" title="오늘 날짜"><i class="ph ph-calendar-blank"></i></button>
                     <button onclick="app.pickNotePhoto()" title="사진 넣기"><i class="ph ph-image"></i></button>
@@ -9209,6 +9334,7 @@ class BhasApp {
                 <textarea id="item-page-note" class="ip2-ta" placeholder="원단·부자재·수정사항·전달내용을 자유롭게 적으세요"
                     onblur="app.saveItemPageNote('${it.id}', this.value)">${esc(text)}</textarea>
             </div>
+            ${this._connectedHTML('item', it.id)}
         </div>`;
     }
     async saveItemPageNote(id, text) {
@@ -9443,13 +9569,16 @@ class BhasApp {
         // 메모 본문의 [ ] 도 할 일이다 — 대시보드 안의 할 일을 한 군데로 모은다
         const projOfNote = (nid) => {
             const n = (this.noteList || []).find(x => String(x.id) === String(nid));
-            const pid = n ? this._noteMeta(n).proj : null;
+            const pid = n ? (n.product_id || this._noteMeta(n).proj) : null;
             return (mockData.products || []).find(p => String(p.id) === String(pid))?.name || null;
         };
         const noteTodos = this._allNoteTodos().map(t => ({
-            src: 'note', id: t.id, noteId: t.noteId, line: t.line, title: t.title,
+            src: t.src, id: t.id, noteId: t.noteId, line: t.line, title: t.title,
+            recordId: t.recordId, targetId: t.srcId,
             due: t.due, done: t.done,
-            list: byProj ? (projOfNote(t.noteId) || '시즌 없음') : '메모', from: t.from,
+            list: byProj ? (projOfNote(t.noteId) || '시즌 없음')
+                : (({ item: '제품', vendor: '거래처' })[t.src] || '메모'), from: t.from,
+            sourceIcon: ({ item: 'ph-t-shirt', vendor: 'ph-factory' })[t.src] || 'ph-note',
             assignee: (mockData.companies || []).find(c => c.name === t.at[0])?.id || null,
             atName: t.at[0] || null, tags: t.tags, createdBy: t.from || null,
         }));
@@ -9484,7 +9613,7 @@ class BhasApp {
             { k: 'done',  label: '완료됨', icon: 'ph-check',         cls: 'gray' },
         ];
         const listNames = [...new Set(all.map(x => x.list))];
-        const LCOL = { '시즌': '#0a84ff', '기본': '#ff9f0a', '메모': '#30d158' };
+        const LCOL = { '시즌': '#0a84ff', '제품': '#0a84ff', '거래처': '#ff9f0a', '기본': '#ff9f0a', '메모': '#30d158' };
         const colorOf = (l, i) => LCOL[l] || ['#ff9f0a', '#0a84ff', '#30d158', '#bf5af2', '#ff453a'][i % 5];
         let shown = cur.startsWith('l:') ? all.filter(x => x.list === cur.slice(2) && !x.done)
                                          : all.filter(F[cur] || F.all);
@@ -9504,7 +9633,7 @@ class BhasApp {
                         <div class="rm-tt" onclick="app.editRemTitle(event,'${x.src}','${x.id}')" title="눌러서 고치기">${esc(x.title)}</div>
                         ${(x.memo || x.project || x.assignee || x.from || x.atName || (x.tags || []).length) ? `<div class="rm-meta">
                             ${x.project ? `<span class="rm-tag"><i class="ph ph-folder"></i>${esc(x.project)}</span>` : ''}
-                            ${x.from ? `<span class="rm-tag rm-go" title="그 메모 그 줄로" onclick="event.stopPropagation();app.findGo('notes','${esc(String(x.noteId))}',${Number(x.line)})"><i class="ph ph-note"></i>${esc(x.from)}</span>` : ''}
+                            ${x.from ? `<span class="rm-tag rm-go" title="원본 열기" onclick="event.stopPropagation();app.openTodoSource('${esc(String(x.id))}')"><i class="ph ${x.sourceIcon || 'ph-note'}"></i>${esc(x.from)}</span>` : ''}
                             ${(x.assignee || x.atName) ? `<span class="rm-tag"><i class="ph ph-user"></i>${esc(nameOf(x.assignee) || x.atName || '담당')}</span>` : ''}
                             ${(x.tags || []).map(t => `<span class="rm-tag">#${esc(t)}</span>`).join('')}
                             ${x.memo ? `<span>${esc(x.memo)}</span>` : ''}
@@ -9587,9 +9716,8 @@ class BhasApp {
                 if (error) throw error;
             } else {
                 // 글자만 바꾸고 @담당자·#꼬리표·날짜는 그대로 붙여둔다
-                const [nid, line] = String(id).split('#');
-                await this._replaceNoteLine(nid, Number(line), (m) => {
-                    const keep = ((m[3] || '').match(/[@#][^\s]+|\b\d{4}-\d{2}-\d{2}\b/g) || []).join(' ');
+                await this._replaceTodoLine(id, (m) => {
+                    const keep = ((m[3] || '').match(/@\[(?:item|season|vendor):[\w-]+\]|@(?!\[)[^\s]+|#[^\s]+|\b\d{4}-\d{2}-\d{2}\b/g) || []).join(' ');
                     return `${m[1]}[${m[2]}] ${title}${keep ? ' ' + keep : ''}`;
                 });
             }
@@ -9608,9 +9736,8 @@ class BhasApp {
                 const { error } = await this.supabase.from('todos').update({ due_date: v }).eq('id', id);
                 if (error) throw error;
             } else {
-                // 메모 줄의 날짜를 바꿔 끼운다
-                const [nid, line] = String(id).split('#');
-                await this._replaceNoteLine(nid, Number(line), (m) => {
+                // 원본 줄의 날짜를 바꿔 끼운다
+                await this._replaceTodoLine(id, (m) => {
                     let t = (m[3] || '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim();
                     if (v) t += ' ' + v;
                     return `${m[1]}[${m[2]}] ${t}`;
@@ -9632,24 +9759,31 @@ class BhasApp {
                 if (error) throw error;
                 (mockData.products || []).forEach(p => { if (p.todos) p.todos = p.todos.filter(t => String(t.id) !== String(id)); });
             } else {
-                if (!await this.showConfirm('메모에서 이 줄을 지울까요?', '삭제')) return;
-                const [nid, line] = String(id).split('#');
-                await this._replaceNoteLine(nid, Number(line), null);
+                if (!await this.showConfirm('원본에서 이 줄을 지울까요?', '삭제')) return;
+                await this._replaceTodoLine(id, null);
             }
             this.requestRender();
         } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
     }
-    // 메모 본문의 한 줄을 바꾸거나(fn) 지운다(fn=null)
-    async _replaceNoteLine(noteId, line, fn) {
-        const n = (this.noteList || []).find(x => String(x.id) === String(noteId)); if (!n) return;
-        const lines = this._noteText(n).split('\n');
-        line = this._locateTodoLine(lines, line, this._todoSnap?.get(`${noteId}#${line}`));
-        if (line < 0) throw new Error('메모 내용이 바뀌어 그 줄을 못 찾았습니다');
+    // 메모·제품 기록·거래처 원본의 한 줄을 바꾸거나(fn) 지운다(fn=null)
+    async _replaceTodoLine(todoId, fn) {
+        const t = this._todoRef?.get(String(todoId)) || this._allNoteTodos().find(x => String(x.id) === String(todoId));
+        if (!t) return;
+        const src = this._todoSource(t.src, t.recordId); if (!src) return;
+        const lines = src.text.split('\n');
+        const line = this._locateTodoLine(lines, t.line, this._todoSnap?.get(String(todoId)));
+        if (line < 0) throw new Error('원본 내용이 바뀌어 그 줄을 못 찾았습니다');
         const m = (lines[line] || '').match(this.NOTE_TODO_RE); if (!m) return;
         if (fn) lines[line] = fn(m); else lines.splice(line, 1);
-        n.body = this._joinNote(this._noteMeta(n), lines.join('\n'));
-        const { error } = await this.supabase.from('notes').update({ body: n.body }).eq('id', n.id);
+        const value = src.note ? this._joinNote(this._noteMeta(src.row), lines.join('\n')) : lines.join('\n');
+        src.row[src.field] = value;
+        const { error } = await this.supabase.from(src.table).update({ [src.field]: value }).eq('id', src.row.id);
         if (error) throw error;
+    }
+    async _replaceNoteLine(noteId, line, fn) {
+        this._allNoteTodos();
+        const t = [...(this._todoRef || new Map()).values()].find(x => x.noteId && String(x.noteId) === String(noteId) && x.line === line);
+        if (t) return this._replaceTodoLine(t.id, fn);
     }
     // 나의 목록에 새 분류 만들기 — 그 목록의 첫 줄을 하나 넣어 자리를 만든다
     async addRemList() {
@@ -9666,8 +9800,8 @@ class BhasApp {
     }
     toggleRemItem(src, id) {
         if (src === 'rem') return this.toggleReminder(id);
-        if (src === 'note') { const [nid, line] = String(id).split('#'); return this.toggleNoteTodo(nid, Number(line), this._todoSnap?.get(String(id))); }
-        return this.toggleTodoFromReminders(id);
+        if (src === 'todo') return this.toggleTodoFromReminders(id);
+        return this.toggleLinkedTodo(id);
     }
     // 할 일 화면에서 기존 할일을 끄고 켠다 — todos 테이블을 그대로 쓴다
     async toggleTodoFromReminders(id) {
@@ -13466,6 +13600,7 @@ class BhasApp {
                                 <span>${esc(j.title)}</span><span style="color:var(--text-muted)">${esc(j.due_date || '')}</span></div>`).join('')}
                         </div>` : '';
                     })()}`}
+                    ${this._connectedHTML('vendor', doc.id)}
                 </div>` : `<div class="m3-none mid">왼쪽에서 연락처를 고르세요</div>`}
             </section>
         </div>`;
@@ -15444,6 +15579,7 @@ class BhasApp {
     }
     bindDashboardEvents() {
         this.bindGlobalSearch();
+        this._bindMentionChips();
         const collapseBtn = document.getElementById('sidebar-collapse-btn');
         if (collapseBtn) collapseBtn.onclick = () => { this.navSidebarCollapsed = !this.navSidebarCollapsed; this.requestRender(); };
         const expandBtn = document.getElementById('sidebar-expand-btn');
@@ -16187,7 +16323,7 @@ class BhasApp {
         { g: '메모 쓸 때', rows: [
             ['[ ]', '할 일 — 할 일 화면에 저절로 올라간다'],
             ['[x]', '끝낸 할 일'],
-            ['@이름', '담당자 — 그 사람 할 일에 뜬다'],
+            ['@이름', '사람 담당 · 제품·시즌·거래처 연결'],
             ['#꼬리표', '말머리 — 같은 꼬리표끼리 모인다'],
             ['⏎', '제목 칸에서 누르면 본문으로'],
         ] },
