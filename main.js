@@ -222,6 +222,38 @@ class BhasApp {
             this.wins = [{ id: 'preview-calendar', view: 'calendar', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
         }
+        if (devPreview === 'crm') {
+            const now = new Date();
+            const ago = n => new Date(now.getTime() - n * 864e5).toISOString();
+            const brand = (mockData.brands || [])[0] || { id: 'preview-brand', name: '하이헤이호', brand_color: '#6366f1' };
+            if (!(mockData.brands || []).length) mockData.brands = [brand];
+            const sample = [
+                { id: 1, mem: 'member_1001', buyer_name: '김민지', order_date: ago(46), pay_amount: 69000, op_status: 'done' },
+                { id: 2, mem: 'member_1002', buyer_name: '이서윤', order_date: ago(185), pay_amount: 89000, op_status: 'done' },
+                { id: 3, mem: 'member_1002', buyer_name: '이서윤', order_date: ago(122), pay_amount: 119000, op_status: 'done' },
+                { id: 4, mem: 'vip_2179', buyer_name: '박지우', order_date: ago(540), pay_amount: 320000, op_status: 'done' },
+                { id: 5, mem: 'vip_2179', buyer_name: '박지우', order_date: ago(450), pay_amount: 410000, op_status: 'done' },
+                { id: 6, mem: 'vip_2179', buyer_name: '박지우', order_date: ago(360), pay_amount: 380000, op_status: 'done' },
+                { id: 7, mem: 'vip_2179', buyer_name: '박지우', order_date: ago(270), pay_amount: 510000, op_status: 'done' },
+                { id: 8, mem: 'member_1003', buyer_name: '정하린', order_date: ago(96), pay_amount: 79000, op_status: 'done' },
+                { id: 9, mem: 'member_1004', buyer_name: '최도윤', order_date: ago(210), pay_amount: 49000, op_status: 'done' },
+                { id: 10, mem: 'member_active', buyer_name: '윤새봄', order_date: ago(1), pay_amount: 59000, op_status: 'done' },
+            ];
+            this._devPreviewCRM = true; this._prefetched = true; this._mallsLoaded = true;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            this.currentView = 'crm'; this._isInitialLoading = false;
+            this.malls = [
+                { mall_key: 'preview-mall', brand_id: brand.id, label: brand.name, channel: 'cafe24' },
+                { mall_key: '29cm', brand_id: brand.id, label: '29CM', channel: '29cm' },
+            ];
+            this.crmBrand = brand.name; this.crmSegment = 'first30';
+            const crmPreview = this._crmSegments(sample, now.toISOString());
+            Object.assign(crmPreview, { own_store_only: true });
+            this.crmData = { [brand.name]: crmPreview };
+            this.crmState = { [brand.name]: 'ok' };
+            this.wins = [{ id: 'preview-crm', view: 'crm', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
         // ====================================================================
         try {
             // 모든 모달 초기화 (숨김)
@@ -2835,7 +2867,7 @@ class BhasApp {
         //  지출은 판매가 아니다 — 매출의 짝이라 '정산' 안에서 전환한다(숨은 탭).
         { head: 'orders', label: '판매', tabs: [
             { k: 'orders', t: '주문' }, { k: 'cs', t: 'CS' }, { k: 'inventory', t: '재고' },
-            { k: 'sales', t: '정산' }, { k: 'analysis', t: '고객 분석' },
+            { k: 'sales', t: '정산' }, { k: 'analysis', t: '고객 분석' }, { k: 'crm', t: '고객 CRM' },
             { k: 'expenses', t: '지출', hidden: true },
         ] },
         // 만드는 쪽 — 견적 내고, 샘플 뜨고, 작업지시서 쓰고, 생산처가 만든다
@@ -2850,7 +2882,7 @@ class BhasApp {
     // 묶음 앱의 첫 칸 — 가로 탭 대신 세로 분류 목록(메모·자료실과 같은 결)
     APP_ICONS = {
         orders: 'ph-shopping-bag-open', cs: 'ph-arrows-counter-clockwise', inventory: 'ph-package',
-        sales: 'ph-chart-line-up', expenses: 'ph-credit-card', analysis: 'ph-crown-simple',
+        sales: 'ph-chart-line-up', expenses: 'ph-credit-card', analysis: 'ph-crown-simple', crm: 'ph-user-focus',
         items: 'ph-t-shirt', dashboard: 'ph-calendar-blank', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
         sample_maker: 'ph-scissors', quotes: 'ph-receipt',
     };
@@ -4895,6 +4927,8 @@ class BhasApp {
             return this._appShell('sales', this.renderSales());
         } else if (this.currentView === 'analysis') {
             return this._appShell('analysis', this.renderAnalysis());
+        } else if (this.currentView === 'crm') {
+            return this._appShell('crm', this.renderCRM());
         } else if (this.currentView === 'notes') {
             return this.renderNotes();
         } else if (this.currentView === 'reminders') {
@@ -5941,6 +5975,160 @@ class BhasApp {
     }
 
     // ============================================================
+    //  고객 CRM — 발송 없이 대상만 찾고 Cafe24 쿠폰용 CSV를 만든다.
+    //  회원ID가 있는 유효 주문만 사용하며 전화·이메일은 조회하지 않는다.
+    // ============================================================
+    _crmSegments(rows, nowISO) {
+        const DAY = 864e5;
+        const ymd = v => String(v || '').slice(0, 10);
+        const ms = v => Date.parse(`${ymd(v)}T00:00:00Z`);
+        const now = ymd(nowISO || new Date().toISOString());
+        const nowMs = ms(now);
+        const source = (rows || []).filter(r => {
+            const d = ymd(r.order_date);
+            return d && Number.isFinite(ms(d)) && ms(d) <= nowMs
+                && (r.actual_paid_amount != null || r.pay_amount != null)
+                && !['cancel', 'return'].includes(String(r.op_status || '').toLowerCase());
+        }).sort((a, b) => ymd(a.order_date).localeCompare(ymd(b.order_date)) || String(a.id || '').localeCompare(String(b.id || ''), 'ko', { numeric: true }));
+        const valid = source.filter(r => r.mem || r.lid);
+        const build = (through) => {
+            const cut = ms(through), by = new Map();
+            valid.forEach(r => {
+                const d = ymd(r.order_date); if (ms(d) > cut) return;
+                const id = String(r.mem || r.lid).trim(); if (!id) return;
+                const x = by.get(id) || { member_id: id, name: '', dates: [], spend: 0, orders: 0 };
+                x.name = String(r.buyer_name || r.receiver_name || x.name || '').trim();
+                x.dates.push(d); x.spend += Number(r.actual_paid_amount ?? r.pay_amount) || 0; x.orders++;
+                by.set(id, x);
+            });
+            const customers = [...by.values()].map(x => {
+                const dates = [...new Set(x.dates)].sort();
+                const gaps = dates.slice(1).map((d, i) => Math.max(0, Math.round((ms(d) - ms(dates[i])) / DAY)));
+                const avg_cycle = gaps.length ? gaps.reduce((s, n) => s + n, 0) / gaps.length : null;
+                return { member_id: x.member_id, name: x.name, first: dates[0], last: dates[dates.length - 1],
+                    spend: x.spend, orders: x.orders, gone_days: Math.floor((cut - ms(dates[dates.length - 1])) / DAY), avg_cycle };
+            });
+            const spendRank = customers.filter(x => x.orders >= 2).sort((a, b) => b.spend - a.spend || a.member_id.localeCompare(b.member_id));
+            const vipN = spendRank.length ? Math.max(1, Math.ceil(spendRank.length * 0.1)) : 0;
+            const seg = {
+                first30: customers.filter(x => x.orders === 1 && x.gone_days >= 30 && x.gone_days < 90),
+                dormant90: customers.filter(x => x.gone_days >= 90 && x.gone_days < 180),
+                dormant180: customers.filter(x => x.gone_days >= 180),
+                vipRisk: spendRank.slice(0, vipN).filter(x => x.avg_cycle != null && x.gone_days >= Math.max(1, x.avg_cycle * 2)),
+            };
+            Object.values(seg).forEach(a => a.sort((x, y) => y.gone_days - x.gone_days || y.spend - x.spend));
+            return seg;
+        };
+        const cur = build(now);
+        const n = new Date(`${now}T00:00:00Z`);
+        const prevEndDate = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 0));
+        const prevEnd = prevEndDate.toISOString().slice(0, 10);
+        const old = build(prevEnd);
+        const after = new Set(valid.filter(r => ms(r.order_date) > ms(prevEnd)).map(r => String(r.mem || r.lid).trim()));
+        const returnRates = {};
+        Object.keys(cur).forEach(k => {
+            const base = old[k] || [], returned = base.filter(x => after.has(x.member_id)).length;
+            returnRates[k] = { base: base.length, returned, rate: base.length ? Math.round(returned / base.length * 1000) / 10 : 0 };
+        });
+        const latest = source.length ? ymd(source[source.length - 1].order_date) : null;
+        return { as_of: now, latest_order: latest, previous_month_end: prevEnd, segments: cur, return_rates: returnRates,
+            customers: new Set(valid.map(r => String(r.mem || r.lid).trim())).size };
+    }
+    setCRMBrand(b) { this.crmBrand = b; this.crmSegment = 'first30'; this.requestRender(); this.ensureViewData(); }
+    setCRMSegment(k) { this.crmSegment = k; this.requestRender(); }
+    async _loadCRM(brand, force) {
+        if (!brand || !this._mallsLoaded || this._devPreviewCRM) return;
+        this._crmLoads = this._crmLoads || {}; this.crmState = this.crmState || {};
+        if (this._crmLoads[brand]) return this._crmLoads[brand];
+        if (!force && ((this.crmData && this.crmData[brand]) || this.crmState[brand] === 'error')) return;
+        const gen = this._crmGen || 0;
+        this.crmState = { ...this.crmState, [brand]: 'loading' }; this.requestRender();
+        const p = (async () => {
+            try {
+                const brandMalls = (this.malls || []).filter(m => {
+                    const b = (mockData.brands || []).find(x => x.id === m.brand_id);
+                    return (b ? b.name : (m.label || m.mall_key)) === brand;
+                });
+                // Cafe24 쿠폰 업로드용 CRM이므로 자사몰 회원ID만 쓴다. 외부몰은 화면에 범위를 명시한다.
+                const cafeMalls = brandMalls.filter(m => (m.channel || 'cafe24') === 'cafe24' && m.active !== false);
+                const mallKeys = cafeMalls.map(m => m.mall_key);
+                const rows = [];
+                for (let from = 0; mallKeys.length; from += 1000) {
+                    const { data, error } = await this.supabase.from('channel_orders')
+                        .select('id,mall_key,order_date,pay_amount,actual_paid_amount,op_status,buyer_name,receiver_name,mem:raw->>member_id,lid:raw->>loginId')
+                        .in('mall_key', mallKeys).order('id').range(from, from + 999);
+                    if (error) throw error;
+                    rows.push(...(data || []));
+                    if (!data || data.length < 1000) break;
+                }
+                if (gen !== (this._crmGen || 0)) return;
+                const crm = this._crmSegments(rows);
+                const hasExternal = brandMalls.some(m => (m.channel || 'cafe24') !== 'cafe24')
+                    || (this.channelConnections || []).some(c => String(c.brand_id) === String(brandMalls[0]?.brand_id) && c.channel !== 'cafe24');
+                Object.assign(crm, { own_store_only: hasExternal });
+                this.crmData = { ...(this.crmData || {}), [brand]: crm };
+                this.crmState = { ...this.crmState, [brand]: 'ok' };
+            } catch (e) {
+                if (gen !== (this._crmGen || 0)) return;
+                this.crmState = { ...this.crmState, [brand]: 'error' };
+                this.crmErr = { ...(this.crmErr || {}), [brand]: String(e.message || e) };
+            }
+        })().finally(() => { if (this._crmLoads[brand] === p) delete this._crmLoads[brand]; this.requestRender(); });
+        this._crmLoads[brand] = p; return p;
+    }
+    _retryCRM(brand) { this._loadCRM(brand, true); }
+    _invalidateCRM() { this._crmGen = (this._crmGen || 0) + 1; this.crmData = {}; this.crmState = {}; this._crmLoads = {}; }
+    downloadCRMCSV() {
+        const names = this._analysisBrandNames();
+        const brand = (this.crmBrand && names.includes(this.crmBrand)) ? this.crmBrand : (names[0] || '');
+        const data = (this.crmData || {})[brand], key = this.crmSegment || 'first30';
+        const rows = data?.segments?.[key] || [];
+        const csv = [['회원ID', '이름', '마지막 주문일', '누적금액'], ...rows.map(r => [r.member_id, r.name, r.last, r.spend])]
+            .map(a => a.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob), a = document.createElement('a');
+        const label = ({ first30: '첫구매30일', dormant90: '휴면90일', dormant180: '휴면180일', vipRisk: 'VIP이탈위험' })[key] || 'CRM';
+        a.href = url; a.download = `${brand}_${label}_${data?.as_of || ''}.csv`; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        this.showToast(`${rows.length.toLocaleString()}명 CSV를 받았습니다`);
+    }
+    renderCRM() {
+        const names = this._analysisBrandNames();
+        const brand = (this.crmBrand && names.includes(this.crmBrand)) ? this.crmBrand : (names[0] || null);
+        const state = (this.crmState || {})[brand], data = (this.crmData || {})[brand];
+        const key = this.crmSegment || 'first30';
+        const defs = [
+            ['first30', '첫구매 30일', '첫 구매 뒤 30~89일 재구매 없음', 'ph-shopping-bag-open', '#0a84ff'],
+            ['dormant90', '휴면 90일', '마지막 구매 후 90~179일', 'ph-moon-stars', '#ff9f0a'],
+            ['dormant180', '휴면 180일', '마지막 구매 후 180일 이상', 'ph-hourglass', '#ff453a'],
+            ['vipRisk', 'VIP 이탈 위험', '누적 상위 10% · 평소 주기 2배 경과', 'ph-crown-simple', '#af52de'],
+        ];
+        const rows = data?.segments?.[key] || [], active = defs.find(x => x[0] === key) || defs[0];
+        const won = n => this._won(n), esc = s => this._vesc(s);
+        const cards = defs.map(([k, label, desc, icon, color]) => {
+            const list = data?.segments?.[k] || [], rr = data?.return_rates?.[k] || { base: 0, returned: 0, rate: 0 };
+            const ret = `지난달 ${rr.base.toLocaleString()}명 중 ${rr.returned.toLocaleString()}명 복귀 · ${rr.rate}%`;
+            return `<button class="crm-card${key === k ? ' on' : ''}" onclick="app.setCRMSegment('${k}')" style="--crm:${color}">
+                <span class="crm-icon"><i class="ph ${icon}"></i></span><span class="crm-count">${list.length.toLocaleString()}<small>명</small></span>
+                <b>${label}</b><span>${desc}</span><em>${ret}</em></button>`;
+        }).join('');
+        const body = state === 'error' ? `<div class="crm-empty bad">불러오지 못했습니다 · ${esc((this.crmErr || {})[brand] || '')}<button onclick="app._retryCRM('${esc(brand).replace(/'/g, "\\'")}')">다시 시도</button></div>`
+            : (!data ? `<div class="crm-empty">${state === 'loading' ? '고객 주문을 불러오는 중…' : '브랜드를 선택해 주세요.'}</div>`
+            : `<section class="crm-list"><div class="crm-list-head"><div><b>${active[1]} 명단</b><span>${active[2]} · ${rows.length.toLocaleString()}명</span></div>
+                <button class="crm-csv" onclick="app.downloadCRMCSV()"><i class="ph ph-download-simple"></i> CSV 받기</button></div>
+                <div class="crm-table-wrap"><table class="crm-table"><thead><tr><th>회원ID</th><th>이름</th><th>마지막 주문일</th><th>누적금액</th><th>경과</th></tr></thead><tbody>
+                ${rows.length ? rows.map(r => `<tr><td><code>${esc(r.member_id)}</code></td><td>${esc(r.name || '—')}</td><td>${esc(r.last)}</td><td class="num">${won(r.spend)}원</td><td class="num">${r.gone_days.toLocaleString()}일</td></tr>`).join('') : '<tr><td colspan="5" class="crm-none">해당 고객이 없습니다</td></tr>'}
+                </tbody></table></div></section>`);
+        return `<div class="mp crm-page">${this._mpTop('고객 CRM', brand ? `${esc(brand)} · 발송 없이 대상만 추립니다` : '브랜드를 고르세요', '')}
+            <div class="it-pills">${names.map(n => `<button class="it-pill${brand === n ? ' on' : ''}" onclick="app.setCRMBrand('${esc(n).replace(/'/g, "\\'")}')">${esc(n)}</button>`).join('') || '<span class="mu">연동된 판매 브랜드가 없습니다</span>'}
+                <span class="pill-sp"></span><span class="sync-b"><i class="ph ph-shield-check"></i> 전화·이메일 제외 · 회원ID만</span></div>
+            <div class="mp-body">${data ? `<div class="crm-meta"><span><i class="ph ph-clock"></i> 최근 주문 ${esc((data.latest_order || '').slice(5) || '없음')}</span>${data.own_store_only ? '<span><i class="ph ph-storefront"></i> 자사몰 주문 기준</span>' : ''}</div>` : ''}
+            <div class="crm-intro"><div><span>CRM 대상</span><b>돌아올 가능성이 있는 고객부터 봅니다</b></div><p>카드를 누르면 Cafe24 쿠폰 대상용 명단을 확인하고 CSV로 받을 수 있습니다. 실제 발송은 하지 않습니다.</p></div>
+            <div class="crm-cards">${cards}</div>${body}
+            <p class="crm-foot">기준일 ${data?.as_of || '—'} · 첫구매/휴면 묶음은 서로 겹치지 않음 · VIP는 별도라 다른 묶음과 겹칠 수 있음</p></div></div>`;
+    }
+
+    // ============================================================
     //  SNS(인스타그램) 운영현황 — 팔로워 추이 · 주간 게시물 · 주간 스토리
     //  ig_accounts(브랜드별 계정) × ig_snapshots(일/주 스냅샷).
     //  수동 입력(source='manual')과 메타 자동수집(source='meta')을 같은 표로 본다.
@@ -6366,7 +6554,7 @@ class BhasApp {
     // ============================================================
     ensureViewData() {
         const v = this.currentView;
-        if ((v === 'orders' || v === 'inventory' || v === 'integrations' || v === 'sales' || v === 'analysis') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
+        if ((v === 'orders' || v === 'inventory' || v === 'integrations' || v === 'sales' || v === 'analysis' || v === 'crm') && !this._mallsLoaded && !this._mallsLoading) this.loadMalls();
         // 분석 탭: 선택 브랜드+연도의 주문 아이템(옵션) 로드 → 고객군 집계
         if (v === 'analysis' && this._mallsLoaded) {
             const names = this._analysisBrandNames();
@@ -6375,6 +6563,11 @@ class BhasApp {
             const from = r.from || '2000-01-01';
             const to = r.to || new Date(Date.now() + 864e5).toISOString().slice(0, 10);
             if (bf) { this._loadAnalysisScope(bf, from, to); this._loadAnalysisRepeat(bf, from, to); this._loadGone(bf, from, to); this._loadCustProfile(bf); }
+        }
+        if (v === 'crm' && this._mallsLoaded) {
+            const names = this._analysisBrandNames();
+            const brand = (this.crmBrand && names.includes(this.crmBrand)) ? this.crmBrand : (names[0] || null);
+            if (brand) this._loadCRM(brand);
         }
         if (v === 'feedback' && !this._fbLoaded && !this._fbLoading) this.loadFeedback();
         if ((v === 'cs' || v === 'orders') && !this._csLoaded && !this._csLoading) this.loadCS();
@@ -7044,7 +7237,7 @@ class BhasApp {
         if (m) return m.label;
         return ({ settings: '설정', contacts: '연락처', cs: 'CS', expenses: '지출', inventory: '재고', news: '뉴스',
                   sales: '정산', sample_maker: '샘플·디자인',
-                  vendors: '생산현황', dashboard: '시즌', analysis: '분석', tech_packs: '작업지시서', quotes: '견적',
+                  vendors: '생산현황', dashboard: '시즌', analysis: '고객 분석', crm: '고객 CRM', tech_packs: '작업지시서', quotes: '견적',
                   integrations: '연동', user_management: '계정', brand_management: '브랜드',
                   feedback: '불편사항', pages: '페이지', kanban: '보드', table: '표',
                   all_todos: '할일', timeline: '타임라인', sample_maker: '샘플' })[view] || view;
@@ -7220,7 +7413,7 @@ class BhasApp {
         this.currentView = prevView;
         // 바탕화면 = 홈 대시보드. 여기 블록을 누르면 switchView 를 타고 창이 열린다.
         let deskboard = '';
-        try { deskboard = this._devPreviewContacts ? '' : (this.renderHome(products) || ''); }
+        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM) ? '' : (this.renderHome(products) || ''); }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
         const dock = this.MAC_DOCK.filter(d => !d.tool).map(d => {
             const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this.wins.find(w => w.view === d.id));
@@ -7291,7 +7484,7 @@ class BhasApp {
     }
     _macEnsureData() {
         const prev = this.currentView;
-        const views = [...new Set([...(this._devPreviewContacts ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
+        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
         views.forEach(v => { this.currentView = v; try { this.ensureViewData(); } catch (_e) {} });
         this.currentView = prev;
     }
@@ -10182,7 +10375,7 @@ class BhasApp {
             this._ordersLoaded = false; this._ordersLoading = false;
             this._mallsLoaded = false; this._mallsLoading = false;
             await Promise.all([this.loadOrders(), this.loadMalls(), this.loadOrderPage(true)]);
-            this._invalidateCust(); this.ensureViewData();
+            this._invalidateCust(); if (this._invalidateCRM) this._invalidateCRM(); this.ensureViewData();
             this.showToast('최신 데이터로 동기화됐어요');
         } catch (e) { this.showToast('동기화 실패: ' + (e?.message || e)); }
         this._refreshing = false; this.requestRender();
