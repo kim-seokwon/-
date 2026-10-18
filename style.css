@@ -4773,3 +4773,38 @@ b.sp-nm.dup{color:#ff453a}
 }
 /* 뉴스 — 14일 유효 건수 (10-28 판정용) */
 .nw-valid{margin:6px 10px 10px;font-size:11px;line-height:1.5;color:var(--text-muted)}
+
+/* 고객 CRM — 세그먼트 하나를 고르고 바로 명단·CSV로 이어지는 단일 위계 */
+.crm-page .mp-body{padding-top:18px}
+.crm-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin:0 0 18px;padding:0 2px}
+.crm-intro div{display:flex;flex-direction:column;gap:4px}
+.crm-intro div>span{font-size:12px;font-weight:700;color:var(--primary)}
+.crm-intro div>b{font-size:21px;line-height:1.25;letter-spacing:-.02em}
+.crm-intro p{max-width:460px;margin:0;color:var(--text-muted);font-size:12.5px;line-height:1.5;text-align:right}
+.crm-cards{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+.crm-card{position:relative;display:grid;grid-template-columns:38px 1fr;grid-template-rows:auto auto auto;column-gap:10px;text-align:left;
+  min-height:142px;padding:16px;border:1px solid var(--card-border);border-radius:15px;background:var(--card-bg);color:var(--text-main);font-family:inherit;cursor:pointer;transition:.15s ease}
+.crm-card:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--crm) 45%,var(--card-border))}
+.crm-card.on{border-color:var(--crm);box-shadow:0 0 0 1px var(--crm),0 10px 26px rgba(0,0,0,.08)}
+.crm-icon{grid-row:1/3;display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:color-mix(in srgb,var(--crm) 12%,transparent);color:var(--crm);font-size:20px}
+.crm-count{align-self:center;font-size:26px;font-weight:850;line-height:1;font-variant-numeric:tabular-nums;color:var(--crm)}
+.crm-count small{margin-left:2px;font-size:11px;font-weight:700;color:var(--text-muted)}
+.crm-card>b{grid-column:1/3;margin-top:12px;font-size:13.5px}
+.crm-card>span:not(.crm-icon):not(.crm-count){grid-column:1/3;margin-top:3px;font-size:11px;color:var(--text-muted);line-height:1.35}
+.crm-card>em{grid-column:1/3;margin-top:10px;padding-top:8px;border-top:1px solid var(--card-border);font-size:10.5px;font-style:normal;color:var(--text-muted)}
+.crm-card>em.gap{color:#ff9f0a;font-weight:750}
+.crm-gap{display:flex;align-items:center;gap:7px;margin:0 0 14px;padding:9px 12px;border:1px solid rgba(255,159,10,.35);border-radius:11px;background:rgba(255,159,10,.09);color:#ff9f0a;font-size:11.5px}
+.crm-gap>i{font-size:16px}.crm-gap>b{color:var(--text-main)}.crm-gap>span{color:var(--text-muted)}
+.crm-list{overflow:hidden;border:1px solid var(--card-border);border-radius:16px;background:var(--card-bg)}
+.crm-list-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid var(--card-border)}
+.crm-list-head>div{display:flex;align-items:baseline;gap:9px}.crm-list-head b{font-size:14px}.crm-list-head span{font-size:11px;color:var(--text-muted)}
+.crm-csv{display:flex;align-items:center;gap:6px;border:0;border-radius:9px;padding:8px 12px;background:var(--primary);color:#fff;font:700 12px inherit;cursor:pointer}
+.crm-table-wrap{overflow:auto;max-height:420px}.crm-table{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap}
+.crm-table th{position:sticky;top:0;z-index:1;padding:9px 14px;background:var(--card-bg);border-bottom:1px solid var(--card-border);color:var(--text-muted);font-size:10.5px;text-align:left}
+.crm-table td{padding:10px 14px;border-bottom:1px solid var(--card-border)}.crm-table tr:last-child td{border-bottom:0}.crm-table .num{text-align:right;font-variant-numeric:tabular-nums}
+.crm-table code{padding:2px 6px;border-radius:5px;background:rgba(127,127,127,.09);color:inherit;font:11.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+.crm-none{text-align:center!important;color:var(--text-muted);padding:34px!important}.crm-empty{padding:42px;text-align:center;border:1px solid var(--card-border);border-radius:16px;color:var(--text-muted)}
+.crm-empty.bad{color:#ff453a}.crm-empty button{margin-left:9px;border:1px solid currentColor;border-radius:7px;background:transparent;color:inherit;padding:4px 9px;cursor:pointer}
+.crm-foot{margin:10px 2px 0;color:var(--text-muted);font-size:10.5px}
+@media(max-width:900px){.crm-cards{grid-template-columns:repeat(2,minmax(150px,1fr))}.crm-intro{align-items:flex-start;flex-direction:column;gap:7px}.crm-intro p{text-align:left}}
+@media(max-width:520px){.crm-page .mp-body{padding:14px 12px}.crm-intro div>b{font-size:18px}.crm-intro p{font-size:11.5px}.crm-cards{grid-template-columns:1fr 1fr;gap:8px}.crm-card{min-height:156px;padding:13px}.crm-list-head{align-items:flex-start}.crm-list-head>div{display:block}.crm-list-head span{display:block;margin-top:3px}.crm-table th,.crm-table td{padding:9px 11px}}
