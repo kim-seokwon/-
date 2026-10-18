@@ -70,8 +70,23 @@ export async function log(db: ReturnType<typeof admin>, mallKey: string, type: s
 
 export const baseOf = (mallId: string) => `https://${mallId}.cafe24api.com`;
 
+// 동시 갱신 경쟁 대비 주입점(테스트용). 기본값 = 실제 fetch·DB.
+export interface TokenDeps {
+  fetchFn?: typeof fetch;
+  reload?: (mallKey: string) => Promise<MallState | null>;
+  save?: (mallKey: string, patch: Partial<MallState>) => Promise<void>;
+  sleep?: (ms: number) => Promise<void>;
+}
+const RELOAD_TRIES = 3, RELOAD_GAP_MS = 1000;
+
 // access_token 갱신 (만료 10분 전이면 refresh) — 몰 자격증명 사용
-export async function ensureToken(db: ReturnType<typeof admin>, st: MallState): Promise<string> {
+// refresh_token 은 갱신 때마다 바뀐다. 두 실행(5분 크론·정시 크론 등)이 동시에 갱신하면 진 쪽은 invalid_grant.
+// → 그때 DB를 다시 읽어 이긴 쪽이 저장한 새 토큰을 채택한다(이긴 쪽 저장이 늦을 수 있어 1초 간격 3회).
+export async function ensureToken(db: ReturnType<typeof admin>, st: MallState, deps: TokenDeps = {}): Promise<string> {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const reload = deps.reload ?? ((k: string) => getMall(db, k));
+  const save = deps.save ?? ((k: string, p: Partial<MallState>) => saveMall(db, k, p));
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>(r => setTimeout(r, ms)));
   const now = Date.now();
   const exp = st.expires_at ? new Date(st.expires_at).getTime() : 0;
   // 유효(10분 여유)하고 비정상적 미래(2.5h 초과=타임존 착오)가 아니면 재사용, 그 외 전부 갱신
@@ -80,19 +95,38 @@ export async function ensureToken(db: ReturnType<typeof admin>, st: MallState): 
   if (!st.client_id || !st.client_secret || !st.cafe24_mall_id) throw new Error(`[${st.mall_key}] 자격증명 미설정`);
 
   const basic = btoa(`${st.client_id}:${st.client_secret}`);
-  const res = await fetch(`${baseOf(st.cafe24_mall_id)}/api/v2/oauth/token`, {
+  const res = await fetchFn(`${baseOf(st.cafe24_mall_id)}/api/v2/oauth/token`, {
     method: "POST",
     headers: { "Authorization": `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: st.refresh_token }),
   });
-  if (!res.ok) throw new Error(`[${st.mall_key}] 토큰 갱신 실패 ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 400 && body.includes("invalid_grant")) {
+      for (let i = 0; i < RELOAD_TRIES; i++) {
+        const fresh = await reload(st.mall_key);
+        const fexp = fresh?.expires_at ? new Date(fresh.expires_at).getTime() : 0;
+        // 다른 실행이 갱신했다 = refresh_token 이 바뀌었고 access_token 이 1분 이상 남아 있다
+        if (fresh?.access_token && fresh.refresh_token && fresh.refresh_token !== st.refresh_token && fexp > Date.now() + 60 * 1000) {
+          st.access_token = fresh.access_token;
+          st.refresh_token = fresh.refresh_token;
+          st.expires_at = fresh.expires_at;
+          return fresh.access_token;
+        }
+        if (i < RELOAD_TRIES - 1) await sleep(RELOAD_GAP_MS);
+      }
+    }
+    throw new Error(`[${st.mall_key}] 토큰 갱신 실패 ${res.status}: ${body}`);
+  }
   const j = await res.json();
-  await saveMall(db, st.mall_key, {
+  const patch = {
     access_token: j.access_token,
     refresh_token: j.refresh_token,
     // 카페24 값 대신 직접 계산한 정확한 UTC ISO (access token 유효 ~2h → 90분 안전마진)
     expires_at: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
-  });
+  };
+  await save(st.mall_key, patch);
+  Object.assign(st, patch);
   return j.access_token;
 }
 
