@@ -21,11 +21,12 @@ const mk = (notes = [], more = {}) => {
     const t = {
         NOTE_TODO_RE: field('NOTE_TODO_RE'), DOW_KO: field('DOW_KO'),
         noteList: notes, vendors: [], pItems: [], remList: [], saved: [], toasts: [], ...more,
-        _noteText: n => n.body || '', _noteMeta: () => null, _joinNote: (_m, txt) => txt,
+        _noteText: n => n.body || '', _noteMeta: () => ({}), _joinNote: (_m, txt) => txt, _seasons: () => [],
         requestRender() {}, showToast(s) { this.toasts.push(s); },
         supabase: { from: (table) => ({ update: (row) => ({ eq: async (_c, id) => { t.saved.push({ table, id, ...row }); return { error: null }; } }) }) },
     };
-    for (const f of ['_lineTodos', '_noteTodos', '_allNoteTodos', '_locateTodoLine', 'toggleNoteTodo',
+    for (const f of ['_mentionTargets', '_lineTodos', '_noteTodos', '_vendorTodos', '_allNoteTodos', '_locateTodoLine',
+                     '_todoSource', 'toggleSourceTodo', 'toggleNoteTodo',
                      '_splitDue', '_findWhen', '_ymd', '_plusDays', '_nextDow']) t[f] = method(f);
     return t;
 };
