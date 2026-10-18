@@ -68,11 +68,10 @@ test('지난달 세그먼트 고객의 이후 재구매를 복귀율로 센다',
     assert.deepEqual(r.return_rates.dormant90, { base: 1, returned: 1, rate: 100 });
 });
 
-test('마지막 주문 수집이 3일을 넘기면 복귀율 대신 공백 표시 대상', () => {
-    assert.equal(seg([O(1, 3)]).data_gap, false);
-    const stale = seg([O(1, 4)]);
-    assert.equal(stale.data_gap, true);
-    assert.equal(stale.latest_order, '2026-10-14');
+test('최근 주문이 오래돼도 복귀율 계산 결과를 유지한다', () => {
+    const stale = seg([O(1, 120), O(2, 1)]);
+    assert.ok(stale.return_rates);
+    assert.equal(Object.hasOwn(stale, 'data_gap'), false);
 });
 
 test('결과에는 전화·이메일 원문이 남지 않는다', () => {
@@ -86,4 +85,5 @@ test('DB 조회와 CSV 열은 회원ID 중심이며 전화·이메일을 요구�
     const load = src.slice(src.indexOf('    async _loadCRM('), src.indexOf('\n    _retryCRM(', src.indexOf('    async _loadCRM(')));
     assert.equal(/phone|email/i.test(load), false);
     assert.match(src, /\['회원ID', '이름', '마지막 주문일', '누적금액'\]/);
+    assert.match(load, /const cafeMalls = brandMalls\.filter/);
 });

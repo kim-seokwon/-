@@ -242,9 +242,14 @@ class BhasApp {
             this._devPreviewCRM = true; this._prefetched = true; this._mallsLoaded = true;
             this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
             this.currentView = 'crm'; this._isInitialLoading = false;
-            this.malls = [{ mall_key: 'preview-mall', brand_id: brand.id, label: brand.name, channel: 'cafe24' }];
+            this.malls = [
+                { mall_key: 'preview-mall', brand_id: brand.id, label: brand.name, channel: 'cafe24' },
+                { mall_key: '29cm', brand_id: brand.id, label: '29CM', channel: '29cm' },
+            ];
             this.crmBrand = brand.name; this.crmSegment = 'first30';
-            this.crmData = { [brand.name]: this._crmSegments(sample, now.toISOString()) };
+            const crmPreview = this._crmSegments(sample, now.toISOString());
+            Object.assign(crmPreview, { own_store_only: true });
+            this.crmData = { [brand.name]: crmPreview };
             this.crmState = { [brand.name]: 'ok' };
             this.wins = [{ id: 'preview-crm', view: 'crm', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
@@ -6026,9 +6031,7 @@ class BhasApp {
             returnRates[k] = { base: base.length, returned, rate: base.length ? Math.round(returned / base.length * 1000) / 10 : 0 };
         });
         const latest = source.length ? ymd(source[source.length - 1].order_date) : null;
-        const gapDays = latest ? Math.floor((nowMs - ms(latest)) / DAY) : null;
-        return { as_of: now, latest_order: latest, data_gap: gapDays == null || gapDays > 3, gap_days: gapDays,
-            previous_month_end: prevEnd, segments: cur, return_rates: returnRates,
+        return { as_of: now, latest_order: latest, previous_month_end: prevEnd, segments: cur, return_rates: returnRates,
             customers: new Set(valid.map(r => String(r.mem || r.lid).trim())).size };
     }
     setCRMBrand(b) { this.crmBrand = b; this.crmSegment = 'first30'; this.requestRender(); this.ensureViewData(); }
@@ -6042,10 +6045,13 @@ class BhasApp {
         this.crmState = { ...this.crmState, [brand]: 'loading' }; this.requestRender();
         const p = (async () => {
             try {
-                const mallKeys = (this.malls || []).filter(m => {
+                const brandMalls = (this.malls || []).filter(m => {
                     const b = (mockData.brands || []).find(x => x.id === m.brand_id);
                     return (b ? b.name : (m.label || m.mall_key)) === brand;
-                }).map(m => m.mall_key);
+                });
+                // Cafe24 쿠폰 업로드용 CRM이므로 자사몰 회원ID만 쓴다. 외부몰은 화면에 범위를 명시한다.
+                const cafeMalls = brandMalls.filter(m => (m.channel || 'cafe24') === 'cafe24' && m.active !== false);
+                const mallKeys = cafeMalls.map(m => m.mall_key);
                 const rows = [];
                 for (let from = 0; mallKeys.length; from += 1000) {
                     const { data, error } = await this.supabase.from('channel_orders')
@@ -6056,7 +6062,11 @@ class BhasApp {
                     if (!data || data.length < 1000) break;
                 }
                 if (gen !== (this._crmGen || 0)) return;
-                this.crmData = { ...(this.crmData || {}), [brand]: this._crmSegments(rows) };
+                const crm = this._crmSegments(rows);
+                const hasExternal = brandMalls.some(m => (m.channel || 'cafe24') !== 'cafe24')
+                    || (this.channelConnections || []).some(c => String(c.brand_id) === String(brandMalls[0]?.brand_id) && c.channel !== 'cafe24');
+                Object.assign(crm, { own_store_only: hasExternal });
+                this.crmData = { ...(this.crmData || {}), [brand]: crm };
                 this.crmState = { ...this.crmState, [brand]: 'ok' };
             } catch (e) {
                 if (gen !== (this._crmGen || 0)) return;
@@ -6097,10 +6107,10 @@ class BhasApp {
         const won = n => this._won(n), esc = s => this._vesc(s);
         const cards = defs.map(([k, label, desc, icon, color]) => {
             const list = data?.segments?.[k] || [], rr = data?.return_rates?.[k] || { base: 0, returned: 0, rate: 0 };
-            const ret = data?.data_gap ? '수집 공백' : `지난달 ${rr.base.toLocaleString()}명 중 ${rr.returned.toLocaleString()}명 복귀 · ${rr.rate}%`;
+            const ret = `지난달 ${rr.base.toLocaleString()}명 중 ${rr.returned.toLocaleString()}명 복귀 · ${rr.rate}%`;
             return `<button class="crm-card${key === k ? ' on' : ''}" onclick="app.setCRMSegment('${k}')" style="--crm:${color}">
                 <span class="crm-icon"><i class="ph ${icon}"></i></span><span class="crm-count">${list.length.toLocaleString()}<small>명</small></span>
-                <b>${label}</b><span>${desc}</span><em${data?.data_gap ? ' class="gap"' : ''}>${ret}</em></button>`;
+                <b>${label}</b><span>${desc}</span><em>${ret}</em></button>`;
         }).join('');
         const body = state === 'error' ? `<div class="crm-empty bad">불러오지 못했습니다 · ${esc((this.crmErr || {})[brand] || '')}<button onclick="app._retryCRM('${esc(brand).replace(/'/g, "\\'")}')">다시 시도</button></div>`
             : (!data ? `<div class="crm-empty">${state === 'loading' ? '고객 주문을 불러오는 중…' : '브랜드를 선택해 주세요.'}</div>`
@@ -6112,7 +6122,8 @@ class BhasApp {
         return `<div class="mp crm-page">${this._mpTop('고객 CRM', brand ? `${esc(brand)} · 발송 없이 대상만 추립니다` : '브랜드를 고르세요', '')}
             <div class="it-pills">${names.map(n => `<button class="it-pill${brand === n ? ' on' : ''}" onclick="app.setCRMBrand('${esc(n).replace(/'/g, "\\'")}')">${esc(n)}</button>`).join('') || '<span class="mu">연동된 판매 브랜드가 없습니다</span>'}
                 <span class="pill-sp"></span><span class="sync-b"><i class="ph ph-shield-check"></i> 전화·이메일 제외 · 회원ID만</span></div>
-            <div class="mp-body">${data?.data_gap ? `<div class="crm-gap"><i class="ph ph-warning-circle"></i><b>주문 수집 마지막 ${esc((data.latest_order || '').slice(5) || '확인 불가')}</b><span>— 이후 주문 미반영 · 복귀율을 계산하지 않습니다</span></div>` : ''}<div class="crm-intro"><div><span>CRM 대상</span><b>돌아올 가능성이 있는 고객부터 봅니다</b></div><p>카드를 누르면 Cafe24 쿠폰 대상용 명단을 확인하고 CSV로 받을 수 있습니다. 실제 발송은 하지 않습니다.</p></div>
+            <div class="mp-body">${data ? `<div class="crm-meta"><span><i class="ph ph-clock"></i> 최근 주문 ${esc((data.latest_order || '').slice(5) || '없음')}</span>${data.own_store_only ? '<span><i class="ph ph-storefront"></i> 자사몰 주문 기준</span>' : ''}</div>` : ''}
+            <div class="crm-intro"><div><span>CRM 대상</span><b>돌아올 가능성이 있는 고객부터 봅니다</b></div><p>카드를 누르면 Cafe24 쿠폰 대상용 명단을 확인하고 CSV로 받을 수 있습니다. 실제 발송은 하지 않습니다.</p></div>
             <div class="crm-cards">${cards}</div>${body}
             <p class="crm-foot">기준일 ${data?.as_of || '—'} · 첫구매/휴면 묶음은 서로 겹치지 않음 · VIP는 별도라 다른 묶음과 겹칠 수 있음</p></div></div>`;
     }
