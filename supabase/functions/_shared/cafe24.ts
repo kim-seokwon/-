@@ -60,8 +60,10 @@ export async function getActiveMalls(db: ReturnType<typeof admin>): Promise<Mall
   return ((data || []) as MallState[]).map(s => applyEnvSecret(s) as MallState);
 }
 
+// 저장 실패를 삼키지 않는다 — 회전한 refresh_token 이 DB에 안 남으면 다음 실행부터 영구 invalid_grant
 export async function saveMall(db: ReturnType<typeof admin>, mallKey: string, patch: Partial<MallState>) {
-  await db.from("channel_sync_state").update({ updated_at: new Date().toISOString(), ...patch }).eq("mall_key", mallKey);
+  const { error } = await db.from("channel_sync_state").update({ updated_at: new Date().toISOString(), ...patch }).eq("mall_key", mallKey);
+  if (error) throw new Error(`[${mallKey}] channel_sync_state 저장 실패: ${error.message}`);
 }
 
 export async function log(db: ReturnType<typeof admin>, mallKey: string, type: string, result: string, detail: unknown) {
@@ -77,7 +79,14 @@ export interface TokenDeps {
   save?: (mallKey: string, patch: Partial<MallState>) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
 }
-const RELOAD_TRIES = 3, RELOAD_GAP_MS = 1000;
+const RELOAD_TRIES = 3, RELOAD_GAP_MS = 1000, SAVE_TRIES = 3;
+
+// 재사용해도 되는 토큰인가 — 만료까지 10분 초과, 2.5h 미만(그 이상=타임존 착오). 일반 재사용·경쟁 복구 둘 다 이 판정만 쓴다.
+export function usableToken(t: Pick<MallState, "access_token" | "expires_at"> | null | undefined, now = Date.now()): boolean {
+  if (!t?.access_token || !t.expires_at) return false;
+  const exp = new Date(t.expires_at).getTime();
+  return exp > now + 10 * 60 * 1000 && exp < now + 2.5 * 3600 * 1000;
+}
 
 // access_token 갱신 (만료 10분 전이면 refresh) — 몰 자격증명 사용
 // refresh_token 은 갱신 때마다 바뀐다. 두 실행(5분 크론·정시 크론 등)이 동시에 갱신하면 진 쪽은 invalid_grant.
@@ -87,10 +96,8 @@ export async function ensureToken(db: ReturnType<typeof admin>, st: MallState, d
   const reload = deps.reload ?? ((k: string) => getMall(db, k));
   const save = deps.save ?? ((k: string, p: Partial<MallState>) => saveMall(db, k, p));
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>(r => setTimeout(r, ms)));
-  const now = Date.now();
-  const exp = st.expires_at ? new Date(st.expires_at).getTime() : 0;
   // 유효(10분 여유)하고 비정상적 미래(2.5h 초과=타임존 착오)가 아니면 재사용, 그 외 전부 갱신
-  if (st.access_token && exp > now + 10 * 60 * 1000 && exp < now + 2.5 * 3600 * 1000) return st.access_token;
+  if (usableToken(st)) return st.access_token!;
   if (!st.refresh_token) throw new Error(`[${st.mall_key}] refresh_token 없음 — 재인증 필요`);
   if (!st.client_id || !st.client_secret || !st.cafe24_mall_id) throw new Error(`[${st.mall_key}] 자격증명 미설정`);
 
@@ -105,13 +112,12 @@ export async function ensureToken(db: ReturnType<typeof admin>, st: MallState, d
     if (res.status === 400 && body.includes("invalid_grant")) {
       for (let i = 0; i < RELOAD_TRIES; i++) {
         const fresh = await reload(st.mall_key);
-        const fexp = fresh?.expires_at ? new Date(fresh.expires_at).getTime() : 0;
-        // 다른 실행이 갱신했다 = refresh_token 이 바뀌었고 access_token 이 1분 이상 남아 있다
-        if (fresh?.access_token && fresh.refresh_token && fresh.refresh_token !== st.refresh_token && fexp > Date.now() + 60 * 1000) {
+        // 다른 실행이 갱신했다 = refresh_token 이 바뀌었고, 새 access_token 이 일반 재사용 규칙도 통과한다
+        if (fresh?.refresh_token && fresh.refresh_token !== st.refresh_token && usableToken(fresh)) {
           st.access_token = fresh.access_token;
           st.refresh_token = fresh.refresh_token;
           st.expires_at = fresh.expires_at;
-          return fresh.access_token;
+          return fresh.access_token!;
         }
         if (i < RELOAD_TRIES - 1) await sleep(RELOAD_GAP_MS);
       }
@@ -125,7 +131,13 @@ export async function ensureToken(db: ReturnType<typeof admin>, st: MallState, d
     // 카페24 값 대신 직접 계산한 정확한 UTC ISO (access token 유효 ~2h → 90분 안전마진)
     expires_at: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
   };
-  await save(st.mall_key, patch);
+  // 저장이 끝나야 성공 — 실패하면 메모리도 그대로 두고 던진다(일시 오류 대비 3회)
+  let lastErr: unknown;
+  for (let i = 0; i < SAVE_TRIES; i++) {
+    try { await save(st.mall_key, patch); lastErr = null; break; }
+    catch (e) { lastErr = e; if (i < SAVE_TRIES - 1) await sleep(RELOAD_GAP_MS); }
+  }
+  if (lastErr) throw new Error(`[${st.mall_key}] 새 토큰 DB 저장 실패(카페24는 이미 회전 — 재인증 필요할 수 있음): ${lastErr instanceof Error ? lastErr.message : lastErr}`);
   Object.assign(st, patch);
   return j.access_token;
 }
