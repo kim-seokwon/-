@@ -1,0 +1,122 @@
+-- 088 brand_customers · brand_gone_counts 에 브랜드 검사 (10-19 RLS점검 위험3: .work/상용화/RLS점검.md)
+--
+-- 두 함수는 SECURITY DEFINER(RLS 우회) + authenticated EXECUTE 인데 p_brand 검사가 없어서,
+-- 로그인만 하면 남의 브랜드 고객 이름·전화·구매액을 받을 수 있었다(STAFF 는 brand_access 밖 브랜드도).
+-- 바꾼 뒤: 함수 첫머리에서 p_brand 의 brands.id 로 can_access_brand 검사 → 불가면 42501 예외.
+--   없는 브랜드 이름도 같은 예외(존재 여부를 흘리지 않음).
+-- 본문(조회·집계)은 10-19 운영 정의와 글자 그대로 같다 — LANGUAGE sql → plpgsql 로 바꾸고 return ( … ) 로 감쌌을 뿐.
+-- 권한: 익명 EXECUTE 없음 유지(public·anon revoke, authenticated·service_role grant — 운영과 같음).
+-- 되돌리기: supabase/rollbacks/088_brand_func_guard.down.sql
+
+create or replace function public.brand_customers(p_brand text, p_from timestamp with time zone DEFAULT NULL::timestamp with time zone, p_to timestamp with time zone DEFAULT NULL::timestamp with time zone, p_kind text DEFAULT 'all'::text, p_days integer DEFAULT 90, p_limit integer DEFAULT 300)
+returns json language plpgsql stable security definer set search_path = public as $function$
+begin
+  -- 브랜드 검사: 로그인 사용자가 이 브랜드를 볼 수 있어야 한다(can_access_brand — RLS 와 같은 규칙).
+  -- 엣지함수(service_role)는 RLS 를 우회하는 것과 같게 통과시킨다.
+  if coalesce(auth.jwt()->>'role', '') <> 'service_role'
+     and not exists (select 1 from brands b where b.name = p_brand and public.can_access_brand(b.id)) then
+    raise exception 'forbidden: brand' using errcode = '42501';
+  end if;
+  return (
+with c as (
+  select coalesce(nullif(o.receiver_phone,''), o.receiver_name, o.buyer_name) cust,
+         max(o.receiver_name) nm,
+         max(o.receiver_phone) phone,
+         count(*) n,
+         sum(coalesce(o.pay_amount,0)) spend,
+         min(o.order_date) first_at,
+         max(o.order_date) last_at,
+         (array_agg(distinct m.label))[1:3] malls
+    from channel_orders o
+    join malls m on m.mall_key = o.mall_key
+    join brands b on b.id = m.brand_id
+   where b.name = p_brand
+     and coalesce(nullif(o.receiver_phone,''), o.receiver_name, o.buyer_name) is not null
+     and coalesce(o.channel_status,'') !~ '^[CR]'
+     and (p_from is null or o.order_date >= p_from)
+     and (p_to   is null or o.order_date <  p_to)
+   group by 1
+),
+-- 떠난 이유의 단서: 그 고객의 CS(교환·반품) 와 마지막으로 산 상품
+x as (
+  select c.*,
+         (now()::date - c.last_at::date) gone_days,
+         (select count(*) from cs_tickets t
+           where t.customer_name = c.nm or regexp_replace(coalesce(t.order_no,''),'\s','','g') in
+                 (select o2.order_id from channel_orders o2
+                   where coalesce(nullif(o2.receiver_phone,''), o2.receiver_name, o2.buyer_name) = c.cust)) cs_n,
+         (select string_agg(distinct left(i.product_name, 24), ', ')
+            from channel_orders o3
+            join channel_order_items i on i.channel_order_id = o3.id
+           where coalesce(nullif(o3.receiver_phone,''), o3.receiver_name, o3.buyer_name) = c.cust
+             and o3.order_date = c.last_at) last_items
+    from c
+)
+select coalesce(json_agg(s.r order by s.sort_key desc), '[]'::json) from (
+  select json_build_object(
+           'name', nm, 'phone', phone, 'orders', n, 'spend', spend,
+           'first', first_at::date, 'last', last_at::date, 'gone_days', gone_days,
+           'cs', cs_n, 'last_items', last_items, 'malls', malls
+         ) r,
+         case when p_kind = 'gone' then gone_days::numeric else spend end sort_key
+    from x
+   where case
+           when p_kind = 'once'   then n = 1
+           when p_kind = 'repeat' then n >= 2
+           when p_kind = 'loyal'  then n >= 10
+           when p_kind = 'vip'    then true
+           when p_kind = 'gone'   then gone_days >= p_days
+           -- 'n3' 처럼 정확히 몇 회 산 사람 (분포 막대를 눌렀을 때)
+           when p_kind ~ '^n[0-9]+$' then n = substring(p_kind from 2)::int
+           else true
+         end
+   order by sort_key desc
+   limit greatest(1, least(p_limit, 1000))
+) s
+  );
+end
+$function$;
+revoke all on function public.brand_customers(text,timestamptz,timestamptz,text,int,int) from public, anon;
+grant execute on function public.brand_customers(text,timestamptz,timestamptz,text,int,int) to authenticated, service_role;
+
+create or replace function public.brand_gone_counts(p_brand text, p_from timestamp with time zone DEFAULT NULL::timestamp with time zone, p_to timestamp with time zone DEFAULT NULL::timestamp with time zone)
+returns json language plpgsql stable security definer set search_path = public as $function$
+begin
+  -- 브랜드 검사: 로그인 사용자가 이 브랜드를 볼 수 있어야 한다(can_access_brand — RLS 와 같은 규칙).
+  -- 엣지함수(service_role)는 RLS 를 우회하는 것과 같게 통과시킨다.
+  if coalesce(auth.jwt()->>'role', '') <> 'service_role'
+     and not exists (select 1 from brands b where b.name = p_brand and public.can_access_brand(b.id)) then
+    raise exception 'forbidden: brand' using errcode = '42501';
+  end if;
+  return (
+with c as (
+  select coalesce(nullif(o.receiver_phone,''), o.receiver_name, o.buyer_name) cust,
+         count(*) n,
+         sum(coalesce(o.pay_amount,0)) spend,
+         max(o.order_date) last_at
+    from channel_orders o
+    join malls m on m.mall_key = o.mall_key
+    join brands b on b.id = m.brand_id
+   where b.name = p_brand
+     and coalesce(nullif(o.receiver_phone,''), o.receiver_name, o.buyer_name) is not null
+     and coalesce(o.channel_status,'') !~ '^[CR]'
+     and (p_from is null or o.order_date >= p_from)
+     and (p_to   is null or o.order_date <  p_to)
+   group by 1
+), d as (select *, (now()::date - last_at::date) gone from c)
+select json_build_object(
+  'customers', (select count(*) from d),
+  'd90',   (select count(*) from d where gone >= 90),
+  'd180',  (select count(*) from d where gone >= 180),
+  'd365',  (select count(*) from d where gone >= 365),
+  -- 떠난 분들이 쥐고 있던 돈 — 되돌릴 값어치를 가늠하려고
+  'lost90_spend', (select coalesce(sum(spend),0) from d where gone >= 90),
+  'repeat90',     (select count(*) from d where gone >= 90 and n >= 2)
+)
+  );
+end
+$function$;
+revoke all on function public.brand_gone_counts(text,timestamptz,timestamptz) from public, anon;
+grant execute on function public.brand_gone_counts(text,timestamptz,timestamptz) to authenticated, service_role;
+
+notify pgrst, 'reload schema';

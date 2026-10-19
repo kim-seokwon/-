@@ -13,7 +13,8 @@
     "test:cust-profile": "node --test tests/cust-profile.test.mjs",
     "test:crm": "node --test tests/customer-crm.test.mjs",
     "test:hometax-excel": "node --test tests/hometax-excel.test.mjs",
-    "test:sales-agg": "node --test tests/sales-agg.test.mjs"
+    "test:sales-agg": "node --test tests/sales-agg.test.mjs",
+    "test:security-087-088": "node --test tests/security-087-088.test.mjs"
   },
   "devDependencies": {
     "vite": "^5.0.0"
