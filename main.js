@@ -2382,6 +2382,9 @@ class BhasApp {
         const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
         const sumBetween = (from, to) => revOrders.filter(o => { const d = localYMD(o.order_date); return d >= from && d <= to; }).reduce((s, o) => s + Number(o.pay_amount || 0), 0);
         const hasFinancial = financialDaily.length > 0;
+        //  재무 일집계는 첫 화면을 막지 않고 뒤에서 받는다(A3). 받는 중엔 최신 500건 폴백 숫자 대신 '…'.
+        const finWait = !hasFinancial && !!this._finLoading;
+        const wonF = v => finWait ? '…' : won(v);
         const todayFinancial = financialFor(todayStr, todayStr);
         const weekFinancial = financialFor(localYMD(weekAgo), todayStr);
         const monthFinancial = financialFor(monthKey + '-01', todayStr);
@@ -2657,14 +2660,14 @@ class BhasApp {
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
             ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.7rem;margin-bottom:0.9rem">
-                ${kpiCard('오늘 매출', won(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
+                ${kpiCard('오늘 매출', wonF(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
                 ${hasFinancial
                     ? kpiCard('주문금액', won(monthFinancial.order), '원', `<span style="font-size:0.68rem;color:var(--text-muted)">${mm}월 · 취소${monthFinancial.unpaidN ? `·입금 전 ${monthFinancial.unpaidN.toLocaleString()}건` : ''} 포함</span>`, '#3b82f6', 'sales')
-                    : kpiCard('실결제금액', won(monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
-                ${kpiCard('환불', won(hasFinancial ? monthFinancial.refund : 0), '원', hasRefundSplit
+                    : kpiCard('실결제금액', wonF(monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
+                ${kpiCard('환불', wonF(hasFinancial ? monthFinancial.refund : 0), '원', hasRefundSplit
                     ? `<span style="font-size:0.68rem;color:var(--text-muted)">${monthFinancial.refundN.toLocaleString()}건 · 취소 ${won(monthFinancial.cancel)} · 반품 ${won(monthFinancial.ret)}${monthFinancial.retPend ? `(처리중 ${monthFinancial.retPend})` : ''}</span>`
                     : `${mm}월 환불 기준`, '#a855f7', 'orders')}
-                ${kpiCard(`${mm}월 매출`, won(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
+                ${kpiCard(`${mm}월 매출`, wonF(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
                 ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">${nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}${nr.unk ? ` · 미분류 ${nr.unk}` : ''} · ` : ''}객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'orders')}
             </div>
             <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:stretch">
@@ -10740,15 +10743,28 @@ class BhasApp {
             }
             return null;
         };
-        const [monthly, daily, channel, stateTotals, financialDaily, brandChannel] = await Promise.all([
+        // 재무 일집계(dashboard_financial_daily)는 기다리지 않는다(A3 — 운영에서 5~9초·timeout 이 나던 뷰).
+        //  끝나면 그 칸만 채우고 다시 그린다. 다시 불러온 사이 옛 응답이 덮지 않게 회차(gen)로 막는다.
+        const gen = this._finGen = (this._finGen || 0) + 1;
+        this._finLoading = true;
+        let finRows;   // undefined = 아직, 그 외 = 받음(실패는 [])
+        safe('dashboard_financial_daily').then(rows => {
+            if (gen !== this._finGen) return;
+            finRows = rows || [];
+            this._finLoading = false;
+            if (this.salesAggData) this.salesAggData.financialDaily = finRows;
+            this.requestRender();
+        });
+        const [monthly, daily, channel, stateTotals, brandChannel] = await Promise.all([
             safe('sales_monthly'), safe('sales_daily'),
             safe('sales_channel_monthly'), safe('order_state_totals'),
-            safe('dashboard_financial_daily'), safe('sales_brand_channel_monthly'),
+            safe('sales_brand_channel_monthly'),
         ]);
+        if (gen !== this._finGen) return;
         if (!monthly) { this.salesAggData = null; return; }   // 브랜드 월매출의 근간이 없으면 클라 집계 폴백
         this.salesAggData = {
             monthly, daily: daily || [], channel: channel || [],
-            stateTotals: stateTotals || [], financialDaily: financialDaily || [], brandChannel: brandChannel || [],
+            stateTotals: stateTotals || [], financialDaily: finRows || [], brandChannel: brandChannel || [],
         };
     }
 
