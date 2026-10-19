@@ -54,19 +54,33 @@ test('088: 두 함수 모두 첫머리에서 can_access_brand 검사 → 42501, 
     assert.match(b, /language plpgsql stable security definer set search_path = public/i);
     const begin = b.indexOf('begin'), guard = b.indexOf('can_access_brand'), ret = b.indexOf('return (');
     assert.ok(begin > 0 && begin < guard && guard < ret, `${name}: 검사가 본문보다 먼저`);
-    assert.match(b, /b\.name = p_brand and public\.can_access_brand\(b\.id\)/);
+    assert.match(b, /select array_agg\(b\.id\) into v_ids\s+from brands b\s+where b\.name = p_brand\s+and \(coalesce\(auth\.jwt\(\)->>'role', ''\) = 'service_role' or public\.can_access_brand\(b\.id\)\)/);
+    assert.match(b, /if v_ids is null then\s+raise exception/);
     assert.match(b, /raise exception '[^']+' using errcode = '42501'/);
     assert.match(up88, new RegExp(`revoke all on function public\\.${name}\\([^)]*\\) from public, anon`));
     assert.doesNotMatch(up88, new RegExp(`grant execute on function public\\.${name}\\([^)]*\\) to [^;]*anon`));
   }
 });
 
-test('088: 조회 본문은 되돌리기(=운영 원래 정의)와 글자 그대로 같다', () => {
+test('088: 조회 본문은 운영 원래 정의와 같고 브랜드 조건만 허용 id 로 바뀜', () => {
   const up = fnBlocks(up88), dn = fnBlocks(dn88);
   for (const name of ['brand_customers', 'brand_gone_counts']) {
     const body = s => s.slice(s.indexOf('with c as'), s.lastIndexOf('$function$')).replace(/\s*\);\s*end\s*$/, '').replace(/;\s*$/, '').trim();
-    assert.equal(body(up[name]), body(dn[name]), name);
+    //  다른 곳은 한 줄 — 브랜드 조건을 이름이 아니라 허용된 id 로
+    const upBody = body(up[name]);
+    assert.equal((upBody.match(/b\.id = any\(v_ids\)/g) || []).length, 1, name);
+    assert.equal(upBody.replace('b.id = any(v_ids)', 'b.name = p_brand'), body(dn[name]), name);
     assert.match(dn[name], /LANGUAGE sql/);
     assert.doesNotMatch(dn[name], /can_access_brand/);
+  }
+});
+
+test('088 회귀(10-19 반려): 동명 브랜드 — 본문은 이름으로 조인하지 않는다', () => {
+  const f = fnBlocks(up88);
+  for (const name of ['brand_customers', 'brand_gone_counts']) {
+    const b = f[name];
+    const bodyPart = b.slice(b.indexOf('return ('));
+    assert.doesNotMatch(bodyPart, /b\.name\s*=\s*p_brand/, `${name}: 본문에 이름 조인이 남으면 권한 밖 동명 브랜드가 섞인다`);
+    assert.match(bodyPart, /join brands b on b\.id = m\.brand_id\s+where b\.id = any\(v_ids\)/);
   }
 });

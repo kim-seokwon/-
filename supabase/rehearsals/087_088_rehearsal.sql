@@ -1,10 +1,14 @@
 -- 087·088 적용 리허설 테스트. 사용: begin; <087> <088> <이 파일> rollback; 을 한 쿼리로 — 끝의 raise 가 전부 되돌린다.
 -- 결과는 에러 메시지 REHEARSAL_RESULT 한 줄. (BAD) 가 하나라도 있으면 실패. 사용자 이름·고객 내용은 출력하지 않는다.
 do $t$
-declare acc uuid[]; r text := ''; v text; okb text; nob text; j json;
+declare acc uuid[]; r text := ''; okid uuid; cid uuid; dupid uuid; before_n int; after_n int; master_n int; stafjwt text; v text; okb text; nob text; j json;
 begin
   select brand_access into acc from companies where role='STAFF' limit 1;
-  select name into okb from brands b where b.id = any(acc) limit 1;
+  -- 허용 브랜드 중 주문 많은 것(okb)·적은 것(C, 동명 리허설에서 권한 밖으로 옮길 대상)
+  select b.id, b.name into okid, okb from brands b join malls m on m.brand_id=b.id join channel_orders o on o.mall_key=m.mall_key
+   where b.id = any(acc) group by b.id, b.name order by count(*) desc limit 1;
+  select b.id into cid from brands b join malls m on m.brand_id=b.id join channel_orders o on o.mall_key=m.mall_key
+   where b.id = any(acc) and b.id <> okid group by b.id order by count(*) asc limit 1;
   select name into nob from brands b where not (b.id = any(coalesce(acc,'{}'))) limit 1;
 
   -- 1) 익명: 업로드·목록
@@ -60,6 +64,28 @@ begin
   set local role service_role;
   begin j := public.brand_gone_counts(nob); r := r || 'svc_bg=ok ';
   exception when others then r := r || 'svc_bg=DENIED(BAD ' || sqlstate || ') '; end;
+  reset role;
+
+  -- 6) 동명 브랜드(10-19 코덱스 반려 회귀): okb 와 이름이 같은 권한 밖 브랜드 B 를 만들고 C 의 몰을 B 로 옮긴다.
+  --    STAFF 의 okb 결과는 그대로여야 하고(섞이지 않음), MASTER 는 B 까지 보여 늘어난다(섞일 데이터가 실제로 있다는 확인).
+  stafjwt := json_build_object('role','authenticated','email',(select username from companies where role='STAFF' limit 1)||'@x')::text;
+  perform set_config('request.jwt.claims', stafjwt, true); set local role authenticated;
+  before_n := (public.brand_gone_counts(okb)->>'customers')::int;
+  reset role;
+  insert into brands(name) values (okb) returning id into dupid;
+  update malls set brand_id = dupid where brand_id = cid;
+  perform set_config('request.jwt.claims', stafjwt, true); set local role authenticated;
+  begin
+    after_n := (public.brand_gone_counts(okb)->>'customers')::int;
+    r := r || case when after_n = before_n then 'staff_dup_bg=same(ok) ' else 'staff_dup_bg=CHANGED(BAD) ' end;
+    j := public.brand_customers(okb, null, null, 'all', 90, 1000);
+    r := r || 'staff_dup_bc=ok(len ' || json_array_length(j) || ') ';
+  exception when others then r := r || 'staff_dup=ERR(BAD ' || sqlstate || ') '; end;
+  reset role;
+  perform set_config('request.jwt.claims', json_build_object('role','authenticated','email',(select username from companies where role='MASTER' limit 1)||'@x')::text, true);
+  set local role authenticated;
+  master_n := (public.brand_gone_counts(okb)->>'customers')::int;
+  r := r || case when master_n > before_n then 'master_dup_bg=grew(ok) ' else 'master_dup_bg=SAME(BAD: 리허설 데이터 무효) ' end;
   reset role;
 
   raise exception 'REHEARSAL_RESULT %', r;

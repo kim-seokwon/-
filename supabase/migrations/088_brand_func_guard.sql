@@ -2,19 +2,26 @@
 --
 -- 두 함수는 SECURITY DEFINER(RLS 우회) + authenticated EXECUTE 인데 p_brand 검사가 없어서,
 -- 로그인만 하면 남의 브랜드 고객 이름·전화·구매액을 받을 수 있었다(STAFF 는 brand_access 밖 브랜드도).
--- 바꾼 뒤: 함수 첫머리에서 p_brand 의 brands.id 로 can_access_brand 검사 → 불가면 42501 예외.
+-- 바꾼 뒤: 함수 첫머리에서 p_brand 이름의 브랜드 중 can_access_brand 통과한 id 만 확정 → 없으면 42501 예외.
+--   본문 조인도 그 id 로만(10-19 코덱스 반려: 이름이 같은 권한 밖 브랜드가 섞이는 우회 차단).
 --   없는 브랜드 이름도 같은 예외(존재 여부를 흘리지 않음).
--- 본문(조회·집계)은 10-19 운영 정의와 글자 그대로 같다 — LANGUAGE sql → plpgsql 로 바꾸고 return ( … ) 로 감쌌을 뿐.
+-- 본문(조회·집계)은 10-19 운영 정의와 같고 브랜드 조건 한 줄(b.name = p_brand → b.id = any(v_ids))만 다르다.
 -- 권한: 익명 EXECUTE 없음 유지(public·anon revoke, authenticated·service_role grant — 운영과 같음).
 -- 되돌리기: supabase/rollbacks/088_brand_func_guard.down.sql
 
 create or replace function public.brand_customers(p_brand text, p_from timestamp with time zone DEFAULT NULL::timestamp with time zone, p_to timestamp with time zone DEFAULT NULL::timestamp with time zone, p_kind text DEFAULT 'all'::text, p_days integer DEFAULT 90, p_limit integer DEFAULT 300)
 returns json language plpgsql stable security definer set search_path = public as $function$
+declare
+  v_ids uuid[];
 begin
-  -- 브랜드 검사: 로그인 사용자가 이 브랜드를 볼 수 있어야 한다(can_access_brand — RLS 와 같은 규칙).
-  -- 엣지함수(service_role)는 RLS 를 우회하는 것과 같게 통과시킨다.
-  if coalesce(auth.jwt()->>'role', '') <> 'service_role'
-     and not exists (select 1 from brands b where b.name = p_brand and public.can_access_brand(b.id)) then
+  -- 브랜드 검사: 이름이 p_brand 인 브랜드 중 로그인 사용자가 볼 수 있는 것(can_access_brand — RLS 와 같은 규칙)의 id 만 확정한다.
+  -- 엣지함수(service_role)는 RLS 를 우회하는 것과 같게 전부 허용. 하나도 없으면 42501.
+  -- 본문은 이 id 로만 조인한다 — 이름이 같은 권한 밖 브랜드가 생겨도 섞이지 않게(brands.name 에 유일 제약 없음).
+  select array_agg(b.id) into v_ids
+    from brands b
+   where b.name = p_brand
+     and (coalesce(auth.jwt()->>'role', '') = 'service_role' or public.can_access_brand(b.id));
+  if v_ids is null then
     raise exception 'forbidden: brand' using errcode = '42501';
   end if;
   return (
@@ -30,7 +37,7 @@ with c as (
     from channel_orders o
     join malls m on m.mall_key = o.mall_key
     join brands b on b.id = m.brand_id
-   where b.name = p_brand
+   where b.id = any(v_ids)
      and coalesce(nullif(o.receiver_phone,''), o.receiver_name, o.buyer_name) is not null
      and coalesce(o.channel_status,'') !~ '^[CR]'
      and (p_from is null or o.order_date >= p_from)
@@ -81,11 +88,17 @@ grant execute on function public.brand_customers(text,timestamptz,timestamptz,te
 
 create or replace function public.brand_gone_counts(p_brand text, p_from timestamp with time zone DEFAULT NULL::timestamp with time zone, p_to timestamp with time zone DEFAULT NULL::timestamp with time zone)
 returns json language plpgsql stable security definer set search_path = public as $function$
+declare
+  v_ids uuid[];
 begin
-  -- 브랜드 검사: 로그인 사용자가 이 브랜드를 볼 수 있어야 한다(can_access_brand — RLS 와 같은 규칙).
-  -- 엣지함수(service_role)는 RLS 를 우회하는 것과 같게 통과시킨다.
-  if coalesce(auth.jwt()->>'role', '') <> 'service_role'
-     and not exists (select 1 from brands b where b.name = p_brand and public.can_access_brand(b.id)) then
+  -- 브랜드 검사: 이름이 p_brand 인 브랜드 중 로그인 사용자가 볼 수 있는 것(can_access_brand — RLS 와 같은 규칙)의 id 만 확정한다.
+  -- 엣지함수(service_role)는 RLS 를 우회하는 것과 같게 전부 허용. 하나도 없으면 42501.
+  -- 본문은 이 id 로만 조인한다 — 이름이 같은 권한 밖 브랜드가 생겨도 섞이지 않게(brands.name 에 유일 제약 없음).
+  select array_agg(b.id) into v_ids
+    from brands b
+   where b.name = p_brand
+     and (coalesce(auth.jwt()->>'role', '') = 'service_role' or public.can_access_brand(b.id));
+  if v_ids is null then
     raise exception 'forbidden: brand' using errcode = '42501';
   end if;
   return (
@@ -97,7 +110,7 @@ with c as (
     from channel_orders o
     join malls m on m.mall_key = o.mall_key
     join brands b on b.id = m.brand_id
-   where b.name = p_brand
+   where b.id = any(v_ids)
      and coalesce(nullif(o.receiver_phone,''), o.receiver_name, o.buyer_name) is not null
      and coalesce(o.channel_status,'') !~ '^[CR]'
      and (p_from is null or o.order_date >= p_from)
