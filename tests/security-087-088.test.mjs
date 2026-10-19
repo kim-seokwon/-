@@ -62,14 +62,19 @@ test('088: 두 함수 모두 첫머리에서 can_access_brand 검사 → 42501, 
   }
 });
 
-test('088: 조회 본문은 운영 원래 정의와 같고 브랜드 조건만 허용 id 로 바뀜', () => {
+test('088: 조회 본문은 운영 원래 정의와 같고 브랜드 조건만 바뀜', () => {
   const up = fnBlocks(up88), dn = fnBlocks(dn88);
   for (const name of ['brand_customers', 'brand_gone_counts']) {
     const body = s => s.slice(s.indexOf('with c as'), s.lastIndexOf('$function$')).replace(/\s*\);\s*end\s*$/, '').replace(/;\s*$/, '').trim();
-    //  다른 곳은 한 줄 — 브랜드 조건을 이름이 아니라 허용된 id 로
-    const upBody = body(up[name]);
-    assert.equal((upBody.match(/b\.id = any\(v_ids\)/g) || []).length, 1, name);
-    assert.equal(upBody.replace('b.id = any(v_ids)', 'b.name = p_brand'), body(dn[name]), name);
+    //  주 집계는 한 줄만 다르다 — 브랜드 조건을 이름이 아니라 허용된 id 로
+    const upBody = body(up[name]).replace('b.id = any(v_ids)', 'b.name = p_brand');
+    const dnBody = body(dn[name]);
+    if (name === 'brand_gone_counts') { assert.equal(upBody, dnBody, name); continue; }
+    //  brand_customers: 주 집계(c)와 마지막 출력부는 그대로, 보조조회(x)만 v_ids 제한이 붙는다
+    const cte = t => { const k = t.indexOf('\nx as ('); assert.ok(k > 0); return t.slice(0, k); };
+    const tail = t => t.slice(t.indexOf('select coalesce(json_agg'));
+    assert.equal(cte(upBody), cte(dnBody), `${name}: 주 집계`);
+    assert.equal(tail(upBody), tail(dnBody), `${name}: 출력부`);
     assert.match(dn[name], /LANGUAGE sql/);
     assert.doesNotMatch(dn[name], /can_access_brand/);
   }
@@ -83,4 +88,19 @@ test('088 회귀(10-19 반려): 동명 브랜드 — 본문은 이름으로 조�
     assert.doesNotMatch(bodyPart, /b\.name\s*=\s*p_brand/, `${name}: 본문에 이름 조인이 남으면 권한 밖 동명 브랜드가 섞인다`);
     assert.match(bodyPart, /join brands b on b\.id = m\.brand_id\s+where b\.id = any\(v_ids\)/);
   }
+});
+
+test('088 회귀(10-19 2차 반려): brand_customers 보조조회도 허용 브랜드만 — 주문은 몰→v_ids, CS 는 brand_id→v_ids', () => {
+  const b = fnBlocks(up88).brand_customers;
+  const bodyPart = b.slice(b.indexOf('return ('));
+  //  본문의 channel_orders 는 전부 malls 에 이어지고 그 몰이 v_ids 로 걸러져야 한다
+  const refs = [...bodyPart.matchAll(/from channel_orders (\w+)([\s\S]*?)(?=\)\s*(?:cs_n|last_items|\)|$)|group by)/g)];
+  assert.equal(refs.length, 4, '주 집계 o + 보조 o2·o3·o4');
+  for (const [, alias, rest] of refs) {
+    const m = rest.match(new RegExp(`join malls (\\w+) on \\1\\.mall_key = ${alias}\\.mall_key`));
+    assert.ok(m, `${alias}: malls 조인`);
+    assert.match(rest, new RegExp(`${m[1]}\\.brand_id = any\\(v_ids\\)|join brands b on b\\.id = ${m[1]}\\.brand_id\\s+where b\\.id = any\\(v_ids\\)`), `${alias}: v_ids 제한`);
+  }
+  //  CS: 허용 브랜드 CS 이거나, 브랜드가 비었으면 허용 브랜드 주문에 이어진 것만
+  assert.match(bodyPart, /from cs_tickets t\s+where \(t\.brand_id = any\(v_ids\)\s+or \(t\.brand_id is null and exists \(/);
 });
