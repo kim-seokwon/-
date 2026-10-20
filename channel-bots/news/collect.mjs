@@ -1,5 +1,5 @@
 // 뉴스 수집기 — 하루 한 번 서버에서 돈다. 키는 Actions 비밀값으로만 들어온다.
-//  ① 경쟁사: 인스타 Business Discovery (우리 IG 비즈니스 계정으로 남의 '비즈니스/크리에이터' 공개 지표를 본다)
+//  ① 경쟁사: instagram-sync(competitors.ts)로 옮김 — 여기선 안 돈다
 //  ② 후기: 네이버 검색 API (블로그·카페·뉴스) + 구글 Custom Search
 //  ③ 트렌드: 네이버 데이터랩 검색어 추이
 // 셋 다 공식 API 다. 로그인 없이 몰래 긁는 방식은 쓰지 않는다.
@@ -34,45 +34,8 @@ const upsert = (table, rows, onConflict) =>
 
 const strip = (s) => String(s || '').replace(/<[^>]*>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim();
 
-// ── ① 경쟁사 인스타 ────────────────────────────────────────
-async function competitors() {
-  if (!need('IG_USER_ID') || !need('IG_ACCESS_TOKEN')) return;
-  const list = await rest('competitors?select=id,handle,name&active=is.true');
-  if (!list.length) { console.log('· 등록된 경쟁사 없음'); return; }
-  const snaps = [], posts = [];
-  for (const c of list) {
-    const fields = `business_discovery.username(${c.handle}){followers_count,media_count,media.limit(8){id,caption,like_count,comments_count,timestamp,permalink,media_url}}`;
-    const url = `https://graph.facebook.com/v21.0/${E.IG_USER_ID}?fields=${encodeURIComponent(fields)}&access_token=${E.IG_ACCESS_TOKEN}`;
-    try {
-      const r = await fetch(url);
-      const j = await r.json();
-      const bd = j.business_discovery;
-      if (!bd) { console.log(`· ${c.handle}: 조회 안 됨 (비즈니스 계정이 아니거나 권한 없음)`); continue; }
-      const media = (bd.media && bd.media.data) || [];
-      const avg = (k) => media.length ? media.reduce((s, m) => s + (m[k] || 0), 0) / media.length : null;
-      snaps.push({
-        competitor_id: c.id, snap_date: today,
-        followers: bd.followers_count ?? null, media_count: bd.media_count ?? null,
-        avg_likes: avg('like_count'), avg_comments: avg('comments_count'),
-      });
-      media.forEach(m => posts.push({
-        kind: 'competitor_post', source: 'instagram', competitor_id: c.id,
-        title: c.name, snippet: strip(m.caption).slice(0, 300), url: m.permalink,
-        author: c.handle, thumb: m.media_url || null,
-        published_at: m.timestamp || null,
-        meta: { likes: m.like_count, comments: m.comments_count },
-      }));
-      console.log(`· ${c.handle}: 팔로워 ${bd.followers_count} · 글 ${media.length}`);
-    } catch (e) { console.log(`· ${c.handle} 실패: ${e.message.slice(0, 80)}`); }
-  }
-  // 직전 스냅샷과 견줘 올린 개수를 센다
-  for (const s of snaps) {
-    const prev = await rest(`competitor_snapshots?select=media_count&competitor_id=eq.${s.competitor_id}&snap_date=lt.${today}&order=snap_date.desc&limit=1`);
-    if (prev[0] && prev[0].media_count != null && s.media_count != null) s.posts_delta = Math.max(0, s.media_count - prev[0].media_count);
-  }
-  await upsert('competitor_snapshots', snaps, 'competitor_id,snap_date');
-  await upsert('news_items', posts, 'kind,url');
-}
+// ── ① 경쟁사 인스타 → supabase/functions/instagram-sync/competitors.ts 로 옮겼다(10-20).
+//    매시 instagram-sync 가 ig_token(자동갱신 토큰)으로 하루 한 번 돈다. 여기서 또 부르면 같은 글을 두 번 받는다.
 
 // ── ② 브랜드 후기 ──────────────────────────────────────────
 async function reviews() {
@@ -153,7 +116,6 @@ async function trends() {
   } catch (e) { console.log(`· 데이터랩 실패: ${e.message.slice(0, 80)}`); }
 }
 
-await competitors();
 await reviews();
 await trends();
 console.log('끝');
