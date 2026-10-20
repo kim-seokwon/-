@@ -7,6 +7,10 @@ import {
     garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
     newPlacement, newCutline, newPoint, techPackChecklistItems,
 } from './sampleMaker.js';
+import {
+    MEETING_FOLDER, HUMAN_HEAD, kstToday, mondayOf, addDays, dataWeekOf, meetingTitle, isMeeting, findMeeting,
+    downMalls, prevTodoSummary, buildBody, regenerateBody, humanPart, newMeetingMeta, confirmMeetingMeta, canRegenerate,
+} from './meetingNote.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
 const __BUILD__ = (typeof __BUILD_TIME__ !== 'undefined') ? __BUILD_TIME__ : '개발';
@@ -4412,6 +4416,16 @@ class BhasApp {
                     open: `app.showQuoteModal('${qt.id}')`, icon: 'ph-receipt', iconColor: '#30d158', kindText: '견적서',
                 });
             });
+            //  회의록 = 메모 폴더 '회의록'의 주간 회의록 (열면 메모 화면으로)
+            (this.noteList || []).forEach(n => {
+                if ((n.folder || '') !== MEETING_FOLDER || !isMeeting(this._noteMeta(n))) return;
+                const m = this._noteMeta(n);
+                aggregatedDocs.push({
+                    id: 'mt:' + n.id, name: n.title || '주간회의', category: '회의록', productId: null, url: '',
+                    date: m.week || (n.created_at || '').slice(0, 10), memo: '', open: `app.openMeetingNote('${n.id}')`,
+                    icon: 'ph-notebook', iconColor: '#ff9f0a', kindText: m.state === 'confirmed' ? '회의록(확정)' : '회의록(초안)',
+                });
+            });
             const cur = this.selectedDocCategory || '전체';
             const q = (this.docQ || '').trim().toLowerCase();
             let docs = aggregatedDocs;
@@ -4517,6 +4531,12 @@ class BhasApp {
                         </div>
                         <div class="fd-find"><i class="ph ph-magnifying-glass"></i>
                             <input placeholder="검색" value="${esc(this.docQ || '')}" oninput="app.docQ=this.value;app.requestRender()"></div>
+                        ${cur === '회의록' ? (() => {
+                            const mt = this._meetingOf(this._meetWeek());
+                            return !this._noteLoaded ? '<button class="fd-add" disabled>회의록 불러오는 중…</button>'
+                                : mt ? `<button class="fd-add" onclick="app.openMeetingNote('${mt.id}')"><i class="ph ph-notebook"></i> 이번 주 회의록 열기</button>`
+                                : `<button class="fd-add" onclick="app.createWeeklyMeeting()"><i class="ph ph-plus"></i> 이번 주 회의록 만들기</button>`;
+                        })() : ''}
                         <button class="fd-add" id="quick-add-doc-btn"><i class="ph ph-plus"></i> 올리기</button>
                     </div>
                     <div class="fd-body">
@@ -4556,8 +4576,8 @@ class BhasApp {
                             <div><span>시즌</span><b>${esc(nameOfP(d.productId) || '-')}</b></div>
                         </div>
                         <div class="fd-pb">
-                            <button class="mbtn pri" onclick="app.showFileModal('${esc(d.url)}','${esc(d.name)}')">열기</button>
-                            <a class="mbtn" href="${esc(d.url)}" download style="text-decoration:none">내려받기</a>
+                            <button class="mbtn pri" onclick="${d.open || `app.showFileModal('${esc(d.url)}','${esc(d.name)}')`}">열기</button>
+                            ${d.url ? `<a class="mbtn" href="${esc(d.url)}" download style="text-decoration:none">내려받기</a>` : ''}
                         </div>`;
                     })()}
                 </aside>
@@ -6587,6 +6607,7 @@ class BhasApp {
             this.ensureTechPacks();
             if (!this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
             if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
+            if (!this._noteLoaded && !this._noteLoading) this.loadNotes();   // 회의록
         }
         if ((v === 'tech_packs' || v === 'vendors' || v === 'dashboard') && !this._itemsLoaded && !this._itemsLoading) this.loadItems();
         if (v === 'items') {
@@ -7780,7 +7801,9 @@ class BhasApp {
     _joinNote(meta, text) {
         const bare = { ...meta };
         Object.keys(bare).forEach(k => { if (bare[k] === '' || bare[k] === '없음' || (Array.isArray(bare[k]) && !bare[k].length)) delete bare[k]; });
-        return (Object.keys(bare).length ? `<!--p ${JSON.stringify(bare)}-->\n` : '') + text;
+        //  문자열 값 안의 '-->' 가 메타 줄을 중간에서 끊지 않게 (회의록 snap 의 소식 제목 등). JSON.parse 가 되돌린다.
+        const json = JSON.stringify(bare).replace(/-->/g, '--\\u003e');
+        return (Object.keys(bare).length ? `<!--p ${json}-->\n` : '') + text;
     }
     async setNoteProp(key, value) {
         const n = this._curNote(); if (!n) return;
@@ -8101,6 +8124,131 @@ class BhasApp {
         return (this.noteList || []).find(x => x.id === this.noteSel)
             || (this.noteList || []).find(x => x.id === this._noteShown)
             || null;
+    }
+    // ── 주간 회의록 (1단계, .work/회의록/기획.md) ────────────────
+    //  회의록 = notes 1건(folder '회의록'). 숫자는 weekly_brief 가 한 번에 내고 메타 snap 에 고정한다.
+    //  그리기·나누기·판정은 meetingNote.js(순수 함수), 여기서는 DB·화면만.
+    _meetWeek() { return mondayOf(kstToday()); }
+    _meetingOf(week) { return findMeeting(this.noteList, week, n => this._noteMeta(n)); }
+    //  목록(최대 200건) 밖에 있을 수도 있어 DB 에서도 한 번 더 찾는다 — 판정은 메타로
+    async _findMeetingDb(week) {
+        const hit = this._meetingOf(week); if (hit) return hit;
+        const { data, error } = await this.supabase.from('notes').select('*')
+            .eq('folder', MEETING_FOLDER).ilike('body', `%"week":"${week}"%`).limit(5);
+        if (error) throw error;
+        return findMeeting(data, week, n => this._noteMeta(n));
+    }
+    openMeetingNote(id) {
+        const n = (this.noteList || []).find(x => String(x.id) === String(id));
+        if (String(this.noteSel) !== String(id)) { this.saveNote(); this._nbDrop(); }
+        this.noteSel = n ? n.id : id; this.noteFolder = 'f:' + MEETING_FOLDER; this.noteSea = 'ALL'; this.notePreview = false;
+        this.switchView('notes');
+    }
+    //  숫자 모으기 — 실패면 null (빈 회의록을 만들지 않는다: 0 과 실패를 헷갈리지 않게)
+    async _weeklyBrief(week) {
+        try {
+            const { data, error } = await this.supabase.rpc('weekly_brief', { p_week_start: dataWeekOf(week) });
+            if (error) throw error;
+            if (!data || typeof data !== 'object') throw new Error('빈 응답');
+            return data;
+        } catch (e) { console.warn('[회의록] weekly_brief 실패', e); return null; }
+    }
+    //  지난주 회의록의 [ ] 줄 → 완료·밀림·담당 없음 (없으면 null)
+    async _prevMeetingTodos(week) {
+        let prev = null;
+        try { prev = await this._findMeetingDb(addDays(week, -7)); } catch (_e) { prev = null; }
+        return prev ? prevTodoSummary(this._noteTodos(prev), kstToday()) : null;
+    }
+    async createWeeklyMeeting() {
+        if (this._meetBusy) return;
+        this._meetBusy = true;
+        try {
+            if (!this._noteLoaded) await this.loadNotes();
+            const week = this._meetWeek();
+            const had = await this._findMeetingDb(week);
+            if (had) {
+                if (!(this.noteList || []).some(x => x.id === had.id)) this.noteList = [had, ...(this.noteList || [])];
+                this.showToast('이번 주 회의록이 이미 있어 그걸 엽니다');
+                this.openMeetingNote(had.id); return;
+            }
+            this.showToast('숫자 모으는 중…');
+            const snap = await this._weeklyBrief(week);
+            if (!snap) { this.showToast('숫자를 못 모았습니다, 다시 시도해 주세요'); return; }
+            const prev = await this._prevMeetingTodos(week);
+            //  숫자 모으는 사이 다른 사람이 만들었을 수 있다 — 한 번 더 본다
+            const raced = await this._findMeetingDb(week);
+            if (raced) { this.noteList = [raced, ...(this.noteList || []).filter(x => x.id !== raced.id)]; this.openMeetingNote(raced.id); return; }
+            const body = this._joinNote(newMeetingMeta(week, snap), buildBody(snap, prev));
+            const { data, error } = await this.supabase.from('notes').insert([{
+                title: meetingTitle(week), body, folder: MEETING_FOLDER, scope: 'shared', owner: null,
+                product_id: null, brand_id: null, created_by: this.currentUser?.name || null,
+            }]).select('*').single();
+            if (error) throw error;
+            this.noteList = [data, ...(this.noteList || [])];
+            this.openMeetingNote(data.id);
+        } catch (e) { this.showToast('회의록 만들기 실패: ' + (e.message || e)); }
+        finally { this._meetBusy = false; }
+    }
+    //  초안일 때만 — 0~9 를 새 숫자로, 10~12 는 그대로
+    async regenerateMeeting() {
+        const n = this._curNote(); if (!n || this._meetBusy) return;
+        await this.saveNote();
+        if (!canRegenerate(this._noteMeta(n))) { this.showToast('확정한 회의록은 다시 만들 수 없습니다'); return; }
+        if (humanPart(this._noteText(n)) == null) { this.showToast(`'${HUMAN_HEAD}' 줄이 없어 다시 만들 수 없습니다 — 쓴 글을 잃지 않게 멈췄습니다`); return; }
+        this._meetBusy = true;
+        try {
+            const meta = this._noteMeta(n);
+            this.showToast('숫자 모으는 중…');
+            const snap = await this._weeklyBrief(meta.week);
+            if (!snap) { this.showToast('숫자를 못 모았습니다, 다시 시도해 주세요'); return; }
+            const prev = await this._prevMeetingTodos(meta.week);
+            await this.saveNote();             // 숫자 모으는 사이 쓴 글
+            const cur = this._noteMeta(n);
+            if (!canRegenerate(cur)) { this.showToast('그사이 확정되어 다시 만들지 않았습니다'); return; }
+            const text = regenerateBody(this._noteText(n), snap, prev);
+            if (text == null) { this.showToast(`'${HUMAN_HEAD}' 줄이 없어 다시 만들 수 없습니다`); return; }
+            const body = this._joinNote({ ...cur, snap, made_at: new Date().toISOString() }, text);
+            const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
+            if (error) throw error;
+            n.body = body; n.updated_at = new Date().toISOString();
+            this._nbDrop(); this.requestRender();
+            this.showToast('0~9번을 새 숫자로 바꿨습니다 (10~12는 그대로)');
+        } catch (e) { this.showToast('다시 만들기 실패: ' + (e.message || e)); }
+        finally { this._meetBusy = false; }
+    }
+    //  확정 — 숫자 고정. 끊긴 몰이 있으면 한 번 더 묻고 그 몰을 메타에 남긴다. 확정 취소는 없다.
+    async confirmMeeting() {
+        const n = this._curNote(); if (!n) return;
+        await this.saveNote();
+        const meta = this._noteMeta(n);
+        if (!canRegenerate(meta)) return;
+        const down = downMalls(meta.snap);
+        const msg = down.length
+            ? `수집이 끊긴 몰이 있습니다: ${down.map(h => h.mall_key).join(', ')}\n이 몰 숫자가 빠진 채로 확정됩니다. 그래도 확정할까요? (확정 취소는 없습니다)`
+            : '확정하면 0~9번 숫자는 더 이상 바뀌지 않습니다. 확정할까요? (확정 취소는 없습니다)';
+        if (!(await this.showConfirm(msg, down.length ? '그래도 확정?' : '회의록 확정'))) return;
+        const next = confirmMeetingMeta(this._noteMeta(n), { by: this._me() || this.currentUser?.name || '' });
+        if (!next) return;
+        const body = this._joinNote(next, this._noteText(n));
+        try {
+            const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
+            if (error) throw error;
+            n.body = body; n.updated_at = new Date().toISOString();
+            this._nbDrop(); this.requestRender();
+        } catch (e) { this.showToast('확정 실패: ' + (e.message || e)); }
+    }
+    _meetingBarHTML(n) {
+        const meta = this._noteMeta(n);
+        if (!isMeeting(meta)) return '';
+        const kst = iso => { const d = new Date(new Date(iso).getTime() + 9 * 3600e3).toISOString(); return `${d.slice(5, 7)}/${d.slice(8, 10)} ${d.slice(11, 16)}`; };
+        const done = meta.state === 'confirmed';
+        return `<div class="nt-meet">
+            <span class="nt-meet-b${done ? ' on' : ''}">${done ? `확정 ${this._vesc(kst(meta.confirmed_at))}` : '초안'}</span>
+            ${done ? '' : `<button class="mbtn" onclick="app.regenerateMeeting()" ${this._meetBusy ? 'disabled' : ''}><i class="ph ph-arrows-clockwise"></i> 다시 만들기</button>
+                <span class="nt-meet-n">0~9번만 새 숫자로 · 6번에서 지운 줄은 되살아남 · 10~12는 그대로</span>
+                <button class="mbtn pri" onclick="app.confirmMeeting()"><i class="ph ph-seal-check"></i> 확정</button>`}
+            ${downMalls(meta.snap).length ? `<span class="nt-meet-w">🔴 수집 끊긴 몰 ${downMalls(meta.snap).length}곳</span>` : ''}
+        </div>`;
     }
     pickNotePhoto() {
         const n = this._curNote(); if (!n) { this.showToast('메모가 없습니다. 먼저 하나 만드세요.'); return; }
@@ -8593,7 +8741,7 @@ class BhasApp {
             if (m) return `<div class="nb-row nb-todo${done ? ' done' : ''}" data-i="${i}" onclick="app.nbPick(${i})">
                 <button class="nb-ck${done ? ' on' : ''}" onclick="event.stopPropagation();app.nbToggle(${i})"></button>${inner}
                 ${this._dueChip(i, sp.due, live)}</div>`;
-            return `<div class="nb-row nb-l" data-i="${i}" onclick="app.nbPick(${i})">${inner}</div>`;
+            return `<div class="nb-row nb-l${!live && /^## /.test(line) ? ' nb-h' : ''}" data-i="${i}" onclick="app.nbPick(${i})">${inner}</div>`;
         }).join('');
         return `<div class="nt-live" onclick="app.nbBlank(event)">${body}
             ${lines.length === 1 && !lines[0] && this.nbLine == null ? '<div class="nb-hint">내용을 적어주세요 · [ ] 를 치면 할 일이 됩니다</div>' : ''}</div>`;
@@ -9428,6 +9576,7 @@ class BhasApp {
                         ${projects.map(pr => `<option class="${this._isTestSeason(pr) ? 'test-season' : ''}" value="${pr.id}"${String(seaF) === String(pr.id) ? ' selected' : ''}>${esc(pr.name)}</option>`).join('')}
                         <option value="NONE"${seaF === 'NONE' ? ' selected' : ''}>시즌 없음</option>
                     </select>
+                    ${cur === 'f:' + MEETING_FOLDER && !this._meetingOf(this._meetWeek()) ? `<button class="mbtn pri nt-meet-new" onclick="app.createWeeklyMeeting()">이번 주 회의록 만들기</button>` : ''}
                     <button class="nt-new" onclick="app.addNote()" title="새 메모"><i class="ph ph-note-pencil"></i></button>
                 </div>
                 ${pick.size > 1 ? `<div class="nt-bulk"><b>${pick.size}개 고름</b>
@@ -9460,6 +9609,7 @@ class BhasApp {
                         <button class="nt-det${this.noteProps ? ' on' : ''}" onclick="app.toggleNoteProps()"
                             title="상태·날짜·담당자·시즌">상세보기<i class="ph ph-caret-down"></i></button>
                     </div>
+                    ${this._meetingBarHTML(sel)}
                     ${this._notePropsBar(sel)}
                     <div class="nt-meta-slot">${this.noteProps ? this._noteMetaChips(sel) : ''}</div>
                     ${this.notePreview
