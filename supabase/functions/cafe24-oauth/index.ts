@@ -17,8 +17,10 @@ import { admin, baseOf, cors, getMall, log, saveMall } from "../_shared/cafe24.t
 // 10-19: CRM 쿠폰(B)용 write_promotion(쿠폰 발급 POST /coupons/{no}/issues)·write_notification(SMS POST /sms) 추가
 //  — 085 재인증 1번에 같이 받기 위해. 앱 권한에 '프로모션 쓰기'·'알림 쓰기'도 먼저 켜야 한다(위와 같은 이유).
 //  권한만 받는다. 이 함수·다른 함수 어디에도 쿠폰 발급·문자 발송 호출은 아직 없다.
+// 10-21: 개발자센터 앱 권한 목록에 개인정보(Privacy) 항목이 없다(선택 가능: Customer·Personal 등) → read_privacy 요청 시 authorize 실패.
+//  앱에 실제 켜진 권한만 요청한다. 회원수(cafe24-members, READ_PRIVACY 필요)는 카페24 개인정보 권한을 받은 뒤 다시 넣는다.
 const SCOPE =
-  "mall.read_order,mall.write_order,mall.read_shipping,mall.write_shipping,mall.read_privacy,mall.write_promotion,mall.write_notification";
+  "mall.read_order,mall.write_order,mall.read_shipping,mall.write_shipping,mall.write_promotion,mall.write_notification";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
