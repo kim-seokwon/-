@@ -197,21 +197,33 @@ async function login(page, acct) {
 }
 
 // 주문조회 페이지 진입 → 인증된 orders API 응답 가로채기 (3개월 청킹)
-async function fetchWindow(page, fromDate, toDate) {
+//  29CM 주문 API 는 상세조건 없이 최대 1개월(INVALID_DEFAULT_SEARCH_PERIOD) — 창은 28일, 한 창 안은 페이지를 넘긴다
+async function fetchPage(page, fromDate, toDate, pageNo, size) {
   const captured = [];
-  const seen = [];
-  const handler = async (res) => { seen.push(res.url().split('?')[0]); if (ORDER_API_RE.test(res.url())) { try { captured.push(await res.json()); } catch {} } };
+  const handler = async (res) => { if (ORDER_API_RE.test(res.url())) { try { captured.push(await res.json()); } catch {} } };
   page.on('response', handler);
-  await page.goto(`${ORDER_PAGE}?fromDate=${fromDate}&toDate=${toDate}&dateConditionType=ORDERED_AT&page=1&size=100`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2000);
+  await page.goto(`${ORDER_PAGE}?fromDate=${fromDate}&toDate=${toDate}&dateConditionType=ORDERED_AT&page=${pageNo}&size=${size}`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
   page.off('response', handler);
-  if (!fetchWindow.logged) {   // 첫 창만: 어디로 갔고 어떤 API 가 왔는지(값은 안 찍음)
-    fetchWindow.logged = true;
-    console.log(`[29cm] 주문화면 url=${page.url()} · 잡힌 응답 ${captured.length}개 · 키=${captured.map(b => Object.keys(b || {}).join('/') + ':' + Object.keys(b?.data || {}).join('/') + ` result=${b?.result} code=${b?.errorCode || b?.error_code} msg=${String(b?.message || '').slice(0, 120)} data=${Array.isArray(b?.data) ? 'array' + b.data.length : typeof b?.data}`).join(' ; ').slice(0, 500)}`);
-    console.log('[29cm] 이 화면의 API:', seen.filter(u => /api/.test(u)).slice(0, 15).join(' , '));
+  const body = captured.find(b => b?.result !== 'FAIL' && b?.data) || captured[0];
+  if (!body) { console.warn(`[29cm] ${fromDate}~${toDate} p${pageNo}: 주문 API 응답 없음`); return { list: [], total: null }; }
+  if (body.result === 'FAIL') throw new Error(`주문 API 거절 ${fromDate}~${toDate}: ${body.errorCode || body.error_code} ${body.message || ''}`);
+  const d = body.data || {};
+  const list = d.content || d.list || d.items || (Array.isArray(d) ? d : []);
+  const total = d.totalElements ?? d.totalCount ?? d.total ?? null;
+  if (!fetchPage.logged) { fetchPage.logged = true; console.log(`[29cm] 주문 API 형태: data 키=${Object.keys(d).join('/')} · 이 페이지 ${list.length}건 · total=${total}`); }
+  return { list, total };
+}
+
+async function fetchWindow(page, fromDate, toDate) {
+  const SIZE = 100, out = [];
+  for (let p = 1; p <= 50; p++) {
+    const { list, total } = await fetchPage(page, fromDate, toDate, p, SIZE);
+    out.push(...list);
+    if (list.length < SIZE || (total != null && out.length >= total)) break;
   }
-  const body = captured.find(b => b?.data);
-  return (body?.data?.content || body?.data?.list || []);
+  if (out.length) console.log(`[29cm] ${fromDate}~${toDate}: ${out.length}건`);
+  return out;
 }
 
 //  계정의 몰이 없으면 만든다(있으면 안 건드림) — 브랜드는 이름으로 찾고, 못 찾으면 비워 두고 알린다
@@ -232,9 +244,9 @@ async function syncAccount(browser, acct) {
   try {
     const page = await ctx.newPage();
     await login(page, acct);
-    // 최근 400일을 88일 창으로 청킹
+    // 최근 400일을 28일 창으로 청킹
     const all = [];
-    const end = Date.now(), CH = 88 * 864e5;
+    const end = Date.now(), CH = 27 * 864e5;   // 28일 창(API 최대 1개월)
     for (let ws = end - 400 * 864e5; ws <= end; ws += CH + 864e5) {
       const we = Math.min(ws + CH, end);
       all.push(...await fetchWindow(page, ymd(new Date(ws)), ymd(new Date(we))));
