@@ -185,7 +185,8 @@ async function login(page, acct) {
   await page.waitForTimeout(1500);
   const msg = await page.locator('.ant-modal, [role="dialog"], .ant-message, .ant-form-item-explain').allInnerTexts().catch(() => []);
   if (msg.join('').trim()) console.log('[29cm] 인증하기 뒤 안내:', msg.join(' | ').replace(/\d{6,}/g, '******').slice(0, 200));
-  await page.waitForURL(/29cm\.co\.kr|partner-connect|partner-order/, { timeout: 30000 }).catch(() => {});
+  // 로그인 주소의 redirectUri 에도 29cm.co.kr 이 들어 있어 정규식으로는 바로 통과해 버린다 → 호스트가 SSO 를 벗어날 때까지 기다린다
+  await page.waitForURL(u => !/partner-sso\.one\.musinsa\.com/.test(new URL(u).hostname), { timeout: 45000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
   if (/partner-sso\.one\.musinsa\.com/.test(page.url())) {
     const bodyTxt = (await page.evaluate(() => document.body.innerText).catch(() => '')).slice(0, 300).replace(/\n/g, ' ');
