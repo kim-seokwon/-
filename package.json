@@ -18,7 +18,10 @@
     "test:weekly-meeting": "node --test tests/weekly-meeting.test.mjs",
     "test:competitor-board": "node --test tests/competitor-board.test.mjs",
     "test:paper-edition": "node --test tests/paper-edition.test.mjs",
-    "test:paper-cards": "node --test tests/paper-cards.test.mjs"
+    "test:paper-cards": "node --test tests/paper-cards.test.mjs",
+    "test:news-magazine": "node --test tests/news-magazine.test.mjs",
+    "test:ui-track": "node --test tests/ui-track.test.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "vite": "^5.0.0"

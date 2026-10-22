@@ -1,4 +1,5 @@
 import { mockData, STAGES } from './mockData.js';
+import { makeTracker, trackAllowed, usageNotice, ORDER_FILTER_ACTION, INV_TAB_ACTION } from './uiTrack.js';
 import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx, MAX_PER_BATCH as HX_MAX } from './hometaxExcel.js';
 // 뉴스 칸 규칙 — 수집기(news-sync)와 같은 파일을 쓴다. 고치면 수집과 화면이 같이 바뀐다.
 import { COMPETITORS, customerList, competitionList, oneStoryEach, validCounts, datedOnly } from './supabase/functions/_shared/news-rules.js';
@@ -8,6 +9,7 @@ import {
 } from './competitorBoard.js';
 import { leadStory, openCalendar, topWorked, brandMoves, weekSummary } from './paperEdition.js';
 import { cardDeck } from './paperCards.js';
+import { magazine, MAG, reactBits, kNum } from './newsMagazine.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
     garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
@@ -193,6 +195,7 @@ class BhasApp {
         // 로컬 화면 검수용. 운영 빌드에서는 절대 켜지지 않는다.
         const devPreview = import.meta.env.DEV && ['localhost', '127.0.0.1'].includes(location.hostname)
             ? new URLSearchParams(location.search).get('dev-preview') : null;
+        if (devPreview) this._noTrack = true;   // 화면 검수는 사용 기록에 안 남긴다
         if (devPreview === 'contacts') {
             this._devPreviewContacts = true; this._prefetched = true;
             this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
@@ -227,7 +230,10 @@ class BhasApp {
             this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
             this.currentView = 'news';
             this.wins = [{ id: 'preview-news', view: 'news', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
-            this.loadNews().then(() => { if (new URLSearchParams(location.search).get('paper')) this.openPaper(); });
+            this.loadNews().then(() => {
+                const sp = new URLSearchParams(location.search);
+                if (sp.get('paper')) this.openPaper(); else if (sp.get('morning')) this._maybeMorning();   // 첫 접속 자동 조간 검수
+            });
             this.requestRender(); return;
         }
         if (devPreview === 'calendar') {
@@ -344,6 +350,7 @@ class BhasApp {
                     if (r === null) return;
                     this._isInitialLoading = false;
                     this.requestRender();
+                    this._maybeMorning();
                 }).catch(err => {
                     // 데이터 로드 실패
                     this._isInitialLoading = false;
@@ -847,11 +854,13 @@ class BhasApp {
             return;
         }
         this.currentView = viewId;
+        this.track?.(viewId, 'open');
         this._pushHistory();
         this.render();
     }
     // 바탕화면 보기 — 열린 창을 전부 내린다(독에 남는다)
     macShowDesktop() {
+        this.track?.('home', 'open');
         (this.wins || []).forEach(w => { w.min = true; });
         this.requestRender();
     }
@@ -925,6 +934,8 @@ class BhasApp {
         this._isRendering = true;
         if (this.currentUser) this._initHistory();   // 로그인 후 1회 — 뒤로가기 연동 시작
 
+        //  뉴스탭은 통째로 다시 그려도 읽던 자리·찾기 칸 입력을 잃지 않게
+        const nmTop = document.querySelector('.nm') ? document.querySelector('.nm').scrollTop : null;
         try {
             this.appContainer.innerHTML = '';
 
@@ -965,6 +976,13 @@ class BhasApp {
             `;
         } finally {
             this._isRendering = false;
+            const nm = document.querySelector('.nm');
+            if (nm && nmTop != null) nm.scrollTop = nmTop;
+            if (nm && this._nmRefocus) {
+                this._nmRefocus = false;
+                const f = nm.querySelector('.nm-find input');
+                if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
+            }
             this._paintPaper();
         }
     }
@@ -1208,6 +1226,7 @@ class BhasApp {
                     this.render();
                     this.loadChannelHealth();   // 수집 끊김 띠 — 자동로그인 쪽에만 있어서 빠져 있었다
                     try { await this.loadInitialData(); this.render(); } catch(e) {}
+                    this._maybeMorning();
                     return;
                 }
 
@@ -4177,7 +4196,7 @@ class BhasApp {
         const hit = x => k.includes('|') ? this._ordKey(x) === k : String(x.order_id) === k;   // 옛 키(주문번호만)도 받는다
         return ((this.opage && this.opage.rows) || []).find(hit) || (this.orders || []).find(hit) || null;
     }
-    selectCS(id) { if (String(this.csSel) === String(id)) return; this.csSel = id; this.requestRender(); }
+    selectCS(id) { if (String(this.csSel) === String(id)) return; this.track?.('cs', 'cs_select'); this.csSel = id; this.requestRender(); }
     selectInv(id) { if (String(this.invSel) === String(id)) return; this.invSel = id; this.requestRender(); }
     // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
     switchAppTab(winId, view) {
@@ -6692,6 +6711,42 @@ class BhasApp {
         }
     }
 
+    //  사용 기록 한 줄 — 화면 id·동작 id 만(uiTrack.js). 비동기·실패 무시·1초 디바운스·검수/미리보기 제외
+    //  수집 기간은 DB(ui_events_until) 가 정한다 — 확인 전 기록은 잠깐 들고 있다가, 기간 밖이면 버리고 그 뒤로 끈다
+    track(screen, action) {
+        if (!action || this._noTrack || !this.supabase) return false;
+        if (!trackAllowed(this.currentUser, { dev: import.meta.env.DEV, search: location.search })) return false;
+        if (!this._tracker) {
+            const ready = Promise.resolve(this.supabase.rpc('ui_events_until')).then(({ data, error }) => {
+                const until = !error && data ? new Date(data) : null;
+                const on = !!until && until.getTime() > Date.now();
+                if (on) this._usageNotice(until);
+                return on;
+            }, () => false);
+            this._tracker = makeTracker({
+                send: row => this.supabase.from('ui_events').insert(row),
+                enabled: () => !this._noTrack && trackAllowed(this.currentUser, { dev: import.meta.env.DEV, search: location.search }),
+                ready,
+            });
+        }
+        return this._tracker(screen, action);
+    }
+    //  직원 안내 — 수집 기간 중 한 번만(이 브라우저 기준). 저장소가 막혀 있으면 매번 뜨는 쪽이 안 뜨는 쪽보다 낫다
+    _usageNotice(until) {
+        const key = 'ui_events_notice:' + until.toISOString().slice(0, 10);
+        try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (_e) { /* 저장 불가 → 그냥 보여준다 */ }
+        if (document.getElementById('ui-usage-notice')) return;
+        const box = document.createElement('div');
+        box.id = 'ui-usage-notice'; box.setAttribute('role', 'status');
+        box.style.cssText = 'position:fixed;left:16px;right:16px;bottom:104px;margin:0 auto;z-index:9999;max-width:560px;'   // 독 위, 폰은 양옆 16px
+            + 'background:var(--card-bg,#fff);color:var(--text,#222);border:1px solid var(--border,#ddd);border-radius:12px;'
+            + 'box-shadow:0 6px 24px rgba(0,0,0,.12);padding:12px 14px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:flex-start';
+        const txt = document.createElement('span'); txt.textContent = usageNotice(until);
+        const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = '확인';
+        ok.style.cssText = 'flex:none;border:0;border-radius:8px;padding:6px 12px;background:var(--primary,#333);color:#fff;cursor:pointer';
+        ok.onclick = () => box.remove();
+        box.append(txt, ok); document.body.appendChild(box);
+    }
     _actor() { return this.currentUser?.username || this.currentUser?.name || 'system'; }
     _brandNameById(id) { const b = (mockData.brands || []).find(b => b.id === id); return b ? b.name : '-'; }
     _brandOptions(selected) {
@@ -7312,6 +7367,7 @@ class BhasApp {
     }
     macOpen(view) {
         if (view === 'home') { this.macShowDesktop(); return; }   // 홈은 바탕화면 자체다
+        this.track?.(view, 'open');
         this.wins = this.wins || [];
         const found = this.wins.find(w => w.view === view);
         if (found) {
@@ -7350,7 +7406,7 @@ class BhasApp {
         if (el) { el.style.zIndex = w.z; return; }   // 순서만 바꾸면 되니 다시 그리지 않는다
         this.requestRender();
     }
-    macClose(id, ev) { if (ev) ev.stopPropagation(); this.wins = (this.wins || []).filter(w => w.id !== id); this.requestRender(); }
+    macClose(id, ev) { if (ev) ev.stopPropagation(); const cw = (this.wins || []).find(w => w.id === id); if (cw) this.track?.(cw.view, 'close'); this.wins = (this.wins || []).filter(w => w.id !== id); this.requestRender(); }
     macMin(id, ev) { if (ev) ev.stopPropagation(); const w = this.wins.find(x => x.id === id); if (w) { w.min = true; this.requestRender(); } }
     macZoom(id, ev) {
         if (ev) ev.stopPropagation();
@@ -9917,6 +9973,7 @@ class BhasApp {
                 .insert([{ title, due_date: due, list_name, created_by: this.currentUser?.name || null }]).select('*').single();
             if (error) throw error;
             this.remList = [data, ...(this.remList || [])];
+            this.track?.('reminders', 'todo_add');
             if (el) el.value = '';
             this.requestRender(); setTimeout(() => document.getElementById('rem-new')?.focus(), 50);
         } catch (e) { this.showToast('추가 실패: ' + (e.message || e)); }
@@ -9928,6 +9985,7 @@ class BhasApp {
         try {
             const { error } = await this.supabase.from('reminders').update({ done, done_at: r.done_at }).eq('id', id);
             if (error) throw error;
+            this.track?.('reminders', done ? 'todo_done' : 'todo_undo');
         } catch (e) { r.done = !done; this.showToast('변경 실패: ' + (e.message || e)); this.requestRender(); }
     }
     setRemList(l) { this.remList2 = l; this.requestRender(); }
@@ -10278,6 +10336,7 @@ class BhasApp {
         c.style.display = 'flex';
     }
     async addCSForOrder(orderNo, kind, mallKey = '') {
+        this.track?.('orders', 'cs_create_order');
         this.closeGlobalModal();
         const found = await this._csLookupOrder(orderNo, mallKey);
         try {
@@ -10306,6 +10365,7 @@ class BhasApp {
         const nameEl = document.getElementById('cs-name'), orderEl = document.getElementById('cs-order');
         const name = (nameEl?.value || '').trim(), orderNo = (orderEl?.value || '').trim();
         if (!name && !orderNo) { this.showToast('고객 이름이나 주문번호 중 하나는 입력해주세요'); return; }
+        this.track?.('cs', 'cs_create');
         const found = orderNo ? await this._csLookupOrder(orderNo) : null;
         if (orderNo && !found) this.showToast('주문번호를 못 찾아 수동으로 저장합니다');
         try {
@@ -10333,6 +10393,7 @@ class BhasApp {
             if (error) throw error;
             const t = (this.csList || []).find(x => x.id === id);
             if (t) { t.status = status; }
+            this.track?.('cs', 'cs_status');
             this.requestRender();
         } catch (e) { this.showToast('변경 실패: ' + (e.message || e)); }
     }
@@ -10341,7 +10402,8 @@ class BhasApp {
         const v = (memo || '').trim() || null;
         const old = t.memo; t.memo = v;
         const { error } = await this.supabase.from('cs_tickets').update({ memo: v }).eq('id', id);
-        if (error) { t.memo = old; this.showToast('저장 실패: ' + error.message); this.requestRender(); }
+        if (error) { t.memo = old; this.showToast('저장 실패: ' + error.message); this.requestRender(); return; }
+        this.track?.('cs', 'cs_memo');
     }
     async editCSMemo(id) {
         const t = (this.csList || []).find(x => x.id === id); if (!t) return;
@@ -10352,7 +10414,7 @@ class BhasApp {
             t.memo = memo || null; this.requestRender();
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
-    setCSFilter(f) { this.csFilter = f; this.requestRender(); }
+    setCSFilter(f) { this.track?.('cs', 'cs_filter'); this.csFilter = f; this.requestRender(); }
     setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.requestRender(); }
     //  새 분류 — 이름을 만들어 두고, 그 분류로 자료를 올리면 자리를 잡는다
     async addDocCategory() {
@@ -10698,6 +10760,7 @@ class BhasApp {
     // 수동 동기화 — 최신 주문·매출·채널상태를 다시 불러온다(대시보드가 로드시점 값이라 안 갱신되던 문제 해소)
     async refreshData() {
         if (this._refreshing) return;
+        this.track?.(this.currentView || 'home', 'refresh');
         this._refreshing = true; this.requestRender();
         try {
             this._ordersLoaded = false; this._ordersLoading = false;
@@ -11097,6 +11160,7 @@ class BhasApp {
     bindOrdersEvents() {
         this.appContainer.querySelectorAll('.oms-tab').forEach(t => t.onclick = () => {
             this.orderFilter = t.dataset.f;
+            this.track?.('orders', ORDER_FILTER_ACTION[t.dataset.f]);
             if (this.opage) this.opage.page = 0;
             this.loadOrderPage(true);
         });
@@ -11145,16 +11209,16 @@ class BhasApp {
         if (chkAll) chkAll.onclick = () => { this.appContainer.querySelectorAll('.oms-chk').forEach(c => { c.checked = chkAll.checked; }); this._syncEpostBtn(); };
         this.appContainer.querySelectorAll('.oms-chk').forEach(c => c.addEventListener('change', () => this._syncEpostBtn()));
         const syncBtn = document.getElementById('oms-sync-btn');
-        if (syncBtn) syncBtn.onclick = () => this.runCafe24Sync();
+        if (syncBtn) syncBtn.onclick = () => { this.track?.('orders', 'order_sync'); this.runCafe24Sync(); };
         const exportBtn = document.getElementById('oms-export-btn');
-        if (exportBtn) exportBtn.onclick = () => this.exportInvoiceTemplate();
+        if (exportBtn) exportBtn.onclick = () => { this.track?.('orders', 'invoice_export'); this.exportInvoiceTemplate(); };
         const epostBtn = document.getElementById('oms-epost-btn');
-        if (epostBtn) { epostBtn.onclick = () => this.issueEpostWaybills(); this._syncEpostBtn(); }
+        if (epostBtn) { epostBtn.onclick = () => { this.track?.('orders', 'ship_issue'); this.issueEpostWaybills(); }; this._syncEpostBtn(); }
         const upBtn = document.getElementById('oms-upload-btn');
         const fileEl = document.getElementById('oms-invoice-file');
         if (upBtn && fileEl) {
             upBtn.onclick = () => fileEl.click();
-            fileEl.onchange = (e) => { const f = e.target.files[0]; if (f) this.handleInvoiceUpload(f); e.target.value = ''; };
+            fileEl.onchange = (e) => { const f = e.target.files[0]; if (f) { this.track?.('orders', 'invoice_upload'); this.handleInvoiceUpload(f); } e.target.value = ''; };
         }
     }
 
@@ -11594,6 +11658,7 @@ class BhasApp {
     }
 
     setInventoryTab(tab) {
+        this.track?.('inventory', INV_TAB_ACTION[tab]);
         this.inventoryTab = tab;
         if (tab === 'materials' && !this._materialsLoaded && !this._materialsLoading) this.loadMaterials();
         this.requestRender();
@@ -11991,6 +12056,7 @@ class BhasApp {
             }]);
         }
         this.closeGlobalModal();
+        this.track?.('inventory', 'inv_save');
         await this.loadInventory();
         this.showToast('품목이 추가되었습니다.');
     }
@@ -12904,6 +12970,7 @@ class BhasApp {
         c.querySelector('#qa-ok').onclick = async () => {
             const title = ti.value.trim(); if (!title) { ti.focus(); return; }
             const w = c.querySelector('#qa-w').value;
+            this.track?.('calendar', 'cal_add');
             this.closeGlobalModal();
             if (w.startsWith('r:')) return this._addRemOn(day, title, w.slice(2));
             return this._addNoteTodoOn(day, title, w.slice(2));
@@ -13573,8 +13640,18 @@ class BhasApp {
     _ymdSeoul() {
         return new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
     }
-    //  로그인 직후 자동으로 펼치던 것은 껐다(10-14). 뉴스 화면의 '오늘 조간 펼치기'로만 연다.
+    //  그날 첫 접속 때 한 번 카드뉴스 조간을 띄운다(10-22 사장님 "카드뉴스는 처음 접속했을때 보여주면 되는거고").
+    //  띄운 순간 오늘 날짜를 적어 둔다 — 닫든 새로고침하든 그날은 다시 안 뜬다. 뉴스 화면에서 언제든 다시 연다.
+    //  자동으로 띄운 것이 실패하거나 볼 게 없으면 조용히 접는다 — 첫 화면을 막지 않는다.
+    async _maybeMorning() {
+        try {
+            if (this.paper || localStorage.getItem(this._paperKey()) === this._ymdSeoul()) return;
+            localStorage.setItem(this._paperKey(), this._ymdSeoul());
+        } catch (_e) { return; }   // 저장을 못 하는 브라우저면 매번 뜨지 않게 아예 띄우지 않는다
+        try { await this.openPaper(true); } catch (_e) { this.paper = null; this.requestRender(); }
+    }
     async openPaper(auto) {
+        this.track?.('news', auto ? 'paper_auto' : 'paper');
         this.paper = { loading: true, data: null, auto: !!auto, idx: 0 };
         this.requestRender();
         try {
@@ -13604,9 +13681,17 @@ class BhasApp {
                 customer: cols.customer.map(atOf).filter(inWin(PAPER_WIN.customer)),
                 compete: cols.compete.map(atOf).filter(inWin(PAPER_WIN.compete)),
                 ed };
-        } catch (e) { this.paper.err = e.message || String(e); }
+        } catch (e) { if (!this.paper) return; this.paper.err = e.message || String(e); }
+        if (!this.paper) return;   // 불러오는 사이 닫았다
+        //  자동으로 띄운 판이 실패했거나 볼 카드가 없으면 첫 화면을 가리지 않는다
+        if (auto && (this.paper.err || !this._paperHasNews(this.paper.data))) { this.paper = null; this.requestRender(); return; }
         this.paper.loading = false;
         this.requestRender();
+    }
+    _paperHasNews(d) {
+        const E = (d && d.ed) || {};
+        return !!(E.lead || (E.moves || []).length || (E.worked || []).length || (E.cal || []).some(x => x.items.length)
+            || (d && ((d.customer || []).length || (d.resale || []).length)));
     }
     closePaper() {
         try { localStorage.setItem(this._paperKey(), this._ymdSeoul()); } catch (_e) {}
@@ -13670,7 +13755,6 @@ class BhasApp {
 
         //  ── 카드 한 장 = 큰 제목 1줄 + 사진 + 핵심 2~3줄 + 큰 숫자 + 작은 출처. 좌우로 넘긴다(스와이프·←→·버튼).
         const src = url => url ? `<a class="pc-src" href="${esc(url)}" target="_blank" rel="noopener">원문 →</a>` : '';
-        const pic = (url, cls) => url ? `<img class="${cls}" src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
         const stats = st => st.length ? `<div class="pc-stats">${st.map(x => `<div${x.k === '평소 대비' ? ' class="r"' : ''}><b>${esc(x.v)}</b><span>${esc(x.k)}</span></div>`).join('')}</div>` : '';
         const head = c => `<div class="pc-k">${esc(c.kicker)}</div><h2 class="pc-t">${esc(c.title)}</h2>`;
         const card = (c, i) => {
@@ -13681,7 +13765,7 @@ class BhasApp {
                     ${c.summary ? `<p class="pc-sum">${esc(c.summary)}</p>` : ''}
                     <div class="pc-hint">옆으로 넘겨 보세요 →</div>`
                 : c.type === 'lead' || c.type === 'move' ? `${head(c)}
-                    ${c.img ? `<div class="pc-img">${pic(c.img, '')}</div>` : ''}
+                    ${this._photo(c.img, 'pc-img')}
                     ${stats(c.stats)}
                     ${c.lines.map(l => `<p class="pc-l">${esc(l)}</p>`).join('')}${src(c.url)}`
                 : c.type === 'open' ? `${head(c)}
@@ -13695,7 +13779,7 @@ class BhasApp {
                     ${c.more ? `<p class="pc-more">외 ${c.more}곳</p>` : ''}`
                 : c.type === 'top' ? `${head(c)}
                     <ol class="pc-rows top">${c.rows.map(r => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">
-                        <span class="pc-rk">${r.rank}</span>${pic(r.img, 'pc-th')}
+                        <span class="pc-rk">${r.rank}</span>${this._photo(r.img, 'pc-th') || '<i class="pc-th"></i>'}
                         <span class="pc-tb"><b>${esc(r.name)}</b> <i>${esc(r.tags.join('+'))}</i> <em>${esc(r.slot)}</em>
                         <span class="pc-rx">${esc(r.react)}</span><small>장치(추정) · ${esc(r.why)}</small></span></a></li>`).join('')}</ol>`
                 : c.type === 'issue' ? `${head(c)}
@@ -13789,141 +13873,105 @@ class BhasApp {
         }
         this._newsLoading = false; this.requestRender();
     }
+    //  사진 한 칸 — 절대 자르지 않는다(10-22 사장님 "이미지는 왜 위아래 크롭되는거야").
+    //  틀은 일정하게 두고 사진은 contain, 남는 자리는 같은 사진을 흐리게 깐다. 못 불러오면 칸째 지운다.
+    _photo(url, cls = '') {
+        if (!url) return '';
+        const u = String(url).replace(/"/g, '%22').replace(/\)/g, '%29');
+        return `<div class="ph-fit ${cls}" style="--ph:url(&quot;${this._vesc(u)}&quot;)"><img src="${this._vesc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"></div>`;
+    }
+    //  뉴스탭 = 누르지 않고 훑어지는 매거진 한 화면(10-22 사장님 "뉴스탭은 너무 구려. 다시 만들어").
+    //  위: 오늘 요약 띠 → 섹션별 카드(사진·브랜드·한 줄 요지·반응·날짜, 누르면 원문). 빈 섹션·빈 값은 숨긴다.
     renderNews() {
         if (!this._newsLoaded) return this._loadingSkeleton('뉴스');
         const esc = s => this._vesc(s);
         const C = this.newsCols || { review: [], trend: [], resale: [], competitor: [] };
         const comps = this.competitors || [];
-        //  칸 셋: 고객 반응 · 경쟁·유통(지켜보는 경쟁사 인스타 글 포함) · 중고로 올라온 우리 옷
-        //  경쟁·유통은 같은 보도자료를 매체마다 다시 쓴 것을 한 건으로 접는다
-        //  경쟁사 인스타 = 조간과 같은 기준(최근 7일 · 좋아요+댓글 큰 순). 조간은 위 8개만, 여기선 전부.
-        const named = p => ({ ...p, author: nameOfPost(p, comps) || p.author });
-        const colOf = k => k === 'trend' ? [...C.competitor, ...oneStoryEach(C.trend)]
-            : k === 'insta' ? topPosts(C.competitor, { top: 999 }).map(named) : (C[k] || []);
-        const n_ = (k) => colOf(k).length;
-        const LABEL = { review: '고객 반응', trend: '경쟁·유통', insta: '경쟁사 인스타', resale: '중고로 올라온 우리 옷' };
-        //  빈 칸을 먼저 보여주지 않는다 — 들어온 게 있는 칸으로 연다
-        const cur = LABEL[this.newsTab] ? this.newsTab : (['review', 'trend', 'resale'].find(k => n_(k)) || 'review');
-        //  10-28 판정용 — 최근 14일 칸별 유효 건수
-        const vc = validCounts({ review: C.review, trend: colOf('trend'), resale: C.resale }, 14);
-        const q = (this.newsQ || '').trim().toLowerCase();
-        const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스',
-                      google: '구글', google_news: '구글 뉴스', instagram: '인스타그램', datalab: '데이터랩' };
-        const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '';
-        const brandOf = id => (mockData.brands || []).find(b => b.id === id)?.name || '';
+        const M = magazine(C, comps, this.compSnaps || [], { q: this.newsQ || '' });
+        const more = this._nmMore || {};
+        const link = u => u && /^https?:/i.test(u) ? `href="${esc(u)}" target="_blank" rel="noopener"` : '';
+        const tag = (u, cls, inner) => link(u) ? `<a class="${cls}" ${link(u)}>${inner}</a>` : `<div class="${cls}">${inner}</div>`;
+        const bits = (...xs) => xs.filter(Boolean).map(x => `<span>${esc(x)}</span>`).join('');
+        const moreBtn = (k, total, n) => total > n ? `<button class="nm-more" onclick="app._nmMore={...(app._nmMore||{}),${k}:!(app._nmMore||{}).${k}};app.requestRender()">
+            ${more[k] ? '접기' : `더보기 ${total - n}건`}</button>` : '';
+        const cut = (k, list, n) => more[k] ? list : list.slice(0, n);
+        const sec = (id, icon, title, note, body, extra = '') => body ? `<section class="nm-sec" id="nm-${id}">
+            <div class="nm-sech"><h2><i class="ph ${icon}"></i>${esc(title)}</h2>${note ? `<em>${esc(note)}</em>` : ''}${extra}</div>${body}</section>` : '';
+        const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' });
 
-        //  지켜보는 곳에서 한 곳을 고르면 가운데는 그 브랜드 글, 오른쪽은 브랜드 한 장
+        //  오늘 요약 띠 — 숫자만, 누르면 그 섹션으로
+        const strip = M.summary.map(s => `<button class="nm-tile${s.value ? '' : ' zero'}" onclick="document.getElementById('nm-${s.key}')?.scrollIntoView({behavior:'smooth',block:'start'})">
+            <em>${esc(s.label)}</em><b>${s.value.toLocaleString('ko-KR')}</b><span>${esc(s.note)}</span></button>`).join('');
+
+        const opens = M.opens.length ? `<div class="nm-opens">${M.opens.map(o => tag(o.url, `nm-open${o.today ? ' today' : ''}`,
+            `<b>${esc(o.day)}</b>${o.when ? `<i>${esc(o.when)}</i>` : ''}<span>${esc(o.name)}</span>${o.what ? `<em>${esc(o.what)}</em>` : ''}`)).join('')}</div>` : '';
+
+        const top = M.top.length ? `<div class="nm-grid">${cut('top', M.top, MAG.TOP_POSTS).map(w => tag(w.url, 'nm-card',
+            `${this._photo(w.thumb, 'nm-ph')}${w.hot ? `<i class="nm-hot">${esc(w.hot)}</i>` : ''}
+            <div class="nm-cb"><div class="nm-brand">${esc(w.brand)}</div><p class="nm-head">${esc(w.head)}</p>
+            <div class="nm-meta">${bits(...reactBits(w.likes, w.comments), w.when)}</div></div>`)).join('')}</div>${moreBtn('top', M.top.length, MAG.TOP_POSTS)}` : '';
+
+        const kn = n => n == null ? '' : kNum(n);
+        const brands = M.brands.length ? `<div class="nm-brands">${cut('brands', M.brands, MAG.BRANDS).map(b => `
+            <div class="nm-bc" onclick="app.openCompBrand('${b.id}')" oncontextmenu="app.compMenu(event,'${b.id}')">
+                <div class="nm-bh"><i class="nm-av">${esc((b.name || '?').trim().slice(0, 1).toUpperCase())}</i>
+                    <div><b>${esc(b.name)}</b>${b.handle ? `<em>@${esc(b.handle)}</em>` : ''}</div>
+                    ${b.newCount ? `<span class="nm-new">새 글 ${b.newCount}</span>` : ''}</div>
+                ${b.recent.length ? `<div class="nm-bthumbs">${b.recent.map(r => this._photo(r.thumb, 'nm-bt')).join('')}</div>` : ''}
+                <div class="nm-meta">${bits(b.followers != null ? `팔로워 ${kn(b.followers)}` : '',
+                    b.delta != null ? `${b.span}일 ${b.delta >= 0 ? '+' : ''}${b.delta.toLocaleString('ko-KR')}` : '',
+                    b.week ? `7일 글 ${b.week}` : '', b.lastWhen ? `최근 ${b.lastWhen}` : '')}</div>
+            </div>`).join('')}</div>${moreBtn('brands', M.brands.length, MAG.BRANDS)}` : '';
+
+        const story = (x, k) => tag(x.url, 'nm-story', `<div class="nm-st">
+                <div class="nm-meta">${x.source ? `<span class="nm-src">${esc(x.source)}</span>` : ''}${bits(x.author, x.when)}</div>
+                <b>${esc(x.title || x.snippet.slice(0, 60))}</b>${x.snippet && x.title ? `<p>${esc(x.snippet)}</p>` : ''}
+                ${k === 'customer' ? `<div class="nm-meta">${bits(...reactBits(x.likes, x.comments))}</div>` : ''}</div>
+            ${this._photo(x.thumb, 'nm-sth')}`);
+        const list = (k, xs) => xs.length ? `<div class="nm-stories">${cut(k, xs, MAG.LIST).map(x => story(x, k)).join('')}</div>${moreBtn(k, xs.length, MAG.LIST)}` : '';
+
+        const resale = M.resale.length ? `<div class="nm-grid sm">${cut('resale', M.resale, MAG.RESALE).map(x => tag(x.url, 'nm-card',
+            `${this._photo(x.thumb, 'nm-ph sq')}<div class="nm-cb">${x.price ? `<div class="nm-price">${x.price.toLocaleString('ko-KR')}원</div>` : ''}
+            <p class="nm-head">${esc(x.title)}</p><div class="nm-meta">${bits(x.source, x.when)}</div></div>`)).join('')}</div>${moreBtn('resale', M.resale.length, MAG.RESALE)}` : '';
+
+        //  브랜드 한 장 — 카드를 누르면 오른쪽에서 열리는 서랍
         const comp = this.newsComp ? comps.find(c => c.id === this.newsComp) : null;
-        const cd = comp ? (this._compData || {})[comp.id] : null;
-        let list = comp ? (cd && cd.posts ? cd.posts.map(named) : []) : colOf(cur);
-        if (q) list = list.filter(i => [i.title, i.snippet, i.author].some(x => String(x || '').toLowerCase().includes(q)));
-        const sel = list.find(i => i.id === this.newsSel) || (comp ? null : list[0]);
-        //  튄 글 — 브랜드마다 평소(중앙값)의 2배 넘게 반응이 온 글
-        const spikes = new Map();
-        const byComp = {};
-        (comp && cd && cd.posts ? cd.posts : C.competitor).forEach(p => { (byComp[p.competitor_id] = byComp[p.competitor_id] || []).push(p); });
-        Object.values(byComp).forEach(ps => reactionStats(ps).spikes.forEach((v, k) => spikes.set(k, v)));
-        const reactOf = i => i.kind === 'competitor_post' && i.meta && i.meta.likes != null
-            ? `<span>♥ ${Number(i.meta.likes || 0).toLocaleString('ko-KR')} · 댓글 ${Number(i.meta.comments || 0).toLocaleString('ko-KR')}</span>`
-              + (spikes.has(i.id) ? `<span class="nw-spike" title="이 브랜드 평소 반응의 ${spikes.get(i.id) ? spikes.get(i.id).toFixed(1) + '배' : '여러 배'}">튄 글</span>` : '')
-            : '';
+        const ranked = comp ? rankCompetitors(comps, this.compSnaps || []) : [];
+        const kfmt = n => n == null ? '-' : kNum(n);
+        const dfmt = r => r.delta == null ? '<i title="기록이 더 쌓이면 나옵니다">—</i>'
+            : `<i class="${r.delta >= 0 ? 'up' : 'dn'}">${r.delta >= 0 ? '+' : ''}${r.delta.toLocaleString('ko-KR')}</i>`;
+        const drawer = comp ? `<div class="nm-dim" onclick="app.newsComp=null;app.requestRender()"></div>
+            <aside class="nm-drawer" role="dialog" aria-label="${esc(comp.name)} 브랜드 한 장">
+                <button class="nm-x" aria-label="닫기" onclick="app.newsComp=null;app.requestRender()"><i class="ph ph-x"></i></button>
+                ${this._compBrandHTML(comp, (this._compData || {})[comp.id], ranked.find(r => r.id === comp.id) || {}, dfmt, kfmt)}</aside>` : '';
 
-        //  지켜보는 곳 = 순위판. 팔로워 · 7일 변화(변화 큰 순), 기본 10곳 + 더보기
-        const ranked = rankCompetitors(comps, this.compSnaps || []);
-        const shownRk = this._compMore ? ranked : ranked.slice(0, RANK_TOP);
-        const rkStart = snapStart(this.compSnaps || []);
-        const anyDelta = ranked.some(r => r.delta != null);
-        const kfmt = n => n == null ? '-' : (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : n.toLocaleString('ko-KR'));
-        const dfmt = (r, cls = '') => r.delta == null ? `<i class="${cls}" title="7일 변화 — 기록이 더 쌓이면 나옵니다">—</i>`
-            : `<i class="${cls} ${r.delta >= 0 ? 'up' : 'dn'}" title="${r.span}일 변화(${esc(r.since || '')}부터)">${r.delta >= 0 ? '+' : ''}${r.delta.toLocaleString('ko-KR')}</i>`;
-        const rkRow = (r, idx) => `<div class="nw-rk${comp && comp.id === r.id ? ' on' : ''}" onclick="app.openCompBrand('${r.id}')" oncontextmenu="app.compMenu(event,'${r.id}')">
-            <i>${idx + 1}</i><span>${esc(r.name)}</span><em><b>${kfmt(r.followers)}</b> ${dfmt(r)}</em></div>`;
-
-        // 경쟁사 요약 (오늘·어제 스냅샷 견주기)
-        const snapOf = (cid) => (this.compSnaps || []).filter(s => s.competitor_id === cid);
-        const compCard = (c) => {
-            const sn = snapOf(c.id);
-            const now = sn[0], prev = sn[1];
-            const d = (now && prev && now.followers != null && prev.followers != null) ? now.followers - prev.followers : null;
-            return `<div class="nw-comp">
-                <div class="nw-cn">${esc(c.name)}<em>@${esc(c.handle)}</em></div>
-                <div class="nw-cs">
-                    <span>팔로워 <b>${now?.followers != null ? now.followers.toLocaleString('ko-KR') : '-'}</b>
-                        ${d != null ? `<i class="${d >= 0 ? 'up' : 'dn'}">${d >= 0 ? '+' : ''}${d}</i>` : ''}</span>
-                    <span>글 <b>${now?.media_count ?? '-'}</b>${now?.posts_delta ? ` <i class="up">+${now.posts_delta}</i>` : ''}</span>
-                    <span>평균 ♥ <b>${now?.avg_likes != null ? Math.round(now.avg_likes) : '-'}</b></span>
-                </div></div>`;
-        };
-
-        const side = (k, label, icon, n) => `<div class="m3-s${cur === k ? ' on' : ''}" onclick="app.setNewsTab('${k}')">
-            <i class="ph ${icon}" style="color:#e0294f"></i><span>${esc(label)}</span><em>${n}</em></div>`;
-
-        return `
-        <div class="m3 wide">
-            <aside class="m3-side">
-                <div class="m3-h">뉴스</div>
-                <button class="nt-newsea" style="margin:2px 8px 8px" onclick="app.openPaper()">
-                    <i class="ph ph-newspaper"></i> 오늘 조간 펼치기</button>
-                ${side('review', LABEL.review, 'ph-chat-circle-text', n_('review'))}
-                ${side('trend', LABEL.trend, 'ph-users-three', n_('trend'))}
-                ${side('insta', LABEL.insta, 'ph-instagram-logo', n_('insta'))}
-                ${side('resale', LABEL.resale, 'ph-recycle', n_('resale'))}
-                <div class="nw-valid" title="10-28 판정용 · 우리 계정 글·중복·무관 기사를 뺀 건수">최근 14일 유효 ·
-                    고객 반응 ${vc.review} · 경쟁·유통 ${vc.trend} · 중고 ${vc.resale}</div>
-                <div class="m3-h">지켜보는 곳
-                    <button class="nt-add" title="경쟁사 추가" onclick="app.addCompetitor()">＋</button></div>
-                ${comps.length ? `<div class="nw-rknote">팔로워 · 7일 변화 큰 순 · 누르면 브랜드 한 장</div>
-                    ${shownRk.map(rkRow).join('')}
-                    ${ranked.length > RANK_TOP ? `<button class="nw-rkmore" onclick="app._compMore=!app._compMore;app.requestRender()">
-                        ${this._compMore ? '접기' : `더보기 (${ranked.length - RANK_TOP}곳)`}</button>` : ''}
-                    ${!anyDelta && rkStart ? `<div class="nw-rknote">7일 변화는 ${esc(rkStart.slice(5).replace('-', '/'))} 기록 시작 — 이틀째부터 나옵니다</div>` : ''}`
-                  : '<div style="padding:6px 10px;font-size:12px;color:var(--text-muted)">＋로 경쟁사를 넣으세요</div>'}
-            </aside>
-            <section class="m3-list">
-                <div class="m3-lbar"><div><b>${comp ? esc(comp.name) + ' · 최근 글' : LABEL[cur]}</b>
-                    <span>${comp && (!cd || cd.loading) ? '불러오는 중' : list.length + '건'}</span></div></div>
-                <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
-                    <input placeholder="찾기" value="${esc(this.newsQ || '')}" oninput="app.newsQ=this.value;app.requestRender()"></div>
-                <div class="m3-rows">
-                    ${!comp && cur === 'trend' && comps.length ? `<div class="nw-comps">${comps.map(compCard).join('')}</div>` : ''}
-                    ${list.map(i => `<div class="m3-r${sel && i.id === sel.id ? ' on' : ''}" onclick="app.selectNews('${i.id}')">
-                        <b>${esc(i.title || '제목 없음')}</b>
-                        <div class="sub"><span>${esc(SRC[i.source] || i.source)}</span>
-                            <span>${esc(when(i.published_at))}</span>
-                            ${i.brand_id ? `<span>${esc(brandOf(i.brand_id))}</span>` : ''}
-                            ${i.kind === 'competitor_post' && !comp ? `<span>${esc(i.author || '')}</span>` : ''}${reactOf(i)}</div>
-                    </div>`).join('') || `<div class="m3-none">${q ? '찾는 글이 없습니다' : '아직 모인 게 없습니다 · 수집이 돌면 채워집니다'}</div>`}
+        const q = (this.newsQ || '').trim();
+        //  서랍은 스크롤되는 .nm 바깥(nm-wrap)에 둔다 — fixed 로 두면 .macwin 이 기준이 돼 위 메뉴막대에 도구막대가 가려졌다(반려1)
+        return `<div class="nm-wrap"><div class="nm">
+            <header class="nm-top">
+                <div class="nm-title"><h1>뉴스</h1><span>${esc(today)}</span></div>
+                <div class="nm-tools">
+                    <label class="nm-find"><i class="ph ph-magnifying-glass"></i>
+                        <input placeholder="브랜드·글 찾기" aria-label="뉴스 찾기" value="${esc(this.newsQ || '')}" oninput="app.newsQ=this.value;app._nmRefocus=true;app.requestRender()"></label>
+                    <button class="nm-paper" onclick="app.openPaper()"><i class="ph ph-newspaper"></i> 오늘 조간 카드뉴스</button>
                 </div>
-            </section>
-            <section class="m3-doc">
-                ${comp && !sel ? this._compBrandHTML(comp, cd, ranked.find(r => r.id === comp.id) || {}, dfmt, kfmt) : sel ? `
-                <div class="m3-tools">
-                    ${comp ? `<button class="mbtn" onclick="app.selectNews('')"><i class="ph ph-arrow-left"></i> 브랜드 한 장</button>` : ''}
-                    ${sel.url && !String(sel.url).startsWith('datalab:')
-                        ? `<a class="mbtn pri" href="${esc(sel.url)}" target="_blank" rel="noopener" style="text-decoration:none">원문 열기</a>` : ''}
-                    <span class="sp"></span>
-                    <span class="nt-scope">${esc(SRC[sel.source] || sel.source)}</span>
-                </div>
-                <div class="m3-page">
-                    ${sel.thumb ? `<img class="nw-th" src="${esc(sel.thumb)}" alt="">` : ''}
-                    <h2 class="m3-big">${esc(sel.title || '제목 없음')}</h2>
-                    <div class="m3-sub">${esc(sel.author || '')}${sel.published_at ? ' · ' + esc(new Date(sel.published_at).toLocaleDateString('ko-KR')) : ''}</div>
-                    ${sel.score != null ? `<div class="nw-score">지수 <b>${esc(String(sel.score))}</b>${sel.snippet ? ` · ${esc(sel.snippet)}` : ''}</div>` : ''}
-                    ${sel.kind === 'trend' && sel.meta && sel.meta.series ? `<div class="nw-spark">
-                        ${(() => { const d = sel.meta.series, mx = Math.max(1, ...d.map(x => x.ratio));
-                            return d.map(x => `<i style="height:${Math.max(3, x.ratio / mx * 60)}px" title="${esc(x.period)} · ${x.ratio}"></i>`).join(''); })()}
-                    </div>` : ''}
-                    ${sel.snippet && sel.score == null ? `<p class="nw-body">${esc(sel.snippet)}</p>` : ''}
-                    ${sel.meta && sel.meta.likes != null ? `<div class="m3-f"><i class="ph ph-heart"></i><span class="k">반응</span>
-                        <span class="v">♥ ${esc(String(sel.meta.likes))} · 댓글 ${esc(String(sel.meta.comments ?? 0))}</span></div>` : ''}
-                </div>` : `<div class="m3-none mid">왼쪽에서 글을 고르세요</div>`}
-            </section>
-        </div>`;
+            </header>
+            <div class="nm-strip">${strip}</div>
+            ${M.empty ? `<div class="nm-none">${q ? '찾는 글이 없습니다' : '아직 모인 게 없습니다 · 수집이 돌면 채워집니다'}</div>` : ''}
+            ${sec('opens', 'ph-calendar-star', '이번주 오픈', '오늘부터 7일 · 경쟁사 글에서 날짜를 뽑음(원문 확인)', opens)}
+            ${sec('top', 'ph-fire', '경쟁사 인스타, 반응 좋은 글', '최근 7일 · 브랜드 평소 대비 큰 순', top)}
+            ${sec('brands', 'ph-binoculars', '지켜보는 곳', '어제부터 새 글 많은 순 · 누르면 브랜드 한 장', brands,
+                `<button class="nm-add" title="경쟁사 추가" aria-label="경쟁사 추가" onclick="app.addCompetitor()"><i class="ph ph-plus"></i></button>`)}
+            ${sec('customer', 'ph-chat-circle-text', '고객 반응', '우리 브랜드 이야기 · 블로그·카페·인스타', list('customer', M.customer))}
+            ${sec('trend', 'ph-article', '경쟁·유통 기사', '같은 보도자료는 하나로', list('trend', M.trend))}
+            ${sec('resale', 'ph-recycle', '중고로 올라온 우리 옷', '', resale)}
+        </div>${drawer}</div>`;
     }
     setNewsTab(k) { this.newsTab = k; this.newsSel = null; this.newsComp = null; this.requestRender(); }
     //  경쟁사 한 곳 — 그 브랜드 글(최근 60)과 이름이 든 기사(최근 40)를 그때 불러 둔다
     async openCompBrand(id) {
         this.newsComp = id; this.newsSel = null;
+        this.track?.('news', 'brand_open');
         this._compData = this._compData || {};
         const c = (this.competitors || []).find(x => x.id === id);
         if (!c || (this._compData[id] && !this._compData[id].err)) { this.requestRender(); return; }
@@ -13960,8 +14008,8 @@ class BhasApp {
         const hot = posts.filter(p => st.spikes.has(p.id)).sort((a, b) => engOf(b) - engOf(a)).slice(0, 3);
         const heart = p => `♥ ${Number((p.meta || {}).likes || 0).toLocaleString('ko-KR')} · 댓글 ${Number((p.meta || {}).comments || 0).toLocaleString('ko-KR')}`;
         const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스', google: '구글', google_news: '구글 뉴스', instagram: '인스타그램' };
-        const postLi = p => `<div class="cb-li" onclick="app.selectNews('${p.id}')"><b>${md(p.published_at)}</b>
-            <span>${esc(p.title || '제목 없음')}</span><em>${heart(p)}${st.spikes.has(p.id) ? ' · 튄 글' : ''}</em></div>`;
+        const postLi = p => `<a class="cb-li" href="${esc(p.url || '')}" target="_blank" rel="noopener"><b>${md(p.published_at)}</b>
+            <span>${esc(p.title || '제목 없음')}</span><em>${heart(p)}${st.spikes.has(p.id) ? ' · 튄 글' : ''}</em></a>`;
         return `${head}<div class="m3-page">
             <div class="cb-h"><h2 class="m3-big">${esc(c.name)}</h2><em>@${esc(c.handle)}</em></div>
             <div class="cb-kpi">
