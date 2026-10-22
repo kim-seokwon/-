@@ -27,11 +27,46 @@ export function accountsFromEnv(env, hasGmail) {
   return { run, skip };
 }
 
-//  메일 본문에서 6자리 인증번호
+//  HTML 메일 → 글자만(style·script·태그·주석을 걷고 &nbsp; 같은 엔티티를 풀어 공백 하나로)
+export function htmlToText(html) {
+  const ent = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'" };
+  return String(html || '')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(style|script|head)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+      const k = e.toLowerCase();
+      if (k[0] === '#') { const n = k[1] === 'x' ? parseInt(k.slice(2), 16) : Number(k.slice(1)); return Number.isFinite(n) ? String.fromCodePoint(n) : ' '; }
+      return ent[k] ?? ' ';
+    })
+    .replace(/\s+/g, ' ').trim();
+}
+
+//  메일 본문에서 6자리 인증번호 — '인증' 근처를 먼저, 없으면 홀로 선 6자리(앞뒤가 숫자·#·문자가 아님 → 색상코드·날짜 조각 제외)
 export function otpFromText(text) {
   const t = String(text || '');
-  return (t.match(/인증[^0-9]{0,25}(\d{6})/) || t.match(/(\d{6})[^0-9]{0,25}인증/) || t.match(/\b(\d{6})\b/) || [])[1] || null;
+  const lone = '(?<![0-9A-Za-z#.,:/-])(\\d{6})(?![0-9A-Za-z.,:/-])';
+  return (t.match(new RegExp(`(?:인증|코드|code)[^0-9]{0,60}?${lone}`, 'i'))
+    || t.match(new RegExp(`${lone}[^0-9]{0,30}(?:인증|코드)`))
+    || t.match(new RegExp(lone)) || [])[1] || null;
 }
+
+//  Gmail 메일 payload → 본문 글자(text/plain 은 그대로, text/html 은 htmlToText). base64url 도 그대로 풀린다
+export function mailText(payload) {
+  const plain = [], html = [];
+  const walk = p => {
+    if (p?.body?.data) {
+      const t = Buffer.from(p.body.data, 'base64').toString('utf-8');
+      (/html/i.test(p.mimeType || '') || /<\/?(html|body|td|div|p|br|table)\b/i.test(t) ? html : plain).push(t);
+    }
+    (p?.parts || []).forEach(walk);
+  };
+  walk(payload || {});
+  return [...plain, ...html.map(htmlToText)].join('\n');
+}
+
+//  로그용 — 6자리 이상 숫자는 가린다(인증번호를 로그에 남기지 않게)
+export const maskDigits = s => String(s || '').replace(/\d{6,}/g, m => '*'.repeat(m.length));
 
 //  Gmail 검색어 — 받는 주소를 알면 그 주소로 온 것만(다른 계정 메일을 집지 않게)
 export function otpQueries(to) {
@@ -49,9 +84,9 @@ export function otpMailUsable({ id, receivedAt }, { notBeforeMs, usedIds }) {
   return true;
 }
 
-//  기준 시각 — 새로 요청했으면 요청 직전부터, 이미 발송됐으면 2분 전부터. 단 앞 계정이 쓴 메일 시각(floor)보다는 늦게.
+//  기준 시각 — 새로 요청했으면 요청 직전부터, 이미 발송됐으면(쿨다운) 10분 전부터. 단 앞 계정이 쓴 메일 시각(floor)보다는 늦게.
 export function otpNotBefore({ now, requested, floor = 0 }) {
-  const base = requested ? now - 10_000 : now - 2 * 60_000;
+  const base = requested ? now - 10_000 : now - 10 * 60_000;
   return Math.max(base, floor ? floor + 1 : 0);
 }
 
@@ -83,17 +118,21 @@ export async function pollOtp(gmail, {
         const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: 15, includeSpamTrash: true });
         for (const m of (list.data.messages || [])) {
           if (usedIds.has(m.id) || scanned.has(m.id)) continue;
+          //  scanned 는 끝까지 본 뒤에만 넣는다 — 중간(full)에서 429 가 나면 다음 바퀴에 같은 메일을 다시 본다
           const meta = await gmail.users.messages.get({ userId: 'me', id: m.id, format: 'metadata', metadataHeaders: ['Subject', 'From'] });
-          scanned.add(m.id);
           const receivedAt = Number(meta.data.internalDate || 0);
-          seen.add(`${header(meta, 'From')} | ${header(meta, 'Subject')}`);
-          if (!otpMailUsable({ id: m.id, receivedAt }, { notBeforeMs, usedIds })) continue;
+          const label = `${header(meta, 'From')} | ${header(meta, 'Subject')}`;
+          if (!otpMailUsable({ id: m.id, receivedAt }, { notBeforeMs, usedIds })) {
+            scanned.add(m.id);
+            seen.add(`${label} [기준보다 ${Math.round((notBeforeMs - receivedAt) / 1000)}초 먼저 옴 — 건너뜀]`);
+            continue;
+          }
           const full = await gmail.users.messages.get({ userId: 'me', id: m.id, format: 'full' });
-          const parts = [header(full, 'Subject')];
-          const walk = p => { if (p.body?.data) parts.push(Buffer.from(p.body.data, 'base64').toString('utf-8')); (p.parts || []).forEach(walk); };
-          walk(full.data.payload || {});
-          const code = otpFromText(parts.join('\n'));
+          scanned.add(m.id);
+          const body = mailText(full.data.payload);
+          const code = otpFromText(`${header(full, 'Subject')}\n${body}`);
           if (code) return { code, id: m.id, receivedAt };
+          seen.add(`${label} [코드 못 읽음 · 본문 앞: ${maskDigits(body.slice(0, 200))}]`);
         }
       }
     } catch (e) {

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
     accountsFromEnv, otpFromText, otpQueries, otpMailUsable, otpNotBefore, mapOrder, runAccounts, is29cmKey,
-    pollOtp, isQuotaError, OTP_POLL_MS, OTP_BACKOFF_MS,
+    pollOtp, isQuotaError, OTP_POLL_MS, OTP_BACKOFF_MS, htmlToText, mailText, maskDigits,
 } from '../channel-bots/29cm/accounts.mjs';
 
 const SYNC = readFileSync(new URL('../channel-bots/29cm/sync.mjs', import.meta.url), 'utf8');
@@ -37,7 +37,7 @@ test('OTP 메일: 앞 계정이 쓴 메일·기준 시각 전 메일은 안 쓴�
 
     //  2번 계정은 1번 계정이 쓴 메일 시각보다 늦은 메일만 — 재요청 쿨다운(이미 발송)이어도
     const now = 10 * 60_000, firstMailAt = now - 30_000;
-    assert.equal(otpNotBefore({ now, requested: false }), now - 120_000);
+    assert.equal(otpNotBefore({ now, requested: false }), now - 600_000, '쿨다운이면 10분 전부터');
     assert.equal(otpNotBefore({ now, requested: false, floor: firstMailAt }), firstMailAt + 1);
     assert.equal(otpNotBefore({ now, requested: true, floor: firstMailAt }), now - 10_000);
 
@@ -96,7 +96,7 @@ function fakeGmail(mails, { quotaAt = [] } = {}) {
             calls.push(['get', a.id, a.format]); hit();
             const m = mails.find(x => x.id === a.id);
             const headers = [{ name: 'Subject', value: m.subject }, { name: 'From', value: '29CM' }];
-            return { data: { internalDate: String(m.at), payload: a.format === 'full' ? { headers, body: { data: b64(m.body) } } : { headers } } };
+            return { data: { internalDate: String(m.at), payload: a.format === 'full' ? (m.payload ? { headers, ...m.payload } : { headers, body: { data: b64(m.body) } }) : { headers } } };
         },
     } } };
     return { gmail, calls };
@@ -140,4 +140,50 @@ test('Gmail 쿼터: 쿼터 오류만 쉬고, 다른 오류는 바로 실패', as
     await assert.rejects(pollOtp(gmail, { now: c.now, sleep: c.sleep, log: quiet }), /invalid_grant/);
     assert.match(SYNC, /pollOtp\(gmailClient\(\)/);
     assert.ok(!/format: 'full'/.test(SYNC), 'sync.mjs 에 옛 full 반복 get 이 남지 않음');
+});
+
+test('Gmail 쿼터 반려1: full 조회가 429 면 같은 메일을 15초 뒤 다시 full 로 읽는다', async () => {
+    const c = clock();
+    const { gmail, calls } = fakeGmail([{ id: 'otp', at: 1e12, subject: '[29CM] 인증', body: '인증번호는 482913 입니다' }], { quotaAt: [3] });
+    const sleeps = []; const sleep = async ms => { sleeps.push(ms); await c.sleep(ms); };
+    const hit = await pollOtp(gmail, { notBeforeMs: 1e12 - 5_000, now: c.now, sleep, log: quiet });
+    assert.equal(hit.code, '482913');
+    assert.deepEqual(sleeps, [15000]);
+    assert.equal(calls.filter(x => x[0] === 'get' && x[2] === 'full').length, 2, 'full 429 → 재시도 1번');
+});
+
+//  run 39736618139 의 메일 모양 — text/html 만, base64url, 코드가 '인증번호'와 멀리 떨어진 표 칸 안
+const MUSINSA_HTML = `<html><head><style>td{color:#333333;font-size:14px}</style></head><body>
+<table><tr><td>[무신사 · 29cm 통합계정] 2차인증 인증번호 안내</td></tr>
+<tr><td>안녕하세요. 요청하신 <b>2차 인증</b>을 위한 인증번호를 안내드립니다. 아래 번호를 화면에 입력해 주세요.</td></tr>
+<tr><td style="font-size:32px;letter-spacing:4px;color:#000000"><strong>&nbsp;482913&nbsp;</strong></td></tr>
+<tr><td>발송 2026.10.22 15:58 · 유효시간 3분</td></tr></table></body></html>`;
+const b64url = t => Buffer.from(t, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+test('인증번호 추출: HTML 만 있는 메일(base64url·태그 사이·색상코드 섞임)에서 코드를 읽는다', async () => {
+    const payload = { mimeType: 'multipart/alternative', parts: [{ mimeType: 'text/html', body: { data: b64url(MUSINSA_HTML) } }] };
+    const text = mailText(payload);
+    assert.ok(!/<|style|#000000/.test(text), '태그·style 이 걷힘');
+    assert.equal(otpFromText(text), '482913');
+    assert.equal(htmlToText('a&nbsp;&amp;&#52;&#x32;<br>b'), 'a &42 b');
+    assert.equal(otpFromText('주문번호 2026-102215 · 색 #123456 · 15:58'), null, '날짜·색상코드 조각은 코드 아님');
+
+    const c = clock();
+    const { gmail } = fakeGmail([{ id: 'm', at: 1e12, subject: '[무신사 · 29cm 통합계정] 2차인증 인증번호 안내 메일입니다.', payload }]);
+    const hit = await pollOtp(gmail, { notBeforeMs: 1e12 - 600_000, now: c.now, sleep: c.sleep, log: quiet });
+    assert.equal(hit.code, '482913');
+});
+
+test('못 찾으면 이유를 남긴다 — 기준 전이면 몇 초 먼저인지, 코드 못 읽으면 본문 앞(숫자 가림)', async () => {
+    const c = clock(), errs = [];
+    const { gmail } = fakeGmail([
+        { id: 'old', at: 1e12 - 700_000, subject: '옛 메일', body: '인증번호 111111' },
+        { id: 'x', at: 1e12, subject: '[29CM] 안내', body: '안내 메일 1234567 입니다' },
+    ]);
+    await assert.rejects(pollOtp(gmail, { timeoutMs: 10_000, notBeforeMs: 1e12 - 600_000, now: c.now, sleep: c.sleep, log: { error: (...x) => errs.push(x.join(' ')) } }), /못 찾음/);
+    const last = errs.at(-1);
+    assert.match(last, /옛 메일 \[기준보다 100초 먼저 옴/);
+    assert.match(last, /\[코드 못 읽음 · 본문 앞: 안내 메일 \*{7} 입니다\]/);
+    assert.ok(!/111111|1234567/.test(last), '로그에 숫자 원문 없음');
+    assert.equal(maskDigits('a 482913 b 12'), 'a ****** b 12');
 });
