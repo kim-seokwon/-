@@ -143,6 +143,6 @@ test('style.css: 860px 이하에서 .pp-cols.four 도 1열(4열 선택자가 모
     const at = css.indexOf('@media (max-width: 860px)');
     assert.ok(at > css.indexOf('.pp-cols.four{grid-template-columns:repeat(4,1fr)}'), '모바일 규칙이 4열 규칙보다 뒤에 있어야 한다');
     const block = css.slice(at, css.indexOf('\n}', at));
-    assert.match(block, /\.pp-cols\.four\{grid-template-columns:1fr\}/);
+    assert.match(block, /\.pp-cols,\.pp-cols\.four,\.pp-cols\.two\{grid-template-columns:1fr\}/);
     assert.match(block, /\.pp-cols\.four \.pp-c\{border-left:0;border-top:1px solid #d6cfc0;padding:14px 0\}/);
 });

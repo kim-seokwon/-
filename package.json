@@ -16,7 +16,9 @@
     "test:sales-agg": "node --test tests/sales-agg.test.mjs",
     "test:security-087-088": "node --test tests/security-087-088.test.mjs",
     "test:weekly-meeting": "node --test tests/weekly-meeting.test.mjs",
-    "test:competitor-board": "node --test tests/competitor-board.test.mjs"
+    "test:competitor-board": "node --test tests/competitor-board.test.mjs",
+    "test:paper-edition": "node --test tests/paper-edition.test.mjs",
+    "test:paper-cards": "node --test tests/paper-cards.test.mjs"
   },
   "devDependencies": {
     "vite": "^5.0.0"

@@ -6,6 +6,8 @@ import {
     RANK_TOP, engOf, topPosts, nameOfPost, rankCompetitors, snapStart, reactionStats,
     searchName, brandIssues, upcomingOpenings,
 } from './competitorBoard.js';
+import { leadStory, openCalendar, topWorked, brandMoves, weekSummary } from './paperEdition.js';
+import { cardDeck } from './paperCards.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
     garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
@@ -971,6 +973,17 @@ class BhasApp {
         let el = document.getElementById('paper-slot');
         if (!el) { el = document.createElement('div'); el.id = 'paper-slot'; document.body.appendChild(el); }
         el.innerHTML = this.paper ? this._paperHTML() : '';
+        const t = document.getElementById('pc-track');
+        if (t && this.paper && this.paper.idx) t.scrollLeft = this.paper.idx * t.clientWidth;
+        if (t) { const a = t.closest('.pc').querySelector('.pc-arw[data-d="-1"]'); if (a) a.disabled = !this.paper.idx; }
+        if (!this._pcKeys) {
+            this._pcKeys = true;
+            document.addEventListener('keydown', e => {
+                if (!this.paper || !document.getElementById('pc-track') || /INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')) return;
+                if (e.key === 'ArrowRight') { e.preventDefault(); this.pcGo(1); }
+                if (e.key === 'ArrowLeft') { e.preventDefault(); this.pcGo(-1); }
+            });
+        }
     }
 
     //  product_id 로 걸린 표를 한 번에 받아 상품별로 나눠 담는다.
@@ -13562,29 +13575,35 @@ class BhasApp {
     }
     //  로그인 직후 자동으로 펼치던 것은 껐다(10-14). 뉴스 화면의 '오늘 조간 펼치기'로만 연다.
     async openPaper(auto) {
-        this.paper = { loading: true, data: null, auto: !!auto };
+        this.paper = { loading: true, data: null, auto: !!auto, idx: 0 };
         this.requestRender();
         try {
             //  경쟁사 인스타 — 7일 반응 상위 + 앞으로 7일 오픈 일정(그 공지는 보통 1~2주 전에 올라온다)
             const igSince = new Date(Date.now() - 14 * 864e5).toISOString();
-            const [{ data, error }, cols, ig, cps] = await Promise.all([
+            const snapSince = new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 10);
+            const [{ data, error }, cols, ig, cps, sn] = await Promise.all([
                 this.supabase.rpc('morning_brief', { p_days: 7 }),   // 날짜·새 소식 수·중고 칸은 그대로 쓴다
                 this._newsColumns(),
                 this.supabase.from('news_items').select('*').eq('kind', 'competitor_post')
                     .gte('published_at', igSince).order('published_at', { ascending: false }).limit(500),
                 this.supabase.from('competitors').select('id,name,handle'),
+                this.supabase.from('competitor_snapshots').select('competitor_id,snap_date,followers').gte('snap_date', snapSince),
             ]);
             if (error) throw error;
             const igPosts = ig.data || [], comps = cps.data || [];
-            const named = p => ({ ...p, author: nameOfPost(p, comps) || p.author });
+            //  지면 짜기 — 집계는 코드, 문장은 템플릿(paperEdition.js)
+            const cal = openCalendar(igPosts, comps);
+            const worked = topWorked(igPosts, comps);
+            const ed = { lead: leadStory(igPosts, comps), cal, worked,
+                moves: brandMoves(igPosts, comps, (sn && sn.data) || []),
+                summary: weekSummary(cal, topWorked(igPosts, comps, { top: 10 })) };
             const atOf = x => ({ ...x, at_ts: x.published_at || x.created_at, no_date: !x.published_at });
             const since = days => Date.now() - days * 864e5;
             const inWin = days => x => new Date(x.at_ts).getTime() >= since(days);
             this.paper.data = { ...data,
                 customer: cols.customer.map(atOf).filter(inWin(PAPER_WIN.customer)),
                 compete: cols.compete.map(atOf).filter(inWin(PAPER_WIN.compete)),
-                insta: topPosts(igPosts).map(named).map(atOf),
-                opens: upcomingOpenings(igPosts, comps) };
+                ed };
         } catch (e) { this.paper.err = e.message || String(e); }
         this.paper.loading = false;
         this.requestRender();
@@ -13637,83 +13656,90 @@ class BhasApp {
             .filter(Boolean).join(' · ');
 
         const customer = d.customer || [],
-              compete = this._oneStoryEach(d.compete || []),
-              insta = d.insta || [], opens = d.opens || [];
+              compete = this._oneStoryEach(d.compete || []);
 
-        //  1면은 사진이 있는 고객 글을 먼저 본다. 없으면 가장 최근 소식.
-        const leadPool = [customer[0], compete[0]].filter(Boolean);
-        const lead = customer.find(x => x.thumb) || leadPool.sort((a, b) => ageOf(a) - ageOf(b))[0] || null;
-        const leadFrom = customer.includes(lead) ? '고객 반응' : '경쟁·유통';
-        const drop = (arr) => arr.filter(x => x !== lead);
-        const cus2 = drop(customer), com2 = drop(compete);
-
-        //  칸 안의 첫 기사는 사진을 달고 크게, 나머지는 제목 줄로 — 신문 지면의 결
-        const bigItem = (x) => `<a class="pp-art" href="${esc(x.url)}" target="_blank" rel="noopener">
-            ${x.thumb ? `<div class="pp-cut"><img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer"
-                onerror="this.closest('.pp-cut').remove()"></div>` : ''}
-            <b>${esc(noEmo(x.title) || '제목 없음')}${ageOf(x) <= 1 && !x.no_date ? '<em class="pp-new">NEW</em>' : ''}</b>
-            ${x.snippet ? `<p>${esc(noEmo(x.snippet).slice(0, 110))}</p>` : ''}
-            <span class="pp-by">${by(x)}</span>${react(x)}</a>`;
-        const item = (x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">
-            <span>${esc(noEmo(x.title) || '제목 없음')}${ageOf(x) <= 1 && !x.no_date ? '<em class="pp-new">NEW</em>' : ''}</span>
-            <em>${by(x)}</em>${react(x)}</a></li>`;
-        const WIN = { '고객 반응': '최근 2주', '경쟁·유통': '최근 3주', '중고로 올라온 우리 옷': '최근 7일', '경쟁사 인스타': '7일 · 반응순' };
+        const E = d.ed || {};
         const won = v => v ? `${Number(v).toLocaleString()}원` : '';
-        const resale = (d.resale || []).map(x => ({ ...x, thumb: (x.meta || {}).thumb,
-            snippet: [won((x.meta || {}).price), x.snippet].filter(Boolean).join(' · ') }));
-        const col = (kick, list) => `<section class="pp-c">
-            <div class="pp-kick">${kick}<em>${WIN[kick] || ''}</em></div>
-            ${list.length ? `${bigItem(list[0])}${list.length > 1
-                    ? `<ul class="pp-l news">${list.slice(1).map(item).join('')}</ul>` : ''}`
-                : (lead && leadFrom === kick
-                    ? `<p class="pp-none">오늘은 1면에 실었습니다.</p>`
-                    : `<p class="pp-none">${WIN[kick] || '최근'} 안에는 없습니다.</p>`)}
-        </section>`;
+        const deck = cardDeck(E, {
+            date: longDate,
+            issues: compete.slice(0, 3).map(x => ({ title: noEmo(x.title) || '제목 없음', by: by(x), url: x.url })),
+            customer: customer.map(x => ({ title: noEmo(x.title) || '제목 없음', url: x.url })),
+            resale: (d.resale || []).map(x => ({ title: [noEmo(x.title), won((x.meta || {}).price)].filter(Boolean).join(' · '), url: x.url })),
+        });
+        P.n = deck.length;
 
-        return `<div class="pp-back">
-        <div class="pp" onclick="event.stopPropagation()">
-            <div class="pp-scroll">
-                <header class="pp-mast">
-                    <div class="pp-ml">제${this._paperNo(d.date || this._ymdSeoul()).toLocaleString()}호<br>새 소식 ${Number(d.fresh || 0).toLocaleString()}건</div>
-                    <h1>아동복 조간</h1>
-                    <div class="pp-mr">${esc(longDate)}<br>인스타그램 · 네이버 · 구글</div>
-                </header>
-                <div class="pp-rule"></div>
+        //  ── 카드 한 장 = 큰 제목 1줄 + 사진 + 핵심 2~3줄 + 큰 숫자 + 작은 출처. 좌우로 넘긴다(스와이프·←→·버튼).
+        const src = url => url ? `<a class="pc-src" href="${esc(url)}" target="_blank" rel="noopener">원문 →</a>` : '';
+        const pic = (url, cls) => url ? `<img class="${cls}" src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+        const stats = st => st.length ? `<div class="pc-stats">${st.map(x => `<div${x.k === '평소 대비' ? ' class="r"' : ''}><b>${esc(x.v)}</b><span>${esc(x.k)}</span></div>`).join('')}</div>` : '';
+        const head = c => `<div class="pc-k">${esc(c.kicker)}</div><h2 class="pc-t">${esc(c.title)}</h2>`;
+        const card = (c, i) => {
+            const inner = c.type === 'cover' ? `
+                    <div class="pc-mast">아동복 조간</div><div class="pc-date">${esc(c.date)}</div>
+                    <div class="pc-cnt">오늘 볼 것 <b>${c.count}장</b></div>
+                    <h2 class="pc-t big">${esc(c.title)}</h2>
+                    ${c.summary ? `<p class="pc-sum">${esc(c.summary)}</p>` : ''}
+                    <div class="pc-hint">옆으로 넘겨 보세요 →</div>`
+                : c.type === 'lead' || c.type === 'move' ? `${head(c)}
+                    ${c.img ? `<div class="pc-img">${pic(c.img, '')}</div>` : ''}
+                    ${stats(c.stats)}
+                    ${c.lines.map(l => `<p class="pc-l">${esc(l)}</p>`).join('')}${src(c.url)}`
+                : c.type === 'open' ? `${head(c)}
+                    <ul class="pc-rows open">${c.rows.map(r => `<li${r.today ? ' class="today"' : ''}>
+                        <span class="pc-d">${esc(r.day)}</span><b>${esc(r.when)}</b>
+                        <span class="pc-nm">${esc(r.name)} <i>${esc(r.kind)}</i><small>${esc(r.what)}</small></span></li>`).join('')}</ul>
+                    ${c.more ? `<p class="pc-more">외 ${c.more}건</p>` : ''}`
+                : c.type === 'rest' ? `${head(c)}
+                    <ul class="pc-rows rest">${c.rows.map(r => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">
+                        <b>${esc(r.name)}</b><span>글 ${r.count}</span></a></li>`).join('')}</ul>
+                    ${c.more ? `<p class="pc-more">외 ${c.more}곳</p>` : ''}`
+                : c.type === 'top' ? `${head(c)}
+                    <ol class="pc-rows top">${c.rows.map(r => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">
+                        <span class="pc-rk">${r.rank}</span>${pic(r.img, 'pc-th')}
+                        <span class="pc-tb"><b>${esc(r.name)}</b> <i>${esc(r.tags.join('+'))}</i> <em>${esc(r.slot)}</em>
+                        <span class="pc-rx">${esc(r.react)}</span><small>장치(추정) · ${esc(r.why)}</small></span></a></li>`).join('')}</ol>`
+                : c.type === 'issue' ? `${head(c)}
+                    <ol class="pc-rows issue">${c.rows.map(r => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">
+                        <b>${esc(r.title)}</b><small>${r.by}</small></a></li>`).join('')}</ol>`
+                : c.type === 'ours' ? `${head(c)}
+                    <div class="pc-ours">${c.cols.map(col => `<div><div class="pc-oh">${esc(col.label)} <b>${col.count}건</b></div>
+                        ${col.rows.length ? `<ul>${col.rows.map(r => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a></li>`).join('')}</ul>`
+                            : '<p class="pc-none">없습니다</p>'}</div>`).join('')}</div>`
+                : `<div class="pc-mast">오늘 조간 끝</div>
+                    ${c.summary ? `<p class="pc-sum">${esc(c.summary)}</p>` : ''}
+                    <p class="pc-foot">문장은 숫자로 자동으로 씁니다(AI 아님) · 우리 계정 글·중복·날짜 없는 기사는 뺍니다</p>
+                    <button class="pp-done" onclick="app.closePaper()">다 봤습니다 — 업무 시작</button>`;
+            return `<section class="pc-card ${c.type}" data-i="${i}" aria-label="${i + 1}/${deck.length}">${inner}</section>`;
+        };
 
-                ${lead ? `<div class="pp-one">
-                    <a class="pp-top" href="${esc(lead.url)}" target="_blank" rel="noopener">
-                        <div class="pp-topk">${leadFrom}</div>
-                        <h2 class="pp-head">${esc(noEmo(lead.title) || '제목 없음')}</h2>
-                        <div class="pp-byline">${by(lead)}</div>
-                    </a>
-                    <div class="pp-onebody">
-                        ${lead.thumb ? `<a class="pp-fig" href="${esc(lead.url)}" target="_blank" rel="noopener">
-                            <img src="${esc(lead.thumb)}" alt="" referrerpolicy="no-referrer" onerror="this.closest('.pp-fig').remove()">
-                            <figcaption>${esc(lead.author || '')} ${when(lead)}</figcaption></a>` : ''}
-                        ${lead.snippet ? `<p class="pp-dek${/^[A-Za-z가-힣]/.test(noEmo(lead.snippet)) ? ' cap' : ''}">${esc(noEmo(lead.snippet).slice(0, 320))}</p>` : ''}
-                        ${react(lead) ? `<div class="pp-leadreact">${react(lead)}</div>` : ''}
-                    </div>
-                </div>` : `<h2 class="pp-head">아직 들어온 소식이 없습니다</h2>`}
-
-                ${opens.length ? `<div class="pp-opens">
-                    <div class="pp-kick">이번주 경쟁사 오픈<em>앞으로 7일 · 경쟁사 글에서 자동으로 뽑음</em></div>
-                    <ul>${opens.map(o => `<li><a href="${esc(o.url)}" target="_blank" rel="noopener">
-                        <b>${esc(o.label)}</b><span>${esc(o.name)}</span></a></li>`).join('')}</ul>
-                </div>` : ''}
-                <div class="pp-rule thin"></div>
-                <div class="pp-cols four">
-                    ${col('고객 반응', cus2)}
-                    ${col('경쟁·유통', com2)}
-                    ${col('경쟁사 인스타', insta)}
-                    ${col('중고로 올라온 우리 옷', resale)}
-                </div>
-                <div class="pp-rule thin"></div>
-                <div class="pp-foot">
-                    <span>고객 반응은 2주, 경쟁·유통은 3주, 경쟁사 인스타는 7일 치를 싣습니다 · 우리 계정 글·중복·무관·날짜 없는 기사는 뺍니다</span>
-                    <button class="pp-done" onclick="app.closePaper()">다 봤습니다 — 업무 시작</button>
-                </div>
+        return `<div class="pp-back pc-back">
+        <div class="pc" onclick="event.stopPropagation()">
+            <div class="pc-bar"><span>아동복 조간 · ${esc(longDate)}</span>
+                <span class="pc-pg">${(P.idx || 0) + 1} / ${deck.length}</span>
+                <button class="pc-x" onclick="app.closePaper()" aria-label="닫기">✕</button></div>
+            <div class="pc-track" id="pc-track" onscroll="app._pcScroll(this)">${deck.map(card).join('')}</div>
+            <div class="pc-nav">
+                <button class="pc-arw" data-d="-1" onclick="app.pcGo(-1)" aria-label="이전">‹</button>
+                <div class="pc-dots">${deck.map((_, i) => `<i class="${i === (P.idx || 0) ? 'on' : ''}"></i>`).join('')}</div>
+                <button class="pc-arw" data-d="1" onclick="app.pcGo(1)" aria-label="다음">›</button>
             </div>
         </div></div>`;
+    }
+    //  카드 넘기기 — 다시 그리지 않고 가로 스크롤만 옮긴다(사진을 다시 받지 않게)
+    pcGo(dir) {
+        const t = document.getElementById('pc-track'); if (!t || !this.paper) return;
+        const i = Math.max(0, Math.min((this.paper.n || 1) - 1, Math.round(t.scrollLeft / t.clientWidth) + dir));
+        t.scrollTo({ left: i * t.clientWidth, behavior: 'smooth' });
+    }
+    _pcScroll(t) {
+        if (!this.paper) return;
+        const i = Math.round(t.scrollLeft / t.clientWidth); if (i === this.paper.idx) return;
+        this.paper.idx = i;
+        const box = t.closest('.pc');
+        box.querySelectorAll('.pc-dots i').forEach((d, k) => d.classList.toggle('on', k === i));
+        box.querySelector('.pc-pg').textContent = `${i + 1} / ${this.paper.n}`;
+        box.querySelector('.pc-arw[data-d="-1"]').disabled = i === 0;
+        box.querySelector('.pc-arw[data-d="1"]').disabled = i === this.paper.n - 1;
     }
 
     // ── 뉴스 (분류 / 목록 / 상세) ─────────────────────────────
