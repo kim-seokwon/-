@@ -206,7 +206,7 @@ async function fetchWindow(page, fromDate, toDate) {
   page.off('response', handler);
   if (!fetchWindow.logged) {   // 첫 창만: 어디로 갔고 어떤 API 가 왔는지(값은 안 찍음)
     fetchWindow.logged = true;
-    console.log(`[29cm] 주문화면 url=${page.url()} · 잡힌 응답 ${captured.length}개 · 키=${captured.map(b => Object.keys(b || {}).join('/') + ':' + Object.keys(b?.data || {}).join('/')).join(' ; ').slice(0, 300)}`);
+    console.log(`[29cm] 주문화면 url=${page.url()} · 잡힌 응답 ${captured.length}개 · 키=${captured.map(b => Object.keys(b || {}).join('/') + ':' + Object.keys(b?.data || {}).join('/') + ` result=${b?.result} code=${b?.errorCode || b?.error_code} msg=${String(b?.message || '').slice(0, 120)} data=${Array.isArray(b?.data) ? 'array' + b.data.length : typeof b?.data}`).join(' ; ').slice(0, 500)}`);
     console.log('[29cm] 이 화면의 API:', seen.filter(u => /api/.test(u)).slice(0, 15).join(' , '));
   }
   const body = captured.find(b => b?.data);
