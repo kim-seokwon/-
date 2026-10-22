@@ -198,10 +198,10 @@ export function mapOrder(order, mallKey) {
     buyer_name: f.orderName ?? null,
     receiver_name: f.receiverName ?? null,
     pay_amount: live.length ? (sum('saleAmount') || sum('sellAmount')) : 0,
-    order_amount: sum('sellAmount') || null,
+    order_amount: sum('sellAmount'),
     channel_status: `${code}:` + [...new Set(items.map(l => l.orderStatusDescription).filter(Boolean))].join(','),
     invoice_no: f.invoiceNo ?? null, courier: f.deliveryCompanyName ?? null,
-    status: 'new', raw: { orderSerial: orderKey(f), items },
+    raw: { orderSerial: orderKey(f), items },   // status 는 안 보낸다 — 재수집 때 직원 처리상태를 덮지 않게(신규는 DB 기본 new)
   };
 }
 
