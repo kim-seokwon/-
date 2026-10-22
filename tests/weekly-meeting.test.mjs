@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as M from '../meetingNote.js';
+//  main.js 에서 떼어 온 메서드가 쓰는 도우미(메모 정리 — 바뀐 게 없으면 저장 안 함)
+import { changedFields, bodyWithText } from '../noteTidy.js'; // eslint-disable-line no-unused-vars
 
 const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const method = (name) => {

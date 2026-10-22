@@ -5065,3 +5065,13 @@ b.sp-nm.dup{color:#ff453a}
   .nm-cb{padding:8px 10px 10px}
   .nm-head{font-size:13px}
 }
+
+/* 메모 목록 — 시즌 단계 메모는 시즌마다 한 줄(누르면 단계 펼침) */
+.nt-row.nt-seag b{gap:6px}
+.nt-row.nt-seag .nt-seag-c{font-size:11px;color:var(--text-muted,#8e8e93);transition:transform .15s}
+.nt-row.nt-seag.open .nt-seag-c{transform:rotate(90deg)}
+.nt-row.nt-seag .ph-calendar-blank{color:#0a84ff}
+.nt-row.nt-seag em{margin-left:auto;font-style:normal;font-size:11px;font-weight:600;color:var(--text-muted,#8e8e93);flex:none;padding-left:8px}
+.nt-row.nt-kid{padding-left:30px;border-top-color:transparent}
+.nt-row.nt-kid b{font-weight:600}
+.mbtn[disabled]{opacity:.55;cursor:progress}

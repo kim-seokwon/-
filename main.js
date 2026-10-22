@@ -19,6 +19,7 @@ import {
     MEETING_FOLDER, HUMAN_HEAD, kstToday, mondayOf, addDays, dataWeekOf, meetingTitle, isMeeting, findMeeting,
     downMalls, prevTodoSummary, buildBody, regenerateBody, humanPart, newMeetingMeta, confirmMeetingMeta, canRegenerate,
 } from './meetingNote.js';
+import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
 const __BUILD__ = (typeof __BUILD_TIME__ !== 'undefined') ? __BUILD_TIME__ : '개발';
@@ -3312,8 +3313,9 @@ class BhasApp {
         const p = (mockData.products || []).find(x => String(x.id) === String(pid));
         let n = this._seasonTodoNote(pid);
         if (!t && !n) return;
-        const body = this._joinNote(n ? this._noteMeta(n) : {}, t);
+        const body = n ? bodyWithText(n.body, t) : this._joinNote({}, t);
         if (n) {
+            if (!changedFields(n, { body })) return;      // 그대로면 저장하지 않는다(update 만 해도 updated_at 이 오늘이 된다)
             n.body = body; n.updated_at = new Date().toISOString();
             const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
             if (error) this.showToast('할 일 저장 실패: ' + error.message);
@@ -7676,13 +7678,19 @@ class BhasApp {
     }
     async saveNote() {
         const n = this._curNote(); if (!n) return;
-        const t = document.getElementById('note-title')?.value ?? n.title;
+        //  제목 칸은 그 칸이 그려진 메모 것만 읽는다 — 다른 메모를 누르면 다시 그리는 사이 옛 칸이 blur 되며
+        //  새로 고른 메모 제목을 앞 메모 제목으로 덮어썼다
+        const ti = document.getElementById('note-title');
+        const t = ti && ti.dataset.id === String(n.id) ? ti.value : n.title;
         const typed = this._noteTyped();
-        const b = typed == null ? n.body : this._joinNote(this._noteMeta(n), typed);
-        if (t === n.title && b === n.body) return;
-        n.title = t; n.body = b; n.updated_at = new Date().toISOString();
+        //  속성 줄은 글자 그대로 두고 글만 바꾼다 — 다시 직렬화하면 키 순서만 바뀌어도 '바뀐 것'이 되어
+        //  열어 보기만 한 메모가 저장되고 updated_at(트리거)이 오늘로 바뀌었다
+        const b = typed == null ? n.body : bodyWithText(n.body, typed);
+        const patch = changedFields(n, { title: t, body: b });
+        if (!patch) return;
+        Object.assign(n, patch); n.updated_at = new Date().toISOString();
         try {
-            const { error } = await this.supabase.from('notes').update({ title: t, body: b }).eq('id', n.id);
+            const { error } = await this.supabase.from('notes').update(patch).eq('id', n.id);
             if (error) throw error;
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
@@ -7741,6 +7749,7 @@ class BhasApp {
     async renameNote(id) {
         const n = (this.noteList || []).find(x => String(x.id) === String(id)); if (!n) return;
         const v = await this.showPrompt('메모 이름', n.title || ''); if (v === null) return;
+        if (!changedFields(n, { title: v.trim() })) return;
         n.title = v.trim(); this.requestRender();
         try { await this.supabase.from('notes').update({ title: n.title }).eq('id', n.id); }
         catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
@@ -7761,7 +7770,7 @@ class BhasApp {
         const n = (this.noteList || []).find(x => String(x.id) === String(id)); if (!n) return;
         const folders = [...new Set((this.noteList || []).map(x => x.folder || '메모'))];
         const v = await this.showPrompt(`옮길 폴더 이름\n(있는 폴더: ${folders.join(', ')})`, n.folder || '메모');
-        if (v === null || !v.trim()) return;
+        if (v === null || !v.trim() || !changedFields(n, { folder: v.trim() })) return;
         n.folder = v.trim(); this.requestRender();
         try { await this.supabase.from('notes').update({ folder: n.folder }).eq('id', n.id); }
         catch (e) { this.showToast('옮기기 실패: ' + (e.message || e)); }
@@ -7852,6 +7861,11 @@ class BhasApp {
         try { await this.supabase.from('notes').update({ folder: v.trim() }).eq('folder', oldName); }
         catch (e) { this.showToast('이름 바꾸기 실패: ' + (e.message || e)); }
     }
+    toggleNoteSeaRow(seaId, wasOpen) {
+        if (this._bandJust && Date.now() - this._bandJust < 250) return;   // 끌어 훑고 놓은 클릭은 접기/펼치기 아님
+        this.noteSeaRows = { ...(this.noteSeaRows || {}), [seaId]: !wasOpen };
+        this.requestRender();
+    }
     selectNote(id) { this.saveNote(); this._nbDrop(); this.noteSel = id; this.notePreview = false; this.requestRender(); }
     togglePrivFolders() { this.notePrivOpen = this.notePrivOpen === false; this.requestRender(); }
     toggleNoteSeasons() { this.noteSeaOpen = !this.noteSeaOpen; this.requestRender(); }
@@ -7907,12 +7921,14 @@ class BhasApp {
         await this.saveNote();                 // 쓰던 글을 먼저 담는다
         const meta = this._noteMeta(n);
         meta[key] = value;
-        n.body = this._joinNote(meta, this._noteText(n));
+        const want = { body: this._joinNote(meta, this._noteText(n)) };
+        if (key === 'proj') want.product_id = value || null;
+        const patch = changedFields(n, want);
+        if (!patch) return;                    // 같은 값을 다시 고른 것 — 저장하지 않는다
+        Object.assign(n, patch);
         n.updated_at = new Date().toISOString();
         this.requestRender();
         try {
-            const patch = { body: n.body };
-            if (key === 'proj') { patch.product_id = value || null; n.product_id = value || null; }
             const { error } = await this.supabase.from('notes').update(patch).eq('id', n.id);
             if (error) throw error;
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
@@ -7995,6 +8011,7 @@ class BhasApp {
     }
     async setNoteOpen(v) {
         const n = this._curNote(); if (!n) return;
+        if (!changedFields(n, { scope: v, owner: v === 'private' && !n.owner ? this._me() : n.owner })) return;
         n.scope = v; if (v === 'private' && !n.owner) n.owner = this._me();
         this.requestRender();
         try {
@@ -8206,11 +8223,12 @@ class BhasApp {
     async linkNoteSeason(pid) {
         const n = this._curNote(); if (!n) { this.showToast('메모를 먼저 여세요'); return; }
         const sea = this._seasons().find(p => String(p.id) === String(pid));
-        n.product_id = pid;
         const meta = this._noteMeta(n); meta.proj = pid;
-        n.body = this._joinNote(meta, this._noteText(n));
+        const patch = changedFields(n, { product_id: pid, body: this._joinNote(meta, this._noteText(n)) });
+        if (!patch) { this.showToast(`이미 '${(sea && sea.name) || '시즌'}' 에 붙어 있습니다`); return; }
+        Object.assign(n, patch);
         const { error } = await this.supabase.from('notes')
-            .update({ product_id: pid, body: n.body }).eq('id', n.id);
+            .update(patch).eq('id', n.id);
         if (error) { this.showToast('붙이지 못했습니다: ' + error.message); return; }
         this.requestRender();
         this.showToast(`'${(sea && sea.name) || '시즌'}' 에 붙였습니다`);
@@ -8689,7 +8707,7 @@ class BhasApp {
     //  지금 화면에 쓰여 있는 본문 전체 (원문칸이면 그 값, live 면 줄을 이어서)
     _noteTyped() {
         const raw = document.getElementById('note-raw');
-        if (raw) return raw.value;
+        if (raw) return raw.dataset.id === String(this._curNote()?.id) ? raw.value : null;   // 다른 메모의 칸이면 안 읽는다
         const cur = this._curNote();
         if (this._nbLines && cur && this._nbFor === cur.id) { this._nbSync(); return this._nbLines.join('\n'); }
         return null;
@@ -9119,7 +9137,20 @@ class BhasApp {
         return this._ymd(d);
     }
     //  고른 단계를 메모로 깐다 — 폴더는 브랜드, 시즌 속성이 붙고, 본문엔 할 일이 들어간다
-    async makeSeasonSteps() {
+    //  버튼 연타·동시 호출이 와도 한 번만 돈다. 도는 동안 버튼은 잠긴다(_stepPickHTML 의 stepMaking)
+    makeSeasonSteps() {
+        if (!this.stepPick) return Promise.resolve();
+        return once(this._stepOnce || (this._stepOnce = new Map()), 'make', async () => {
+            this.stepMaking = true; this._paintStepPick();
+            try { await this._makeSeasonStepsRun(); }
+            finally { this.stepMaking = false; if (this.stepPick) this._paintStepPick(); }
+        });
+    }
+    //  시즌 단계 메모인가 — season(product_id/proj) + 단계 표시(step · season-home · 옛 메모는 단계 만들기 흔적+정확한 제목)
+    _stageInfo(n) {
+        return stageOf(n, this._noteMeta(n), { seasons: this._seasons() || [], steps: this.seasonSteps || [] });
+    }
+    async _makeSeasonStepsRun() {
         const pk = this.stepPick; if (!pk) return;
         const creating = !pk.id;
         const makeHome = creating || pk.homeMade === false;
@@ -9152,14 +9183,31 @@ class BhasApp {
         const brand = (mockData.brands || []).find(b => String(b.id) === String(sea.brand_id));
         const chosen = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
         if (!chosen.length && !makeHome) { this.showToast('고른 단계가 없습니다'); return; }
+        //  같은 시즌+단계 메모가 이미 있으면 만들지 않는다. 화면 목록은 덜 불렸을 수 있어 DB 에서도 한 번 본다
+        let have = (this.noteList || []).filter(n => String(n.product_id || '') === String(sea.id));
+        try {
+            const r = await this.supabase.from('notes').select('id,title,body,product_id,pinned,created_at').eq('product_id', sea.id);
+            if (!r.error && r.data) have = [...have, ...r.data];
+        } catch (_e) { /* 못 읽으면 화면 목록만으로 거른다 */ }
+        const plan = planStageRows(have, sea.id, chosen, n => this._stageInfo(n));
+        const homeNeeded = makeHome && !plan.homeExists;
+        if (!plan.make.length && !homeNeeded) {
+            if (makeHome) pk.homeMade = true;
+            this.stepPick = null; this.noteFolder = 'f:' + (brand ? brand.name : '공용'); this.noteSea = String(sea.id);
+            this.closeStepPick();
+            this.showToast(`${sea.name} · 고른 단계 메모가 이미 다 있습니다`);
+            this.switchView('notes');
+            return;
+        }
         //  '샘플·제작' 처럼 kind='items' 인 단계는 메모가 아니라 제품리스트에서 하는 일이다.
         //  메모를 만들지 않고, 만들기가 끝나면 그 시즌의 제품리스트를 열어 준다.
-        const steps = chosen;          // 샘플·제작도 페이지를 만든다. 그 페이지 안에 제품리스트가 붙는다.
+        const steps = plan.make;       // 샘플·제작도 페이지를 만든다. 그 페이지 안에 제품리스트가 붙는다. 이미 있는 단계는 뺐다
         const folder = brand ? brand.name : '공용';
         const me = this.currentUser?.name || null;
         const rows = steps.map(st => {
             const due = this._stepDueOf(st);
-            const meta = { proj: String(sea.id), status: '요청' };
+            //  step = 단계 id — 목록에서 시즌 한 줄로 묶고, 다음에 같은 단계를 또 만들지 않는 기준
+            const meta = { proj: String(sea.id), status: '요청', step: String(st.id) };
             if (due) meta.due = due;
             //  제품리스트와 묶이는 단계는 페이지 안에 제품표가 뜨도록 표시해 둔다
             if (st.kind === 'items') meta.embed = 'items';
@@ -9171,7 +9219,7 @@ class BhasApp {
                 owner: this._me(), created_by: me,
             };
         });
-        if (makeHome) {
+        if (homeNeeded) {
             const homeMeta = { proj: String(sea.id), status: '요청', embed: 'season-home' };
             if (pk.start) homeMeta.start = pk.start;
             if (pk.open) homeMeta.due = pk.open;
@@ -9196,7 +9244,9 @@ class BhasApp {
             this.stepPick = null;
             this.noteFolder = 'f:' + folder; this.noteSea = String(sea.id);
             this.closeStepPick();
-            this.showToast(`${sea.name} · 기본 페이지와 단계 ${Math.max(0, rows.length - (makeHome ? 1 : 0))}개를 만들었습니다`);
+            const made = rows.length - (homeNeeded ? 1 : 0);
+            this.showToast(`${sea.name} · ${homeNeeded ? '기본 페이지와 ' : ''}단계 ${made}개를 만들었습니다`
+                + (plan.skip.length ? ` (이미 있는 ${plan.skip.length}개는 건너뜀)` : ''));
             this.switchView('notes');
         } catch (e) { this.showToast('만들지 못했습니다: ' + (e.message || e)); }
     }
@@ -9254,22 +9304,26 @@ class BhasApp {
                     <span>${(() => { const c = this._stepsFor(sea.brand_id).filter(x => pk.on.has(x.id));
                         const ni = c.filter(x => x.kind !== 'items').length, it = c.length - ni;
                         return `${ni}개 페이지를 만듭니다${it ? ' · 샘플·제작은 제품리스트에서 합니다' : ''} · 각 페이지 안에 [ ] 할 일이 들어갑니다`; })()}</span>
-                    <button class="mbtn pri" onclick="app.makeSeasonSteps()">${isNew ? "시즌 만들기" : "만들기"}</button>
+                    <button class="mbtn pri" onclick="app.makeSeasonSteps()"${this.stepMaking ? ' disabled aria-busy="true"' : ''}>${this.stepMaking ? '만드는 중…' : (isNew ? "시즌 만들기" : "만들기")}</button>
                 </div>
         </div>`;
     }
     // ── 메모 여러 개 고르기 — 끌어서 훑고, 한번에 옮기거나 지운다 ──
-    _picked() { if (!(this.noteMulti instanceof Set)) this.noteMulti = new Set(); return this.noteMulti; }
+    _picked() {
+        if (!(this.noteMulti instanceof Set)) this.noteMulti = new Set();
+        for (const id of this.noteMulti) if (id == null || id === '' || id === 'undefined') this.noteMulti.delete(id);   // 가짜 ID 가 일괄 이동·삭제로 가지 않게
+        return this.noteMulti;
+    }
     clearNotePick() { this.noteMulti = new Set(); this.requestRender(); }
     //  목록에서 마우스를 끌면 지나간 메모가 다 골라진다
     nbBandStart(ev) {
         if (ev.button !== 0) return;
         const box = ev.currentTarget;
-        const startRow = ev.target.closest('.nt-row');
+        const startRow = ev.target.closest('.nt-row[data-id]');   // 시즌 묶음 머리줄(data-id 없음)은 메모가 아니다
         const picked = this._picked();
         //  이미 고른 것을 끌면 '폴더로 옮기기' 다 — 훑기로 가로채지 않는다
         if (startRow && picked.has(startRow.dataset.id)) return;
-        const rows = [...box.querySelectorAll('.nt-row')];
+        const rows = [...box.querySelectorAll('.nt-row[data-id]')];
         const base = (ev.shiftKey || ev.metaKey || ev.ctrlKey) ? new Set(picked) : new Set();
         const x0 = ev.clientX, y0 = ev.clientY;
         let band = null, moved = false;
@@ -9313,7 +9367,7 @@ class BhasApp {
             this.requestRender(); return;
         }
         if (ev.shiftKey) {
-            const ids = [...document.querySelectorAll('.nt-row')].map(r => r.dataset.id);
+            const ids = [...document.querySelectorAll('.nt-row[data-id]')].map(r => r.dataset.id);
             const from = ids.indexOf(String(this.noteSel ?? this._noteShown));
             const to = ids.indexOf(String(id));
             if (from >= 0 && to >= 0) {
@@ -9601,18 +9655,37 @@ class BhasApp {
             String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
         //  고정한 메모는 맨 위 '고정됨' 묶음으로 따로 뺀다.
         //  안 그러면 날짜 묶음(어제/오늘) 사이에 끼어들어 '어제 → 오늘 → 어제' 처럼 같은 머리말이 두 번 찍힌다.
-        list.forEach(n => {
-            const b = n.pinned ? '고정됨' : bucket(n.updated_at);
-            if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
+        const rowHTML = (n, kid) => {
             //  목록은 이름만 — 날짜·본문 미리보기를 같이 깔면 눈이 어지러워 제목이 안 읽힌다.
             //  날짜는 위의 묶음 머리말(오늘/어제)이 이미 말해 준다.
             const td = this._noteTodos(n);
-            items += `<div class="nt-row${sel && n.id === sel.id ? ' on' : ''}${pick.has(String(n.id)) ? ' pick' : ''}"
+            //  시즌 줄 안에서는 '26FW 1차 · ' 를 떼고 단계 이름만
+            const sea = kid ? (this._seasons() || []).find(p => String(p.id) === String(kid)) : null;
+            const nm = n.title || '새 메모';
+            const shown = sea && nm.startsWith(sea.name + ' · ') ? nm.slice(sea.name.length + 3) : nm;
+            return `<div class="nt-row${kid ? ' nt-kid' : ''}${sel && n.id === sel.id ? ' on' : ''}${pick.has(String(n.id)) ? ' pick' : ''}"
                     data-id="${n.id}" oncontextmenu="app.noteMenu(event,'${n.id}')"
                     draggable="true" ondragstart="app.nbDragStart(event,'${n.id}')" title="끌어서 훑으면 여러 개를 고를 수 있습니다"
                     onclick="app.noteClick(event,'${n.id}')">
-                <b>${this._donut(td)}${esc(n.title || '새 메모')}</b>
+                <b>${this._donut(td)}${esc(shown)}</b>
             </div>`;
+        };
+        //  시즌 단계 메모(기본 페이지 + 단계)는 시즌마다 한 줄 — 누르면 단계 목록이 펼쳐진다.
+        //  묶음 자리는 그 시즌에서 가장 최근에 고친 메모 자리. 일반 메모 순서는 그대로
+        const seaOpen = this.noteSeaRows || {};
+        groupRows(list, n => this._stageInfo(n)).forEach(r => {
+            const lead = r.type === 'season' ? r.lead : r.note;
+            const b = lead.pinned ? '고정됨' : bucket(lead.updated_at);
+            if (b !== last) { last = b; items += `<div class="nt-grp">${esc(b)}</div>`; }
+            if (r.type === 'note') { items += rowHTML(r.note); return; }
+            const sea = (this._seasons() || []).find(p => String(p.id) === r.seaId);
+            const open = seaOpen[r.seaId] ?? !!(sel && this.noteSel && r.notes.some(n => n.id === sel.id));
+            const done = r.notes.filter(n => this._noteMeta(n).status === '완료').length;
+            items += `<div class="nt-row nt-seag${open ? ' open' : ''}" data-sea="${esc(r.seaId)}" role="button" aria-expanded="${open}"
+                    onclick="app.toggleNoteSeaRow('${esc(r.seaId)}',${open})" title="눌러서 단계 펼치기">
+                <b><i class="ph ph-caret-right nt-seag-c"></i><i class="ph ph-calendar-blank"></i>${esc((sea && sea.name) || '시즌')}<em>${done ? `${done}/` : ''}${r.notes.length}</em></b>
+            </div>`;
+            if (open) items += r.notes.map(n => rowHTML(n, r.seaId)).join('');
         });
         if (!items) items = `<div class="nt-none">메모 없음</div>`;
         const fold = (key, icon, label, n, color, brand) => {
@@ -9702,7 +9775,7 @@ class BhasApp {
                 <div class="nt-page">
                     <div class="nt-when">${esc(longWhen(sel.updated_at))}${sel.created_by ? ' · ' + esc(sel.created_by) : ''}</div>
                     <div class="nt-trow">
-                        <input id="note-title" class="nt-title" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
+                        <input id="note-title" class="nt-title" data-id="${esc(sel.id)}" value="${esc(sel.title || '')}" placeholder="제목" onblur="app.saveNote()">
                         <button class="nt-det${this.noteProps ? ' on' : ''}" onclick="app.toggleNoteProps()"
                             title="상태·날짜·담당자·시즌">상세보기<i class="ph ph-caret-down"></i></button>
                     </div>
@@ -9710,7 +9783,7 @@ class BhasApp {
                     ${this._notePropsBar(sel)}
                     <div class="nt-meta-slot">${this.noteProps ? this._noteMetaChips(sel) : ''}</div>
                     ${this.notePreview
-                        ? `<textarea id="note-raw" class="nt-body" placeholder="내용을 적어주세요"
+                        ? `<textarea id="note-raw" class="nt-body" data-id="${esc(sel.id)}" placeholder="내용을 적어주세요"
                               oninput="app.noteTyping(event)" onkeydown="app.noteKey(event)"
                               onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`
                         : this._noteLiveHTML(sel)}
