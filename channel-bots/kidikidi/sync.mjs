@@ -26,7 +26,7 @@ if (!ELAND_ID || !ELAND_PW || !ELAND_TOTP_SECRET || !SUPABASE_URL || !SUPABASE_S
   process.exit(0);
 }
 
-const BASE = 'https://po.elandbo.co.kr';
+const BASE = process.env.ELAND_BASE || 'https://po.elandbo.co.kr';   // 시험용 모의 서버만 덮어씀
 const MALL_KEY = 'kidikidi';
 // 주문상태 코드: 신규~배송준비 (역추적한 orderCodes). 필요시 조정.
 const ORDER_CODES = '1010,1020,1030,1040,1050,1060';
@@ -41,6 +41,26 @@ function ymd(d) { return d.toISOString().slice(0, 10); }
 async function login(browser) {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
+  //  실패 원인을 '판정'할 수 있게 남긴다(2026-10-22): 로그인 POST 응답의 loginResultCode·메시지,
+  //  그리고 사이트가 띄우는 alert/confirm 문구. Playwright 는 대화상자를 조용히 닫아 원인이 사라졌었다.
+  //  비번·OTP 값은 찍지 않는다(응답 JSON 의 코드/메시지만).
+  const seen = { results: [], dialogs: [] };
+  page.on('dialog', async d => {
+    seen.dialogs.push(`${d.type()}: ${d.message().slice(0, 200)}`);
+    console.log(`[kidikidi] 대화상자 ${d.type()}: ${d.message().slice(0, 200)}`);
+    await d.dismiss().catch(() => {});   // 계정 연장 요청 등 상태를 바꾸는 confirm 은 누르지 않는다
+  });
+  page.on('response', async res => {
+    if (res.request().method() !== 'POST' || !/\/(login|otp|[^/]*certif)/i.test(new URL(res.url()).pathname)) return;
+    try {
+      const j = await res.json();
+      const d = j && j.data || {};
+      const r = { url: new URL(res.url()).pathname, http: res.status(), resultCode: j.resultCode, loginResultCode: d.loginResultCode,
+        message: String(d.loginResultMessage || j.resultMessage || '').slice(0, 200) };
+      seen.results.push(r);
+      console.log('[kidikidi] 로그인 응답', JSON.stringify(r));
+    } catch {}
+  });
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
 
   await page.fill('#userId', ELAND_ID);
@@ -51,17 +71,39 @@ async function login(browser) {
   //   로그인 후 OTP 입력창(#otp_num)이 노출되면 채우고 '인증하기' 클릭
   await page.waitForSelector('#otp_num', { state: 'visible', timeout: 15000 }).catch(() => {});
   if (await page.locator('#otp_num').isVisible().catch(() => false)) {
+    console.log('[kidikidi] 1단계(아이디·비번) 통과 → OTP 입력');
     const code = authenticator.generate(ELAND_TOTP_SECRET);
     await page.fill('#otp_num', code);
     await page.click('a#otp_certify');
+  } else {
+    console.log('[kidikidi] OTP 입력창 없음(바로 통과했거나 1단계에서 막힘 — 아래 응답코드로 판정)');
   }
   // 로그인 완료 대기: /main 진입 or 네트워크 안정
   await page.waitForURL(/\/main/, { timeout: 20000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
   if (/\/login/.test(page.url())) {
-    throw new Error('로그인 실패(여전히 /login). 아이디/비번/TOTP 설정키 확인');
+    const last = seen.results.map(r => r.loginResultCode || r.resultCode).filter(Boolean).pop() || '응답코드 못 잡음';
+    console.error(`[kidikidi] 판정: ${verdict(last)} (코드 ${last})`);
+    throw new Error(`로그인 실패(여전히 /login) — ${last}`);
   }
   return { ctx, page };
+}
+
+//  E·LAND login.common.js 의 loginResultCode → 사람 말(2026-10-22 사이트 JS 에서 확인)
+function verdict(code) {
+  return ({
+    FAILED_PASSWORD_MISMATCH: '비밀번호 틀림 → ELAND_PW 갱신',
+    FAILED_MULTI_PASSWORD_MISMATCH: '비번 여러 번 틀려 본인인증 필요 → 사장님이 사이트에서 본인인증 후 ELAND_PW 갱신',
+    FAILED_PASSWORD_EXPIRATION: '비밀번호 만료 → 사이트에서 새 비번으로 바꾼 뒤 ELAND_PW 갱신',
+    FAILED_PASSWORD_RESET: '비밀번호 초기화됨 → 사이트에서 새 비번 설정 후 ELAND_PW 갱신',
+    FAILED_FIRST_LOGIN: '최초 로그인 정보입력 필요 → 사이트에서 비번·정보 저장 후 ELAND_PW 갱신',
+    FAILED_EXPIRATION_PERIOD: '계정 사용기간 만료 → 사이트에서 연장 승인요청(이랜드 승인 대기)',
+    FAILED_NOT_USED: '계정 사용중지 → 이랜드 담당 MD에 재활성 요청',
+    FAILED_NOT_AUTHORIZED: '권한 없음 → 이랜드 담당 MD에 권한 요청',
+    FAILED_OTP_UNREGISTERED_ACCOUNT: 'OTP 미등록 → 사이트에서 OTP 재등록 후 설정키를 ELAND_TOTP_SECRET 에',
+    FAILED_OTP_RESPONSE_ERROR: 'OTP 서버 응답 오류 → 잠시 뒤 재시도',
+    FAILED_OTP_ETC: 'OTP 오류(코드 틀림 가능) → OTP 재등록 후 ELAND_TOTP_SECRET 갱신',
+  })[code] || '알 수 없음 → 로그의 대화상자 문구 확인';
 }
 
 // 2) 내부 주문 API 호출 (세션쿠키 자동 포함)

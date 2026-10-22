@@ -14,16 +14,19 @@
 // ============================================================
 import { chromium } from 'playwright';
 import { google } from 'googleapis';
+import { authenticator } from 'otplib';
 import { createClient } from '@supabase/supabase-js';
 
 const {
   CM29_ID, CM29_PW,
   GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
+  CM29_TOTP_SECRET,   // 있으면 구글 OTP(TOTP)로 2차인증 — Gmail 불필요(영구 해법, 2026-10-22)
   SUPABASE_URL, SUPABASE_SERVICE_KEY,
 } = process.env;
 
-if (!CM29_ID || !CM29_PW || !GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (CM29_ID/PW, GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN, SUPABASE_* 필요)');
+const HAS_GMAIL = !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN);
+if (!CM29_ID || !CM29_PW || !(CM29_TOTP_SECRET || HAS_GMAIL) || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (CM29_ID/PW, CM29_TOTP_SECRET 또는 GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN, SUPABASE_* 필요)');
   process.exit(0);
 }
 
@@ -105,6 +108,15 @@ async function login(browser) {
   }
   console.log('[29cm] 2차인증 화면 도달');
 
+  let code;
+  if (CM29_TOTP_SECRET) {
+    //  OTP 탭(첫 라디오) — 설정키로 6자리 자체 생성. 30초 경계에 걸리면 새 창으로 넘어간 뒤 만든다.
+    await page.locator('input[type="radio"]').nth(0).check().catch(() => {});
+    await page.waitForTimeout(500);
+    if (authenticator.timeRemaining() < 5) await page.waitForTimeout(authenticator.timeRemaining() * 1000 + 500);
+    code = authenticator.generate(CM29_TOTP_SECRET);
+    console.log('[29cm] 2차인증 = 구글 OTP(TOTP) 자체 생성');
+  } else {
   // '이메일' 탭 라디오 선택(기본 선택이지만 안전하게)
   await page.locator('input[type="radio"]').nth(1).check().catch(() => {});
   await page.waitForTimeout(500);
@@ -122,12 +134,24 @@ async function login(browser) {
     console.log('[29cm] 인증번호가 이미 발송됨(재요청 쿨다운) → 최신 메일 바로 확인');
   }
 
-  const code = await readEmailOtp({ notBeforeMs: otpNotBefore });
+  try {
+    code = await readEmailOtp({ notBeforeMs: otpNotBefore });
+  } catch (e) {
+    //  invalid_grant = Gmail 재동의 필요(구글 OAuth 앱이 '테스트' 상태면 7일마다 만료). 원인을 한 줄로 남긴다.
+    if (/invalid_grant/.test(String(e && (e.message || e)))) console.error('[29cm] 판정: Gmail refresh_token 만료/철회(invalid_grant) → CM29_TOTP_SECRET 으로 전환하거나 Gmail 재동의');
+    throw e;
+  }
+  }
   console.log('[29cm] OTP 코드 수신 → 입력');
   await page.fill('input[name="code"], input[placeholder*="인증코드"]', code);
   await page.getByRole('button', { name: /인증하기/ }).click();
   await page.waitForURL(/29cm\.co\.kr|partner-connect|partner-order/, { timeout: 30000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
+  if (/partner-sso\.one\.musinsa\.com/.test(page.url())) {
+    const bodyTxt = (await page.evaluate(() => document.body.innerText).catch(() => '')).slice(0, 300).replace(/\n/g, ' ');
+    console.error(`[29cm] 2차인증 후에도 로그인 화면. body="${bodyTxt}"`);
+    throw new Error('2차인증 실패(코드 틀림/만료 가능)');
+  }
   console.log('[29cm] 로그인 완료');
   return { ctx, page };
 }
