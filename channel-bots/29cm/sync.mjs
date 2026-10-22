@@ -209,9 +209,10 @@ async function fetchPage(page, fromDate, toDate, pageNo, size) {
   if (!body) { console.warn(`[29cm] ${fromDate}~${toDate} p${pageNo}: 주문 API 응답 없음`); return { list: [], total: null }; }
   if (body.result === 'FAIL') throw new Error(`주문 API 거절 ${fromDate}~${toDate}: ${body.errorCode || body.error_code} ${body.message || ''}`);
   const d = body.data || {};
-  const list = d.content || d.list || d.items || (Array.isArray(d) ? d : []);
+  const list = d.resultList || d.content || d.list || d.items || (Array.isArray(d) ? d : []);
   const total = d.totalElements ?? d.totalCount ?? d.total ?? null;
   if (!fetchPage.logged) { fetchPage.logged = true; console.log(`[29cm] 주문 API 형태: data 키=${Object.keys(d).join('/')} · 이 페이지 ${list.length}건 · total=${total}`); }
+  if (list.length && !fetchPage.rowLogged) { fetchPage.rowLogged = true; console.log(`[29cm] 주문 한 건의 칸: ${Object.keys(list[0]).join(',').slice(0, 800)}`); }
   return { list, total };
 }
 
