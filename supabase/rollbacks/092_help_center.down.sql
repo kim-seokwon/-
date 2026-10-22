@@ -12,4 +12,3 @@ delete from storage.buckets where id = 'feedback';
 drop table if exists public.feedback_reports;
 drop table if exists public.notice_reads;
 drop table if exists public.notices;
-
