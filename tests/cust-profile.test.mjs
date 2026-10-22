@@ -17,8 +17,10 @@ const M = {
     _retryCustProfile: method('_retryCustProfile(brand) {', '_retryCustProfile'),
     _invalidateCust: method('_invalidateCust() {', '_invalidateCust'),
     _custMembersAgg: method('_custMembersAgg(M) {', '_custMembersAgg'),
+    _custMembersHTML: method('_custMembersHTML(m, retry) {', '_custMembersHTML'),
     refreshData: method('async refreshData() {', 'refreshData'),
 };
+globalThis.tipHTML = () => '<i class="tip-q"></i>'; globalThis.TIPS = {};   // 도움말 ? 툴팁(helpWidget) 자리 — 회원수 문구만 본다
 globalThis.mockData = { brands: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] };
 const MALLS = [{ mall_key: 'a1', brand_id: 1, channel: 'cafe24' }, { mall_key: 'b1', brand_id: 2, channel: 'cafe24' }];
 const tick = () => new Promise(r => setTimeout(r, 5));
@@ -91,4 +93,18 @@ test('일부 몰만 수집된 날은 합계에서 빼고, 전일 대비는 정�
     r = agg({ malls, rows: [R('m1', '2026-10-05', 120)] });
     assert.deepEqual(r, { incomplete: true, latest: '2026-10-05', got: 1, need: 2 });
     assert.deepEqual(agg({ error: 'x' }), { error: 'x' });
+});
+
+test('회원수 데이터가 없으면 대체지표 안내 — 옛 "권한 연결 후" 문구 없음, 회원수=구매고객이라 하지 않음', () => {
+    for (const m of [null, M._custMembersAgg({ rows: [], malls: ['a1'] })]) {
+        const h = M._custMembersHTML(m);
+        assert.match(h, /API 권한 미제공으로 자동 수집할 수 없습니다/);
+        assert.match(h, /구매고객 수·추이를 운영 지표로/);
+        assert.match(h, /전체 회원수와 다른 지표/);
+        assert.doesNotMatch(h, /권한 연결 후/);
+    }
+    // 스냅샷이 있으면 기존 전체 회원수 UI 그대로
+    const agg = M._custMembersAgg({ rows: [{ mall_key: 'a1', snap_date: '2026-10-20', total: 100 }, { mall_key: 'a1', snap_date: '2026-10-21', total: 103 }], malls: ['a1'] });
+    const h = M._custMembersHTML(agg);
+    assert.match(h, /전체 회원수 (<i[^>]*><\/i> )?<b[^>]*>103명/); assert.match(h, /\+3명/); assert.doesNotMatch(h, /API 권한 미제공/);
 });

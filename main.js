@@ -5984,7 +5984,7 @@ class BhasApp {
     }
     // 회원수(카페24 전체 회원) — 전일·30일 전 대비 증감. 탈퇴는 따로 안 세고 증감으로 본다(10-16 사장님).
     _custMembersHTML(m, retry) {
-        if (!m) return `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.7rem;border-top:1px solid var(--card-border);padding-top:0.6rem">전체 회원수 추이는 카페24 회원 권한 연결 후 매일 기록됩니다</div>`;
+        if (!m) return `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.7rem;border-top:1px solid var(--card-border);padding-top:0.6rem">카페24 전체 회원수는 현재 API 권한 미제공으로 자동 수집할 수 없습니다. 위 구매고객 수·추이를 운영 지표로 확인하세요(구매고객은 기간 안에 주문한 고객으로, 전체 회원수와 다른 지표입니다).</div>`;
         const note = t => `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.7rem;border-top:1px solid var(--card-border);padding-top:0.6rem">${t}</div>`;
         if (m.error) return note(`<span style="color:#ef4444">회원수를 불러오지 못했습니다</span>${retry || ''}`);
         if (m.incomplete) return note(`회원수: ${m.latest} 일부 몰만 수집됨(${m.got}/${m.need}) — 모든 몰이 수집된 날부터 합계를 보여줍니다`);
