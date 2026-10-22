@@ -163,6 +163,7 @@ async function login(page, acct) {
     }
     usedOtpIds.add(hit.id); lastOtpAt = Math.max(lastOtpAt, hit.receivedAt || 0);
     code = hit.code;
+    console.log(`[29cm] 사용한 메일: ${hit.receivedAt ? new Date(hit.receivedAt).toISOString() : '시각 없음'}`);
   } catch (e) {
     //  invalid_grant = Gmail 재동의 필요(구글 OAuth 앱이 '테스트' 상태면 7일마다 만료). 원인을 한 줄로 남긴다.
     if (/invalid_grant/.test(String(e && (e.message || e)))) console.error('[29cm] 판정: Gmail refresh_token 만료/철회(invalid_grant) → CM29_TOTP_SECRET 으로 전환하거나 Gmail 재동의');
@@ -175,8 +176,15 @@ async function login(page, acct) {
   if (await dlgOk.first().isVisible().catch(() => false)) { await dlgOk.first().click().catch(() => {}); await page.waitForTimeout(500); }
   const codeBox = page.locator('input[name="code"], input[placeholder*="인증코드"]').first();
   await codeBox.click({ timeout: 10000 }).catch(() => {});
-  await codeBox.fill(code, { timeout: 15000 });
-  await page.getByRole('button', { name: /인증하기/ }).click();
+  await codeBox.fill('', { timeout: 15000 });
+  await codeBox.pressSequentially(code, { delay: 60 });   // antd 입력은 키 입력으로 넣어야 상태가 잡힌다
+  console.log(`[29cm] 코드 ${code.length}자리 입력 · 입력칸 글자수 ${(await codeBox.inputValue().catch(() => '')).length}`);
+  const verifyBtn = page.getByRole('button', { name: /인증하기/ });
+  for (let i = 0; i < 20 && !(await verifyBtn.isEnabled().catch(() => false)); i++) await page.waitForTimeout(250);
+  await verifyBtn.click();
+  await page.waitForTimeout(1500);
+  const msg = await page.locator('.ant-modal, [role="dialog"], .ant-message, .ant-form-item-explain').allInnerTexts().catch(() => []);
+  if (msg.join('').trim()) console.log('[29cm] 인증하기 뒤 안내:', msg.join(' | ').replace(/\d{6,}/g, '******').slice(0, 200));
   await page.waitForURL(/29cm\.co\.kr|partner-connect|partner-order/, { timeout: 30000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
   if (/partner-sso\.one\.musinsa\.com/.test(page.url())) {
