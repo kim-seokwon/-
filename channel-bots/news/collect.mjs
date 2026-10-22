@@ -10,6 +10,14 @@ const SB = E.SUPABASE_URL, KEY = E.SUPABASE_SERVICE_KEY;
 if (!SB || !KEY) { console.error('SUPABASE_URL / SUPABASE_SERVICE_KEY 가 필요합니다'); process.exit(1); }
 
 const KST = (d = new Date()) => new Date(d.getTime() + 9 * 3600e3);
+
+//  구글 맞춤검색 결과 하나의 글 날짜 — article:published_time 등 메타태그, 없으면 null
+function cseDate(i) {
+  const m = ((i.pagemap && i.pagemap.metatags) || [])[0] || {};
+  const v = m['article:published_time'] || m['og:article:published_time'] || m['datepublished'] || m['date'] || m['pubdate'];
+  const t = v ? Date.parse(v) : NaN;
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
 const today = KST().toISOString().slice(0, 10);
 
 async function rest(path, opt = {}) {
@@ -72,6 +80,8 @@ async function reviews() {
           kind: 'review', source: 'google', brand_id: b.id,
           title: i.title, snippet: (i.snippet || '').slice(0, 300), url: i.link,
           author: i.displayLink || null,
+          //  구글 검색은 글 날짜를 따로 안 준다 — 페이지 메타태그에서 찾고, 없으면 비워 둔다(화면이 날짜 없는 글을 뺀다)
+          published_at: cseDate(i),
         }));
         console.log(`· 구글 '${b.name}' 수집`);
       } catch (e) { console.log(`· 구글 ${b.name} 실패: ${e.message.slice(0, 60)}`); }

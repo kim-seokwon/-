@@ -48,6 +48,31 @@ export function dedupeSimilar(list, th = SIMILAR_TITLE) {
     return kept;
 }
 
+//  출처가 달라도 같은 기사 — 구글 검색은 '제목 < 섹션 < 기사본문 - 매체', 구글 뉴스는 '제목 - 매체',
+//   어떤 매체는 '매체 - 제목' 으로 적는다. 꾸밈을 떼고 글자만 남긴 것이 같으면 한 기사다.
+export function titleKey(t) {
+    let s = String(t || '').split(/\s<\s/)[0];                     // '< 섹션 < 기사본문' 이하
+    //  ' - ' 로 나뉘면 가장 긴 조각이 제목이다(매체명은 짧다 — 앞에 붙든 뒤에 붙든)
+    s = s.split(/\s+-\s+/).reduce((a, b) => (b.length > a.length ? b : a), '');
+    return s.replace(/\.{2,}|…/g, ' ').replace(/[^0-9a-z가-힣]+/gi, '').toLowerCase();
+}
+//  같은 기사가 여럿이면 날짜 있는 쪽 하나만(자리는 먼저 온 것 자리). 날짜 없는 사본은 옛 기사가 새 기사로 둔갑한다.
+export function mergeSameTitle(list) {
+    const at = new Map(), out = [];
+    for (const x of list || []) {
+        const k = titleKey(x.title);
+        if (!k) { out.push(x); continue; }
+        if (!at.has(k)) { at.set(k, out.length); out.push(x); continue; }
+        const i = at.get(k);
+        if (!out[i].published_at && x.published_at) out[i] = x;
+    }
+    return out;
+}
+//  경쟁·유통 칸 — 같은 기사 합친 뒤 날짜 없는 기사는 뺀다(수집일을 기사 날짜로 쓰면 2년 전 기사가 '이번 주'가 된다)
+export function datedOnly(list) {
+    return mergeSameTitle(list).filter(x => !!x.published_at);
+}
+
 //  같은 사건을 매체마다 다르게 적은 보도자료 — 85% 닮지 않아도 같은 이야기다(화면에서만 접는다).
 //  제목 낱말(끝 조사 뗀 것)이 짧은 쪽 기준 절반 넘게 겹치면 같은 이야기로 보고 맨 처음 것만 남긴다.
 const stem = w => w.replace(/(에서|에게|으로|에|의|은|는|이|가|을|를|로|와|과|도|만|까지|부터)$/, '') || w;

@@ -1,7 +1,11 @@
 import { mockData, STAGES } from './mockData.js';
 import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx, MAX_PER_BATCH as HX_MAX } from './hometaxExcel.js';
 // 뉴스 칸 규칙 — 수집기(news-sync)와 같은 파일을 쓴다. 고치면 수집과 화면이 같이 바뀐다.
-import { COMPETITORS, customerList, competitionList, oneStoryEach, validCounts } from './supabase/functions/_shared/news-rules.js';
+import { COMPETITORS, customerList, competitionList, oneStoryEach, validCounts, datedOnly } from './supabase/functions/_shared/news-rules.js';
+import {
+    RANK_TOP, engOf, topPosts, nameOfPost, rankCompetitors, snapStart, reactionStats,
+    searchName, brandIssues, upcomingOpenings,
+} from './competitorBoard.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
     garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
@@ -198,6 +202,30 @@ class BhasApp {
                 { id: 'preview-3', status: '거래중단', name: '올드 부자재', category: '부자재', contact_name: '이수진', phone: '02-987-6543', fax: '', email: 'trim@example.com', address: '서울 종로구', memo: '대체처 확인', jobs: [] },
             ];
             this.wins = [{ id: 'preview-contacts', view: 'contacts', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
+        //  뉴스·조간 화면 검수 — Playwright 가 넣어 준 읽기 전용 데이터(window.__NEWS_PREVIEW)로만 그린다. DB 에 쓰지 않는다.
+        if (devPreview === 'news') {
+            const fx = window.__NEWS_PREVIEW || {};
+            const from = (t) => {
+                let r = (fx[t] || []).slice();
+                const b = {
+                    select: () => b, or: () => b,
+                    eq: (k, v) => { r = r.filter(x => x[k] === v); return b; },
+                    in: (k, vs) => { r = r.filter(x => vs.includes(x[k])); return b; },
+                    gte: (k, v) => { r = r.filter(x => String(x[k] || '') >= v); return b; },
+                    order: (k, o) => { r.sort((x, y) => (x[k] == null) - (y[k] == null) || String(y[k] ?? '').localeCompare(String(x[k] ?? '')) * (o && o.ascending ? -1 : 1)); return b; },
+                    limit: (n) => { r = r.slice(0, n); return b; },
+                    then: (ok, ng) => Promise.resolve({ data: r, error: null }).then(ok, ng),
+                };
+                return b;
+            };
+            this.supabase = { from, rpc: async () => ({ data: { date: this._ymdSeoul(), days: 7, fresh: 0, resale: [] }, error: null }) };
+            this._prefetched = true; this._isInitialLoading = false;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            this.currentView = 'news';
+            this.wins = [{ id: 'preview-news', view: 'news', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
+            this.loadNews().then(() => { if (new URLSearchParams(location.search).get('paper')) this.openPaper(); });
             this.requestRender(); return;
         }
         if (devPreview === 'calendar') {
@@ -13537,17 +13565,26 @@ class BhasApp {
         this.paper = { loading: true, data: null, auto: !!auto };
         this.requestRender();
         try {
-            const [{ data, error }, cols] = await Promise.all([
+            //  경쟁사 인스타 — 7일 반응 상위 + 앞으로 7일 오픈 일정(그 공지는 보통 1~2주 전에 올라온다)
+            const igSince = new Date(Date.now() - 14 * 864e5).toISOString();
+            const [{ data, error }, cols, ig, cps] = await Promise.all([
                 this.supabase.rpc('morning_brief', { p_days: 7 }),   // 날짜·새 소식 수·중고 칸은 그대로 쓴다
                 this._newsColumns(),
+                this.supabase.from('news_items').select('*').eq('kind', 'competitor_post')
+                    .gte('published_at', igSince).order('published_at', { ascending: false }).limit(500),
+                this.supabase.from('competitors').select('id,name,handle'),
             ]);
             if (error) throw error;
+            const igPosts = ig.data || [], comps = cps.data || [];
+            const named = p => ({ ...p, author: nameOfPost(p, comps) || p.author });
             const atOf = x => ({ ...x, at_ts: x.published_at || x.created_at, no_date: !x.published_at });
             const since = days => Date.now() - days * 864e5;
             const inWin = days => x => new Date(x.at_ts).getTime() >= since(days);
             this.paper.data = { ...data,
                 customer: cols.customer.map(atOf).filter(inWin(PAPER_WIN.customer)),
-                compete: cols.compete.map(atOf).filter(inWin(PAPER_WIN.compete)) };
+                compete: cols.compete.map(atOf).filter(inWin(PAPER_WIN.compete)),
+                insta: topPosts(igPosts).map(named).map(atOf),
+                opens: upcomingOpenings(igPosts, comps) };
         } catch (e) { this.paper.err = e.message || String(e); }
         this.paper.loading = false;
         this.requestRender();
@@ -13600,7 +13637,8 @@ class BhasApp {
             .filter(Boolean).join(' · ');
 
         const customer = d.customer || [],
-              compete = this._oneStoryEach(d.compete || []);
+              compete = this._oneStoryEach(d.compete || []),
+              insta = d.insta || [], opens = d.opens || [];
 
         //  1면은 사진이 있는 고객 글을 먼저 본다. 없으면 가장 최근 소식.
         const leadPool = [customer[0], compete[0]].filter(Boolean);
@@ -13619,7 +13657,7 @@ class BhasApp {
         const item = (x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">
             <span>${esc(noEmo(x.title) || '제목 없음')}${ageOf(x) <= 1 && !x.no_date ? '<em class="pp-new">NEW</em>' : ''}</span>
             <em>${by(x)}</em>${react(x)}</a></li>`;
-        const WIN = { '고객 반응': '최근 2주', '경쟁·유통': '최근 3주', '중고로 올라온 우리 옷': '최근 7일' };
+        const WIN = { '고객 반응': '최근 2주', '경쟁·유통': '최근 3주', '중고로 올라온 우리 옷': '최근 7일', '경쟁사 인스타': '7일 · 반응순' };
         const won = v => v ? `${Number(v).toLocaleString()}원` : '';
         const resale = (d.resale || []).map(x => ({ ...x, thumb: (x.meta || {}).thumb,
             snippet: [won((x.meta || {}).price), x.snippet].filter(Boolean).join(' · ') }));
@@ -13657,15 +13695,21 @@ class BhasApp {
                     </div>
                 </div>` : `<h2 class="pp-head">아직 들어온 소식이 없습니다</h2>`}
 
+                ${opens.length ? `<div class="pp-opens">
+                    <div class="pp-kick">이번주 경쟁사 오픈<em>앞으로 7일 · 경쟁사 글에서 자동으로 뽑음</em></div>
+                    <ul>${opens.map(o => `<li><a href="${esc(o.url)}" target="_blank" rel="noopener">
+                        <b>${esc(o.label)}</b><span>${esc(o.name)}</span></a></li>`).join('')}</ul>
+                </div>` : ''}
                 <div class="pp-rule thin"></div>
-                <div class="pp-cols">
+                <div class="pp-cols four">
                     ${col('고객 반응', cus2)}
                     ${col('경쟁·유통', com2)}
+                    ${col('경쟁사 인스타', insta)}
                     ${col('중고로 올라온 우리 옷', resale)}
                 </div>
                 <div class="pp-rule thin"></div>
                 <div class="pp-foot">
-                    <span>고객 반응은 2주, 경쟁·유통은 3주 치를 싣습니다 · 우리 계정 글·중복·무관 기사는 뺍니다</span>
+                    <span>고객 반응은 2주, 경쟁·유통은 3주, 경쟁사 인스타는 7일 치를 싣습니다 · 우리 계정 글·중복·무관·날짜 없는 기사는 뺍니다</span>
                     <button class="pp-done" onclick="app.closePaper()">다 봤습니다 — 업무 시작</button>
                 </div>
             </div>
@@ -13693,7 +13737,8 @@ class BhasApp {
             brands: (mockData.brands || []).filter(b => b.status !== 'closed').map(b => b.name).filter(Boolean),
             urls: new Set((ownRows.data || []).map(x => x.url)),
         };
-        return { customer: customerList(rv.data || [], own), compete: competitionList(tr.data || []) };
+        //  날짜 없는 기사(구글 검색 사본)는 합친 뒤 뺀다 — 수집일을 기사 날짜로 쓰면 옛 기사가 '이번 주'로 둔갑한다
+        return { customer: customerList(rv.data || [], own), compete: competitionList(datedOnly(tr.data || [])) };
     }
     async loadNews() {
         this._newsLoading = true;
@@ -13725,9 +13770,12 @@ class BhasApp {
         const comps = this.competitors || [];
         //  칸 셋: 고객 반응 · 경쟁·유통(지켜보는 경쟁사 인스타 글 포함) · 중고로 올라온 우리 옷
         //  경쟁·유통은 같은 보도자료를 매체마다 다시 쓴 것을 한 건으로 접는다
-        const colOf = k => k === 'trend' ? [...C.competitor, ...oneStoryEach(C.trend)] : (C[k] || []);
+        //  경쟁사 인스타 = 조간과 같은 기준(최근 7일 · 좋아요+댓글 큰 순). 조간은 위 8개만, 여기선 전부.
+        const named = p => ({ ...p, author: nameOfPost(p, comps) || p.author });
+        const colOf = k => k === 'trend' ? [...C.competitor, ...oneStoryEach(C.trend)]
+            : k === 'insta' ? topPosts(C.competitor, { top: 999 }).map(named) : (C[k] || []);
         const n_ = (k) => colOf(k).length;
-        const LABEL = { review: '고객 반응', trend: '경쟁·유통', resale: '중고로 올라온 우리 옷' };
+        const LABEL = { review: '고객 반응', trend: '경쟁·유통', insta: '경쟁사 인스타', resale: '중고로 올라온 우리 옷' };
         //  빈 칸을 먼저 보여주지 않는다 — 들어온 게 있는 칸으로 연다
         const cur = LABEL[this.newsTab] ? this.newsTab : (['review', 'trend', 'resale'].find(k => n_(k)) || 'review');
         //  10-28 판정용 — 최근 14일 칸별 유효 건수
@@ -13738,9 +13786,32 @@ class BhasApp {
         const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '';
         const brandOf = id => (mockData.brands || []).find(b => b.id === id)?.name || '';
 
-        let list = colOf(cur);
+        //  지켜보는 곳에서 한 곳을 고르면 가운데는 그 브랜드 글, 오른쪽은 브랜드 한 장
+        const comp = this.newsComp ? comps.find(c => c.id === this.newsComp) : null;
+        const cd = comp ? (this._compData || {})[comp.id] : null;
+        let list = comp ? (cd && cd.posts ? cd.posts.map(named) : []) : colOf(cur);
         if (q) list = list.filter(i => [i.title, i.snippet, i.author].some(x => String(x || '').toLowerCase().includes(q)));
-        const sel = list.find(i => i.id === this.newsSel) || list[0];
+        const sel = list.find(i => i.id === this.newsSel) || (comp ? null : list[0]);
+        //  튄 글 — 브랜드마다 평소(중앙값)의 2배 넘게 반응이 온 글
+        const spikes = new Map();
+        const byComp = {};
+        (comp && cd && cd.posts ? cd.posts : C.competitor).forEach(p => { (byComp[p.competitor_id] = byComp[p.competitor_id] || []).push(p); });
+        Object.values(byComp).forEach(ps => reactionStats(ps).spikes.forEach((v, k) => spikes.set(k, v)));
+        const reactOf = i => i.kind === 'competitor_post' && i.meta && i.meta.likes != null
+            ? `<span>♥ ${Number(i.meta.likes || 0).toLocaleString('ko-KR')} · 댓글 ${Number(i.meta.comments || 0).toLocaleString('ko-KR')}</span>`
+              + (spikes.has(i.id) ? `<span class="nw-spike" title="이 브랜드 평소 반응의 ${spikes.get(i.id) ? spikes.get(i.id).toFixed(1) + '배' : '여러 배'}">튄 글</span>` : '')
+            : '';
+
+        //  지켜보는 곳 = 순위판. 팔로워 · 7일 변화(변화 큰 순), 기본 10곳 + 더보기
+        const ranked = rankCompetitors(comps, this.compSnaps || []);
+        const shownRk = this._compMore ? ranked : ranked.slice(0, RANK_TOP);
+        const rkStart = snapStart(this.compSnaps || []);
+        const anyDelta = ranked.some(r => r.delta != null);
+        const kfmt = n => n == null ? '-' : (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : n.toLocaleString('ko-KR'));
+        const dfmt = (r, cls = '') => r.delta == null ? `<i class="${cls}" title="7일 변화 — 기록이 더 쌓이면 나옵니다">—</i>`
+            : `<i class="${cls} ${r.delta >= 0 ? 'up' : 'dn'}" title="${r.span}일 변화(${esc(r.since || '')}부터)">${r.delta >= 0 ? '+' : ''}${r.delta.toLocaleString('ko-KR')}</i>`;
+        const rkRow = (r, idx) => `<div class="nw-rk${comp && comp.id === r.id ? ' on' : ''}" onclick="app.openCompBrand('${r.id}')" oncontextmenu="app.compMenu(event,'${r.id}')">
+            <i>${idx + 1}</i><span>${esc(r.name)}</span><em><b>${kfmt(r.followers)}</b> ${dfmt(r)}</em></div>`;
 
         // 경쟁사 요약 (오늘·어제 스냅샷 견주기)
         const snapOf = (cid) => (this.compSnaps || []).filter(s => s.competitor_id === cid);
@@ -13769,33 +13840,39 @@ class BhasApp {
                     <i class="ph ph-newspaper"></i> 오늘 조간 펼치기</button>
                 ${side('review', LABEL.review, 'ph-chat-circle-text', n_('review'))}
                 ${side('trend', LABEL.trend, 'ph-users-three', n_('trend'))}
+                ${side('insta', LABEL.insta, 'ph-instagram-logo', n_('insta'))}
                 ${side('resale', LABEL.resale, 'ph-recycle', n_('resale'))}
                 <div class="nw-valid" title="10-28 판정용 · 우리 계정 글·중복·무관 기사를 뺀 건수">최근 14일 유효 ·
                     고객 반응 ${vc.review} · 경쟁·유통 ${vc.trend} · 중고 ${vc.resale}</div>
                 <div class="m3-h">지켜보는 곳
                     <button class="nt-add" title="경쟁사 추가" onclick="app.addCompetitor()">＋</button></div>
-                ${comps.length ? comps.map(c => `<div class="m3-s" oncontextmenu="app.compMenu(event,'${c.id}')">
-                    <i class="ph ph-instagram-logo" style="color:#c13584"></i><span>${esc(c.name)}</span></div>`).join('')
+                ${comps.length ? `<div class="nw-rknote">팔로워 · 7일 변화 큰 순 · 누르면 브랜드 한 장</div>
+                    ${shownRk.map(rkRow).join('')}
+                    ${ranked.length > RANK_TOP ? `<button class="nw-rkmore" onclick="app._compMore=!app._compMore;app.requestRender()">
+                        ${this._compMore ? '접기' : `더보기 (${ranked.length - RANK_TOP}곳)`}</button>` : ''}
+                    ${!anyDelta && rkStart ? `<div class="nw-rknote">7일 변화는 ${esc(rkStart.slice(5).replace('-', '/'))} 기록 시작 — 이틀째부터 나옵니다</div>` : ''}`
                   : '<div style="padding:6px 10px;font-size:12px;color:var(--text-muted)">＋로 경쟁사를 넣으세요</div>'}
             </aside>
             <section class="m3-list">
-                <div class="m3-lbar"><div><b>${LABEL[cur]}</b>
-                    <span>${list.length}건</span></div></div>
+                <div class="m3-lbar"><div><b>${comp ? esc(comp.name) + ' · 최근 글' : LABEL[cur]}</b>
+                    <span>${comp && (!cd || cd.loading) ? '불러오는 중' : list.length + '건'}</span></div></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
                     <input placeholder="찾기" value="${esc(this.newsQ || '')}" oninput="app.newsQ=this.value;app.requestRender()"></div>
                 <div class="m3-rows">
-                    ${cur === 'trend' && comps.length ? `<div class="nw-comps">${comps.map(compCard).join('')}</div>` : ''}
+                    ${!comp && cur === 'trend' && comps.length ? `<div class="nw-comps">${comps.map(compCard).join('')}</div>` : ''}
                     ${list.map(i => `<div class="m3-r${sel && i.id === sel.id ? ' on' : ''}" onclick="app.selectNews('${i.id}')">
                         <b>${esc(i.title || '제목 없음')}</b>
                         <div class="sub"><span>${esc(SRC[i.source] || i.source)}</span>
                             <span>${esc(when(i.published_at))}</span>
-                            ${i.brand_id ? `<span>${esc(brandOf(i.brand_id))}</span>` : ''}</div>
+                            ${i.brand_id ? `<span>${esc(brandOf(i.brand_id))}</span>` : ''}
+                            ${i.kind === 'competitor_post' && !comp ? `<span>${esc(i.author || '')}</span>` : ''}${reactOf(i)}</div>
                     </div>`).join('') || `<div class="m3-none">${q ? '찾는 글이 없습니다' : '아직 모인 게 없습니다 · 수집이 돌면 채워집니다'}</div>`}
                 </div>
             </section>
             <section class="m3-doc">
-                ${sel ? `
+                ${comp && !sel ? this._compBrandHTML(comp, cd, ranked.find(r => r.id === comp.id) || {}, dfmt, kfmt) : sel ? `
                 <div class="m3-tools">
+                    ${comp ? `<button class="mbtn" onclick="app.selectNews('')"><i class="ph ph-arrow-left"></i> 브랜드 한 장</button>` : ''}
                     ${sel.url && !String(sel.url).startsWith('datalab:')
                         ? `<a class="mbtn pri" href="${esc(sel.url)}" target="_blank" rel="noopener" style="text-decoration:none">원문 열기</a>` : ''}
                     <span class="sp"></span>
@@ -13817,7 +13894,70 @@ class BhasApp {
             </section>
         </div>`;
     }
-    setNewsTab(k) { this.newsTab = k; this.newsSel = null; this.requestRender(); }
+    setNewsTab(k) { this.newsTab = k; this.newsSel = null; this.newsComp = null; this.requestRender(); }
+    //  경쟁사 한 곳 — 그 브랜드 글(최근 60)과 이름이 든 기사(최근 40)를 그때 불러 둔다
+    async openCompBrand(id) {
+        this.newsComp = id; this.newsSel = null;
+        this._compData = this._compData || {};
+        const c = (this.competitors || []).find(x => x.id === id);
+        if (!c || (this._compData[id] && !this._compData[id].err)) { this.requestRender(); return; }
+        this._compData[id] = { loading: true };
+        this.requestRender();
+        try {
+            const n = searchName(c.name);
+            const [ps, is] = await Promise.all([
+                this.supabase.from('news_items').select('*').eq('kind', 'competitor_post').eq('competitor_id', id)
+                    .order('published_at', { ascending: false, nullsFirst: false }).limit(60),
+                n ? this.supabase.from('news_items').select('*').in('kind', ['news', 'trend', 'review'])
+                    .or(`title.ilike.%${n}%,snippet.ilike.%${n}%`)
+                    .order('published_at', { ascending: false, nullsFirst: false }).limit(40)
+                  : Promise.resolve({ data: [] }),
+            ]);
+            if (ps.error) throw ps.error;
+            this._compData[id] = { posts: ps.data || [], issues: is.error ? [] : (is.data || []), issuesErr: !!is.error };
+        } catch (e) { this._compData[id] = { err: e.message || String(e), posts: [], issues: [] }; }
+        this.requestRender();
+    }
+    //  브랜드 한 장 — 순위 · 오픈 일정 · 고객 반응 · 신규 소식 · 이슈
+    _compBrandHTML(c, cd, r, dfmt, kfmt) {
+        const esc = s => this._vesc(s);
+        const md = t => { const d = new Date(t); return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()}`; };
+        const head = `<div class="m3-tools">
+                <a class="mbtn pri" href="https://instagram.com/${esc(c.handle)}" target="_blank" rel="noopener" style="text-decoration:none">인스타 열기</a>
+                <span class="sp"></span><span class="nt-scope">브랜드 한 장</span></div>`;
+        if (!cd || cd.loading) return `${head}<div class="m3-none mid">불러오는 중…</div>`;
+        if (cd.err) return `${head}<div class="m3-none mid">불러오지 못했습니다 · ${esc(cd.err)}</div>`;
+        const posts = cd.posts || [];
+        const st = reactionStats(posts);
+        const opens = upcomingOpenings(posts, [c], { days: 30 });
+        const issues = brandIssues(cd.issues, c.name).slice(0, 8);
+        const hot = posts.filter(p => st.spikes.has(p.id)).sort((a, b) => engOf(b) - engOf(a)).slice(0, 3);
+        const heart = p => `♥ ${Number((p.meta || {}).likes || 0).toLocaleString('ko-KR')} · 댓글 ${Number((p.meta || {}).comments || 0).toLocaleString('ko-KR')}`;
+        const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스', google: '구글', google_news: '구글 뉴스', instagram: '인스타그램' };
+        const postLi = p => `<div class="cb-li" onclick="app.selectNews('${p.id}')"><b>${md(p.published_at)}</b>
+            <span>${esc(p.title || '제목 없음')}</span><em>${heart(p)}${st.spikes.has(p.id) ? ' · 튄 글' : ''}</em></div>`;
+        return `${head}<div class="m3-page">
+            <div class="cb-h"><h2 class="m3-big">${esc(c.name)}</h2><em>@${esc(c.handle)}</em></div>
+            <div class="cb-kpi">
+                <span>팔로워<b>${kfmt(r.followers)}</b></span>
+                <span>${r.delta != null && r.span < 7 ? `${r.span}일 변화` : '7일 변화'}<b>${dfmt(r)}</b></span>
+                <span>평소 반응(글 하나)<b>${st.usual != null ? Math.round(st.usual).toLocaleString('ko-KR') : '-'}</b></span>
+                <span>최근 글<b>${posts.length}</b></span>
+            </div>
+            <div class="cb-sec"><h3>오픈 일정<em>앞으로 30일 · 글에서 날짜·시각을 자동으로 뽑음(틀릴 수 있어 원문 확인)</em></h3>
+                ${opens.length ? opens.map(o => `<a class="cb-li cb-open" href="${esc(o.url)}" target="_blank" rel="noopener">
+                    <b>${esc(o.label)}</b><span>${esc(o.title || '')}</span></a>`).join('') : '<div class="cb-none">다가오는 오픈 공지가 없습니다</div>'}</div>
+            <div class="cb-sec"><h3>고객 반응<em>좋아요·댓글 수 · 평소(중앙값)의 2배 넘으면 튄 글 · 다른 계정 댓글 내용은 인스타가 주지 않습니다</em></h3>
+                ${hot.length ? hot.map(postLi).join('') : `<div class="cb-none">${st.usual == null ? '글이 적어 평소 반응을 아직 말하기 어렵습니다' : '최근 튄 글은 없습니다'}</div>`}</div>
+            <div class="cb-sec"><h3>신규 소식<em>최근 인스타 글</em></h3>
+                ${posts.length ? posts.slice(0, 6).map(postLi).join('') : '<div class="cb-none">모인 글이 없습니다 · 수집이 돌면 채워집니다</div>'}</div>
+            <div class="cb-sec"><h3>이슈<em>이름이 들어간 기사·블로그·카페 글</em></h3>
+                ${issues.length ? issues.map(x => `<a class="cb-li" href="${esc(x.url)}" target="_blank" rel="noopener">
+                    <b>${x.published_at ? md(x.published_at) : '날짜없음'}</b><span>${esc(x.title || '')}</span>
+                    <em>${esc(SRC[x.source] || x.source || '')}</em></a>`).join('')
+                  : `<div class="cb-none">${cd.issuesErr ? '기사를 불러오지 못했습니다' : '이름이 든 기사가 아직 없습니다'}</div>`}</div>
+        </div>`;
+    }
     selectNews(id) { this.newsSel = id; this.requestRender(); }
     async addCompetitor() {
         const handle = await this.showPrompt('인스타 핸들 (@ 없이)'); if (!handle || !handle.trim()) return;
