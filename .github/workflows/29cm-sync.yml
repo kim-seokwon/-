@@ -12,7 +12,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25   # 계정 2개를 차례로
     defaults:
       run:
         working-directory: channel-bots/29cm
@@ -28,6 +28,12 @@ jobs:
           CM29_ID: ${{ secrets.CM29_ID }}
           CM29_PW: ${{ secrets.CM29_PW }}
           CM29_TOTP_SECRET: ${{ secrets.CM29_TOTP_SECRET }}
+          CM29_OTP_TO: ${{ secrets.CM29_OTP_TO }}
+          # 2계정: 로하이스튜디오(mall_key 29cm-rohi). 비어 있으면 건너뜀
+          CM29_ID_2: ${{ secrets.CM29_ID_2 }}
+          CM29_PW_2: ${{ secrets.CM29_PW_2 }}
+          CM29_TOTP_SECRET_2: ${{ secrets.CM29_TOTP_SECRET_2 }}
+          CM29_OTP_TO_2: ${{ secrets.CM29_OTP_TO_2 }}
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}

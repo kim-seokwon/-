@@ -8,32 +8,34 @@
 //    인증=메모리 Bearer → page.on('response')로 주문응답 가로채기.
 //
 //  환경변수(GitHub Secrets):
-//    MUSINSA_ID, MUSINSA_PW              : 통합 파트너 로그인
-//    GMAIL_USER, GMAIL_APP_PASSWORD      : OTP 메일 수신 Gmail + 앱 비밀번호(16자, 2FA 계정에서 생성)
+//    CM29_ID, CM29_PW (+ CM29_TOTP_SECRET, CM29_OTP_TO)          : 하이헤이호 → mall_key 29cm
+//    CM29_ID_2, CM29_PW_2 (+ CM29_TOTP_SECRET_2, CM29_OTP_TO_2)  : 로하이스튜디오 → mall_key 29cm-rohi (없으면 건너뜀)
+//    GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN : 이메일 OTP 읽기(TOTP 없는 계정만 씀)
 //    SUPABASE_URL, SUPABASE_SERVICE_KEY
+//  계정은 하나씩 차례로 — 한 계정이 실패해도 다음 계정은 돈다. 하나라도 실패하면 끝에 exit 1(Actions 에 빨간불).
 // ============================================================
 import { chromium } from 'playwright';
 import { google } from 'googleapis';
 import { authenticator } from 'otplib';
 import { createClient } from '@supabase/supabase-js';
+import { accountsFromEnv, otpNotBefore, pollOtp, orderKey, mapOrder, runAccounts } from './accounts.mjs';
 
 const {
-  CM29_ID, CM29_PW,
   GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
-  CM29_TOTP_SECRET,   // 있으면 구글 OTP(TOTP)로 2차인증 — Gmail 불필요(영구 해법, 2026-10-22)
   SUPABASE_URL, SUPABASE_SERVICE_KEY,
 } = process.env;
 
 const HAS_GMAIL = !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN);
-if (!CM29_ID || !CM29_PW || !(CM29_TOTP_SECRET || HAS_GMAIL) || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.log('[29cm] 자격증명 미설정 — 수집 건너뜀. (CM29_ID/PW, CM29_TOTP_SECRET 또는 GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN, SUPABASE_* 필요)');
+const { run: ACCOUNTS, skip: SKIPPED } = accountsFromEnv(process.env, HAS_GMAIL);
+for (const s of SKIPPED) console.log(`[29cm:${s.brand}] 건너뜀 — ${s.why}`);
+if (!ACCOUNTS.length || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.log('[29cm] 돌릴 계정 없음(또는 SUPABASE_* 없음) — 수집 건너뜀.');
   process.exit(0);
 }
 
 const LOGIN_URL = 'https://partner-sso.one.musinsa.com/oauth/login?clientId=E9_PARTNER&platform=29cm&redirectUri=https%3A%2F%2Fpartner-auth.29cm.co.kr%2F';
 const ORDER_PAGE = 'https://partner-order.29cm.co.kr/list';
 const ORDER_API_RE = /commerce-admin-api\.29cm\.co\.kr\/partner-admin\/v4\/orders/;
-const MALL_KEY = '29cm';
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
 const ymd = d => d.toISOString().slice(0, 10);
 
@@ -43,43 +45,15 @@ function gmailClient() {
   o.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
   return google.gmail({ version: 'v1', auth: o });
 }
-async function readEmailOtp({ timeoutMs = 90000, notBeforeMs = Date.now() - 5 * 60_000 } = {}) {
-  const gmail = gmailClient();
-  const started = Date.now();
-  const seen = new Set();
-  const scan = async (id) => {
-    const msg = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
-    const receivedAt = Number(msg.data.internalDate || 0);
-    if (receivedAt && receivedAt < notBeforeMs) return null;
-    const headers = msg.data.payload?.headers || [];
-    const subject = headers.find(h => h.name === 'Subject')?.value || '';
-    const from = headers.find(h => h.name === 'From')?.value || '';
-    seen.add(`${from} | ${subject}`);
-    const parts = [subject];
-    const walk = p => { if (p.body?.data) parts.push(Buffer.from(p.body.data, 'base64').toString('utf-8')); (p.parts || []).forEach(walk); };
-    walk(msg.data.payload || {});
-    const text = parts.join('\n');
-    return (text.match(/인증[^0-9]{0,25}(\d{6})/) || text.match(/(\d{6})[^0-9]{0,25}인증/) || text.match(/\b(\d{6})\b/) || [])[1];
-  };
-  while (Date.now() - started < timeoutMs) {
-    // 스팸/휴지통 포함. 키워드 우선 → 없으면 최근 1시간 전체 메일 스캔(발신자/제목 무관 6자리 추출)
-    for (const q of [
-      `newer_than:15m (29CM OR 29cm OR MUSINSA OR 무신사 OR 인증 OR 인증번호 OR verification OR 파트너)`,
-      `newer_than:15m`,
-    ]) {
-      const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: 15, includeSpamTrash: true });
-      for (const m of (list.data.messages || [])) {
-        const code = await scan(m.id);
-        if (code) return code;
-      }
-    }
-    await new Promise(r => setTimeout(r, 4000));
-  }
-  console.error('[29cm] OTP 메일 못 찾음. 메일함 최근 1시간 목록:', [...seen].slice(0, 15).join(' || ') || '(메일 0건 — 이 계정으로 메일이 안 옴)');
-  throw new Error('OTP 메일에서 인증번호를 못 찾음');
-}
+//  usedIds = 이번 실행에서 이미 쓴 메일 id(다른 계정 코드 재사용 금지) · to = 그 계정 인증 메일 받는 주소(선택)
+//  돌려줌 { code, id, receivedAt }. 폴링·쿼터 백오프는 accounts.mjs pollOtp
+const readEmailOtp = (opts = {}) => pollOtp(gmailClient(), { notBeforeMs: Date.now() - 5 * 60_000, ...opts });
 
-async function login(browser) {
+//  이번 실행에서 쓴 OTP 메일 — 다음 계정이 같은 메일(앞 계정 코드)을 집지 않게
+const usedOtpIds = new Set();
+let lastOtpAt = 0;
+
+async function newCtx(browser) {
   const ctx = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
     viewport: { width: 1280, height: 900 },
@@ -87,13 +61,16 @@ async function login(browser) {
   });
   // 자동화 탐지 우회(navigator.webdriver 숨김)
   await ctx.addInitScript(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
-  const page = await ctx.newPage();
+  return ctx;
+}
+
+async function login(page, acct) {
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
 
   // 실측 셀렉터: 아이디=name=id / 비번=name=password / 로그인=button[type=submit]
-  await page.fill('input[name="id"], input[type="text"]', CM29_ID);
-  await page.fill('input[name="password"]', CM29_PW);
-  console.log('[29cm] 로그인 폼 입력 완료 → 제출');
+  await page.fill('input[name="id"], input[type="text"]', acct.id);
+  await page.fill('input[name="password"]', acct.pw);
+  console.log(`[29cm:${acct.brand}] 로그인 폼 입력 완료 → 제출`);
   await page.click('button[type="submit"]');
 
   // 2차 인증 화면 대기: 인증코드 입력칸(항상 존재)이 뜰 때까지
@@ -109,12 +86,12 @@ async function login(browser) {
   console.log('[29cm] 2차인증 화면 도달');
 
   let code;
-  if (CM29_TOTP_SECRET) {
+  if (acct.totp) {
     //  OTP 탭(첫 라디오) — 설정키로 6자리 자체 생성. 30초 경계에 걸리면 새 창으로 넘어간 뒤 만든다.
     await page.locator('input[type="radio"]').nth(0).check().catch(() => {});
     await page.waitForTimeout(500);
     if (authenticator.timeRemaining() < 5) await page.waitForTimeout(authenticator.timeRemaining() * 1000 + 500);
-    code = authenticator.generate(CM29_TOTP_SECRET);
+    code = authenticator.generate(acct.totp);
     console.log('[29cm] 2차인증 = 구글 OTP(TOTP) 자체 생성');
   } else {
   // '이메일' 탭 라디오 선택(기본 선택이지만 안전하게)
@@ -125,9 +102,9 @@ async function login(browser) {
   // 활성일 때만 새 메일을 요청하고 아니면 이미 발송된 최신 메일을 바로 읽는다.
   const reqBtn = page.getByRole('button', { name: /인증번호 받기|인증번호 재요청/ }).first();
   await reqBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
-  let otpNotBefore = Date.now() - 2 * 60_000;
-  if (await reqBtn.isEnabled().catch(() => false)) {
-    otpNotBefore = Date.now() - 10_000;
+  const requested = await reqBtn.isEnabled().catch(() => false);
+  const notBeforeMs = otpNotBefore({ now: Date.now(), requested, floor: lastOtpAt });
+  if (requested) {
     await reqBtn.click({ timeout: 10000 });
     console.log(`[29cm] 인증번호 새 발송 요청 (${new Date().toISOString()}) → 메일 대기`);
   } else {
@@ -135,7 +112,9 @@ async function login(browser) {
   }
 
   try {
-    code = await readEmailOtp({ notBeforeMs: otpNotBefore });
+    const hit = await readEmailOtp({ notBeforeMs, usedIds: usedOtpIds, to: acct.otpTo });
+    usedOtpIds.add(hit.id); lastOtpAt = Math.max(lastOtpAt, hit.receivedAt || 0);
+    code = hit.code;
   } catch (e) {
     //  invalid_grant = Gmail 재동의 필요(구글 OAuth 앱이 '테스트' 상태면 7일마다 만료). 원인을 한 줄로 남긴다.
     if (/invalid_grant/.test(String(e && (e.message || e)))) console.error('[29cm] 판정: Gmail refresh_token 만료/철회(invalid_grant) → CM29_TOTP_SECRET 으로 전환하거나 Gmail 재동의');
@@ -152,8 +131,7 @@ async function login(browser) {
     console.error(`[29cm] 2차인증 후에도 로그인 화면. body="${bodyTxt}"`);
     throw new Error('2차인증 실패(코드 틀림/만료 가능)');
   }
-  console.log('[29cm] 로그인 완료');
-  return { ctx, page };
+  console.log(`[29cm:${acct.brand}] 로그인 완료`);
 }
 
 // 주문조회 페이지 진입 → 인증된 orders API 응답 가로채기 (3개월 청킹)
@@ -168,34 +146,24 @@ async function fetchWindow(page, fromDate, toDate) {
   return (body?.data?.content || body?.data?.list || []);
 }
 
-function mapOrder(o) {
-  return {
-    channel: '29cm', mall_key: MALL_KEY,
-    order_id: String(o.orderNumber ?? o.orderNo ?? o.orderId ?? o.id),
-    order_date: o.orderedAt ?? o.orderDate ?? o.paymentCompletedAt ?? null,
-    buyer_name: o.ordererName ?? o.buyerName ?? null,
-    receiver_name: o.receiverName ?? o.recipientName ?? null,
-    receiver_phone: o.receiverPhone ?? null, receiver_address: o.receiverAddress ?? null,
-    pay_amount: Number(o.actualSalePrice ?? o.realSalePrice ?? o.salePrice ?? o.paymentAmount ?? 0),
-    channel_status: o.orderStatus ?? o.status ?? null, status: 'new', raw: o,
-  };
-}
-
-async function ensureMall() {
-  const { data } = await db.from('malls').select('mall_key').eq('mall_key', MALL_KEY).maybeSingle();
+//  계정의 몰이 없으면 만든다(있으면 안 건드림) — 브랜드는 이름으로 찾고, 못 찾으면 비워 두고 알린다
+async function ensureMall(acct) {
+  const { data, error: selErr } = await db.from('malls').select('mall_key').eq('mall_key', acct.mallKey).maybeSingle();
+  if (selErr) throw selErr;   // 조회가 실패했는데 '없다'로 보고 upsert 하면 있던 몰의 브랜드 연결을 지운다
   if (data) return;
-  const { data: brand } = await db.from('brands').select('id').or('name.ilike.%하이헤이호%,name.ilike.%hiheyho%').maybeSingle();
-  await db.from('malls').upsert({ mall_key: MALL_KEY, label: '29CM', channel: '29cm', brand_id: brand?.id ?? null, active: true, connected: true }, { onConflict: 'mall_key' });
+  const { data: brand } = await db.from('brands').select('id').or(acct.brandMatch.map(n => `name.ilike.%${n}%`).join(',')).limit(1).maybeSingle();
+  if (!brand) console.warn(`[29cm:${acct.brand}] 브랜드를 못 찾음 — 몰 ${acct.mallKey} 를 브랜드 없이 만든다(설정에서 연결)`);
+  const { error } = await db.from('malls').upsert({ mall_key: acct.mallKey, label: acct.mallLabel, channel: '29cm', brand_id: brand?.id ?? null, active: true, connected: true }, { onConflict: 'mall_key' });
+  if (error) throw error;
 }
 
-async function run() {
-  await ensureMall();
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
-  });
+//  계정 하나 = 로그인 창 하나. 끝나면 그 창을 닫는다(다음 계정과 세션이 섞이지 않게)
+async function syncAccount(browser, acct) {
+  await ensureMall(acct);
+  const ctx = await newCtx(browser);   // 로그인이 실패해도 finally 에서 닫힌다
   try {
-    const { page } = await login(browser);
+    const page = await ctx.newPage();
+    await login(page, acct);
     // 최근 400일을 88일 창으로 청킹
     const all = [];
     const end = Date.now(), CH = 88 * 864e5;
@@ -204,15 +172,28 @@ async function run() {
       all.push(...await fetchWindow(page, ymd(new Date(ws)), ymd(new Date(we))));
     }
     const byId = {};
-    for (const o of all) { const k = String(o.orderNumber ?? o.orderNo ?? o.orderId ?? o.id); if (k) byId[k] = o; }
-    const rows = Object.values(byId).map(mapOrder).filter(r => r.order_id && r.order_id !== 'undefined');
-    console.log(`[29cm] 주문 ${rows.length}건`);
+    for (const o of all) { const k = orderKey(o); if (k) byId[k] = o; }
+    const rows = Object.values(byId).map(o => mapOrder(o, acct.mallKey)).filter(r => r.order_id && r.order_id !== 'undefined');
+    console.log(`[29cm:${acct.brand}] 주문 ${rows.length}건`);
     if (rows.length) {
       const { error } = await db.from('channel_orders').upsert(rows, { onConflict: 'mall_key,order_id' });
       if (error) throw error;
-      console.log(`[29cm] Supabase 저장 ${rows.length}건`);
+      console.log(`[29cm:${acct.brand}] Supabase 저장 ${rows.length}건 (${acct.mallKey})`);
     }
-  } finally { await browser.close(); }
+    return rows.length;
+  } finally { await ctx.close().catch(() => {}); }
+}
+
+async function run() {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+  });
+  let results;
+  try { results = await runAccounts(ACCOUNTS, a => syncAccount(browser, a)); }
+  finally { await browser.close(); }
+  console.log('[29cm] 결과:', results.map(r => `${r.brand} ${r.ok ? `${r.count}건` : '실패'}`).join(' · '));
+  if (results.some(r => !r.ok)) process.exit(1);
 }
 
 run().catch(e => { console.error('[29cm] 실패:', e); process.exit(1); });
