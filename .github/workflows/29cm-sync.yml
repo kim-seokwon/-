@@ -3,7 +3,7 @@ name: 29CM 주문 수집
 on:
   # 10-22 Gmail 재연결·수집 확인(756건) → 정기 재개. 로그인마다 인증번호 메일 1통이라 하루 1번(06:00 KST)만
   schedule:
-    - cron: '0 21 * * *'
+    - cron: '17 21 * * *'   # 정각은 GitHub 혼잡으로 건너뛰어짐(10-23 06:00 미실행) → 06:17 KST
   workflow_dispatch:
 
 concurrency:
