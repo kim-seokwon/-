@@ -227,3 +227,10 @@ test('요청 버튼 미클릭: 버튼 이름·쿨다운 문구로만 판정 · �
     assert.match(SYNC, /snap\(page, acct, '1-도달'\)/);
     assert.match(YML, /actions\/upload-artifact@v4[\s\S]*if: always\(\)[\s\S]*path: channel-bots\/29cm\/debug\//);
 });
+
+test('saleAmount 0 이면 pay_amount 0 — 정가로 바꾸지 않는다, 칸이 없을 때만 sellAmount', () => {
+    const z = mapOrder({ orderSerial: 'Z1', items: [{ orderSerial: 'Z1', orderItemManageId: 1, orderStatusDescription: '배송완료', saleAmount: 0, sellAmount: 30000 }] }, '29cm');
+    assert.equal(z.pay_amount, 0); assert.equal(z.order_amount, 30000);
+    const n = mapOrder({ orderSerial: 'Z2', items: [{ orderSerial: 'Z2', orderItemManageId: 2, orderStatusDescription: '배송완료', sellAmount: 30000 }] }, '29cm');
+    assert.equal(n.pay_amount, 30000);
+});

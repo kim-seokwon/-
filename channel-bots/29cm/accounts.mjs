@@ -197,7 +197,8 @@ export function mapOrder(order, mallKey) {
     order_date: f.orderedAt ?? f.paidAt ?? null,
     buyer_name: f.orderName ?? null,
     receiver_name: f.receiverName ?? null,
-    pay_amount: live.length ? (sum('saleAmount') || sum('sellAmount')) : 0,
+    //  실결제 = saleAmount. 칸이 아예 없을 때만 sellAmount 로 대신한다(0원 결제를 정가로 바꾸지 않게)
+    pay_amount: live.some(l => l.saleAmount != null) ? sum('saleAmount') : sum('sellAmount'),
     order_amount: sum('sellAmount'),
     channel_status: `${code}:` + [...new Set(items.map(l => l.orderStatusDescription).filter(Boolean))].join(','),
     invoice_no: f.invoiceNo ?? null, courier: f.deliveryCompanyName ?? null,
