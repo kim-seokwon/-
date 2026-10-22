@@ -1,5 +1,8 @@
 import { mockData, STAGES } from './mockData.js';
 import { makeTracker, trackAllowed, usageNotice, ORDER_FILTER_ACTION, INV_TAB_ACTION } from './uiTrack.js';
+import { TIPS, MANUAL, searchManual } from './helpDict.js';
+import { tipHTML, initTips } from './helpWidget.js';
+import { helpTabs, helpFocusKey, unreadCount, validateFeedback, validateNotice, feedbackPath, helpPanelHTML, manualListHTML, helpFabHTML } from './helpCenter.js';
 import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx, MAX_PER_BATCH as HX_MAX } from './hometaxExcel.js';
 // 뉴스 칸 규칙 — 수집기(news-sync)와 같은 파일을 쓴다. 고치면 수집과 화면이 같이 바뀐다.
 import { COMPETITORS, customerList, competitionList, oneStoryEach, validCounts, datedOnly } from './supabase/functions/_shared/news-rules.js';
@@ -9,6 +12,8 @@ import {
 } from './competitorBoard.js';
 import { leadStory, openCalendar, topWorked, brandMoves, weekSummary } from './paperEdition.js';
 import { cardDeck } from './paperCards.js';
+// 29CM 몰 판별 — 봇(계정별 몰 29cm · 29cm-rohi)과 같은 규칙
+import { is29cmKey } from './channel-bots/29cm/accounts.mjs';
 import { magazine, MAG, reactBits, kNum } from './newsMagazine.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
@@ -985,6 +990,7 @@ class BhasApp {
                 if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
             }
             this._paintPaper();
+            this._helpBoot();
         }
     }
     //  조간은 어느 화면이든 그 위를 덮는다 — 앱 칸 밖의 전용 자리에 그린다
@@ -1001,6 +1007,7 @@ class BhasApp {
                 if (!this.paper || !document.getElementById('pc-track') || /INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')) return;
                 if (e.key === 'ArrowRight') { e.preventDefault(); this.pcGo(1); }
                 if (e.key === 'ArrowLeft') { e.preventDefault(); this.pcGo(-1); }
+                if (e.key === 'Escape') { e.preventDefault(); this.closePaper(); }
             });
         }
     }
@@ -1647,7 +1654,7 @@ class BhasApp {
                     
                     ${this.renderSubView(products)}
                 </main>
-                ${(role === 'MASTER' || role === 'STAFF') ? `<button onclick="app.openFeedbackModal()" class="feedback-fab" title="불편사항 접수"><i class="ph ph-chat-dots"></i><span>불편사항</span></button>` : ''}
+                ${helpFabHTML(this._help ? this._help.unread : 0)}
             </div>
 
             <div id="global-search-overlay" class="search-overlay" style="display: none;">
@@ -2346,7 +2353,7 @@ class BhasApp {
         const CHCOL = { '카페24': '#3b82f6', '키디키디': '#f59e0b', '스마트스토어': '#10b981', '무신사': '#111827', '29CM': '#6b7280' };
         const channelOf = (o) => {
             const mk = (o.mall_key || '').toLowerCase();
-            if (mk === '29cm') return '29CM';
+            if (is29cmKey(mk)) return '29CM';   // 29cm(하이헤이호) · 29cm-rohi(로하이스튜디오) …
             if (mk === 'kidikidi') return '키디키디';
             if (mk === 'smartstore') return '스마트스토어';
             if (mk === 'musinsa') return '무신사';
@@ -2469,7 +2476,7 @@ class BhasApp {
         const brandColor = {}; brandArr.forEach(([b], i) => brandColor[b] = palette[i % palette.length]);
         // 채널별은 항상 5개 고정 표시(0원도) — 카페24·키디키디·29CM·스마트스토어·기타
         const CHAN_FIXED = ['카페24', '키디키디', '29CM', '스마트스토어', '기타'];
-        const _platDisp = p => ({ cafe24: '카페24', kidikidi: '키디키디', '29cm': '29CM', smartstore: '스마트스토어' })[String(p || '').toLowerCase()] || '기타';
+        const _platDisp = p => is29cmKey(p) ? '29CM' : ({ cafe24: '카페24', kidikidi: '키디키디', smartstore: '스마트스토어' })[String(p || '').toLowerCase()] || '기타';
         // 채널×브랜드 이번달 매출도 서버 집계(brandChannel, 전량)에서. this.orders(500건)면 로하이·토비가 사라진다.
         const chanBrand = {}; CHAN_FIXED.forEach(c => chanBrand[c] = {});
         const _useAggCh = this.salesAggData && Array.isArray(this.salesAggData.brandChannel) && this.salesAggData.brandChannel.length > 0;
@@ -2728,16 +2735,16 @@ class BhasApp {
                 ${kpiCard('오늘 매출', wonF(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
                 ${hasFinancial
                     ? kpiCard('주문금액', won(monthFinancial.order), '원', `<span style="font-size:0.68rem;color:var(--text-muted)">${mm}월 · 취소${monthFinancial.unpaidN ? `·입금 전 ${monthFinancial.unpaidN.toLocaleString()}건` : ''} 포함</span>`, '#3b82f6', 'sales')
-                    : kpiCard('실결제금액', wonF(monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
-                ${kpiCard('환불', wonF(hasFinancial ? monthFinancial.refund : 0), '원', hasRefundSplit
+                    : kpiCard(`실결제금액 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
+                ${kpiCard(`환불 ${tipHTML('refund_split', TIPS)}`, wonF(hasFinancial ? monthFinancial.refund : 0), '원', hasRefundSplit
                     ? `<span style="font-size:0.68rem;color:var(--text-muted)">${monthFinancial.refundN.toLocaleString()}건 · 취소 ${won(monthFinancial.cancel)} · 반품 ${won(monthFinancial.ret)}${monthFinancial.retPend ? `(처리중 ${monthFinancial.retPend})` : ''}</span>`
                     : `${mm}월 환불 기준`, '#a855f7', 'orders')}
-                ${kpiCard(`${mm}월 매출`, wonF(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
-                ${kpiCard(`${mm}월 주문`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">${nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}${nr.unk ? ` · 미분류 ${nr.unk}` : ''} · ` : ''}객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'orders')}
+                ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
+                ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', `<span style="font-size:0.68rem;color:var(--text-muted)">${nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}${nr.unk ? ` · 미분류 ${nr.unk}` : ''} · ` : ''}객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원</span>`, '#10b981', 'orders')}
             </div>
             <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:stretch">
                 <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
-                    ${panel('채널·브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>', `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
+                    ${panel(`채널·브랜드별 매출 ${tipHTML('channel_basis', TIPS)} <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>`, `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
                         <div style="flex:1;min-width:240px">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>
                         <div style="width:200px;flex-shrink:0"><div style="position:relative;display:flex;justify-content:center;margin-bottom:0.5rem">${donut(brandArr, palette)}${brandArr.length ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none"><div style="font-size:1.05rem;font-weight:800;line-height:1;color:${palette[0]}">${Math.round(brandArr[0][1] / brandGrand * 100)}%</div><div style="font-size:0.58rem;color:var(--text-muted);max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(brandArr[0][0])}</div></div>` : ''}</div>${brandTotals}</div>
                     </div>`)}
@@ -5371,7 +5378,8 @@ class BhasApp {
         const platformKey = (o) => {
             if ((o.channel || 'cafe24') === 'cafe24') return 'cafe24';
             const mk = (o.mall_key || '').toLowerCase();
-            if (['kidikidi', 'musinsa', '29cm', 'smartstore'].includes(mk)) return mk;
+            if (is29cmKey(mk)) return '29cm';
+            if (['kidikidi', 'musinsa', 'smartstore'].includes(mk)) return mk;
             const ch = (o.channel || '').toLowerCase();
             if (ch === 'eland') return 'kidikidi';
             if (ch === 'naver') return 'smartstore';
@@ -5385,8 +5393,9 @@ class BhasApp {
             const CANCELLED = new Set(['cancel', 'return']);
             this.salesAggData.channel.forEach(r => {
                 if (CANCELLED.has(r.state) || !scopeMonths.includes(r.ym)) return;
-                chanSum[r.platform] = (chanSum[r.platform] || 0) + (Number(r.amt) || 0);
-                chanCnt[r.platform] = (chanCnt[r.platform] || 0) + (r.cnt || 0);
+                const pk = is29cmKey(r.platform) ? '29cm' : r.platform;   // 서버 집계(021)는 29cm-rohi 를 따로 센다 → 29CM 로 합친다
+                chanSum[pk] = (chanSum[pk] || 0) + (Number(r.amt) || 0);
+                chanCnt[pk] = (chanCnt[pk] || 0) + (r.cnt || 0);
             });
         } else {
             // 브랜드 상세(또는 브랜드 접근제한)는 그 브랜드 슬라이스에서 계산해야 정확
@@ -5398,7 +5407,7 @@ class BhasApp {
             const ch = (m.channel || 'cafe24'), mk = (m.mall_key || '').toLowerCase();
             if (ch === 'cafe24') chanMalls.cafe24.push(m);
             else if (mk === 'kidikidi' || ch === 'eland') chanMalls.kidikidi.push(m);
-            else if (mk === '29cm') chanMalls['29cm'].push(m);
+            else if (is29cmKey(mk)) chanMalls['29cm'].push(m);
             else if (mk === 'musinsa') chanMalls.musinsa.push(m);
             else if (mk === 'smartstore' || ch === 'naver') chanMalls.smartstore.push(m);
         });
@@ -5406,7 +5415,7 @@ class BhasApp {
         const chanStatusOf = (key) => { const ms = chanMalls[key] || []; if (!ms.length) return null; let best = null; ms.forEach(m => { const s = this._channelStatus(m); if (s && (!best || (_rank[s.label] || 0) > (_rank[best.label] || 0))) best = s; }); return best; };
         const connectedSet = new Set(Object.keys(chanMalls).filter(k => chanMalls[k].length));
         const chanCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
-            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-broadcast" style="color:var(--primary)"></i> ${shortLabel} 채널별 매출</div>
+            <div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem"><i class="ph ph-broadcast" style="color:var(--primary)"></i> ${shortLabel} 채널별 매출 ${tipHTML('channel_basis', TIPS)}</div>
             <div style="display:flex;flex-direction:column;gap:0.75rem">
             ${CHANNELS.map(ch => { const amt = chanSum[ch.key] || 0; const cnt = chanCnt[ch.key] || 0; const on = amt > 0 || cnt > 0; const st = chanStatusOf(ch.key); const conn = connectedSet.has(ch.key); const active = on || (st && st.color === '#22c55e'); const stBadge = st ? `<span style="font-size:0.64rem;font-weight:700;color:${st.color}">● ${st.label}</span> <span style="font-size:0.6rem;color:var(--text-muted)">${st.sub}</span>` : '<span style="font-size:0.66rem;background:rgba(148,163,184,0.15);padding:1px 6px;border-radius:6px">연동 예정</span>'; return `<div style="display:flex;align-items:center;gap:10px">
                 <span style="width:9px;height:9px;border-radius:3px;background:${active ? ch.color : 'rgba(148,163,184,0.4)'};flex-shrink:0"></span>
@@ -5486,7 +5495,7 @@ class BhasApp {
         const optMax = Math.max(1, ...optArr.map(x => x[1]));
         const netCard = `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
             <div style="font-size:0.92rem;font-weight:700;margin-bottom:0.3rem"><i class="ph ph-coins" style="color:#10b981"></i> 채널 순이익 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:500">(수수료 차감)</span></div>
-            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.9rem">총매출 ${won(grossTot)} → 순매출 <b style="color:#10b981">${won(netTot)}</b></div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.9rem">총매출 ${won(grossTot)} → 순매출 ${tipHTML('net_after_fee', TIPS)} <b style="color:#10b981">${won(netTot)}</b></div>
             ${netArr.length ? netArr.map(([c, v]) => `<div style="margin-bottom:0.6rem">
                 <div style="display:flex;justify-content:space-between;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600">${CH_LABEL[c] || c} <span style="font-size:0.68rem;color:var(--text-muted)">수수료 ${Math.round((CH_FEE[c] ?? 0.05) * 100)}%</span></span><span style="font-weight:800;font-variant-numeric:tabular-nums">${won(v.n)}</span></div>
                 <div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${Math.max(3, v.g / netMax * 100)}%;background:#10b981;border-radius:5px;opacity:0.9"></div></div>
@@ -5983,7 +5992,7 @@ class BhasApp {
         const s = m.series, lo = Math.min(...s), hi = Math.max(...s), w = 100, h = 24;
         const pts = s.length > 1 ? s.map((v, i) => `${(i / (s.length - 1) * w).toFixed(1)},${(hi === lo ? h / 2 : h - (v - lo) / (hi - lo) * h).toFixed(1)}`).join(' ') : '';
         return `<div style="margin-top:0.7rem;border-top:1px solid var(--card-border);padding-top:0.6rem">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:0.78rem;font-weight:700">전체 회원수 <b style="font-size:1rem;color:#6366f1">${m.total.toLocaleString()}명</b> <span style="font-size:0.66rem;color:var(--text-muted);font-weight:500">${m.date}${m.stale ? ` · ${m.stale.date} 일부 몰 미수집(${m.stale.got}/${m.stale.need})` : ''}</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:0.78rem;font-weight:700">전체 회원수 ${tipHTML('member_count', TIPS)} <b style="font-size:1rem;color:#6366f1">${m.total.toLocaleString()}명</b> <span style="font-size:0.66rem;color:var(--text-muted);font-weight:500">${m.date}${m.stale ? ` · ${m.stale.date} 일부 몰 미수집(${m.stale.got}/${m.stale.need})` : ''}</span></div>
             ${pts ? `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:90px;height:24px"><polyline points="${pts}" fill="none" stroke="#6366f1" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>` : ''}</div>
             <div style="display:flex;gap:14px;font-size:0.76rem;color:var(--text-muted);margin-top:4px">${diff(m.dPrev, '전일 대비')}${diff(m.dMonth, '30일 전 대비')}</div></div>`;
     }
@@ -6757,7 +6766,245 @@ class BhasApp {
     }
     closeGlobalModal() { const c = document.getElementById('global-modal-container'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }
 
-    // ── 불편사항 접수(직원용) ──────────────────────────────────
+    // ── 도움말(공지 · 사용설명서 · 불편접수) — 오른쪽 아래 ? 버튼. 패널은 앱 칸 밖 #help-slot 에 따로 그린다 ──
+    //  앱 전체가 다시 그려져도 패널은 그대로(적던 글이 안 날아감). 패널은 도움말 동작 때만 다시 그린다.
+    //  문구·검사·HTML 은 helpCenter.js / helpDict.js, 숫자 옆 ? 는 helpWidget.js.
+    _helpOffline() { return ['dev', 'preview', 'preview-user'].includes(this.currentUser?.id); }   // 화면 검수용 가짜 계정 — DB 안 부름
+    _helpBoot() {
+        if (!this.currentUser || this.currentView === 'login') {   // 로그아웃 — 남의 공지·접수가 남지 않게 비운다
+            if (this._help) { this._help = null; const el = document.getElementById('help-slot'); if (el) el.innerHTML = ''; }
+            return;
+        }
+        if (!this._tipsOn) { this._tipsOn = true; initTips(TIPS); }
+        if (this._help && this._help.user === this.currentUser.id) return;
+        this._help = { user: this.currentUser.id, open: false, tab: null, q: '', notices: null, readIds: [], feedback: null, unread: 0, editing: null, error: '', busy: false };
+        if (!document.getElementById('help-slot')) {
+            const el = document.createElement('div'); el.id = 'help-slot'; document.body.appendChild(el);
+            el.addEventListener('click', e => this._helpClick(e));
+            el.addEventListener('input', e => { if (e.target.id === 'hc-q') this._helpSearch(e.target.value); });
+            el.addEventListener('change', e => {
+                if (e.target.id !== 'hc-fb-img') return;
+                const f = e.target.files?.[0], n = document.getElementById('hc-fb-img-name');
+                if (n) n.textContent = f ? `${f.name} (${Math.max(1, Math.round(f.size / 1024)).toLocaleString()}KB)` : '화면 사진 붙이기(선택 · 5MB 까지)';
+            });
+            document.addEventListener('keydown', e => {
+                if (e.key !== 'Escape' || !this._help?.open || this.paper) return;
+                if (document.getElementById('tip-pop') && !document.getElementById('tip-pop').hidden) return;   // 툴팁이 먼저 닫힌다
+                this.closeHelp();
+            });
+        }
+        if (helpTabs(this.currentUser.role).includes('notice')) this._helpLoadNotices();
+    }
+    _helpRole() { return this.currentUser?.role || 'CLIENT'; }
+    //  지금 보고 있는 화면 — 맥 화면이면 맨 앞 창(없으면 home), 아니면 currentView
+    _helpScreen() {
+        const front = (this.wins || []).filter(x => !x.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0];
+        return String(front ? front.view : this.macMode ? 'home' : this.currentView || '').slice(0, 200);   // 창이 다 내려가 있으면 바탕화면(홈)
+    }
+    toggleHelp() { if (this._help?.open) this.closeHelp(); else this.openHelp(); }
+    openHelp(tab) {
+        this._helpBoot();
+        const h = this._help; if (!h) return;
+        const tabs = helpTabs(this._helpRole());
+        h.open = true; h.error = '';
+        h.tab = tabs.includes(tab) ? tab : (tabs.includes(h.tab) ? h.tab : (h.unread ? 'notice' : tabs.includes('manual') ? 'manual' : tabs[0]));
+        this._helpEnterTab();
+        this._paintHelp();
+    }
+    closeHelp() { if (!this._help) return; this._help.open = false; this._help.editing = null; this._paintHelp(); }
+    _helpEnterTab() {
+        const h = this._help;
+        if (h.tab === 'notice') { if (!h.notices) this._helpLoadNotices(); else this._helpMarkRead(); }
+        if (h.tab === 'feedback' && !h.feedback) this._helpLoadFeedback();
+    }
+    _paintHelp() {
+        const el = document.getElementById('help-slot'); if (!el) return;
+        const h = this._help;
+        //  다시 그리기 전 포커스 자리 — 버튼·패널을 통째로 바꾸므로 그대로 두면 BODY 로 떨어진다(키보드 사용자)
+        const act = document.activeElement;
+        const wasOpen = !!el.querySelector('.hc-panel');
+        const onFab = !!act?.closest?.('.help-fab'), inPanel = !!(act && el.contains(act) && act !== el);
+        const key = inPanel ? helpFocusKey(act) : null;
+        const fab = document.querySelector('.help-fab');
+        if (fab) { fab.outerHTML = helpFabHTML(h ? h.unread : 0); const f2 = document.querySelector('.help-fab'); if (f2) f2.setAttribute('aria-expanded', String(!!h?.open)); }
+        const fab2 = () => document.querySelector('.help-fab');
+        if (!h || !h.open) {
+            el.innerHTML = '';
+            if (onFab || inPanel || wasOpen && (!act || act === document.body)) fab2()?.focus();   // 닫으면 연 버튼으로 돌아간다
+            return;
+        }
+        el.innerHTML = helpPanelHTML({
+            role: this._helpRole(), tab: h.tab, unread: h.unread, notices: h.notices, readIds: h.readIds,
+            q: h.q, manual: searchManual(h.q, MANUAL, TIPS), tips: TIPS, feedback: h.feedback,
+            editing: h.editing, error: h.error, busy: h.busy, screen: this._helpScreen(),
+        });
+        const back = key && el.querySelector(key);
+        if (back && !back.disabled) back.focus();
+        else if (!wasOpen || inPanel) (el.querySelector('.hc-tab.on') || el.querySelector('.hc-x'))?.focus();   // 막 열었으면 패널 안으로
+        else if (onFab) fab2()?.focus();
+    }
+    _helpSearch(q) {
+        const h = this._help; if (!h) return;
+        h.q = q;
+        const box = document.getElementById('hc-manual-list');
+        if (box) box.innerHTML = manualListHTML({ q, manual: searchManual(q, MANUAL, TIPS), tips: TIPS });
+    }
+    async _helpLoadNotices() {
+        const h = this._help; if (!h) return;
+        if (this._helpOffline()) { h.notices = h.notices || []; h.unread = unreadCount(h.notices, h.readIds); this._paintHelp(); return; }
+        try {
+            const me = this._me();
+            const [n, r] = await Promise.all([
+                this.supabase.from('notices').select('id,title,body,pinned,published,created_at').order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(50),
+                this.supabase.from('notice_reads').select('notice_id').eq('username', me),
+            ]);
+            if (n.error) throw n.error;
+            if (h !== this._help) return;
+            h.notices = n.data || []; h.readIds = (r.data || []).map(x => x.notice_id);
+        } catch (e) { h.notices = h.notices || []; if (h.open && h.tab === 'notice') h.error = '공지를 못 불러왔습니다: ' + (e.message || e); }
+        h.unread = unreadCount(h.notices, h.readIds);
+        if (h.open && h.tab === 'notice') this._helpMarkRead();
+        this._paintHelp();
+    }
+    //  공지 탭을 열면 보이는 공지 전부 읽음(이미 읽은 건 다시 안 보냄). 점은 바로 끄고, 저장 실패는 다음에 다시 시도
+    async _helpMarkRead() {
+        const h = this._help; if (!h || !h.notices) return;
+        const seen = new Set(h.readIds);
+        const fresh = h.notices.filter(n => n.published !== false && !seen.has(n.id)).map(n => n.id);
+        if (!fresh.length) return;
+        h.readIds = [...h.readIds, ...fresh]; h.unread = 0;
+        if (this._helpOffline()) return;
+        try {
+            const { error } = await this.supabase.from('notice_reads').upsert(fresh.map(id => ({ notice_id: id })), { onConflict: 'notice_id,username', ignoreDuplicates: true });
+            if (error) throw error;
+        } catch (_e) { h.readIds = h.readIds.filter(id => !fresh.includes(id)); }
+    }
+    async _helpLoadFeedback() {
+        const h = this._help; if (!h) return;
+        if (this._helpOffline()) { h.feedback = h.feedback || []; this._paintHelp(); return; }
+        try {
+            let q = this.supabase.from('feedback_reports').select('id,username,screen,body,image_path,status,admin_note,created_at').order('created_at', { ascending: false }).limit(100);
+            if (this._helpRole() !== 'MASTER') q = q.eq('username', this._me());
+            const { data, error } = await q;
+            if (error) throw error;
+            if (h !== this._help) return;
+            h.feedback = data || [];
+        } catch (e) { h.feedback = h.feedback || []; h.error = '불편접수를 못 불러왔습니다: ' + (e.message || e); }
+        this._paintHelp();
+    }
+    async _helpClick(e) {
+        const b = e.target.closest('[data-hc]'); if (!b || b.disabled) return;
+        const h = this._help; if (!h) return;
+        const act = b.dataset.hc, id = b.dataset.id;
+        if (act === 'close') return this.closeHelp();
+        if (act === 'tab') { h.tab = b.dataset.tab; h.error = ''; h.editing = null; this._helpEnterTab(); return this._paintHelp(); }
+        if (act === 'n-new') { h.editing = { title: '', body: '', pinned: false, published: true }; return this._paintHelp(); }
+        if (act === 'n-edit') { const n = (h.notices || []).find(x => x.id === id); if (n) { h.editing = { ...n }; this._paintHelp(); } return; }
+        if (act === 'n-cancel') { h.editing = null; h.error = ''; return this._paintHelp(); }
+        if (act === 'n-save') return this._helpSaveNotice();
+        if (act === 'n-pin') { const n = (h.notices || []).find(x => x.id === id); if (n) return this._helpUpdateNotice(id, { pinned: !n.pinned }); return; }
+        if (act === 'fb-send') return this._helpSendFeedback();
+        if (act === 'fb-st') return this._helpSetStatus(id, b.dataset.st);
+        if (act === 'fb-img') return this._helpOpenImage(id);
+    }
+    async _helpSaveNotice() {
+        const h = this._help; if (!h || !h.editing || this._helpRole() !== 'MASTER') return;
+        const title = (document.getElementById('hc-n-title')?.value || '').trim();
+        const body = document.getElementById('hc-n-body')?.value || '';
+        const pinned = !!document.getElementById('hc-n-pin')?.checked, published = !!document.getElementById('hc-n-pub')?.checked;
+        h.editing = { ...h.editing, title, body, pinned, published };
+        const bad = validateNotice(title, body);
+        if (bad) { h.error = bad; return this._paintHelp(); }
+        if (this._helpOffline()) { h.error = '미리보기에서는 저장하지 않습니다.'; return this._paintHelp(); }
+        h.busy = true; h.error = ''; this._paintHelp();
+        try {
+            const row = { title, body, pinned, published };
+            const { error } = h.editing.id
+                ? await this.supabase.from('notices').update({ ...row, updated_at: new Date().toISOString() }).eq('id', h.editing.id)
+                : await this.supabase.from('notices').insert([row]);
+            if (error) throw error;
+            h.editing = null; this.showToast('공지를 저장했습니다.');
+            await this._helpLoadNotices();
+        } catch (e) { h.error = '저장 실패: ' + (e.message || e); }
+        h.busy = false; this._paintHelp();
+    }
+    async _helpUpdateNotice(id, patch) {
+        const h = this._help;
+        if (this._helpOffline()) { h.error = '미리보기에서는 저장하지 않습니다.'; return this._paintHelp(); }
+        try {
+            const { error } = await this.supabase.from('notices').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+            if (error) throw error;
+            await this._helpLoadNotices();
+        } catch (e) { h.error = '저장 실패: ' + (e.message || e); this._paintHelp(); }
+    }
+    async _helpSendFeedback() {
+        const h = this._help; if (!h || h.busy) return;
+        const ta = document.getElementById('hc-fb-body'), fi = document.getElementById('hc-fb-img');
+        const body = (ta?.value || '').trim(), file = fi?.files?.[0] || null;
+        const bad = validateFeedback(body, file);
+        const showErr = msg => {   // 다시 그려도 적은 글·고른 사진이 남게(다시 누르면 그대로 재시도)
+            h.error = msg; this._paintHelp();
+            const t2 = document.getElementById('hc-fb-body'); if (t2) t2.value = ta?.value || '';
+            const f2 = document.getElementById('hc-fb-img');
+            if (f2 && file) { try { const dt = new DataTransfer(); dt.items.add(file); f2.files = dt.files; f2.dispatchEvent(new Event('change', { bubbles: true })); } catch { /* 못 넣으면 다시 고르면 된다 */ } }
+        };
+        if (bad) return showErr(bad);
+        if (this._helpOffline()) return showErr('미리보기에서는 접수하지 않습니다.');
+        h.busy = true; h.error = '';
+        const btn = document.querySelector('[data-hc="fb-send"]'); if (btn) btn.disabled = true;
+        try {
+            const me = this._me();
+            let image_path = null;
+            if (file) {
+                const path = feedbackPath(me, file.type, crypto.randomUUID());
+                if (!path) throw new Error('사진 저장 위치를 만들지 못했습니다');
+                const { error: upErr } = await this.supabase.storage.from('feedback').upload(path, file, { contentType: file.type, upsert: false });
+                if (upErr) throw upErr;
+                image_path = path;
+            }
+            const { error } = await this.supabase.from('feedback_reports').insert([{
+                body, image_path, screen: this._helpScreen(),
+                screen_meta: { w: window.innerWidth, h: window.innerHeight },
+            }]);
+            if (error) {   // 사진만 올라가고 접수가 안 됐으면 방금 올린 사진을 치운다(092: 안 붙은 내 파일만 지울 수 있음)
+                if (image_path) await this._helpDropUpload(image_path);
+                throw error;
+            }
+            h.busy = false; h.feedback = null;
+            this.showToast('불편사항을 접수했습니다. 고마워요!');
+            await this._helpLoadFeedback();
+        } catch (e) { h.busy = false; showErr('접수 실패: ' + (e.message || e)); }
+    }
+    //  접수에 못 붙은 첨부 치우기 — 실패해도 접수 오류 안내가 먼저라 조용히 넘기되 콘솔에 남긴다
+    async _helpDropUpload(path) {
+        try {
+            const { error } = await this.supabase.storage.from('feedback').remove([path]);
+            if (error) throw error;
+        } catch (e) { console.warn('[help] 남은 첨부 정리 실패', path, e?.message || e); }
+    }
+    async _helpSetStatus(id, status) {
+        const h = this._help; if (!h || this._helpRole() !== 'MASTER') return;
+        if (this._helpOffline()) { h.error = '미리보기에서는 저장하지 않습니다.'; return this._paintHelp(); }
+        try {
+            const { error } = await this.supabase.from('feedback_reports').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+            if (error) throw error;
+            const f = (h.feedback || []).find(x => x.id === id); if (f) f.status = status;
+            h.error = '';
+        } catch (e) { h.error = '상태 변경 실패: ' + (e.message || e); }
+        this._paintHelp();
+    }
+    //  첨부는 공개 주소가 없다(private 버킷) — 10분짜리 서명 주소로만 새 탭에 연다
+    async _helpOpenImage(id) {
+        const h = this._help; const f = (h?.feedback || []).find(x => x.id === id); if (!f?.image_path) return;
+        const w = window.open('', '_blank');
+        try {
+            const { data, error } = await this.supabase.storage.from('feedback').createSignedUrl(f.image_path, 600);
+            if (error || !data?.signedUrl) throw error || new Error('주소 없음');
+            if (w) { w.opener = null; w.location.href = data.signedUrl; } else window.open(data.signedUrl, '_blank', 'noopener');
+        } catch (e) { if (w) w.close(); h.error = '사진을 못 열었습니다: ' + (e?.message || e); this._paintHelp(); }
+    }
+
+    // ── 불편사항 접수(옛 방식, 10-22 부터 도움말 패널 불편접수로 대체 — 버튼은 내렸고 함수만 남김) ──
     openFeedbackModal() {
         const c = document.getElementById('global-modal-container'); if (!c) return;
         const cats = ['버그', '개선요청', '불편', '기타'];
@@ -7564,6 +7811,7 @@ class BhasApp {
                 <span class="mac-mb-right">
                     <button class="mac-find" onclick="app.openFind()" title="모두 찾기 (⌘K)"><i class="ph ph-magnifying-glass"></i></button>
                     <span class="mac-ver" title="지금 쓰는 버전">${esc(this._buildTag())}</span>
+                    ${helpFabHTML(this._help ? this._help.unread : 0)}
                     ${(() => { const n = this.unreadCount(); return `<button class="mac-bell${n ? ' has' : ''}"
                         onclick="app.openNotifCenter()" title="알림 센터${n ? ` · 안 읽음 ${n}` : ''}">
                         <i class="ph ph-bell"></i>${n ? '<i class="dot"></i>' : ''}</button>`; })()}
@@ -10776,7 +11024,7 @@ class BhasApp {
             </div>
         </div>`;
         return `<div class="mp">
-            ${this._mpTop('불편사항', `직원 접수 ${list.length}건 · 미처리 ${open.length}건`)}
+            ${this._mpTop('불편사항(옛 접수함)', `직원 접수 ${list.length}건 · 미처리 ${open.length}건 · 10-22부터 새 접수는 오른쪽 아래 ? 도움말 → 불편접수`)}
             <div class="mp-body">
             ${open.length ? open.map(card).join('') : '<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);text-align:center">미처리 불편사항이 없습니다 👍</div>'}
             ${done.length ? `<div style="font-size:0.8rem;color:var(--text-muted);font-weight:700;margin:1.6rem 2px 0.7rem">해결됨 (${done.length})</div>${done.map(card).join('')}` : ''}
@@ -11196,7 +11444,7 @@ class BhasApp {
                 <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">`)}
             <div class="mp-body">
             <div class="mp-seg" style="margin-bottom:12px">
-                ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('claim', '취소·반품·교환', counts.claim)}${tab('all', '전체', counts.all)}
+                ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('claim', '취소·반품·교환', counts.claim)}${tab('all', '전체', counts.all)}<span class="tip-wrap">배송대상 ${tipHTML('ship_ready', TIPS)}</span>
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
                 <div style="position:relative;flex:1;min-width:220px;max-width:380px">
@@ -15560,7 +15808,7 @@ class BhasApp {
         // 브랜드+채널 → 몰 매칭 (cafe24=채널, 봇채널=mall_key/eland)
         const mallFor = (brand, chKey) => malls.find(m => m.brand_id === brand.id && (
             chKey === 'cafe24' ? (m.channel || 'cafe24') === 'cafe24'
-                : (m.mall_key === chKey || (chKey === 'kidikidi' && m.channel === 'eland'))
+                : (m.mall_key === chKey || (chKey === 'kidikidi' && m.channel === 'eland') || (chKey === '29cm' && is29cmKey(m.mall_key)))
         ));
         // 채널별 실제 연동에 필요한 준비물 — 미연동 셀에 '필요: ...'로 표기.
         const chReq = {

@@ -2227,6 +2227,95 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
 .feedback-fab i { font-size: 1.15rem; }
 .feedback-fab:hover { filter: brightness(1.08); }
 
+/* 도움말 ? 버튼 · 패널(공지/사용설명서/불편접수) · 숫자 옆 ? 툴팁 — 10-22 */
+.help-fab {
+    position: fixed; right: 22px; bottom: 22px; z-index: 1150;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 11px 17px; border-radius: 30px; border: none; cursor: pointer;
+    background: var(--primary); color: #fff; font-size: 0.88rem; font-weight: 700;
+    box-shadow: 0 6px 22px rgba(59, 130, 246, 0.38);
+}
+.help-fab > i.ph { font-size: 1.15rem; }
+.help-fab:hover { filter: brightness(1.08); }
+.help-fab .hc-dot { position: absolute; top: 4px; right: 6px; border: 2px solid var(--primary); }
+.hc-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; margin-left: 5px; vertical-align: middle; }
+#help-slot .hc-panel {
+    position: fixed; right: 22px; bottom: 78px; z-index: 1160;
+    width: 380px; max-width: calc(100vw - 32px); max-height: min(640px, calc(100vh - 110px));
+    display: flex; flex-direction: column; overflow: hidden;
+    background: var(--bg-dark); color: var(--text-main);
+    border: 1px solid var(--card-border); border-radius: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+.hc-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 8px; font-size: 1rem; }
+.hc-x { border: 0; background: transparent; color: var(--text-muted); font-size: 1.5rem; line-height: 1; cursor: pointer; padding: 0 4px; }
+.hc-tabs { display: flex; gap: 4px; padding: 0 12px 10px; border-bottom: 1px solid var(--card-border); }
+.hc-tab { flex: 1; padding: 8px 6px; border-radius: 10px; border: 0; background: transparent; color: var(--text-muted); font-size: 0.84rem; font-weight: 700; cursor: pointer; }
+.hc-tab.on { background: rgba(var(--tint), 0.08); color: var(--text-main); }
+.hc-body { flex: 1; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.hc-card { border: 1px solid var(--card-border); border-radius: 12px; padding: 10px 12px; background: rgba(var(--tint), 0.03); }
+.hc-card.unread { border-color: rgba(239, 68, 68, 0.45); }
+.hc-card-h { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.88rem; }
+.hc-card-h b { flex: 1 1 auto; min-width: 0; }
+.hc-when, .hc-meta { font-size: 0.7rem; color: var(--text-muted); }
+.hc-text { margin-top: 6px; font-size: 0.84rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.hc-steps { margin: 6px 0 0; padding-left: 18px; font-size: 0.82rem; line-height: 1.55; }
+.hc-nums { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.hc-num { display: inline-flex; align-items: center; gap: 2px; font-size: 0.74rem; padding: 3px 4px 3px 9px; border-radius: 20px; background: rgba(var(--tint), 0.06); }
+.hc-pin, .hc-hide, .hc-st { font-size: 0.66rem; font-weight: 800; padding: 2px 7px; border-radius: 20px; }
+.hc-pin { background: rgba(59, 130, 246, 0.15); color: var(--primary); }
+.hc-hide { background: rgba(var(--tint), 0.1); color: var(--text-muted); }
+.hc-st.st-new { background: rgba(245, 158, 11, 0.16); color: #d97706; }
+.hc-st.st-doing { background: rgba(59, 130, 246, 0.15); color: var(--primary); }
+.hc-st.st-done { background: rgba(16, 185, 129, 0.15); color: #059669; }
+.hc-note { margin-top: 6px; font-size: 0.78rem; color: var(--text-muted); }
+.hc-form { display: flex; flex-direction: column; gap: 8px; }
+.hc-in { width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--card-border); background: rgba(var(--tint), 0.04); color: var(--text-main); font-size: 0.86rem; font-family: inherit; resize: vertical; }
+.hc-chk, .hc-file { font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.hc-file { cursor: pointer; padding: 8px 11px; border: 1px dashed var(--card-border); border-radius: 10px; }
+.hc-file:hover { border-color: var(--primary); color: var(--primary); }
+.hc-file input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.hc-file:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
+.hc-file span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.hc-row.end { justify-content: flex-end; }
+.hc-btn { padding: 7px 13px; border-radius: 9px; border: 1px solid var(--card-border); background: transparent; color: var(--text-main); font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+.hc-btn.sm { padding: 4px 10px; font-size: 0.74rem; }
+.hc-btn.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+.hc-btn.on { border-color: var(--primary); color: var(--primary); background: rgba(59, 130, 246, 0.1); }
+.hc-btn:disabled { opacity: 0.5; cursor: default; }
+.hc-sub { font-size: 0.74rem; font-weight: 700; color: var(--text-muted); margin-top: 4px; }
+.hc-empty { padding: 1.4rem 0.5rem; text-align: center; font-size: 0.82rem; color: var(--text-muted); }
+.hc-err { padding: 8px 10px; border-radius: 9px; background: rgba(239, 68, 68, 0.12); color: #ef4444; font-size: 0.78rem; }
+.tip-q {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; padding: 0; margin: 0 2px; vertical-align: 1px;
+    border-radius: 50%; border: 1px solid rgba(var(--tint), 0.28); background: transparent;
+    color: var(--text-muted); font-size: 10px; font-weight: 800; line-height: 1; cursor: help;
+    position: relative;
+}
+.tip-q::after { content: ''; position: absolute; inset: -8px; }   /* 손가락 탭 범위 넓히기(32px) */
+.tip-q:hover, .tip-q[aria-expanded="true"] { color: var(--primary); border-color: var(--primary); }
+.tip-wrap { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; font-size: 0.74rem; color: var(--text-muted); }
+.tip-pop {
+    position: fixed; z-index: 3000; max-width: 300px; box-sizing: border-box;
+    padding: 10px 12px; border-radius: 12px; background: #111827; color: #f9fafb;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); font-size: 0.78rem; line-height: 1.5; pointer-events: auto;
+}
+.tip-pop[hidden] { display: none; }
+.tip-pop b { display: block; margin-bottom: 4px; font-size: 0.82rem; }
+.tip-pop ul { margin: 0; padding-left: 16px; }
+.tip-pop li + li { margin-top: 3px; }
+/* 맥 화면(기본) — ? 는 위 메뉴바 알림 종 옆, 패널은 메뉴바 바로 아래 오른쪽(독을 가리지 않게) */
+.mac-menubar .help-fab {
+    position: relative; right: auto; bottom: auto; z-index: auto;
+    padding: 2px 8px; gap: 4px; border-radius: 6px; box-shadow: none;
+    background: transparent; color: inherit; font-size: 12px; font-weight: 600;
+}
+.mac-menubar .help-fab > i.ph { font-size: 14px; }
+.mac-menubar .help-fab:hover, .mac-menubar .help-fab[aria-expanded="true"] { background: rgba(127, 127, 127, .22); filter: none; }
+.mac-menubar .help-fab .hc-dot { position: absolute; top: 1px; right: 2px; width: 7px; height: 7px; margin: 0; border: 0; }
+body:has(.mac-desktop) #help-slot .hc-panel { top: 36px; bottom: auto; right: 12px; max-height: calc(100vh - 150px); }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 /* 로고 = 홈 버튼 (클릭 시 홈으로) */
 .nav-logo span[title="홈으로"], .top-bar-logo[title="홈으로"] { transition: opacity 0.15s ease; }
@@ -2362,6 +2451,13 @@ body.light .sidebar-expand-fab { background: #ffffff; color: #0f172a; border-col
     /* 불편사항 FAB: 모바일에선 원형 아이콘만 */
     .feedback-fab span { display: none; }
     .feedback-fab { padding: 14px !important; border-radius: 50% !important; right: 16px !important; bottom: 16px !important; }
+    /* 도움말 ?: 모바일에선 원형, 아래 탭바(62px) 위로 */
+    .help-fab span { display: none; }
+    .help-fab { padding: 13px !important; border-radius: 50% !important; right: 16px !important; bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important; }
+    #help-slot .hc-panel { left: 16px; right: 16px; width: auto; max-width: none; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); max-height: calc(100vh - 160px); }
+    .mac-menubar .help-fab span { display: none; }
+    .mac-menubar .help-fab { padding: 2px 7px !important; border-radius: 6px !important; right: auto !important; bottom: auto !important; }
+    body:has(.mac-desktop) #help-slot .hc-panel { top: 34px; bottom: auto; left: 8px; right: 8px; max-height: calc(100vh - 140px); }
 
     /* 분석탭: 브랜드 사이드바 → 모바일에선 가로 스크롤 탭 줄로 */
     .analysis-layout { flex-direction: column !important; }
