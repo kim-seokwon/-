@@ -170,7 +170,12 @@ async function login(page, acct) {
   }
   }
   console.log('[29cm] OTP 코드 수신 → 입력');
-  await page.fill('input[name="code"], input[placeholder*="인증코드"]', code);
+  // '인증번호가 전송되었습니다' 팝업이 떠 있으면 [확인]으로 닫아야 입력칸이 풀린다
+  const dlgOk = page.locator('.ant-modal, [role="dialog"]').getByRole('button', { name: /확인/ });
+  if (await dlgOk.first().isVisible().catch(() => false)) { await dlgOk.first().click().catch(() => {}); await page.waitForTimeout(500); }
+  const codeBox = page.locator('input[name="code"], input[placeholder*="인증코드"]').first();
+  await codeBox.click({ timeout: 10000 }).catch(() => {});
+  await codeBox.fill(code, { timeout: 15000 });
   await page.getByRole('button', { name: /인증하기/ }).click();
   await page.waitForURL(/29cm\.co\.kr|partner-connect|partner-order/, { timeout: 30000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
