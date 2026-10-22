@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-    accountsFromEnv, otpFromText, otpQueries, otpMailUsable, otpNotBefore, mapOrder, runAccounts, is29cmKey,
+    accountsFromEnv, otpFromText, otpQueries, otpMailUsable, otpNotBefore, groupOrders, mapOrder, runAccounts, is29cmKey,
     pollOtp, isQuotaError, OTP_POLL_MS, OTP_BACKOFF_MS, htmlToText, mailText, maskDigits, OTP_VALID_MS, OTP_SKEW_MS, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage,
 } from '../channel-bots/29cm/accounts.mjs';
 
@@ -59,11 +59,22 @@ test('한 계정 실패가 다음 계정을 막지 않는다', async () => {
     assert.match(errs[0], /하이헤이호.*2차인증 실패/);
 });
 
-test('주문 매핑: 계정 몰로 저장(같은 주문번호도 몰이 다르면 따로)', () => {
-    const o = { orderNumber: 123, orderedAt: '2026-10-22', actualSalePrice: '15000', orderStatus: '1' };
-    assert.equal(mapOrder(o, '29cm').mall_key, '29cm');
-    const r = mapOrder(o, '29cm-rohi');
-    assert.equal(r.mall_key, '29cm-rohi'); assert.equal(r.channel, '29cm'); assert.equal(r.order_id, '123'); assert.equal(r.pay_amount, 15000);
+test('주문 매핑: 실제 API(상품 줄) → 주문번호로 묶기 · 금액 합 · 계정 몰로 저장', () => {
+    const lines = [
+        { orderItemManageId: 1, orderSerial: 'A1', orderedAt: '2026-10-22T10:00:00', saleAmount: 15000, sellAmount: 18000, orderStatusDescription: '배송완료', orderName: '가' },
+        { orderItemManageId: 2, orderSerial: 'A1', orderedAt: '2026-10-22T10:00:00', saleAmount: 5000, sellAmount: 6000, orderStatusDescription: '배송완료' },
+        { orderItemManageId: 2, orderSerial: 'A1', saleAmount: 5000 },          // 창 겹침으로 같은 줄 재수신
+        { orderItemManageId: 3, orderSerial: 'B2', saleAmount: 7000, orderStatusDescription: '취소' },
+        { orderItemManageId: 4, saleAmount: 1 },                                  // 주문번호 없음 → 버림
+    ];
+    const g = groupOrders(lines);
+    assert.equal(g.length, 2);
+    const r = mapOrder(g.find(x => x.orderSerial === 'A1'), '29cm-rohi');
+    assert.equal(r.mall_key, '29cm-rohi'); assert.equal(r.channel, '29cm'); assert.equal(r.order_id, 'A1');
+    assert.equal(r.pay_amount, 20000); assert.equal(r.order_amount, 24000); assert.equal(r.raw.items.length, 2);
+    const b = mapOrder(g.find(x => x.orderSerial === 'B2'), '29cm');
+    assert.equal(b.channel_status, '2:취소'); assert.equal(b.pay_amount, 0);
+    assert.equal(r.channel_status, '1:배송완료');
 });
 
 test('sync.mjs·yml 연결: 계정 반복 · 계정별 창 닫기 · 실패 있으면 exit 1 · 2계정 env', () => {

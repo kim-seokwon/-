@@ -19,7 +19,7 @@ import { chromium } from 'playwright';
 import { google } from 'googleapis';
 import { authenticator } from 'otplib';
 import { createClient } from '@supabase/supabase-js';
-import { accountsFromEnv, otpNotBefore, pollOtp, orderKey, mapOrder, runAccounts, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage } from './accounts.mjs';
+import { accountsFromEnv, otpNotBefore, pollOtp, orderKey, groupOrders, mapOrder, runAccounts, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage } from './accounts.mjs';
 
 const {
   GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
@@ -252,9 +252,8 @@ async function syncAccount(browser, acct) {
       const we = Math.min(ws + CH, end);
       all.push(...await fetchWindow(page, ymd(new Date(ws)), ymd(new Date(we))));
     }
-    const byId = {};
-    for (const o of all) { const k = orderKey(o); if (k) byId[k] = o; }
-    const rows = Object.values(byId).map(o => mapOrder(o, acct.mallKey)).filter(r => r.order_id && r.order_id !== 'undefined');
+    const rows = groupOrders(all).map(o => mapOrder(o, acct.mallKey)).filter(r => r.order_id);
+    console.log(`[29cm:${acct.brand}] 상품줄 ${all.length} → 주문 ${rows.length}`);
     console.log(`[29cm:${acct.brand}] 주문 ${rows.length}건`);
     if (rows.length) {
       const { error } = await db.from('channel_orders').upsert(rows, { onConflict: 'mall_key,order_id' });

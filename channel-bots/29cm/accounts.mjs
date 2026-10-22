@@ -163,18 +163,45 @@ export async function pollOtp(gmail, {
   throw new Error('OTP 메일에서 인증번호를 못 찾음');
 }
 
-export const orderKey =o => String(o.orderNumber ?? o.orderNo ?? o.orderId ?? o.id);
+//  29CM 주문 API(v4/orders resultList)는 '상품 줄' 단위다 — orderSerial(주문번호) 하나에 줄 여러 개.
+//  channel_orders 는 다른 몰처럼 주문 1건 = 1행이라 주문번호로 묶고 금액은 줄 합, 줄은 raw.items 에 둔다.
+export const orderKey = o => {
+  const k = o?.orderSerial ?? o?.orderNumber ?? o?.orderNo ?? o?.orderId;
+  return k == null || k === '' ? null : String(k);
+};
 
-export function mapOrder(o, mallKey) {
+export function groupOrders(lines) {
+  const by = new Map();
+  for (const l of lines || []) {
+    const k = orderKey(l); if (!k) continue;
+    const g = by.get(k) || [];
+    if (!g.some(x => x.orderItemManageId != null && x.orderItemManageId === l.orderItemManageId)) g.push(l);   // 창이 겹쳐 같은 줄이 두 번 와도 한 번만
+    by.set(k, g);
+  }
+  return [...by.entries()].map(([k, items]) => ({ orderSerial: k, items }));
+}
+
+const num = v => Number(v ?? 0) || 0;
+export function mapOrder(order, mallKey) {
+  const items = order.items || [order];
+  const f = items[0] || {};
+  //  DB order_op_state 는 몰 상태가 2·3·4 로 시작하면 취소·반품·교환, 나머지는 완료로 센다 → 29CM 한글 상태를 그 코드로 바꾼다
+  const kind = l => /취소/.test(l.orderStatusDescription || '') ? '2' : /반품|환불/.test(l.orderStatusDescription || '') ? '3' : /교환/.test(l.orderStatusDescription || '') ? '4' : '1';
+  const live = items.filter(l => !['2', '3'].includes(kind(l)));         // 매출 = 취소·반품 아닌 줄만
+  const kinds = new Set(items.map(kind));
+  const code = kinds.size === 1 ? [...kinds][0] : (live.length ? '1' : [...kinds].sort()[0]);
+  const sum = key => live.reduce((t, l) => t + num(l[key]), 0);
   return {
     channel: '29cm', mall_key: mallKey,
-    order_id: orderKey(o),
-    order_date: o.orderedAt ?? o.orderDate ?? o.paymentCompletedAt ?? null,
-    buyer_name: o.ordererName ?? o.buyerName ?? null,
-    receiver_name: o.receiverName ?? o.recipientName ?? null,
-    receiver_phone: o.receiverPhone ?? null, receiver_address: o.receiverAddress ?? null,
-    pay_amount: Number(o.actualSalePrice ?? o.realSalePrice ?? o.salePrice ?? o.paymentAmount ?? 0),
-    channel_status: o.orderStatus ?? o.status ?? null, status: 'new', raw: o,
+    order_id: orderKey(f),
+    order_date: f.orderedAt ?? f.paidAt ?? null,
+    buyer_name: f.orderName ?? null,
+    receiver_name: f.receiverName ?? null,
+    pay_amount: live.length ? (sum('saleAmount') || sum('sellAmount')) : 0,
+    order_amount: sum('sellAmount') || null,
+    channel_status: `${code}:` + [...new Set(items.map(l => l.orderStatusDescription).filter(Boolean))].join(','),
+    invoice_no: f.invoiceNo ?? null, courier: f.deliveryCompanyName ?? null,
+    status: 'new', raw: { orderSerial: orderKey(f), items },
   };
 }
 
