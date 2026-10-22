@@ -2840,7 +2840,7 @@ class BhasApp {
         this.notify({
             id: 'upd', kind: '업데이트', icon: 'ph-arrow-circle-down', col: '#0a84ff', sticky: true,
             title: '새 버전이 나왔습니다',
-            sub: '제품리스트 제작현황을 표에서 바로 바꿀 수 있습니다. 눌러야 새 버전으로 바뀝니다.',
+            sub: '새 기능·수정이 들어왔습니다. 쓰던 글을 저장한 뒤 [업데이트]를 누르면 바뀝니다.',
             actions: [{ t: '업데이트', run: () => this.applyUpdate() },
                       { t: '나중에', run: () => this.snoozeUpdate() }],
         });
@@ -3597,7 +3597,7 @@ class BhasApp {
         const out = [];
         // 0) 새 버전 — 누를 때까지 남는다
         if (this._updReady) out.push({ id: 'upd:' + __BUILD__, kind: '업데이트', icon: 'ph-arrow-circle-down',
-            col: '#0a84ff', title: '새 버전이 나왔습니다', sub: '제작현황을 제품표에서 바로 변경 · 눌러서 업데이트', when: '', view: '__update' });
+            col: '#0a84ff', title: '새 버전이 나왔습니다', sub: '새 기능·수정 반영 · 눌러서 업데이트', when: '', view: '__update' });
         // 1) 나에게 배정된 할일
         (mockData.products || []).forEach(p => (p.todos || []).forEach(t => {
             if (t.completed) return;
