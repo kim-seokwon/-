@@ -38,7 +38,7 @@ const LOGIN_URL = 'https://partner-sso.one.musinsa.com/oauth/login?clientId=E9_P
 const ORDER_PAGE = 'https://partner-order.29cm.co.kr/list';
 const ORDER_API_RE = /commerce-admin-api\.29cm\.co\.kr\/partner-admin\/v4\/orders/;
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
-const ymd = d => d.toISOString().slice(0, 10);
+const ymd = d => new Date(d.getTime() + 9 * 36e5).toISOString().slice(0, 10);   // 29CM 날짜는 KST — UTC면 06시 실행 때 오늘이 빠진다
 
 // Gmail API로 최근 29CM/무신사 인증코드(6자리) 읽기
 function gmailClient() {
@@ -245,7 +245,7 @@ async function syncAccount(browser, acct) {
   try {
     const page = await ctx.newPage();
     await login(page, acct);
-    // 최근 N일(정기 60 · 수동 400, CM29_DAYS)을 28일 창으로 청킹 — 정기는 상태 변화(취소·반품)만 따라가면 된다
+    // 최근 N일(기본 400, CM29_DAYS)을 28일 창으로 청킹 — 정기도 400일: 오래된 주문의 늦은 취소·반품까지 다시 덮어쓴다
     const DAYS = Number(process.env.CM29_DAYS) || 400;
     const all = [];
     const end = Date.now(), CH = 27 * 864e5;   // 28일 창(API 최대 1개월)
