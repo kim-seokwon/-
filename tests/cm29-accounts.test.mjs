@@ -225,7 +225,7 @@ test('요청 버튼 미클릭: 버튼 이름·쿨다운 문구로만 판정 · �
     assert.match(SYNC, /if \(found && !on && !cooldown\)/, '문구 없이 비활성이면 풀리길 기다렸다 클릭');
     assert.ok(!/이미 발송됨\(재요청 쿨다운\)/.test(SYNC), '버튼 비활성만으로 쿨다운이라 하지 않음');
     assert.match(SYNC, /snap\(page, acct, '1-도달'\)/);
-    assert.match(YML, /actions\/upload-artifact@v4[\s\S]*if: always\(\)[\s\S]*path: channel-bots\/29cm\/debug\//);
+    assert.match(YML, /actions\/upload-artifact@v4[\s\S]*if: failure\(\)[\s\S]*path: channel-bots\/29cm\/debug\//);
 });
 
 test('saleAmount 0 이면 pay_amount 0 — 정가로 바꾸지 않는다, 칸이 없을 때만 sellAmount', () => {

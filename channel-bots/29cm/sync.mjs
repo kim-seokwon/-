@@ -245,10 +245,11 @@ async function syncAccount(browser, acct) {
   try {
     const page = await ctx.newPage();
     await login(page, acct);
-    // 최근 400일을 28일 창으로 청킹
+    // 최근 N일(정기 60 · 수동 400, CM29_DAYS)을 28일 창으로 청킹 — 정기는 상태 변화(취소·반품)만 따라가면 된다
+    const DAYS = Number(process.env.CM29_DAYS) || 400;
     const all = [];
     const end = Date.now(), CH = 27 * 864e5;   // 28일 창(API 최대 1개월)
-    for (let ws = end - 400 * 864e5; ws <= end; ws += CH + 864e5) {
+    for (let ws = end - DAYS * 864e5; ws <= end; ws += CH + 864e5) {
       const we = Math.min(ws + CH, end);
       all.push(...await fetchWindow(page, ymd(new Date(ws)), ymd(new Date(we))));
     }
