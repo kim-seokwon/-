@@ -84,11 +84,27 @@ export function otpMailUsable({ id, receivedAt }, { notBeforeMs, usedIds }) {
   return true;
 }
 
-//  기준 시각 — 새로 요청했으면 요청 직전부터, 이미 발송됐으면(쿨다운) 10분 전부터. 단 앞 계정이 쓴 메일 시각(floor)보다는 늦게.
+//  인증번호 유효시간(3분) + 시계 오차 여유(1분) — 쿨다운이면 이 안에 온 메일만 쓴다(만료 코드 집지 않게)
+export const OTP_VALID_MS = 3 * 60_000;
+export const OTP_SKEW_MS = 60_000;
+
+//  기준 시각 — 새로 요청했으면 요청 직전부터, 이미 발송됐으면(쿨다운) 유효시간+오차(4분) 전부터. 단 앞 계정이 쓴 메일 시각(floor)보다는 늦게.
 export function otpNotBefore({ now, requested, floor = 0 }) {
-  const base = requested ? now - 10_000 : now - 10 * 60_000;
+  const base = requested ? now - 10_000 : now - (OTP_VALID_MS + OTP_SKEW_MS);
   return Math.max(base, floor ? floor + 1 : 0);
 }
+
+//  2차인증 '인증번호 받기' 버튼 이름 — 화면 문구가 조금 달라도(요청·발송·전송·재발송·다시 받기) 잡는다
+export const OTP_REQ_BTN_RE = /인증\s*(번호|코드|메일)?\s*(받기|요청|재요청|발송|재발송|전송|재전송)|재발송|재전송|다시\s*받기|코드\s*받기/;
+
+//  재요청 쿨다운 화면 문구 — 이게 보일 때만 '이미 발송됨'으로 본다
+export const OTP_COOLDOWN_RE = /\d+\s*(초|분)\s*(후|뒤)|재\s*(요청|발송|전송)[^\n]{0,15}(가능|후|뒤)|잠시\s*후\s*다시|남은\s*시간|\b\d{1,2}:\d{2}\b/;
+
+//  화면 기록용 HTML 가리기 — 이메일 주소·6자리 이상 숫자·input value
+export const maskPage = html => String(html || '')
+  .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '***@***')
+  .replace(/\d{6,}/g, m => '*'.repeat(m.length))
+  .replace(/(\svalue=")[^"]*"/gi, '$1***"');
 
 //  Gmail 폴링 간격 · 쿼터 초과 때 쉬는 시간
 export const OTP_POLL_MS = 6000;

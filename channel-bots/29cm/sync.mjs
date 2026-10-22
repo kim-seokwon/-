@@ -14,11 +14,12 @@
 //    SUPABASE_URL, SUPABASE_SERVICE_KEY
 //  계정은 하나씩 차례로 — 한 계정이 실패해도 다음 계정은 돈다. 하나라도 실패하면 끝에 exit 1(Actions 에 빨간불).
 // ============================================================
+import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { google } from 'googleapis';
 import { authenticator } from 'otplib';
 import { createClient } from '@supabase/supabase-js';
-import { accountsFromEnv, otpNotBefore, pollOtp, orderKey, mapOrder, runAccounts } from './accounts.mjs';
+import { accountsFromEnv, otpNotBefore, pollOtp, orderKey, mapOrder, runAccounts, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage } from './accounts.mjs';
 
 const {
   GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
@@ -53,6 +54,16 @@ const readEmailOtp = (opts = {}) => pollOtp(gmailClient(), { notBeforeMs: Date.n
 const usedOtpIds = new Set();
 let lastOtpAt = 0;
 
+//  2차인증 화면 기록 — debug/<몰>-<단계>.png·.html (HTML 은 앞 6000자, 이메일·6자리 이상 숫자 가림). 실패해도 진행
+async function snap(page, acct, step) {
+  try {
+    await mkdir('debug', { recursive: true });
+    const base = `debug/${acct.mallKey}-${step}`;
+    await page.screenshot({ path: `${base}.png`, fullPage: true });
+    await writeFile(`${base}.html`, maskPage((await page.content()).slice(0, 6000)));
+  } catch (e) { console.log(`[29cm] 화면 기록 실패(${step}):`, e?.message || e); }
+}
+
 async function newCtx(browser) {
   const ctx = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -84,6 +95,7 @@ async function login(page, acct) {
     throw new Error('로그인 후 2차인증 화면에 도달하지 못함');
   }
   console.log('[29cm] 2차인증 화면 도달');
+  await snap(page, acct, '1-도달');
 
   let code;
   if (acct.totp) {
@@ -94,25 +106,61 @@ async function login(page, acct) {
     code = authenticator.generate(acct.totp);
     console.log('[29cm] 2차인증 = 구글 OTP(TOTP) 자체 생성');
   } else {
-  // '이메일' 탭 라디오 선택(기본 선택이지만 안전하게)
-  await page.locator('input[type="radio"]').nth(1).check().catch(() => {});
-  await page.waitForTimeout(500);
+  // '이메일' 선택 — 순서(nth) 가정 말고 라벨 '이메일' 로. 안 되면 글자 클릭, 그래도 안 되면 두 번째 라디오
+  const emailPicked = await page.getByLabel(/이메일/).first().check({ timeout: 3000 }).then(() => 'label')
+    .catch(() => page.getByText(/^\s*이메일/).first().click({ timeout: 3000 }).then(() => 'text'))
+    .catch(() => page.locator('input[type="radio"]').nth(1).check({ timeout: 3000 }).then(() => 'nth(1)'))
+    .catch(() => '실패');
+  console.log(`[29cm] 이메일 인증 선택: ${emailPicked}`);
+  await page.waitForTimeout(800);
+  await snap(page, acct, '2-이메일선택');
   // 2차 인증 화면 진입 시 첫 메일은 자동 발송되는 경우가 있다.
-  // 재요청 버튼이 비활성인 동안 기다렸다 강제 클릭하면 쿨다운이 긴 계정에서 계속 실패하므로,
-  // 활성일 때만 새 메일을 요청하고 아니면 이미 발송된 최신 메일을 바로 읽는다.
-  const reqBtn = page.getByRole('button', { name: /인증번호 받기|인증번호 재요청/ }).first();
-  await reqBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
-  const requested = await reqBtn.isEnabled().catch(() => false);
-  const notBeforeMs = otpNotBefore({ now: Date.now(), requested, floor: lastOtpAt });
-  if (requested) {
-    await reqBtn.click({ timeout: 10000 });
-    console.log(`[29cm] 인증번호 새 발송 요청 (${new Date().toISOString()}) → 메일 대기`);
-  } else {
-    console.log('[29cm] 인증번호가 이미 발송됨(재요청 쿨다운) → 최신 메일 바로 확인');
+  // 요청 버튼: 활성이면 눌러 새 메일 → 그 뒤 온 메일만. 비활성(쿨다운)이면 유효시간 안 메일을 잠깐 찾고,
+  // 없으면 버튼이 풀리길(최대 3분) 기다렸다 눌러 새 메일을 받는다. 버튼을 못 찾으면 화면 버튼 이름을 남긴다.
+  const reqBtn = page.locator('button, [role="button"], input[type="button"], input[type="submit"]').filter({ hasText: OTP_REQ_BTN_RE }).first();
+  const found = await reqBtn.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+  if (!found) {
+    const names = (await page.locator('button').allInnerTexts().catch(() => [])).map(t => t.trim()).filter(Boolean);
+    console.log('[29cm] 인증번호 요청 버튼 못 찾음 — 화면 버튼:', names.slice(0, 15).join(' | ') || '(없음)');
   }
+  const enabled = () => reqBtn.isEnabled({ timeout: 2000 }).catch(() => false);
+  const request = async () => {
+    const at = Date.now();
+    await reqBtn.click({ timeout: 10000 });
+    console.log(`[29cm] 인증번호 새 발송 요청 (${new Date(at).toISOString()}) → 메일 대기`);
+    await page.waitForTimeout(1500);
+    await snap(page, acct, '3-요청후');
+    return otpNotBefore({ now: Date.now(), requested: true, floor: lastOtpAt });
+  };
+  const read = (notBeforeMs, timeoutMs) => readEmailOtp({ notBeforeMs, usedIds: usedOtpIds, to: acct.otpTo, ...(timeoutMs ? { timeoutMs } : {}) });
 
   try {
-    const hit = await readEmailOtp({ notBeforeMs, usedIds: usedOtpIds, to: acct.otpTo });
+    let hit = null;
+    //  쿨다운은 화면 문구('n초 후 재요청' 등)로만 판정. 문구 없이 비활성이면 20초까지 풀리길 기다렸다 누른다
+    const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    const cooldown = OTP_COOLDOWN_RE.test(bodyText);
+    let on = found && await enabled();
+    console.log(`[29cm] 요청 버튼: ${found ? (on ? '활성' : '비활성') : '없음'} · 쿨다운 문구: ${cooldown ? '있음' : '없음'}`);
+    if (found && !on && !cooldown) {
+      //  쿨다운 문구 없이 비활성 — 화면이 덜 준비됐을 수 있어 20초까지 풀리길 기다린다
+      for (let i = 0; i < 10 && !on; i++) { await page.waitForTimeout(2000); on = await enabled(); }
+      if (!on) { console.log('[29cm] 요청 버튼이 쿨다운 문구 없이 비활성 — 화면 기록(debug) 확인 필요'); await snap(page, acct, '2b-버튼비활성'); }
+    }
+    if (on) {
+      hit = await read(await request());
+    } else {
+      console.log(found ? '[29cm] 요청 못 함(쿨다운/비활성) → 유효시간 안 메일 먼저 확인, 없으면 버튼 풀리면 요청' : '[29cm] 요청 버튼 없음 → 자동 발송 메일 확인');
+      hit = await read(otpNotBefore({ now: Date.now(), requested: false, floor: lastOtpAt }), found ? 30_000 : undefined).catch(e => {
+        if (!found || /invalid_grant/.test(String(e?.message || e))) throw e;
+        return null;
+      });
+      if (!hit) {
+        const until = Date.now() + 180_000;
+        while (Date.now() < until && !(await enabled())) await page.waitForTimeout(5000);
+        if (!(await enabled())) throw new Error('인증번호 재요청 버튼이 3분 넘게 비활성');
+        hit = await read(await request());
+      }
+    }
     usedOtpIds.add(hit.id); lastOtpAt = Math.max(lastOtpAt, hit.receivedAt || 0);
     code = hit.code;
   } catch (e) {

@@ -39,3 +39,11 @@ jobs:
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      # 2차인증 화면 캡처·HTML 앞부분(이메일·6자리 이상 숫자 가림) — 화면 구조 확인용, 3일 보관
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 29cm-2fa-debug
+          path: channel-bots/29cm/debug/
+          if-no-files-found: ignore
+          retention-days: 3

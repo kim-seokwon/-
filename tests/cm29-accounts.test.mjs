@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
     accountsFromEnv, otpFromText, otpQueries, otpMailUsable, otpNotBefore, mapOrder, runAccounts, is29cmKey,
-    pollOtp, isQuotaError, OTP_POLL_MS, OTP_BACKOFF_MS, htmlToText, mailText, maskDigits,
+    pollOtp, isQuotaError, OTP_POLL_MS, OTP_BACKOFF_MS, htmlToText, mailText, maskDigits, OTP_VALID_MS, OTP_SKEW_MS, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage,
 } from '../channel-bots/29cm/accounts.mjs';
 
 const SYNC = readFileSync(new URL('../channel-bots/29cm/sync.mjs', import.meta.url), 'utf8');
@@ -37,7 +37,7 @@ test('OTP 메일: 앞 계정이 쓴 메일·기준 시각 전 메일은 안 쓴�
 
     //  2번 계정은 1번 계정이 쓴 메일 시각보다 늦은 메일만 — 재요청 쿨다운(이미 발송)이어도
     const now = 10 * 60_000, firstMailAt = now - 30_000;
-    assert.equal(otpNotBefore({ now, requested: false }), now - 600_000, '쿨다운이면 10분 전부터');
+    assert.equal(otpNotBefore({ now, requested: false }), now - 240_000, '쿨다운이면 유효 3분+오차 1분 전부터');
     assert.equal(otpNotBefore({ now, requested: false, floor: firstMailAt }), firstMailAt + 1);
     assert.equal(otpNotBefore({ now, requested: true, floor: firstMailAt }), now - 10_000);
 
@@ -170,20 +170,49 @@ test('인증번호 추출: HTML 만 있는 메일(base64url·태그 사이·색�
 
     const c = clock();
     const { gmail } = fakeGmail([{ id: 'm', at: 1e12, subject: '[무신사 · 29cm 통합계정] 2차인증 인증번호 안내 메일입니다.', payload }]);
-    const hit = await pollOtp(gmail, { notBeforeMs: 1e12 - 600_000, now: c.now, sleep: c.sleep, log: quiet });
+    const hit = await pollOtp(gmail, { notBeforeMs: 1e12 - 240_000, now: c.now, sleep: c.sleep, log: quiet });
     assert.equal(hit.code, '482913');
 });
 
 test('못 찾으면 이유를 남긴다 — 기준 전이면 몇 초 먼저인지, 코드 못 읽으면 본문 앞(숫자 가림)', async () => {
     const c = clock(), errs = [];
     const { gmail } = fakeGmail([
-        { id: 'old', at: 1e12 - 700_000, subject: '옛 메일', body: '인증번호 111111' },
+        { id: 'old', at: 1e12 - 340_000, subject: '옛 메일', body: '인증번호 111111' },
         { id: 'x', at: 1e12, subject: '[29CM] 안내', body: '안내 메일 1234567 입니다' },
     ]);
-    await assert.rejects(pollOtp(gmail, { timeoutMs: 10_000, notBeforeMs: 1e12 - 600_000, now: c.now, sleep: c.sleep, log: { error: (...x) => errs.push(x.join(' ')) } }), /못 찾음/);
+    await assert.rejects(pollOtp(gmail, { timeoutMs: 10_000, notBeforeMs: 1e12 - 240_000, now: c.now, sleep: c.sleep, log: { error: (...x) => errs.push(x.join(' ')) } }), /못 찾음/);
     const last = errs.at(-1);
     assert.match(last, /옛 메일 \[기준보다 100초 먼저 옴/);
     assert.match(last, /\[코드 못 읽음 · 본문 앞: 안내 메일 \*{7} 입니다\]/);
     assert.ok(!/111111|1234567/.test(last), '로그에 숫자 원문 없음');
     assert.equal(maskDigits('a 482913 b 12'), 'a ****** b 12');
+});
+
+test('반려2: 쿨다운이어도 유효시간 지난 코드(5분 전)는 안 쓰고, 다음 폴링에 온 새 코드를 쓴다', async () => {
+    assert.equal(OTP_VALID_MS + OTP_SKEW_MS, 240_000);
+    const c = clock(), now0 = c.now();
+    const mails = [{ id: 'stale', at: now0 - 5 * 60_000, subject: '[29CM] 인증', body: '인증번호 111111' }];
+    const { gmail, calls } = fakeGmail(mails);
+    let rounds = 0;
+    const sleep = async ms => { await c.sleep(ms); if (++rounds === 1) mails.unshift({ id: 'fresh', at: c.now(), subject: '[29CM] 인증', body: '인증번호 482913' }); };
+    const notBeforeMs = otpNotBefore({ now: now0, requested: false, floor: 0 });   // 첫 계정 · 쿨다운
+    const hit = await pollOtp(gmail, { notBeforeMs, now: c.now, sleep, log: quiet });
+    assert.equal(hit.code, '482913'); assert.equal(hit.id, 'fresh');
+    assert.ok(!calls.some(x => x[1] === 'stale' && x[2] === 'full'), '만료 메일은 본문도 안 엶');
+});
+
+test('요청 버튼 미클릭: 버튼 이름·쿨다운 문구로만 판정 · 화면 기록은 가림 · artifact 업로드', () => {
+    for (const t of ['인증번호 받기', '인증번호 재요청', '인증요청', '인증번호 발송', '재발송', '인증 코드 전송', '다시 받기']) assert.match(t, OTP_REQ_BTN_RE, t);
+    for (const t of ['확인', '로그인', '이메일', '인증하기']) assert.doesNotMatch(t, OTP_REQ_BTN_RE, t);
+    for (const t of ['59초 후 재요청 가능', '재발송은 1분 뒤 가능합니다', '남은 시간 02:41', '잠시 후 다시 시도해 주세요']) assert.match(t, OTP_COOLDOWN_RE, t);
+    for (const t of ['이메일로 인증번호를 받으세요', '2차 인증이 필요합니다', '인증번호 받기']) assert.doesNotMatch(t, OTP_COOLDOWN_RE, t);
+    const m = maskPage('<p>ab.c+1@musinsa.com 로 482913</p><input value="secret">');
+    assert.ok(!/musinsa\.com|482913|secret/.test(m), m);
+
+    assert.match(SYNC, /getByLabel\(\/이메일\/\)/, '이메일은 라벨로 고른다');
+    assert.match(SYNC, /OTP_COOLDOWN_RE\.test\(bodyText\)/);
+    assert.match(SYNC, /if \(found && !on && !cooldown\)/, '문구 없이 비활성이면 풀리길 기다렸다 클릭');
+    assert.ok(!/이미 발송됨\(재요청 쿨다운\)/.test(SYNC), '버튼 비활성만으로 쿨다운이라 하지 않음');
+    assert.match(SYNC, /snap\(page, acct, '1-도달'\)/);
+    assert.match(YML, /actions\/upload-artifact@v4[\s\S]*if: always\(\)[\s\S]*path: channel-bots\/29cm\/debug\//);
 });

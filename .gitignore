@@ -5,3 +5,6 @@ dist
 .system_generated
 /brain
 .work/
+
+# 29CM 봇 2차인증 화면 기록(actions artifact 용)
+channel-bots/29cm/debug/
