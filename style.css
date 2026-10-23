@@ -5171,3 +5171,27 @@ b.sp-nm.dup{color:#ff453a}
 .nt-row.nt-kid{padding-left:30px;border-top-color:transparent}
 .nt-row.nt-kid b{font-weight:600}
 .mbtn[disabled]{opacity:.55;cursor:progress}
+
+/* 캘린더 브랜드 칩 — 전체 / 브랜드별 / 공통 (10-23). 좁은 화면은 칩 줄만 옆으로 민다 */
+.cal-brands{display:flex;gap:6px;margin:10px 0 0;overflow-x:auto;scrollbar-width:none;flex:0 0 auto;-webkit-overflow-scrolling:touch}
+.cal-brands::-webkit-scrollbar{display:none}
+.cal-bchip{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;border:.5px solid var(--card-border);background:transparent;color:var(--text-main);
+  font-family:inherit;font-size:12.5px;padding:5px 11px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.cal-bchip i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.cal-bchip em{font-style:normal;font-size:11px;color:var(--text-muted)}
+.cal-bchip.on{background:var(--text-main);color:var(--card-bg);border-color:var(--text-main)}
+.cal-bchip.on em{color:inherit;opacity:.7}
+.cal-bnow{font-size:14px;font-weight:600;color:var(--text-muted);margin-left:6px}
+
+/* 작업지시서 — 제작/업로드 배지 · 올린 파일 미리보기 (10-23) */
+.tp-src{display:inline-block;font-size:9.5px;font-weight:700;line-height:1;padding:2px 5px;border-radius:4px;margin-right:4px;vertical-align:1px}
+.tp-src.mk{background:rgba(94,92,230,.14);color:#5e5ce6}
+.tp-src.up{background:rgba(10,132,255,.14);color:#0a84ff}
+.fd-th.tp > i.ph{font-size:34px}
+.tpf-modal{width:min(920px,calc(100vw - 32px));max-height:calc(100vh - 48px);display:flex;flex-direction:column}
+.tpf-body{flex:1 1 auto;min-height:0;overflow:auto;background:var(--hover-bg,rgba(0,0,0,.04));border-radius:8px;display:flex;align-items:center;justify-content:center}
+.tpf-body iframe{width:100%;height:min(72vh,900px);border:0;background:#fff}
+.tpf-body img{max-width:100%;max-height:72vh;object-fit:contain;display:block}
+.tpf-foot{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:10px;flex-wrap:wrap}
+.tpf-foot span{margin-right:auto;font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%}
+.cal-bload{align-self:center;flex:0 0 auto;font-size:11.5px;color:var(--text-muted);padding-left:2px}

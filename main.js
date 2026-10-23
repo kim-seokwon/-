@@ -25,6 +25,8 @@ import {
     downMalls, prevTodoSummary, buildBody, regenerateBody, humanPart, newMeetingMeta, confirmMeetingMeta, canRegenerate,
 } from './meetingNote.js';
 import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
+import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
+import { TP_BUCKET, TP_ACCEPT, validateTpFile, tpFilePath, tpDefaultName, isUploadPack, hasPackConfig, tpKind, tpKindLabel, tpSizeText } from './techPackFile.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
 const __BUILD__ = (typeof __BUILD_TIME__ !== 'undefined') ? __BUILD_TIME__ : '개발';
@@ -264,8 +266,47 @@ class BhasApp {
                 { ...common, id: 'rt-year', title: '보험 갱신', kind: 'general', recurrence_type: 'yearly', year_month: now.getMonth() + 1, year_day: Math.min(28, now.getDate() + 2) },
             ];
             this.routineOccurrences = [{ id: 'occ-preview', routine_id: 'rt-sub', occurrence_date: `${yy}-${mm}-10`, status: 'done', override_data: {}, completed_at: new Date().toISOString(), actual_amount: 78900 }];
-            this._calCursor = `${yy}-${mm}-15`; this.calDay = `${yy}-${mm}-15`;
+            //  브랜드 칩 검수 — 브랜드 2개 · 시즌 마감 · 할 일 · 생산 작업을 브랜드마다 하나씩(나머지 루틴은 공통)
+            if (!(mockData.brands || []).length) mockData.brands = [
+                { id: 'preview-b1', name: '하이헤이호', brand_color: '#6366f1' }, { id: 'preview-b2', name: '로하이스튜디오', brand_color: '#ff9f0a' }];
+            const [b1, b2] = mockData.brands;
+            mockData.products = [
+                { id: 'preview-s1', name: '26SS 셔츠', brand_id: b1.id, due_date: `${yy}-${mm}-20`, todos: [{ text: '원단 스와치 확정', due_date: `${yy}-${mm}-08`, completed: false }] },
+                { id: 'preview-s2', name: '26SS 데님', brand_id: b2 ? b2.id : b1.id, due_date: `${yy}-${mm}-22`, todos: [] }];
+            this.pItems = [{ id: 'preview-i1', name: '옥스포드 셔츠', product_id: 'preview-s1' }]; this._itemsLoaded = true;
+            this.remList = [
+                { id: 'preview-r1', title: '데님 샘플 수령', due_date: `${yy}-${mm}-12`, source_kind: 'season', source_id: 'preview-s2', done: false },
+                { id: 'preview-r2', title: '세무사 서류', due_date: `${yy}-${mm}-12`, done: false }];
+            this.vendors[0].jobs = [{ id: 'preview-j1', title: '셔츠 메인 생산', due_date: `${yy}-${mm}-18`, item_id: 'preview-i1', status: 'doing' }];
+            this._devPreviewCalBrands = true;
+            //  홈 칸 불러오기(주문·몰·매출)가 로그인 없이 운영 서버로 나가 401 을 내던 것 — 미리보기에선 막는다
+            this._ordersLoaded = this._mallsLoaded = this._quotesLoaded = this._igLoaded = true; this.malls = this.malls || [];
+            this._techPacksLoaded = true; this._techPacks = [];
+            this._calCursor = `${yy}-${mm}-15`; this.calDay = `${yy}-${mm}-12`;
             this.wins = [{ id: 'preview-calendar', view: 'calendar', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
+        //  작업지시서 화면 검수 — 제작 1 · 업로드 2. 저장소는 가짜(DB·Storage 에 쓰지 않는다)
+        if (devPreview === 'techpacks') {
+            if (!(mockData.brands || []).length) mockData.brands = [{ id: 'preview-b1', name: '하이헤이호', brand_color: '#6366f1' }];
+            const day = n => new Date(Date.now() - n * 864e5).toISOString();
+            this._devPreviewTechPacks = true; this._prefetched = true; this._isInitialLoading = false;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            this.currentView = 'tech_packs'; this._techPacksLoaded = true; this._itemsLoaded = true;
+            this._ordersLoaded = this._mallsLoaded = this._quotesLoaded = this._igLoaded = this._vendorsLoaded = this._invLoaded = true;
+            this.malls = []; this.vendors = []; this.orders = this.orders || [];
+            this.pItems = [{ id: 'preview-i1', name: '옥스포드 셔츠', tech_pack_id: 'preview-tp2' }];
+            this._techPacks = [
+                { id: 'preview-tp1', style_name: '린넨 셔츠', style_no: 'HH-2601', config: {}, source: 'made', created_at: day(5) },
+                { id: 'preview-tp2', style_name: '옥스포드 셔츠 공장 지시서', config: {}, source: 'upload', file_path: '00000000-0000-4000-8000-000000000002.pdf', file_name: '옥스포드 셔츠 작업지시서.pdf', file_type: 'application/pdf', file_size: 482133, brand_id: mockData.brands[0].id, created_at: day(1) },
+                { id: 'preview-tp3', style_name: '데님 사양표', config: {}, source: 'upload', file_path: '00000000-0000-4000-8000-000000000003.xlsx', file_name: '데님 사양표.xlsx', file_type: 'application/vnd.ms-excel', file_size: 30211, created_at: day(2) },
+            ];
+            const q = { select: () => q, order: () => q, eq: () => q, single: () => q, insert: () => q, then: (ok, ng) => Promise.resolve({ data: null, error: { message: '화면 검수 — 저장 안 함' } }).then(ok, ng) };
+            this.supabase = { from: () => q, storage: { from: () => ({
+                upload: async () => ({ error: { message: '화면 검수 — 저장 안 함' } }), remove: async () => ({ error: null }),
+                createSignedUrl: async () => ({ data: null, error: { message: '화면 검수 — 파일 없음' } }) }) } };
+            this.tpSel = 'preview-tp2';
+            this.wins = [{ id: 'preview-tp', view: 'tech_packs', x: 8, y: 8, w: 1300, h: 800, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
         }
         if (devPreview === 'crm') {
@@ -3805,8 +3846,8 @@ class BhasApp {
                 [r.list_name, r.due_date].filter(Boolean).join(' · '), `app.findGo('reminders','${r.id}')`);
         });
         (this._techPacks || []).forEach(t => {
-            if (hit(t.style_name, t.style_no)) add('작업지시서', 'ph-clipboard-text', '#5e5ce6',
-                t.style_name || '무제', t.style_no || '', `app.findGo('tech_packs','${t.id}')`);
+            if (hit(t.style_name, t.style_no, t.file_name)) add('작업지시서', 'ph-clipboard-text', '#5e5ce6',
+                t.style_name || '무제', [isUploadPack(t) ? '업로드' : '', t.style_no].filter(Boolean).join(' · '), `app.findGo('tech_packs','${t.id}')`);
         });
         (this.quotes || []).forEach(x => {
             if (hit(x.quote_no, x.client_name)) add('견적', 'ph-receipt', '#30d158',
@@ -4063,9 +4104,24 @@ class BhasApp {
             if (!t) return empty();
             const it = (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
             const sea = it ? this._seasons().find(p => String(p.id) === String(it.product_id)) : null;
+            if (isUploadPack(t)) {
+                const viewable = ['image', 'pdf'].includes(tpKind(t));
+                return wrap(t.style_name || '무제', t.style_no || '', `
+                    ${f('구분', '업로드 · ' + tpKindLabel(t))}
+                    ${f('파일', t.file_name || '')}
+                    ${f('크기', tpSizeText(t.file_size))}
+                    ${f('올린 날', (t.created_at || '').slice(0, 10))}
+                    ${f('브랜드', t.brand_id ? this._brandNameById(t.brand_id) : '공통')}
+                    ${f('제품', it ? it.name : '')}
+                    ${f('시즌', sea ? sea.name : '')}
+                `, `${viewable ? `<button class="mbtn pri" onclick="app.openTechPackFile('${t.id}')">미리보기</button>` : ''}
+                    <button class="mbtn${viewable ? '' : ' pri'}" onclick="app.openTechPackFile('${t.id}', true)">내려받기</button>
+                    <button class="mbtn danger" onclick="app.deleteTechPack('${t.id}','${esc(t.style_name || '')}')">삭제</button>`);
+            }
             let thumb = ''; try { thumb = garmentPreviewSVG(t.config, false); } catch (_e) {}
             return wrap(t.style_name || '무제', t.style_no || '', `
                 ${thumb ? `<div class="dt-thumb">${thumb}</div>` : ''}
+                ${f('구분', '제작')}
                 ${f('만든 날', (t.created_at || '').slice(0, 10))}
                 ${f('제품', it ? it.name : '')}
                 ${f('시즌', sea ? sea.name : '')}
@@ -4127,7 +4183,8 @@ class BhasApp {
                             oninput="app.itemNoteTyping()" onblur="app.saveItemNote('${it.id}')">${esc(note ? this._noteText(note) : '')}</textarea>`;
                 })()}
             `, `${tp ? `<button class="mbtn pri" onclick="app.openTechPack('${tp.id}')">작업지시서 열기</button>`
-                     : `<button class="mbtn pri" onclick="app.itemNewTechPack('${it.id}')">작업지시서 만들기</button>`}
+                     : `<button class="mbtn pri" onclick="app.itemNewTechPack('${it.id}')">작업지시서 만들기</button>
+                        <button class="mbtn" onclick="app.showTechPackUpload('${it.id}')">지시서 파일 올리기</button>`}
                 <button class="mbtn" onclick="app.itemToVendor('${it.id}')">생산 투입</button>
                 <button class="mbtn" onclick="app.delItem('${it.id}')">삭제</button>`);
         }
@@ -4472,8 +4529,8 @@ class BhasApp {
                 aggregatedDocs.push({
                     id: 'tp:' + t.id, name: (t.style_name || '무제') + (t.style_no ? ` (${t.style_no})` : ''),
                     category: '작업지시서', productId: it ? it.product_id : null, url: '',
-                    date: (t.created_at || '').slice(0, 10), memo: '', open: `app.openTechPack('${t.id}')`,
-                    icon: 'ph-clipboard-text', iconColor: '#5e5ce6', kindText: '작업지시서',
+                    date: (t.created_at || '').slice(0, 10), memo: isUploadPack(t) ? (t.file_name || '') : '', open: `app.openTechPack('${t.id}')`,
+                    icon: 'ph-clipboard-text', iconColor: '#5e5ce6', kindText: isUploadPack(t) ? '작업지시서(업로드)' : '작업지시서',
                 });
             });
             (this.quotes || []).forEach(qt => {
@@ -4631,7 +4688,8 @@ class BhasApp {
                             //  아이콘을 또 크게 띄우느니 내용을 보여준다 — 작업지시서는 도식화
                             if (String(d.id).startsWith('tp:')) {
                                 const t = (this._techPacks || []).find(x => 'tp:' + x.id === d.id);
-                                try { const svg = t && garmentPreviewSVG(t.config, false); if (svg) return `<div class="fd-pvsvg">${svg}</div>`; } catch (_e) {}
+                                if (isUploadPack(t)) return `<i class="ph ${tpKind(t) === 'pdf' ? 'ph-file-pdf' : (tpKind(t) === 'image' ? 'ph-image' : 'ph-file')}" style="color:#0a84ff"></i>`;
+                                try { const svg = t && hasPackConfig(t) && garmentPreviewSVG(t.config, false); if (svg) return `<div class="fd-pvsvg">${svg}</div>`; } catch (_e) {}
                             }
                             return null;
                         })() || (isImg(d.url) ? `<img src="${esc(d.url)}" alt="">`
@@ -6707,6 +6765,12 @@ class BhasApp {
         if (v === 'calendar' && !this._routinesLoaded && !this._routinesLoading) this.loadCalendarRoutines();
         if (v === 'calendar' && !this._remLoaded && !this._remLoading) this.loadReminders();
         if (v === 'calendar' && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+        //  브랜드 칩이 쓰는 고리(제품·작업지시서·메모) — 오면 다시 그려 제자리 브랜드로 옮긴다
+        if (v === 'calendar') {
+            if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
+            if (!this._techPacksLoaded) this.ensureTechPacks();
+            if (!this._noteLoaded && !this._noteLoading) this.loadNotes();
+        }
         if ((v === 'vendors' || v === 'contacts' || v === 'inventory') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
         if (v === 'news' && !this._newsLoaded && !this._newsLoading) this.loadNews();
         if (v === 'vendors' && !this._invLoaded && !this._invLoading) this.loadInventory();
@@ -8794,23 +8858,26 @@ class BhasApp {
     }
     // 날짜가 붙은 모든 것 한 벌 — 홈의 할 일 칸과 통합 캘린더가 같이 쓴다
     _allDated() {
-        if (this._devPreviewCalendar) {
+        if (this._devPreviewCalendar && !this._devPreviewCalBrands) {
             const center = this._dateLocal(this._calCursor || new Date().toISOString().slice(0, 10)) || new Date();
             return this._expandedRoutines(this._dateKey(new Date(center.getFullYear(), center.getMonth() - 1, 1)), this._dateKey(new Date(center.getFullYear(), center.getMonth() + 2, 0)));
         }
+        //  한 건마다 brand_id 를 단다(모르면 null = 공통) — 캘린더 브랜드 칩이 이걸로 거른다
+        const br = makeBrandResolver({ seasons: mockData.products || [], items: this.pItems || [], techPacks: this._techPacks || [],
+            notes: this.noteList || [], noteSeason: n => this._noteMeta(n).proj || null });
         const out = [];
-        (this.remList || []).forEach(r => out.push({
+        (this.remList || []).forEach(r => out.push({ brand_id: br.reminder(r),
             //  기본 분류면 이름을 또 적지 않는다 — 칸 이름이 이미 '할 일' 이다
             date: r.due_date, title: r.title, sub: /^(기본|미리\s*알림)$/.test(r.list_name || '') ? '' : (r.list_name || ''),
             done: !!r.done, color: '#ff9f0a', kind: 'rem', view: 'reminders', tag: '할 일',
             go: `app.findGo('reminders','${r.id}')`,
         }));
         (mockData.products || []).forEach(p => {
-            (p.todos || []).forEach(t => out.push({
+            (p.todos || []).forEach(t => out.push({ brand_id: p.brand_id || null,
                 date: t.due_date, title: t.text, sub: p.name,
                 done: !!t.completed, color: '#0a84ff', kind: 'todo', view: 'reminders', tag: '시즌',
             }));
-            if (p.due_date) out.push({
+            if (p.due_date) out.push({ brand_id: p.brand_id || null,
                 date: p.due_date, title: p.name, sub: '시즌 마감',
                 done: (p.currentStage || '') === 'shipping', color: '#bf5af2', kind: 'proj', view: 'dashboard',
                 tag: '시즌', go: `app.openSeasonItems('${p.id}')`,
@@ -8821,7 +8888,7 @@ class BhasApp {
             const due = this._noteMeta(n).due;
             if (!due) return;
             const td = this._noteTodos(n);
-            out.push({
+            out.push({ brand_id: br.note(n),
                 date: due, title: n.title || '메모', sub: '',
                 done: td.length ? td.every(x => x.done) : (this._noteMeta(n).status === '완료'),
                 color: '#bf5af2', kind: 'step', view: 'notes', tag: '단계',
@@ -8832,14 +8899,14 @@ class BhasApp {
         const stepNotes = new Set((this.noteList || []).filter(n => this._noteMeta(n).due).map(n => String(n.id)));
         this._allNoteTodos().forEach(t => {
             if (t.noteId && stepNotes.has(String(t.noteId))) return;
-            out.push({
+            out.push({ brand_id: br.lineTodo(t),
                 date: t.due, title: t.title, sub: t.from,
                 done: t.done, color: '#30d158', kind: t.src, view: t.src === 'note' ? 'notes' : (t.src === 'item' ? 'items' : (t.src === 'vendor' ? 'contacts' : 'detail')),
                 tag: ({ item: '제품', vendor: '거래처', season: '시즌' })[t.src] || '메모',
                 go: `app.openTodoSource('${t.id}')`,
             });
         });
-        (this.vendors || []).forEach(v => (v.jobs || []).forEach(j => out.push({
+        (this.vendors || []).forEach(v => (v.jobs || []).forEach(j => out.push({ brand_id: br.job(j),
             date: j.due_date, title: j.title || '작업', sub: v.name,
             done: j.status === 'done', color: '#6366f1', kind: 'job', view: 'vendors', tag: '생산',
             go: `app.goVendorJob('${v.id}')`,
@@ -12956,13 +13023,40 @@ class BhasApp {
     calToday() { this._calCursor = new Date().toISOString().slice(0, 10); this.calDay = this._calCursor; this.requestRender(); }
     setCalView(v) { this.calView = v; this.requestRender(); }
     selectCalDay(d) { this.calDay = d; this.requestRender(); }
+    //  브랜드 칩 — 전체 / 브랜드별 / 공통(브랜드 없는 것). 고른 것은 이 브라우저에 기억한다
+    _calBrand() {
+        if (this.calBrand === undefined) {
+            let v = CAL_BRAND_ALL;
+            try { v = localStorage.getItem('cal.brand') || CAL_BRAND_ALL; } catch (_e) { /* 저장소 막힘 — 전체로 */ }
+            this.calBrand = v;
+        }
+        return calBrandValid(this.calBrand, mockData.brands || []);
+    }
+    setCalBrand(id) {
+        this.calBrand = calBrandValid(String(id || CAL_BRAND_ALL), mockData.brands || []);
+        try { localStorage.setItem('cal.brand', this.calBrand); } catch (_e) { /* 기억만 못 할 뿐 */ }
+        this.requestRender();
+    }
     renderCalendar() {
         const esc = s => this._vesc(s);
         const todayS = new Date().toISOString().slice(0, 10);
         const cur = new Date(this._calCursor || todayS);
         const yy = cur.getFullYear(), mo = cur.getMonth();
         const view = this.calView || 'month';
-        const items = this._allDated().filter(x => x.date && this._calOn(x.kind));
+        const brands = mockData.brands || [];
+        const bsel = this._calBrand();
+        const dated = this._allDated().filter(x => x.date && this._calOn(x.kind));
+        const items = dated.filter(x => calBrandMatch(x, bsel));
+        const monthKey = `${yy}-${String(mo + 1).padStart(2, '0')}`;
+        const bCount = sel2 => dated.filter(x => String(x.date).startsWith(monthKey) && calBrandMatch(x, sel2)).length;
+        const bChip = (id, name, color) => `<button class="cal-bchip${bsel === String(id) ? ' on' : ''}" role="tab" aria-selected="${bsel === String(id)}"
+                onclick="app.setCalBrand('${esc(id)}')">${color ? `<i style="background:${esc(color)}"></i>` : ''}${esc(name)}<em>${bCount(String(id))}</em></button>`;
+        //  제품·지시서·메모가 아직 안 왔으면 일부가 공통에 잠깐 섞인다 — 오는 대로 다시 그린다
+        const linking = !this._devPreviewCalendar && (!this._itemsLoaded || !this._techPacksLoaded || !this._noteLoaded);
+        const brandBar = `<div class="cal-brands" role="tablist" aria-label="브랜드별 보기">
+                ${bChip(CAL_BRAND_ALL, '전체')}${brands.map(b => bChip(b.id, b.name || '브랜드', b.brand_color || '#8e8e93')).join('')}${bChip(CAL_BRAND_NONE, '공통')}
+                ${linking ? '<span class="cal-bload">브랜드 분류 중…</span>' : ''}
+            </div>`;
         const byDate = {};
         items.forEach(x => { (byDate[x.date] ||= []).push(x); });
         const ymd = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -13057,7 +13151,8 @@ class BhasApp {
                         <button class="t" onclick="app.calToday()">오늘</button>
                         <button onclick="app.calMove(1)">›</button></div>
                 </div>
-                <h1 class="cal-h1">${yy}년 ${mo + 1}월</h1>
+                ${brandBar}
+                <h1 class="cal-h1">${yy}년 ${mo + 1}월${bsel !== CAL_BRAND_ALL ? ` <small class="cal-bnow">${esc(bsel === CAL_BRAND_NONE ? '공통' : ((brands.find(b => String(b.id) === bsel) || {}).name || ''))}</small>` : ''}</h1>
                 ${grid}
             </section>
             <aside class="cal-day">
@@ -14785,7 +14880,7 @@ class BhasApp {
                     <input id="vj-qty" type="number" class="login-input" placeholder="수량">
                 </div>
                 <label style="font-size:0.8rem;color:var(--text-muted)">작업지시서 연결 <span style="color:#ef4444">*필수</span> <span style="color:var(--primary)">(검수 체크리스트 자동생성)</span></label>
-                <select id="vj-pack" class="login-input"><option value="">— 작업지시서를 선택하세요 —</option>${(this._techPacks || []).map(t => `<option value="${t.id}">${this._vesc(t.style_name)}${t.style_no ? ` (${t.style_no})` : ''}</option>`).join('')}</select>
+                <select id="vj-pack" class="login-input"><option value="">— 작업지시서를 선택하세요 —</option>${(this._techPacks || []).map(t => `<option value="${t.id}">${this._vesc(t.style_name)}${t.style_no ? ` (${t.style_no})` : ''}${isUploadPack(t) ? ' · 업로드' : ''}</option>`).join('')}</select>
                 <label style="font-size:0.8rem;color:var(--text-muted)">마감(스케줄)</label>
                 <input id="vj-due" type="date" class="login-input">
             </div>
@@ -14877,7 +14972,7 @@ class BhasApp {
         this._qcDraft = {
             jobId,
             packId: job.tech_pack_id || null,
-            checklist: saved || (pack && pack.config ? this._qcFromConfig(pack.config, job) : this._defaultQcChecklist(job)),
+            checklist: saved || (hasPackConfig(pack) ? this._qcFromConfig(pack.config, job) : this._defaultQcChecklist(job)),
             photos: Array.isArray(job.qc_photos) ? job.qc_photos.slice() : [],
             quick: job.quick_status || null,
             vendorName: vendor ? vendor.name : '',
@@ -14906,7 +15001,7 @@ class BhasApp {
             <div style="display:flex;gap:6px;margin-bottom:0.7rem;align-items:center">
                 <select id="qc-pack" class="login-input" style="flex:1">
                     <option value="">— 연결 안 됨 (기본 체크리스트) —</option>
-                    ${(this._techPacks || []).map(t => `<option value="${t.id}" ${d.packId === t.id ? 'selected' : ''}>${this._vesc(t.style_name)}${t.style_no ? ` (${t.style_no})` : ''}</option>`).join('')}
+                    ${(this._techPacks || []).map(t => `<option value="${t.id}" ${d.packId === t.id ? 'selected' : ''}>${this._vesc(t.style_name)}${t.style_no ? ` (${t.style_no})` : ''}${isUploadPack(t) ? ' · 업로드' : ''}</option>`).join('')}
                 </select>
                 ${d.packId ? `<button id="qc-spec-toggle" class="btn-secondary" style="padding:8px 12px;border-radius:9px;white-space:nowrap">${d.showSpec ? '지시서 접기' : '지시서 보기'}</button>` : ''}
             </div>
@@ -14952,7 +15047,7 @@ class BhasApp {
         if (packSel) packSel.onchange = () => {
             d.packId = packSel.value || null;
             const pack = d.packId ? (this._techPacks || []).find(t => t.id === d.packId) : null;
-            d.checklist = pack && pack.config ? this._qcFromConfig(pack.config, { qty: d.qty }) : this._defaultQcChecklist({ qty: d.qty });
+            d.checklist = hasPackConfig(pack) ? this._qcFromConfig(pack.config, { qty: d.qty }) : this._defaultQcChecklist({ qty: d.qty });
             d.showSpec = !!d.packId;
             this._renderQcModal();
         };
@@ -15008,12 +15103,21 @@ class BhasApp {
 
     // ----- 작업지시서(tech_packs) 저장/로드 + 검수 연결 -----
     async ensureTechPacks(force) {
-        if (this._techPacksLoaded && !force) return;
+        if ((this._techPacksLoaded || this._techPacksLoading) && !force) return;
+        this._techPacksLoading = true;
         try {
-            const { data } = await this.supabase.from('tech_packs').select('id, style_name, style_no, config, created_at, item_id').order('created_at', { ascending: false });
+            //  093(파일 올리기 칸) 전이면 새 칸 없이 다시 읽는다 — 목록이 통째로 비지 않게
+            let { data, error } = await this.supabase.from('tech_packs')
+                .select('id, style_name, style_no, config, created_at, item_id, source, file_path, file_name, file_type, file_size, brand_id').order('created_at', { ascending: false });
+            this._tpUploadMissing = false;
+            if (error) {
+                this._tpUploadMissing = /source|file_|brand_id|column/i.test(error.message || '');
+                ({ data, error } = await this.supabase.from('tech_packs').select('id, style_name, style_no, config, created_at, item_id').order('created_at', { ascending: false }));
+                if (error) throw error;
+            }
             this._techPacks = data || [];
-        } catch (e) { this._techPacks = this._techPacks || []; }
-        this._techPacksLoaded = true;
+        } catch (e) { this._techPacks = this._techPacks || []; console.warn('[작업지시서] 불러오기 실패', e?.message || e); }
+        this._techPacksLoaded = true; this._techPacksLoading = false;
         this.requestRender();
     }
 
@@ -15041,6 +15145,7 @@ class BhasApp {
     newTechPack() { this.sampleConfig = defaultSampleConfig(); this._editingTechPackId = null; this.switchView('sample_maker'); }
     openTechPack(id) {
         const t = (this._techPacks || []).find(x => x.id === id);
+        if (isUploadPack(t)) return this.openTechPackFile(id);
         if (!t || !t.config) { this.showToast('설정을 불러올 수 없습니다'); return; }
         this.sampleConfig = JSON.parse(JSON.stringify(t.config));
         this._editingTechPackId = id;
@@ -15049,6 +15154,7 @@ class BhasApp {
     printTechPack(id) {
         const t = (this._techPacks || []).find(x => x.id === id);
         if (!t) return;
+        if (isUploadPack(t)) return this.openTechPackFile(id);
         const w = window.open('', '_blank');
         if (!w) { this.showToast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
         w.document.write(buildTechPackPrintHTML(t.config)); w.document.close();
@@ -15056,6 +15162,7 @@ class BhasApp {
     downloadTechPack(id) {
         const t = (this._techPacks || []).find(x => x.id === id);
         if (!t) return;
+        if (isUploadPack(t)) return this.openTechPackFile(id, true);
         try {
             const html = buildTechPackPrintHTML(t.config);
             const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
@@ -15071,12 +15178,135 @@ class BhasApp {
     async deleteTechPack(id, name) {
         if (!await this.showConfirm(`작업지시서 "${name || ''}" 를 삭제할까요? 되돌릴 수 없어요.`, '삭제')) return;
         try {
+            const t = (this._techPacks || []).find(x => x.id === id);
             const { error } = await this.supabase.from('tech_packs').delete().eq('id', id);
             if (error) throw error;
+            if (isUploadPack(t) && t.file_path) await this._tpDropFile(t.file_path);
             if (this._editingTechPackId === id) this._editingTechPackId = null;
             this.showToast('삭제됨');
             await this.ensureTechPacks(true);
         } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
+    }
+    // ----- 작업지시서 파일 올리기(093) — 외부에서 받은 지시서를 그대로 보관 -----
+    //  itemId: 제품 화면에서 부르면 그 제품에 바로 붙인다
+    showTechPackUpload(itemId) {
+        if (this._tpUploadMissing) { this.showToast('파일 올리기는 093_tech_pack_upload.sql 적용 후 사용할 수 있습니다'); return; }
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const esc = s => this._vesc(s);
+        const brands = mockData.brands || [];
+        const items = (this.pItems || []).filter(i => i.name && !i.tech_pack_id || String(i.id) === String(itemId || ''));
+        const pre = (this.pItems || []).find(i => String(i.id) === String(itemId || ''));
+        const preBrand = pre ? (pre.brand_id || (this._seasons().find(p => String(p.id) === String(pre.product_id)) || {}).brand_id || '') : '';
+        c.innerHTML = `<div class="glass modal-content fade-in vmodal" style="width:92%;max-width:460px;padding:1.6rem;border-radius:20px;position:relative">
+            <h2 style="margin:0 0 1rem;font-size:1.1rem"><i class="ph ph-upload-simple"></i> 작업지시서 파일 올리기</h2>
+            <div style="display:flex;flex-direction:column;gap:10px">
+                <input id="tpu-file" type="file" accept="${TP_ACCEPT}" class="login-input">
+                <div style="font-size:0.74rem;color:var(--text-muted)">PDF · 사진(jpg·png·webp) · 엑셀(xlsx·xls) · 한글(hwp) · 20MB 이하</div>
+                <input id="tpu-name" class="login-input" placeholder="지시서 이름 (비우면 파일 이름)" maxlength="120" value="${esc(pre ? pre.name : '')}">
+                <input id="tpu-no" class="login-input" placeholder="스타일 번호 (선택)" maxlength="60">
+                <select id="tpu-brand" class="login-input"><option value="">브랜드 — 공통</option>${brands.map(b => `<option value="${esc(b.id)}"${String(preBrand) === String(b.id) ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
+                <select id="tpu-item" class="login-input"><option value="">제품 연결 — 나중에</option>${items.slice(0, 300).map(i => `<option value="${esc(i.id)}"${pre && String(pre.id) === String(i.id) ? ' selected' : ''}>${esc(i.name)}${i.pattern_no ? ` (${esc(i.pattern_no)})` : ''}</option>`).join('')}</select>
+                <div id="tpu-err" style="font-size:0.8rem;color:#ef4444;min-height:1em"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:1rem">
+                <button onclick="app.closeGlobalModal()" class="btn-secondary" style="padding:9px 18px;border-radius:10px">취소</button>
+                <button id="tpu-save" class="btn-primary" style="padding:9px 18px;border-radius:10px">올리기</button>
+            </div>
+        </div>`;
+        c.style.display = 'flex';
+        const f = document.getElementById('tpu-file'), nm = document.getElementById('tpu-name'), err = document.getElementById('tpu-err');
+        f.onchange = () => {
+            const file = f.files && f.files[0]; const v = validateTpFile(file);
+            err.textContent = file && !v.ok ? v.error : '';
+            if (file && v.ok && !nm.value.trim()) nm.value = tpDefaultName(file.name);
+        };
+        document.getElementById('tpu-save').onclick = () => this.uploadTechPack();
+    }
+    async uploadTechPack() {
+        const f = document.getElementById('tpu-file'), err = document.getElementById('tpu-err'), btn = document.getElementById('tpu-save');
+        const file = f && f.files && f.files[0];
+        const v = validateTpFile(file);
+        if (!v.ok) { if (err) err.textContent = v.error; return; }
+        const fileName = String(file.name).normalize('NFC');
+        const path = tpFilePath(crypto.randomUUID(), v.ext);
+        if (!path) { if (err) err.textContent = '저장 위치를 만들지 못했습니다'; return; }
+        const row = {
+            style_name: (document.getElementById('tpu-name')?.value || '').trim() || tpDefaultName(fileName),
+            style_no: (document.getElementById('tpu-no')?.value || '').trim() || null,
+            brand_id: document.getElementById('tpu-brand')?.value || null,
+            config: {}, source: 'upload', file_path: path, file_name: fileName.slice(0, 255), file_type: v.mime, file_size: file.size,
+        };
+        const itemId = document.getElementById('tpu-item')?.value || null;
+        if (itemId) row.item_id = itemId;
+        if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+        let uploaded = false, saved = null;
+        try {
+            const { error: upErr } = await this.supabase.storage.from(TP_BUCKET).upload(path, file, { contentType: v.mime, upsert: false });
+            if (upErr) throw upErr;
+            uploaded = true;
+            const { data, error } = await this.supabase.from('tech_packs').insert([row]).select('id').single();
+            if (error) throw error;
+            if (!data?.id) throw new Error('저장 확인 실패');
+            saved = data;
+        } catch (e) {
+            if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+            if (err) err.textContent = '올리기 실패: ' + (e?.message || e);
+        } finally {
+            //  DB 에 줄이 안 생겼으면(에러·예외 모두) 올린 파일을 무조건 지운다 — 파일만 남지 않게
+            if (uploaded && !saved) await this._tpDropFile(path);
+        }
+        if (!saved) return;
+        this.closeGlobalModal();
+        //  제품 줄에도 박는다(양쪽 연결). 실패하면 지시서는 남기고 그 사실만 알린다
+        const linked = itemId ? (await this.setItem(itemId, 'tech_pack_id', saved.id, 1)) === true : true;
+        await this.ensureTechPacks(true);
+        this.showToast(linked ? `작업지시서를 올렸습니다 — ${row.style_name}`
+            : `지시서는 올렸고 제품 연결은 실패했습니다 — 제품 화면에서 다시 연결해 주세요 (${row.style_name})`);
+    }
+    //  버킷에서 파일 하나 지우기 — 실패하면 사용자에게 알리고 콘솔에 경로를 남긴다(관리자가 손으로 지울 수 있게)
+    async _tpDropFile(path) {
+        try {
+            const { error } = await this.supabase.storage.from(TP_BUCKET).remove([path]);
+            if (error) throw error;
+            return true;
+        } catch (e) {
+            console.warn(`[작업지시서] 파일 정리 실패 — ${TP_BUCKET}/${path}`, e?.message || e);
+            this.showToast(`올린 파일 정리에 실패했습니다 — 관리자에게 알려 주세요 (${TP_BUCKET}/${path})`);
+            return false;
+        }
+    }
+    //  올린 파일 열기 — 공개 주소가 없다(private 버킷). 10분짜리 서명 주소로 미리보기(사진·PDF) 또는 내려받기
+    //  newTab: 다른 창(검수 등) 위에서 열 때 — 그 창을 덮지 않고 새 탭으로
+    async openTechPackFile(id, download, newTab) {
+        const t = (this._techPacks || []).find(x => String(x.id) === String(id));
+        if (!t || !t.file_path) { this.showToast('파일 정보가 없습니다'); return; }
+        const kind = tpKind(t), viewable = !download && (kind === 'image' || kind === 'pdf');
+        const w = newTab && viewable ? window.open('', '_blank') : null;
+        try {
+            const { data, error } = await this.supabase.storage.from(TP_BUCKET)
+                .createSignedUrl(t.file_path, 600, viewable ? undefined : { download: t.file_name || true });
+            if (error || !data?.signedUrl) throw error || new Error('주소 없음');
+            if (viewable && newTab) {
+                if (w) { w.opener = null; w.location.href = data.signedUrl; } else window.open(data.signedUrl, '_blank', 'noopener');
+                return;
+            }
+            if (viewable) { this._tpPreview(t, data.signedUrl, kind); return; }
+            const a = document.createElement('a');
+            a.href = data.signedUrl; a.rel = 'noopener'; a.download = t.file_name || '';
+            document.body.appendChild(a); a.click(); a.remove();
+        } catch (e) { if (w) w.close(); this.showToast('파일을 열지 못했습니다: ' + (e?.message || e)); }
+    }
+    _tpPreview(t, url, kind) {
+        const c = document.getElementById('global-modal-container'); if (!c) return;
+        const esc = s => this._vesc(s);
+        c.innerHTML = `<div class="glass modal-content fade-in tpf-modal">
+            <div class="hk-top"><b><i class="ph ${kind === 'pdf' ? 'ph-file-pdf' : 'ph-image'}"></i> ${esc(t.style_name || t.file_name || '작업지시서')}</b>
+                <button class="fi-x" onclick="app.closeGlobalModal()">×</button></div>
+            <div class="tpf-body">${kind === 'pdf' ? `<iframe src="${esc(url)}" title="${esc(t.file_name || '')}"></iframe>` : `<img src="${esc(url)}" alt="${esc(t.file_name || '')}">`}</div>
+            <div class="tpf-foot"><span>${esc(t.file_name || '')} · ${tpSizeText(t.file_size)}</span>
+                <button class="mbtn pri" onclick="app.openTechPackFile('${t.id}', true)"><i class="ph ph-download-simple"></i> 내려받기</button></div>
+        </div>`;
+        c.style.display = 'flex';
     }
     // ============================================================
     //  제품리스트 — 생산의 중심 표
@@ -15107,17 +15337,21 @@ class BhasApp {
 
     // 표의 칸을 고치면 바로 저장한다. redraw=1 은 색·집계가 바뀌는 칸(상태·체크·날짜·고르기)만.
     async setItem(id, field, value, redraw) {
-        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return;
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return false;
         const v = (value === '' ? null : value);
         const old = it[field]; it[field] = v;
-        const { error } = await this.supabase.from('product_items').update({ [field]: v }).eq('id', id);
-        if (error) { it[field] = old; this.showToast('저장 실패: ' + error.message); this.requestRender(); return; }
+        //  네트워크가 끊겨 요청이 예외로 터져도 에러와 똑같이 되돌리고 false — 부르는 쪽(업로드 후 제품 연결)이 멈추지 않게
+        let error;
+        try { ({ error } = await this.supabase.from('product_items').update({ [field]: v }).eq('id', id)); }
+        catch (e) { error = { message: e?.message || String(e) }; }
+        if (error) { it[field] = old; this.showToast('저장 실패: ' + error.message); this.requestRender(); return false; }
         // 시즌을 고르면 그 시즌의 브랜드를 따라간다 (비어 있을 때만)
         if (field === 'product_id' && v && !it.brand_id) {
             const s = this._seasons().find(p => String(p.id) === String(v));
             if (s && s.brand_id) { it.brand_id = s.brand_id; await this.supabase.from('product_items').update({ brand_id: s.brand_id }).eq('id', id); }
         }
         if (redraw) this.requestRender();
+        return true;
     }
 
     // ── 판매명 ──────────────────────────────────────────────
@@ -15482,8 +15716,15 @@ class BhasApp {
     }
 
     async itemLinkTechPack(id, tpId) {
-        await this.setItem(id, 'tech_pack_id', tpId, 1);
-        if (tpId) await this.supabase.from('tech_packs').update({ item_id: id }).eq('id', tpId);
+        //  제품 쪽이 실패하면 지시서 쪽도 건드리지 않는다 — 한쪽만 연결된 상태를 만들지 않는다
+        if (!(await this.setItem(id, 'tech_pack_id', tpId, 1))) return false;
+        if (tpId) {
+            try {
+                const { error } = await this.supabase.from('tech_packs').update({ item_id: id }).eq('id', tpId);
+                if (error) throw error;
+            } catch (e) { this.showToast('제품엔 연결했지만 작업지시서 쪽 저장 실패: ' + (e?.message || e)); return false; }
+        }
+        return true;
     }
 
     async itemNewQuote(id) {
@@ -15742,26 +15983,30 @@ class BhasApp {
         const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '';
         //  제품리스트에서 만든 지시서는 그 제품 이름을 달고 다닌다
         const itemOf = t => (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
+        const kIcon = { pdf: 'ph-file-pdf', image: 'ph-image', sheet: 'ph-file-xls', hwp: 'ph-file-text' };
         const tile = t => {
             let thumb = '';
-            try { thumb = garmentPreviewSVG(t.config, false); } catch (_e) { thumb = ''; }
+            const up = isUploadPack(t);
+            if (up) thumb = `<i class="ph ${kIcon[tpKind(t)] || 'ph-file'}" style="color:#0a84ff"></i>`;
+            else try { thumb = hasPackConfig(t) ? garmentPreviewSVG(t.config, false) : ''; } catch (_e) { thumb = ''; }
             const it = itemOf(t);
             return `<button class="fd-it tp${String(this.tpSel) === String(t.id) ? ' on' : ''}"
                     onclick="app.selectTechPack('${t.id}')" ondblclick="app.openTechPack('${t.id}')"
                     title="${esc(t.style_name || '무제')}">
                 <span class="fd-th tp">${thumb || '<i class="ph ph-clipboard-text" style="color:#5e5ce6"></i>'}</span>
                 <span class="fd-nm">${esc(t.style_name || '무제')}</span>
-                <span class="fd-sub">${t.style_no ? esc(t.style_no) : when(t.created_at)}</span>
+                <span class="fd-sub"><b class="tp-src ${up ? 'up' : 'mk'}">${up ? '업로드' : '제작'}</b>${t.style_no ? esc(t.style_no) : when(t.created_at)}</span>
                 ${it ? `<em class="fd-badge tp"><i class="ph ph-t-shirt"></i></em>` : ''}
             </button>`;
         };
         return `<div class="mp">
-            ${this._mpTop('작업지시서', `${list.length}건 · 두 번 누르면 열린다 · ⌘P로 PDF`,
-                `<button onclick="app.newTechPack()" class="mbtn pri"><i class="ph ph-plus"></i> 새 작업지시서</button>`)}
+            ${this._mpTop('작업지시서', `${list.length}건 · 제작 ${list.filter(t => !isUploadPack(t)).length} · 업로드 ${list.filter(isUploadPack).length} · 두 번 누르면 열린다`,
+                `<button onclick="app.showTechPackUpload()" class="mbtn"><i class="ph ph-upload-simple"></i> 파일 올리기</button>
+                 <button onclick="app.newTechPack()" class="mbtn pri"><i class="ph ph-plus"></i> 새 작업지시서</button>`)}
             <div class="fd-body">
                 ${!this._techPacksLoaded ? this._loadingSkeleton('작업지시서')
                     : (list.length ? `<div class="fd-grid tp">${list.map(tile).join('')}</div>`
-                        : `<div class="fd-none">저장된 작업지시서가 없습니다 — <b>샘플·디자인</b>에서 만들어 저장하거나 위 [새 작업지시서]로 시작하세요</div>`)}
+                        : `<div class="fd-none">저장된 작업지시서가 없습니다 — <b>샘플·디자인</b>에서 만들어 저장하거나, 위 [새 작업지시서]·[파일 올리기]로 시작하세요</div>`)}
             </div>
             <div class="fd-path"><i class="ph ph-clipboard-text"></i><span>작업지시서 ${list.length}건</span></div>
         </div>`;
@@ -15778,6 +16023,10 @@ class BhasApp {
 
     _qcSpecHTML(packId) {
         const pack = (this._techPacks || []).find(t => t.id === packId);
+        if (isUploadPack(pack)) return `<div style="font-size:0.82rem;color:#111;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span><i class="ph ph-file"></i> 업로드한 지시서 — ${this._vesc(pack.file_name || '')}</span>
+            <button type="button" class="mbtn" onclick="app.openTechPackFile('${pack.id}', false, true)">파일 열기</button>
+            <span style="color:#888">검수 항목은 기본 항목만 나옵니다</span></div>`;
         if (!pack || !pack.config) return '<p style="color:#888;font-size:0.8rem">지시서를 찾을 수 없음</p>';
         const items = techPackChecklistItems(pack.config);
         return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">

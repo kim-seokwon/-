@@ -22,6 +22,8 @@
     "test:news-magazine": "node --test tests/news-magazine.test.mjs",
     "test:ui-track": "node --test tests/ui-track.test.mjs",
     "test:help-center": "node --test tests/help-center.test.mjs",
+    "test:calendar-brand": "node --test tests/calendar-brand.test.mjs",
+    "test:tech-pack-upload": "node --test tests/tech-pack-upload.test.mjs",
     "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
