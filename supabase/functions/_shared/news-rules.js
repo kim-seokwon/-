@@ -137,12 +137,37 @@ export function isCompetition(x, competitors = COMPETITORS) {
     return !OFFTOPIC.some(w => h.includes(squash(w)));
 }
 
+//  팝업·유통 소식 — 경쟁사 이름이 없어도 '백화점에 키즈 브랜드 팝업' 기사는 경쟁·유통 칸에 든다(10-26 사장님).
+//   팝업 + 백화점·유통 낱말 + 아동·키즈 낱말이 다 있어야 한다. 아이돌·공연 팝업(스트레이키즈는 '키즈'가 들어간다)·OFFTOPIC 은 막는다.
+export const POPUP_WORDS = ['팝업'];                    // 팝업스토어 포함
+export const RETAIL_WORDS = [
+    '백화점', '현대백화점', '더현대', '신세계', '롯데백화점', '갤러리아', 'AK플라자', '스타필드', '롯데월드몰',
+    '타임빌라스', '아이파크몰', '커넥트현대', '아울렛', '쇼핑몰',
+];
+export const POPUP_BLOCK = [
+    '스트레이키즈', '아이돌', '콘서트', '팬미팅', '팬사인', '굿즈', '앨범', '컴백', '뮤지컬', '공연', '엔터테인먼트',
+    '아동복지', '복지시설',
+];
+export function isPopupNews(x) {
+    //  제목 끝 ' - 매체명' 은 뗀다 — 매체 '키즈맘'이 아동 낱말로 잡혀 장보기 기사가 들어왔다(10-26 실데이터)
+    const h = hay({ title: bareTitle(x.title), snippet: x.snippet });
+    const any = list => list.some(w => h.includes(squash(w)));
+    if (!any(POPUP_WORDS) || !any(RETAIL_WORDS)) return false;
+    //  '키즈'는 스트레이키즈(아이돌)·무도키즈(팬 별명)·키즈카페를 뗀 뒤에 남아 있을 때만 센다
+    const kidsH = h.replace(/스트레이키즈|무도키즈|키즈카페/g, '');
+    if (!KIDS_CONTEXT.some(w => kidsH.includes(squash(w)))) return false;
+    return !any(POPUP_BLOCK) && !any(OFFTOPIC);
+}
+
+//  화면 칸 — 경쟁사 기사 또는 팝업·유통 소식
+export const isTrendItem = (x, competitors = COMPETITORS) => isCompetition(x, competitors) || isPopupNews(x);
+
 export function competitionList(items, competitors = COMPETITORS) {
     const seenUrl = new Set();
     const ok = items.filter(x => {
         if (!x.url || seenUrl.has(x.url)) return false;
         seenUrl.add(x.url);
-        return isCompetition(x, competitors);
+        return isTrendItem(x, competitors);
     });
     return dedupeSimilar(ok);
 }

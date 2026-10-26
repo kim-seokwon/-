@@ -5,7 +5,7 @@ import { tipHTML, initTips } from './helpWidget.js';
 import { helpTabs, helpFocusKey, unreadCount, validateFeedback, validateNotice, feedbackPath, helpPanelHTML, manualListHTML, helpFabHTML } from './helpCenter.js';
 import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx, MAX_PER_BATCH as HX_MAX } from './hometaxExcel.js';
 // 뉴스 칸 규칙 — 수집기(news-sync)와 같은 파일을 쓴다. 고치면 수집과 화면이 같이 바뀐다.
-import { COMPETITORS, customerList, competitionList, oneStoryEach, validCounts, datedOnly } from './supabase/functions/_shared/news-rules.js';
+import { COMPETITORS, POPUP_WORDS, customerList, competitionList, oneStoryEach, validCounts, datedOnly } from './supabase/functions/_shared/news-rules.js';
 import {
     RANK_TOP, engOf, topPosts, nameOfPost, rankCompetitors, snapStart, reactionStats,
     searchName, brandIssues, upcomingOpenings,
@@ -14251,7 +14251,8 @@ class BhasApp {
             .order('published_at', { ascending: false, nullsFirst: false }).limit(n);
         //  경쟁·유통은 경쟁사 이름이 든 것만 서버에서 먼저 고른다 — 안 그러면 최근 800건이
         //   옛 '아동복 소식' 해시태그 글로 차서 경쟁사 기사가 밀려난다. 띄어쓰기('무신사 키즈')도 잡게 글자 사이를 연다.
-        const like = COMPETITORS.map(c => `%${[...c].join('%')}%`)
+        //   팝업·유통 소식(isPopupNews)은 경쟁사 이름이 없으니 '팝업' 낱말로도 고른다 — 최종 판정은 competitionList 가 한다.
+        const like = [...COMPETITORS, ...POPUP_WORDS].map(c => `%${[...c].join('%')}%`)
             .flatMap(p => [`title.ilike.${p}`, `snippet.ilike.${p}`]).join(',');
         const [rv, tr, ig, ownRows] = await Promise.all([
             sel(['review'], 300), sel(['trend', 'news'], 800).or(like),
@@ -14340,7 +14341,7 @@ class BhasApp {
             </div>`).join('')}</div>${moreBtn('brands', M.brands.length, MAG.BRANDS)}` : '';
 
         const story = (x, k) => tag(x.url, 'nm-story', `<div class="nm-st">
-                <div class="nm-meta">${x.source ? `<span class="nm-src">${esc(x.source)}</span>` : ''}${bits(x.author, x.when)}</div>
+                <div class="nm-meta">${x.popup ? '<span class="nm-src nm-pop">팝업</span>' : ''}${x.source ? `<span class="nm-src">${esc(x.source)}</span>` : ''}${bits(x.author, x.when)}</div>
                 <b>${esc(x.title || x.snippet.slice(0, 60))}</b>${x.snippet && x.title ? `<p>${esc(x.snippet)}</p>` : ''}
                 ${k === 'customer' ? `<div class="nm-meta">${bits(...reactBits(x.likes, x.comments))}</div>` : ''}</div>
             ${this._photo(x.thumb, 'nm-sth')}`);

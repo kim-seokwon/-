@@ -3,7 +3,7 @@
 //  데이터·수집은 그대로 쓴다(loadNews 가 읽어 온 것).
 import { openCalendar, topWorked, headOf, ratioWord } from './paperEdition.js';
 import { engOf, nameOfPost, rankCompetitors } from './competitorBoard.js';
-import { oneStoryEach } from './supabase/functions/_shared/news-rules.js';
+import { oneStoryEach, isPopupNews, isCompetition } from './supabase/functions/_shared/news-rules.js';
 
 const DAY = 864e5, KST = 9 * 36e5;
 const tsOf = x => { const t = Date.parse((x && (x.published_at || x.created_at)) || ''); return Number.isNaN(t) ? null : t; };
@@ -74,7 +74,9 @@ export function magazine(C, comps, snaps, { now = Date.now(), q = '' } = {}) {
     const item = x => ({ id: x.id, url: x.url, title: x.title || '', snippet: x.snippet || '', source: sourceKo(x.source),
         author: x.author && !String(x.author).startsWith('#') ? x.author : '', thumb: x.thumb || (x.meta && x.meta.thumb) || null,
         when: whenWord(x.published_at, now), price: x.meta && x.meta.price ? Number(x.meta.price) : null,
-        likes: x.meta && x.meta.likes != null ? x.meta.likes : null, comments: x.meta && x.meta.comments != null ? x.meta.comments : null });
+        likes: x.meta && x.meta.likes != null ? x.meta.likes : null, comments: x.meta && x.meta.comments != null ? x.meta.comments : null,
+        //  경쟁사 이름 없이 팝업 규칙으로 들어온 기사 — 카드에 '팝업' 꼬리표
+        popup: !isCompetition(x) && isPopupNews(x) });
     const pick = list => (list || []).map(item).filter(x => matches(query, x.title, x.snippet, x.author, x.source));
     //  경쟁·유통은 같은 보도자료 재탕을 한 건으로
     const customer = pick(C && C.review), trend = pick(oneStoryEach((C && C.trend) || [])), resale = pick(C && C.resale);
