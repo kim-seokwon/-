@@ -84,6 +84,24 @@ insert into malls values ('hhh', '11111111-1111-4111-8111-111111111111'), ('rohi
     r = await get(t3);
     assert.equal(r.customer_name, '(이름없음)'); assert.equal(r.channel_order_id, null); assert.equal(r.product_name, null);
 
+    // 3-1) 반려1: CS → 몰A 주문(채움) → 몰B 같은 번호 → 자동으로 채운 칸만 되돌림
+    const t31 = await cs('DUP-2');
+    const t32 = await cs('DUP-2', { product: '직원이 먼저 적은 상품' });
+    const oA = await order('DUP-2', 'hhh'); await items(oA, ['몰A 상품']);
+    r = await get(t31);
+    assert.equal(r.channel_order_id, oA); assert.equal(r.customer_name, '방보경');
+    assert.deepEqual(Object.keys(r.auto_fill).sort(), ['brand_id', 'channel_order_id', 'customer_name', 'product_name']);
+    assert.deepEqual(Object.keys((await get(t32)).auto_fill).sort(), ['brand_id', 'channel_order_id', 'customer_name'], '직원 상품은 기록 안 함');
+    await db.query(`update cs_tickets set customer_name = '직원이 고친 이름' where id = $1`, [t32]);   // 자동 뒤에 직원이 고침
+    const oB = await order('DUP-2', 'rohi'); await items(oB, ['몰B 상품']);
+    r = await get(t31);
+    assert.equal(r.channel_order_id, null); assert.equal(r.customer_name, '(이름없음)');
+    assert.equal(r.brand_id, null); assert.equal(r.product_name, null); assert.equal(r.auto_fill, null);
+    r = await get(t32);
+    assert.equal(r.channel_order_id, null, '자동 연결은 풀림');
+    assert.equal(r.customer_name, '직원이 고친 이름', '자동 뒤 직원이 고친 값은 그대로');
+    assert.equal(r.product_name, '직원이 먼저 적은 상품');
+
     // 4) 접수일이 주문일보다 빠르면(가드가 막는 경우) 건드리지 않고, 주문 수집은 그대로 성공
     const t4 = await cs('OLD-1', { on: '2026-10-01' });
     const o4 = await order('OLD-1', 'hhh'); await items(o4, ['상품']);
@@ -96,10 +114,22 @@ insert into malls values ('hhh', '11111111-1111-4111-8111-111111111111'), ('rohi
     await order('NOPE-1', 'hhh');
     assert.equal((await get(t5)).channel_order_id, null);
 
+    // 5-1) 반려1: 채우기 함수가 통째로 터져도 주문·품목 저장은 계속된다
+    await db.exec(`create or replace function cs_fill_from_order(p_order uuid) returns void language plpgsql as $$ begin raise exception '강제 실패'; end $$;`);
+    const t51 = await cs('BOOM-1');
+    const o51 = await order('BOOM-1', 'hhh'); await items(o51, ['상품']);
+    assert.equal((await db.query(`select count(*)::int c from channel_order_items where channel_order_id = $1`, [o51])).rows[0].c, 1);
+    assert.equal((await get(t51)).channel_order_id, null);
+    await db.exec(up);                                                           // 원래 함수로 되돌림
+    const idx = await db.query(`select 1 from pg_indexes where indexname = 'channel_orders_order_id_idx'`);
+    assert.equal(idx.rows.length, 1);
+
     // 6) 되돌리기: 트리거·함수만 빠지고 채운 값은 남는다
     await db.exec(read('../supabase/rollbacks/095_cs_fill_from_order.down.sql'));
     const t6 = await cs('AFTER-1'); await order('AFTER-1', 'hhh');
     assert.equal((await get(t6)).channel_order_id, null, '되돌린 뒤엔 안 채움');
     assert.equal((await get(t1)).customer_name, '방보경');
     assert.equal((await db.query(`select count(*)::int c from pg_proc where proname like 'cs_fill%'`)).rows[0].c, 0);
+    assert.equal((await db.query(`select 1 from pg_indexes where indexname = 'channel_orders_order_id_idx'`)).rows.length, 0);
+    assert.equal((await db.query(`select 1 from information_schema.columns where table_name = 'cs_tickets' and column_name = 'auto_fill'`)).rows.length, 0);
 });
