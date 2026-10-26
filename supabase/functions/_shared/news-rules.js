@@ -148,11 +148,16 @@ export const POPUP_BLOCK = [
     '스트레이키즈', '아이돌', '콘서트', '팬미팅', '팬사인', '굿즈', '앨범', '컴백', '뮤지컬', '공연', '엔터테인먼트',
     '아동복지', '복지시설',
 ];
+//  지점 표기 — '롯데 동탄점'·'현대百'·'더현대 대구'처럼 백화점 이름 없이 지점만 쓴 기사(반려1). 띄어쓰기는 squash 로 이미 없다.
+//   이름 뒤 한글 1~6자 + '점' 으로 좁힌다 — '신세계푸드'·'롯데칠성' 같은 계열사는 '점'이 없어 안 걸린다.
+export const RETAIL_BRANCH = /(현대|롯데|신세계|갤러리아|ak)[가-힣]{1,6}점|(현대|롯데|신세계)百/;
+//  제목 끝 매체명 — ' - 매체' 와 ' | 매체' · ' ｜ 매체' · ' · 매체'(매체명은 띄어쓰기 없는 짧은 낱말)
+const popupTitle = t => bareTitle(t).replace(/\s+[|｜·]\s*[^\s|｜·-]{1,15}$/, '');
 export function isPopupNews(x) {
-    //  제목 끝 ' - 매체명' 은 뗀다 — 매체 '키즈맘'이 아동 낱말로 잡혀 장보기 기사가 들어왔다(10-26 실데이터)
-    const h = hay({ title: bareTitle(x.title), snippet: x.snippet });
+    //  제목 끝 매체명은 뗀다 — 매체 '키즈맘'이 아동 낱말로 잡혀 장보기 기사가 들어왔다(10-26 실데이터)
+    const h = hay({ title: popupTitle(x.title), snippet: x.snippet });
     const any = list => list.some(w => h.includes(squash(w)));
-    if (!any(POPUP_WORDS) || !any(RETAIL_WORDS)) return false;
+    if (!any(POPUP_WORDS) || !(any(RETAIL_WORDS) || RETAIL_BRANCH.test(h))) return false;
     //  '키즈'는 스트레이키즈(아이돌)·무도키즈(팬 별명)·키즈카페를 뗀 뒤에 남아 있을 때만 센다
     const kidsH = h.replace(/스트레이키즈|무도키즈|키즈카페/g, '');
     if (!KIDS_CONTEXT.some(w => kidsH.includes(squash(w)))) return false;
