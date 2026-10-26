@@ -10755,7 +10755,8 @@ class BhasApp {
         if (!name && !orderNo) { this.showToast('고객 이름이나 주문번호 중 하나는 입력해주세요'); return; }
         this.track?.('cs', 'cs_create');
         const found = orderNo ? await this._csLookupOrder(orderNo) : null;
-        if (orderNo && !found) this.showToast('주문번호를 못 찾아 수동으로 저장합니다');
+        //  결제 직후 접수면 주문이 아직 수집 전(카페24 5분 주기) — 095 트리거가 주문이 들어올 때 빈칸을 채운다
+        if (orderNo && !found) this.showToast('주문이 아직 안 들어왔어요(5분마다 수집). 들어오면 고객·상품이 자동으로 채워집니다');
         try {
             const { error } = await this.supabase.from('cs_tickets').insert([{
                 customer_name: name || found?.customer_name || '(이름없음)',
