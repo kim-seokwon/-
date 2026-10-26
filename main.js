@@ -10679,17 +10679,33 @@ class BhasApp {
         } catch (e) { this.csList = []; this._csLoaded = true; this.showToast('CS를 불러오지 못했습니다: ' + (e.message || e)); }
         this._csLoading = false; this.requestRender();
     }
+    // 주문번호 표기 차이 — 직원은 하이픈·공백·ORD 를 빼거나 붙여 적는다(10-26 키디키디 "20250724-1209833" ↔ 202507241209833).
+    //  cafe24 YYYYMMDD-NNNNNNN · 29cm ORDYYYYMMDD-NNNNNNN · eland 15자리 숫자. 후보를 다 만들어 in 으로 찾는다.
+    _orderNoCandidates(orderNo) {
+        const raw = String(orderNo || '').trim();
+        if (!raw) return [];
+        const up = raw.toUpperCase().replace(/\s+/g, '');
+        const bare = up.replace(/[^A-Z0-9]/g, '');
+        const num = bare.replace(/^ORD/, '');
+        const c = [raw, up, bare, num];
+        if (/^\d{14,15}$/.test(num)) {
+            const dash = `${num.slice(0, 8)}-${num.slice(8)}`;
+            c.push(dash, `ORD${dash}`, `ORD${num}`);
+        }
+        return [...new Set(c)];
+    }
     // 주문번호로 기존 주문을 찾아 상품명·구매처·브랜드를 자동으로 채운다.
+    //  후보 표기 중 맞는 주문이 정확히 1건일 때만 쓴다 — 2건 이상(몰끼리 같은 번호·표기 겹침)이면 어느 건지 모르니 null.
     async _csLookupOrder(orderNo, mallKey = '') {
-        const no = (orderNo || '').trim();
-        if (!no) return null;
+        const cands = this._orderNoCandidates(orderNo);
+        if (!cands.length) return null;
         try {
             let q = this.supabase.from('channel_orders')
-                .select('id, mall_key, channel, receiver_name, buyer_name').eq('order_id', no);
+                .select('id, mall_key, channel, receiver_name, buyer_name').in('order_id', cands);
             if (mallKey) q = q.eq('mall_key', mallKey);   // 몰끼리 같은 주문번호가 있다
-            const { data } = await q.limit(1);
-            const o = (data || [])[0];
-            if (!o) return null;
+            const { data } = await q.limit(2);
+            if ((data || []).length !== 1) return null;
+            const o = data[0];
             const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
             const { data: items } = await this.supabase.from('channel_order_items')
                 .select('product_name').eq('channel_order_id', o.id).limit(3);
