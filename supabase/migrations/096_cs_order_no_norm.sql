@@ -2,13 +2,16 @@
 --  사례(운영 읽기 전용 조회 10-26): 키디키디 CS "20250724-1209833"·"20250711-1006403" ↔ 주문 202507241209833·202507111006403,
 --  29cm "ORD20260604-8904004"(표기 같음, 접수 때 29cm 주문 미수집).
 --  095 위에 얹는다(095 는 이미 배포 중이라 고치지 않음). 095 의 cs_fill_from_order 를 정규화 비교로 바꾸고, 1회 보정을 돈다.
---  정규화: 영숫자만 · 대문자 · 맨 앞 'ORD' 무시 → cafe24 YYYYMMDD-NNNNNNN · 29cm ORDYYYYMMDD-NNNNNNN · eland 15자리가 같은 꼴이 된다.
+--  정규화: 알려진 형식만 — cafe24 YYYYMMDD-NNNNNNN · 29cm ORDYYYYMMDD-NNNNNNN · eland 15자리 숫자(공백·대소문자 무시)는
+--   15자리 숫자로 모은다. 그 외(예: "ORD1", "A-2")는 원문 그대로 정확 일치만 — 넓게 합치면 엉뚱한 주문에 붙는다(반려1).
 --   정규화로 겹치는 주문이 2건 이상이면(몰끼리 같은 번호) 095 와 같이 안 채우고 자동분만 되돌린다.
 -- 운영 적용 금지(사장님 승인 후 팀장이). 095 다음에 깐다. 되돌리기: supabase/rollbacks/096_cs_order_no_norm.down.sql
 
 create or replace function public.order_no_norm(t text)
 returns text language sql immutable parallel safe set search_path = public as $$
-  select regexp_replace(upper(regexp_replace(coalesce(t, ''), '[^A-Za-z0-9]', '', 'g')), '^ORD', '')
+  select case when upper(regexp_replace(coalesce(t, ''), '\s', '', 'g')) ~ '^(ORD)?[0-9]{8}-?[0-9]{7}$'
+              then regexp_replace(coalesce(t, ''), '[^0-9]', '', 'g')
+              else coalesce(t, '') end
 $$;
 grant execute on function public.order_no_norm(text) to authenticated, service_role;
 
@@ -84,20 +87,28 @@ begin
   end loop;
 end $$;
 
---  1회 보정 — 지금 주문에 안 붙은 CS 중 정규화 번호로 주문이 정확히 1건 맞는 것(10-26 운영 기준 3건 예상: 키디키디 2·29cm 1).
+--  1회 보정 — 10-26 운영 읽기 전용 조회로 확인한 미연결 3건만(반려1: 범위 명시).
+--   키디키디 "20250724-1209833"·"20250711-1006403", 29cm "ORD20260604-8904004".
+--   세 번호 각각 정규화로 주문이 정확히 1건이고, 그 주문들에 걸리는 미연결 CS 가 정확히 3건일 때만 돈다 — 아니면 아무것도 안 함.
 --   cs_fill_from_order 로 돌린다: 빈칸만 채우고 auto_fill 에 기록 · 직원 값 안 덮음 · 접수일<주문일이면 안 건드림.
 do $$
-declare r record;
+declare
+  nos constant text[] := array['20250724-1209833', '20250711-1006403', 'ORD20260604-8904004'];
+  ords uuid[];
+  n_cs int;
 begin
-  for r in
-    select o.id from channel_orders o
-     where public.order_no_norm(o.order_id) in (
-       select public.order_no_norm(c.order_no) from cs_tickets c
-        where c.channel_order_id is null and public.order_no_norm(c.order_no) <> '')
-       and (select count(*) from channel_orders x where public.order_no_norm(x.order_id) = public.order_no_norm(o.order_id)) = 1
-  loop
-    perform public.cs_fill_from_order(r.id);
-  end loop;
+  select array_agg(o.id) into ords
+    from unnest(nos) k
+    join channel_orders o on public.order_no_norm(o.order_id) = public.order_no_norm(k)
+   where (select count(*) from channel_orders x where public.order_no_norm(x.order_id) = public.order_no_norm(k)) = 1;
+  select count(*) into n_cs
+    from cs_tickets c join channel_orders o on public.order_no_norm(c.order_no) = public.order_no_norm(o.order_id)
+   where o.id = any(coalesce(ords, '{}')) and c.channel_order_id is null;
+  if coalesce(array_length(ords, 1), 0) <> 3 or n_cs <> 3 then
+    raise notice '096 1회 보정 건너뜀: 주문 %건 · 미연결 CS %건(둘 다 3이어야 함)', coalesce(array_length(ords, 1), 0), n_cs;
+    return;
+  end if;
+  perform public.cs_fill_from_order(x) from unnest(ords) x;
 end $$;
 
 select '096 order_no_norm + cs_fill_from_order normalized + backfill done' as status,

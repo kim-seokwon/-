@@ -10680,19 +10680,14 @@ class BhasApp {
         this._csLoading = false; this.requestRender();
     }
     // 주문번호 표기 차이 — 직원은 하이픈·공백·ORD 를 빼거나 붙여 적는다(10-26 키디키디 "20250724-1209833" ↔ 202507241209833).
-    //  cafe24 YYYYMMDD-NNNNNNN · 29cm ORDYYYYMMDD-NNNNNNN · eland 15자리 숫자. 후보를 다 만들어 in 으로 찾는다.
+    //  알려진 형식만 넓힌다: cafe24 YYYYMMDD-NNNNNNN · 29cm ORDYYYYMMDD-NNNNNNN · eland 15자리 숫자. 그 외는 원문만(ORD1≠1, A-2≠A2).
     _orderNoCandidates(orderNo) {
         const raw = String(orderNo || '').trim();
         if (!raw) return [];
-        const up = raw.toUpperCase().replace(/\s+/g, '');
-        const bare = up.replace(/[^A-Z0-9]/g, '');
-        const num = bare.replace(/^ORD/, '');
-        const c = [raw, up, bare, num];
-        if (/^\d{14,15}$/.test(num)) {
-            const dash = `${num.slice(0, 8)}-${num.slice(8)}`;
-            c.push(dash, `ORD${dash}`, `ORD${num}`);
-        }
-        return [...new Set(c)];
+        const m = /^(?:ORD)?(\d{8})-?(\d{7})$/.exec(raw.toUpperCase().replace(/\s+/g, ''));
+        if (!m) return [raw];
+        const num = m[1] + m[2], dash = `${m[1]}-${m[2]}`;
+        return [...new Set([raw, num, dash, `ORD${dash}`, `ORD${num}`])];
     }
     // 주문번호로 기존 주문을 찾아 상품명·구매처·브랜드를 자동으로 채운다.
     //  후보 표기 중 맞는 주문이 정확히 1건일 때만 쓴다 — 2건 이상(몰끼리 같은 번호·표기 겹침)이면 어느 건지 모르니 null.
@@ -10700,12 +10695,12 @@ class BhasApp {
         const cands = this._orderNoCandidates(orderNo);
         if (!cands.length) return null;
         try {
-            let q = this.supabase.from('channel_orders')
-                .select('id, mall_key, channel, receiver_name, buyer_name').in('order_id', cands);
-            if (mallKey) q = q.eq('mall_key', mallKey);   // 몰끼리 같은 주문번호가 있다
-            const { data } = await q.limit(2);
+            //  몰로 먼저 거르면 몰 2곳 같은 번호가 1건으로 보인다 — 전체에서 유일한지 먼저 보고, 몰은 그 뒤에 맞춰 본다(반려1).
+            const { data } = await this.supabase.from('channel_orders')
+                .select('id, mall_key, channel, receiver_name, buyer_name').in('order_id', cands).limit(2);
             if ((data || []).length !== 1) return null;
             const o = data[0];
+            if (mallKey && o.mall_key !== mallKey) return null;
             const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
             const { data: items } = await this.supabase.from('channel_order_items')
                 .select('product_name').eq('channel_order_id', o.id).limit(3);
