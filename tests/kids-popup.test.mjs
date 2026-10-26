@@ -52,6 +52,14 @@ test('반려2: 대리점·편의점은 지점 아님 · 본문 | 는 안 자르�
     assert.equal(isPopupNews(n('현대백화점 판교점 키즈 팝업 - 키즈맘')), true, '매체만 떼고 본문 키즈는 남는다');
 });
 
+test('반려3: 매체가 앞에 온 제목 · 요약 속 육아 매체명', () => {
+    assert.equal(isPopupNews(n('패션비즈 - 신세계 강남 키즈 팝업')), true, '긴 조각이 제목');
+    assert.equal(isPopupNews(n('신세계 강남 키즈 팝업 - 패션비즈')), true);
+    assert.equal(isPopupNews(n('주말 백화점 팝업 행사 | 키즈맘', '키즈맘이 전하는 주말 행사')), false);
+    assert.equal(isPopupNews(n('주말 백화점 팝업 행사', '베이비뉴스 취재 — 주말 행사')), false);
+    assert.equal(isPopupNews(n('주말 백화점 팝업 행사 | 키즈맘', '아동복 브랜드 3곳 참여')), true, '요약의 진짜 아동 낱말은 센다');
+});
+
 test('isTrendItem·competitionList: 팝업 기사가 경쟁 칸에 들고, isCompetition 은 그대로', () => {
     const pop = n('더현대 서울 키즈 브랜드 팝업스토어 오픈');
     assert.equal(isCompetition(pop), false, '경쟁사 규칙은 안 건드렸다');

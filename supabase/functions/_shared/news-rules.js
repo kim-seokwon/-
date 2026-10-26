@@ -159,14 +159,17 @@ export const isRetailBranch = h => [...h.matchAll(BRANCH)].some(m => !m[2] || !N
 //   아무 구분자나 자르면 '팝업 | 아동복' 같은 본문까지 잘린다 → 알려진 매체명만 뗀다. 일반 ' - 매체' 는 bareTitle 이 뗀다.
 export const KIDS_MEDIA = ['키즈맘', '베이비뉴스', '베스트베이비', '맘앤앙팡', '베이비타임즈', '키즈조선', '어린이조선일보', '어린이동아', '유아동신문'];
 const MEDIA_TAIL = new RegExp(`\\s*[-|｜·]\\s*(${KIDS_MEDIA.join('|')})\\s*$`);
-const popupTitle = t => bareTitle(t).replace(MEDIA_TAIL, '');
+//   ' - ' 로 나뉘면 가장 긴 조각이 제목이다 — '패션비즈 - 신세계 강남 키즈 팝업'처럼 매체가 앞에 오기도 한다(반려3)
+const popupTitle = t => String(t || '').split(/\s+-\s+/).reduce((a, b) => (b.length > a.length ? b : a), '').replace(MEDIA_TAIL, '');
+//  아동 맥락은 육아 매체 이름을 다 지운 뒤 본다 — 요약 '키즈맘이 전하는 주말 행사'의 키즈맘도 아동 낱말이 아니다(반려3)
+const KIDS_MEDIA_ANY = new RegExp(KIDS_MEDIA.map(squash).join('|'), 'g');
 export function isPopupNews(x) {
     //  제목 끝 매체명은 뗀다 — 매체 '키즈맘'이 아동 낱말로 잡혀 장보기 기사가 들어왔다(10-26 실데이터)
     const h = hay({ title: popupTitle(x.title), snippet: x.snippet });
     const any = list => list.some(w => h.includes(squash(w)));
     if (!any(POPUP_WORDS) || any(NOT_RETAIL) || !(any(RETAIL_WORDS) || isRetailBranch(h))) return false;
-    //  '키즈'는 스트레이키즈(아이돌)·무도키즈(팬 별명)·키즈카페를 뗀 뒤에 남아 있을 때만 센다
-    const kidsH = h.replace(/스트레이키즈|무도키즈|키즈카페/g, '');
+    //  '키즈'는 육아 매체명·스트레이키즈(아이돌)·무도키즈(팬 별명)·키즈카페를 뗀 뒤에 남아 있을 때만 센다
+    const kidsH = h.replace(KIDS_MEDIA_ANY, '').replace(/스트레이키즈|무도키즈|키즈카페/g, '');
     if (!KIDS_CONTEXT.some(w => kidsH.includes(squash(w)))) return false;
     return !any(POPUP_BLOCK) && !any(OFFTOPIC);
 }
