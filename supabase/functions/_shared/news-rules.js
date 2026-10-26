@@ -148,16 +148,23 @@ export const POPUP_BLOCK = [
     '스트레이키즈', '아이돌', '콘서트', '팬미팅', '팬사인', '굿즈', '앨범', '컴백', '뮤지컬', '공연', '엔터테인먼트',
     '아동복지', '복지시설',
 ];
-//  지점 표기 — '롯데 동탄점'·'현대百'·'더현대 대구'처럼 백화점 이름 없이 지점만 쓴 기사(반려1). 띄어쓰기는 squash 로 이미 없다.
-//   이름 뒤 한글 1~6자 + '점' 으로 좁힌다 — '신세계푸드'·'롯데칠성' 같은 계열사는 '점'이 없어 안 걸린다.
-export const RETAIL_BRANCH = /(현대|롯데|신세계|갤러리아|ak)[가-힣]{1,6}점|(현대|롯데|신세계)百/;
-//  제목 끝 매체명 — ' - 매체' 와 ' | 매체' · ' ｜ 매체' · ' · 매체'(매체명은 띄어쓰기 없는 짧은 낱말)
-const popupTitle = t => bareTitle(t).replace(/\s+[|｜·]\s*[^\s|｜·-]{1,15}$/, '');
+//  지점 표기 — '롯데 동탄점'·'현대百 판교'처럼 백화점 이름 없이 지점만 쓴 기사(반려1). 띄어쓰기는 squash 로 이미 없다.
+//   '점' 앞이 대리점·편의점·면세점·마트·아울렛이면 지점이 아니다(현대자동차 대리점·롯데 편의점 — 반려2).
+const BRANCH = /(현대|롯데|신세계|갤러리아|ak)([가-힣]{1,6})점|(현대|롯데|신세계)百/g;
+const NOT_BRANCH = /(대리|편의|면세|마트|아울렛)$/;
+//  대리점·편의점·면세점 기사는 백화점 낱말이 있어도 유통(백화점 팝업)으로 안 친다
+export const NOT_RETAIL = ['대리점', '편의점', '면세점'];
+export const isRetailBranch = h => [...h.matchAll(BRANCH)].some(m => !m[2] || !NOT_BRANCH.test(m[2]));
+//  제목 끝 매체명 — 아동 낱말이 든 육아 매체만, 구분자(- | ｜ ·) 앞뒤 띄어쓰기 유무 무관(반려2).
+//   아무 구분자나 자르면 '팝업 | 아동복' 같은 본문까지 잘린다 → 알려진 매체명만 뗀다. 일반 ' - 매체' 는 bareTitle 이 뗀다.
+export const KIDS_MEDIA = ['키즈맘', '베이비뉴스', '베스트베이비', '맘앤앙팡', '베이비타임즈', '키즈조선', '어린이조선일보', '어린이동아', '유아동신문'];
+const MEDIA_TAIL = new RegExp(`\\s*[-|｜·]\\s*(${KIDS_MEDIA.join('|')})\\s*$`);
+const popupTitle = t => bareTitle(t).replace(MEDIA_TAIL, '');
 export function isPopupNews(x) {
     //  제목 끝 매체명은 뗀다 — 매체 '키즈맘'이 아동 낱말로 잡혀 장보기 기사가 들어왔다(10-26 실데이터)
     const h = hay({ title: popupTitle(x.title), snippet: x.snippet });
     const any = list => list.some(w => h.includes(squash(w)));
-    if (!any(POPUP_WORDS) || !(any(RETAIL_WORDS) || RETAIL_BRANCH.test(h))) return false;
+    if (!any(POPUP_WORDS) || any(NOT_RETAIL) || !(any(RETAIL_WORDS) || isRetailBranch(h))) return false;
     //  '키즈'는 스트레이키즈(아이돌)·무도키즈(팬 별명)·키즈카페를 뗀 뒤에 남아 있을 때만 센다
     const kidsH = h.replace(/스트레이키즈|무도키즈|키즈카페/g, '');
     if (!KIDS_CONTEXT.some(w => kidsH.includes(squash(w)))) return false;

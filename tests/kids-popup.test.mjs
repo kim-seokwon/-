@@ -42,6 +42,16 @@ test('반려1: 제목 끝 매체명 구분자 | ｜ · 도 뗀다', () => {
     assert.equal(isPopupNews(n('아르케메종·캉골 키즈 신세계 팝업')), true, '띄어쓰기 없는 가운뎃점은 매체 구분자 아님');
 });
 
+test('반려2: 대리점·편의점은 지점 아님 · 본문 | 는 안 자르고 알려진 육아 매체만 뗀다', () => {
+    assert.equal(isPopupNews(n('현대자동차 대리점 어린이 팝업 행사')), false);
+    assert.equal(isPopupNews(n('롯데 편의점 키즈 상품 팝업')), false);
+    assert.equal(isPopupNews(n('신세계 면세점 키즈 팝업')), false, '면세점은 백화점 팝업 아님');
+    assert.equal(isPopupNews(n('롯데 동탄점 팝업 | 아동복')), true, '본문 | 뒤 아동복은 남는다');
+    assert.equal(isPopupNews(n('주말 백화점 팝업 행사｜키즈맘')), false, '띄어쓰기 없는 ｜키즈맘도 뗀다');
+    assert.equal(isPopupNews(n('주말 백화점 팝업 행사-베이비뉴스')), false);
+    assert.equal(isPopupNews(n('현대백화점 판교점 키즈 팝업 - 키즈맘')), true, '매체만 떼고 본문 키즈는 남는다');
+});
+
 test('isTrendItem·competitionList: 팝업 기사가 경쟁 칸에 들고, isCompetition 은 그대로', () => {
     const pop = n('더현대 서울 키즈 브랜드 팝업스토어 오픈');
     assert.equal(isCompetition(pop), false, '경쟁사 규칙은 안 건드렸다');
