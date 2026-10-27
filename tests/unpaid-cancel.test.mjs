@@ -45,10 +45,27 @@ test('클레임 탭 숫자에서 입금 전 취소만 빠진다', () => {
     assert.equal(claimCount({ cancel: 1 }, 5), 0);                     // 음수 안 됨
 });
 
-test('반품·교환률 카드 — 건수는 취소·반품·교환, 환불 금액은 취소·반품만', () => {
-    const r = claimSummary([{ state: 'cancel', cnt: 27, amt: 2397930 }, { state: 'exchange', cnt: 27, amt: 3329140 },
-        { state: 'return', cnt: 20, amt: 997410 }, { state: 'done', cnt: 100, amt: 9e6 }]);
-    assert.deepEqual(r, { cnt: 74, refund: 3395340 });
+test('반품·교환률 카드 — 10월 모양: 클레임 159건(결제금액 빈 결제 후 취소 포함), 환불 = 실제 환불액(교환 제외)', () => {
+    //  운영 10월: 입금 전 취소 56 · 결제 후 취소 112(이 중 85건 pay_amount NULL) · 반품 20 · 교환 27
+    const oct = [
+        ...Array.from({ length: 56 }, () => ({ op_status: 'cancel', pay_amount: null, fin_unpaid: true, refund_amount: 0 })),
+        ...Array.from({ length: 85 }, () => ({ op_status: 'cancel', pay_amount: null, fin_unpaid: false, refund_amount: 50000 })),
+        ...Array.from({ length: 27 }, () => ({ op_status: 'cancel', pay_amount: 80000, fin_unpaid: false, refund_amount: 80000 })),
+        ...Array.from({ length: 20 }, () => ({ op_status: 'return', pay_amount: 50000, fin_unpaid: false, refund_amount: 60000 })),
+        ...Array.from({ length: 27 }, () => ({ op_status: 'exchange', pay_amount: 120000, fin_unpaid: false, refund_amount: 9999 })),
+        ...Array.from({ length: 9 }, () => ({ op_status: 'done', pay_amount: 30000, fin_unpaid: false })),
+    ];
+    const r = claimSummary(oct);
+    assert.equal(r.cnt, 159);
+    assert.equal(r.refund, 85 * 50000 + 27 * 80000 + 20 * 60000);
+});
+
+test('main.js — 반품·교환률 카드는 sales_monthly 가 아니라 클레임 원본(salesScoped.claims)을 쓴다', () => {
+    const a = src.indexOf("const cancelThis = (cancelledOrders");
+    const card = src.slice(a, src.indexOf('// 브랜드 색상은', a));
+    assert.match(card, /this\.salesScoped\.claims/);
+    assert.doesNotMatch(card, /cancelThisAmt \+=/);   // 서버 월집계 pay_amount 를 환불로 더하지 않는다
+    assert.match(src, /claims: claimSummary\(claimRows\)/);
 });
 
 test('slim 주문에 미입금 표시를 붙인다', () => {
@@ -77,7 +94,8 @@ test('_loadSalesScope — 입금 전 취소는 반품·취소 목록에도 매�
     const mkQ = rows => { const q = { select: () => q, eq: () => q, gte: () => q, lt: () => q, in: () => q, order: () => q,
         then: (res) => res({ data: rows, error: null }) }; return q; };
     const t = {
-        malls: [], supabase: { from: tb => mkQ(tb === 'channel_orders_slim' ? slim : unpaid.map(o => ({ id: o.id }))) },
+        malls: [], supabase: { from: tb => mkQ(tb === 'channel_orders_slim' ? slim
+            : all.filter(o => ['cancel', 'return', 'exchange'].includes(o.op_status)).map(({ id, op_status, fin_unpaid, refund_amount }) => ({ id, op_status, fin_unpaid, refund_amount }))) },
         _itemsFor: async () => [], _orderState: o => o.op_status, requestRender() {}, showToast() {},
     };
     t._isCancelled = o => ['cancel', 'return'].includes(o.op_status);
@@ -86,4 +104,7 @@ test('_loadSalesScope — 입금 전 취소는 반품·취소 목록에도 매�
     assert.equal(t.salesScoped.cancelled.length, 5);
     assert.equal(t.salesScoped.orders.length, 5);   // 교환 1 + 정상 4
     assert.ok(!t.salesScoped.cancelled.some(o => o.id.startsWith('u')));
+    //  카드: 결제 후 취소 3 + 반품 2 + 교환 1 = 6건, 환불 = 취소·반품 refund_amount 70,000
+    assert.deepEqual(t.salesScoped.claims, { cnt: 6, refund: 70000 });
+    assert.equal(t.salesScoped.brand, '하이헤이호');
 });

@@ -31,14 +31,16 @@ export function claimCount(byState, unpaidCancel) {
     return Math.max(0, (m.cancel || 0) - (Number(unpaidCancel) || 0)) + (m.return || 0) + (m.exchange || 0);
 }
 
-//  매출 분석 '반품·교환률' 카드 — 건수는 취소·반품·교환, '환불' 금액은 취소·반품만(교환은 환불 아님).
-//   rows: sales_monthly 같은 { state, cnt, amt } 줄(이미 결제금액 있는 주문만 = 입금 전 취소 없음)
-export function claimSummary(rows) {
+//  매출 분석 '반품·교환률' 카드 — 주문 원본(channel_orders)에서 센다.
+//   sales_monthly 는 결제금액(pay_amount) 있는 주문만 남겨 결제 후 취소 상당수(10월 112건 중 85건)가 빠진다 → 쓰지 않는다.
+//   건수 = 취소·반품·교환(입금 전 취소 제외), 환불 = 취소·반품의 실제 환불액(refund_amount). 교환은 환불 아님.
+export function claimSummary(orders) {
     let cnt = 0, refund = 0;
-    for (const r of rows || []) {
-        if (!['cancel', 'return', 'exchange'].includes(r.state)) continue;
-        cnt += r.cnt || 0;
-        if (r.state !== 'exchange') refund += Number(r.amt) || 0;
+    for (const o of orders || []) {
+        const s = o.op_status;
+        if (!['cancel', 'return', 'exchange'].includes(s) || isUnpaidCancel(o, s)) continue;
+        cnt += 1;
+        if (s !== 'exchange') refund += Number(o.refund_amount) || 0;
     }
     return { cnt, refund };
 }

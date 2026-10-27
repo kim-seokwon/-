@@ -5236,12 +5236,20 @@ class BhasApp {
         const cancelThis = (cancelledOrders || []).filter(o => inScope(o.order_date));
         // 취소·반품·교환 건수/금액도 서버 집계본에서(슬라이스가 없어도 정확)
         let cancelThisCnt = cancelThis.length;
-        //  '환불' 금액 = 결제 후 취소·반품만(교환·입금 전 취소는 환불 아님 — 10-27)
-        let cancelThisAmt = cancelThis.filter(o => this._isRefund(o)).reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
-        if (this.salesAggData?.monthly) {
-            //  sales_monthly 는 결제금액 있는 주문만 센다 → 입금 전 취소는 처음부터 없다
-            ({ cnt: cancelThisCnt, refund: cancelThisAmt } = claimSummary(this.salesAggData.monthly.filter(r =>
-                scopeMonths.includes(r.ym) && (!_allowedNames || _allowedNames.has(r.brand_name)) && (bf === 'ALL' || r.brand_name === bf))));
+        //  '환불' 금액 = 결제 후 취소·반품의 실제 환불액(교환·입금 전 취소는 환불 아님 — 10-27)
+        let cancelThisAmt = cancelThis.filter(o => this._isRefund(o)).reduce((s, o) => s + (Number(o.refund_amount) || 0), 0);
+        //  브랜드 상세: 그 브랜드+기간 클레임 주문 원본으로 센다(sales_monthly 는 결제금액 빈 취소가 빠져 틀린다 — 반려1)
+        const _cl = bf !== 'ALL' && this.salesScoped?.brand === bf ? this.salesScoped.claims : null;
+        if (_cl) ({ cnt: cancelThisCnt, refund: cancelThisAmt } = _cl);
+        else if (this.salesAggData?.monthly) {
+            //  전체 보기('취소 N건 제외' 한 줄)는 예전처럼 서버 집계 건수(입금 전 취소는 결제금액이 없어 원래 안 들어간다)
+            cancelThisCnt = 0;
+            this.salesAggData.monthly.forEach(r => {
+                if (!['cancel', 'return', 'exchange'].includes(r.state) || !scopeMonths.includes(r.ym)) return;
+                if (_allowedNames && !_allowedNames.has(r.brand_name)) return;
+                if (bf !== 'ALL' && r.brand_name !== bf) return;
+                cancelThisCnt += r.cnt || 0;
+            });
         }
 
         // 브랜드 색상은 이름 기준으로 고정(차트·카드·매트릭스가 항상 같은 색을 쓰게)
@@ -5338,9 +5346,10 @@ class BhasApp {
             ${bf === 'ALL'
                 ? kpi('판매 브랜드', `${brandNow.length}<span style="font-size:1rem;font-weight:600">개</span>`, brandNow.slice(0, 2).map(b => b.name).join(' · ') || '—')
                 // 브랜드 상세에선 '브랜드 개수'가 무의미 → 반품·교환률로 대체
-                : kpi('반품·교환률', `${(ordersThisMonth + cancelThisCnt) ? Math.round(cancelThisCnt / (ordersThisMonth + cancelThisCnt) * 100) : 0}<span style="font-size:1rem;font-weight:600">%</span>`,
-                    `${cancelThisCnt}건 · 환불 ${wonMan(cancelThisAmt)}원`,
-                    (ordersThisMonth + cancelThisCnt) && cancelThisCnt / (ordersThisMonth + cancelThisCnt) >= 0.15 ? '#ef4444' : undefined)}
+                //  클레임 원본(_cl)을 받기 전엔 틀린 숫자 대신 '불러오는 중'
+                : kpi('반품·교환률', `${!_cl ? '—' : (ordersThisMonth + cancelThisCnt) ? Math.round(cancelThisCnt / (ordersThisMonth + cancelThisCnt) * 100) : 0}<span style="font-size:1rem;font-weight:600">%</span>`,
+                    _cl ? `${cancelThisCnt}건 · 환불 ${wonMan(cancelThisAmt)}원` : '불러오는 중…',
+                    _cl && (ordersThisMonth + cancelThisCnt) && cancelThisCnt / (ordersThisMonth + cancelThisCnt) >= 0.15 ? '#ef4444' : undefined)}
         </div>`;
 
         // SVG 차트 (단일월=일별 / 연간전체=월별)
@@ -11697,13 +11706,16 @@ class BhasApp {
             let q = this.supabase.from('channel_orders_slim').select('*')
                 .gte('order_date', fromISO).lt('order_date', toISO);
             if (mallKeys.length) q = q.in('mall_key', mallKeys);
-            //  slim 뷰엔 fin_unpaid 가 없어 입금 전 취소 id 만 따로 받는다(반품·취소 목록에서 뺀다)
-            let uq = this.supabase.from('channel_orders').select('id').eq('op_status', 'cancel').eq('fin_unpaid', true)
+            //  slim 뷰엔 fin_unpaid·refund_amount 가 없어 클레임 주문만 따로 받는다
+            //   → 입금 전 취소 표시(반품·취소 목록에서 뺀다) + 반품·교환률 카드 건수·환불액
+            let uq = this.supabase.from('channel_orders').select('id, op_status, fin_unpaid, refund_amount')
+                .in('op_status', ['cancel', 'return', 'exchange'])
                 .gte('order_date', fromISO).lt('order_date', toISO);
             if (mallKeys.length) uq = uq.in('mall_key', mallKeys);
-            const [{ data, error }, { data: unpaid }] = await Promise.all([q.order('order_date', { ascending: false }), uq]);
+            const [{ data, error }, { data: claimRows, error: cErr }] = await Promise.all([q.order('order_date', { ascending: false }), uq]);
             if (error) throw error;
-            const rows = markUnpaid(data || [], (unpaid || []).map(r => r.id));
+            if (cErr) throw cErr;
+            const rows = markUnpaid(data || [], (claimRows || []).filter(r => r.fin_unpaid === true).map(r => r.id));
             const items = await this._itemsFor(rows.map(o => o.id));
             const byOrder = {};
             items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
@@ -11711,6 +11723,7 @@ class BhasApp {
             this.salesScoped = {
                 orders: withItems.filter(o => o.pay_amount != null && !this._isCancelled(o)),
                 cancelled: withItems.filter(o => this._isCancelled(o) && !this._isUnpaidCancel(o)),
+                brand: brandName, claims: claimSummary(claimRows),
             };
             this._salesScopeKey = key;
         } catch (e) {
