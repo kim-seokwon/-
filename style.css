@@ -3588,6 +3588,21 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .cs-shp-m{font-size:11px;color:var(--text-muted);padding:2px 0 4px}
 .cs-opt{font-style:normal;font-size:11px;color:var(--text-muted)}
 .cs-shp-no{font-size:12px;color:var(--text-muted);padding:2px 0 6px}
+/* CS 부분 반품·교환 · 지우기 */
+.cs-part{display:inline-block;font-size:10.5px;font-weight:800;color:#ef4444;background:rgba(239,68,68,.1);border-radius:999px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+.cs-claim{font-size:10.5px;color:#ef4444}
+.cs-claim-hint{margin-top:8px;font-size:12px;font-weight:700;color:var(--text-main);background:rgba(239,68,68,.08);border-radius:8px;padding:6px 9px}
+.cs-del{color:#ef4444;margin-left:auto}
+.cs-pick{width:92%;max-width:440px;padding:1.4rem;border-radius:18px}
+.cs-pick h2{margin:0 0 .3rem;font-size:1.05rem}
+.cs-pick-sub{font-size:12px;color:var(--text-muted);margin-bottom:10px}
+.cs-pick-list{max-height:52vh;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.cs-pick-li{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;padding:8px 10px;border:.5px solid var(--card-border);border-radius:10px;font-size:12.5px;cursor:pointer}
+.cs-pick-li:has(input:checked){border-color:var(--primary);background:rgba(99,102,241,.08)}
+.cs-pick-li input{width:17px;height:17px;accent-color:var(--primary)}
+.cs-pick-li small{color:var(--text-muted);white-space:nowrap}
+.cs-pick-btns{display:flex;gap:6px;margin-top:12px}
+.cs-undo .mbtn{margin-left:6px}
 .dt-a{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px;border-top:.5px solid var(--card-border);flex:0 0 auto}
 .dt-none{margin:auto;padding:2rem 1rem;text-align:center;color:var(--text-muted);font-size:12.5px}
 /* 고른 줄 표시 */
