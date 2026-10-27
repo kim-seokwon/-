@@ -1310,21 +1310,10 @@ class BhasApp {
         });
     }
 
-    renderDashboard() {
-        const { role, name } = this.currentUser;
-        // 지난 스티커 되살리기 — 로그인 후 딱 한 번
-        if (!this._stickiesRestored) this.restoreStickies();
-        // 메모·할 일은 열고 나서 받으면 매번 기다린다 → 로그인 직후 뒤에서 미리 받아둔다
-        if (!this._prefetched) {
-            this._prefetched = true;
-            setTimeout(() => {
-                if (!this._noteLoaded && !this._noteLoading) this.loadNotes();
-                if (!this._remLoaded && !this._remLoading) this.loadReminders();
-                if (!this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
-            }, 400);
-        }
+    //  메뉴 가시성 판정(역할 기본값 + 계정별 menu_access) — 사이드 메뉴와 도움말 사용설명서가 같이 쓴다
+    _menuItems() {
+        const role = this.currentUser?.role;
         const perms = mockData.permissions[role] || [];
-        
         const menuItems = [
             { id: 'dashboard', label: '시즌', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
@@ -1353,16 +1342,48 @@ class BhasApp {
         ];
         // 계정별 세분화 권한(menu_access) 반영: 설정돼 있으면 그 목록으로 가시성 결정.
         // 단 계정/브랜드 관리는 항상 MASTER 전용(보안), 할일은 항상 노출. 없으면(null) 역할 기본값 유지.
-        const ma = Array.isArray(this.currentUser.menu_access) ? this.currentUser.menu_access : null;
+        const ma = Array.isArray(this.currentUser?.menu_access) ? this.currentUser.menu_access : null;
         if (ma) {
             menuItems.forEach(it => {
                 if (it.id === 'user_management' || it.id === 'brand_management' || it.id === 'feedback') it.visible = role === 'MASTER';
                 // 새로 생긴 메뉴는 기존 menu_access 목록에 없으므로 역할 기본값을 유지한다
                 // (안 그러면 권한을 다시 저장하기 전까지 아무에게도 안 보인다).
-                else if (['all_todos', 'cs', 'expenses', 'notes', 'reminders', 'settings', 'contacts'].includes(it.id)) it.visible = true;
+                //  (전엔 여기서 true 로 켜서 고객사에도 CS·메모·연락처가 열렸다 → 역할 기본값 그대로 둔다)
+                else if (['all_todos', 'cs', 'expenses', 'notes', 'reminders', 'settings', 'contacts'].includes(it.id)) { /* 역할 기본값 유지 */ }
                 else it.visible = ma.includes(it.id);
             });
         }
+        return menuItems;
+    }
+    //  지금 계정이 볼 수 있는 화면 id. 사이드 목록에 없는 화면(제품리스트·뉴스·고객 CRM)은 직원·관리자 기본값, 홈은 누구나
+    _menuViewSet() {
+        const role = this.currentUser?.role;
+        const set = new Set(this._menuItems().filter(it => it.visible).map(it => it.id));
+        set.add('home');
+        if (role === 'MASTER' || role === 'STAFF') ['items', 'news', 'crm'].forEach(v => set.add(v));
+        return set;
+    }
+    //  사용설명서 항목 → 실제로 열 화면. 판매·생산 묶음은 묶음 안에서 허용된 첫 탭, 아니면 그 id. 허용된 게 없으면 null
+    _helpManualTarget(id) {
+        const set = this._menuViewSet();
+        const g = (this.APP_GROUPS || []).find(x => x.head === id);
+        const cand = g ? [g.head, ...g.tabs.map(t => t.k)] : [id];
+        return cand.find(v => set.has(v)) || null;
+    }
+    renderDashboard() {
+        const { role, name } = this.currentUser;
+        // 지난 스티커 되살리기 — 로그인 후 딱 한 번
+        if (!this._stickiesRestored) this.restoreStickies();
+        // 메모·할 일은 열고 나서 받으면 매번 기다린다 → 로그인 직후 뒤에서 미리 받아둔다
+        if (!this._prefetched) {
+            this._prefetched = true;
+            setTimeout(() => {
+                if (!this._noteLoaded && !this._noteLoading) this.loadNotes();
+                if (!this._remLoaded && !this._remLoading) this.loadReminders();
+                if (!this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+            }, 400);
+        }
+        const menuItems = this._menuItems();
         const navGroups = [
             { id: 'work', label: '업무' },
             { id: 'stock', label: '판매' },
@@ -6884,7 +6905,8 @@ class BhasApp {
     _helpManual(q) {
         const v = this._helpScreen(), g = this._groupOf(v), id = g ? g.head : v;
         const icons = Object.fromEntries((this.MAC_DOCK || []).filter(d => !d.tool && !d.launcher).map(d => [d.id, d.icon]));
-        return { q, manual: searchManual(q, MANUAL, TIPS), tips: TIPS, here: MANUAL.some(m => m.id === id) ? id : null, open: this._help?.mOpen || null, icons };
+        const ok = MANUAL.filter(m => this._helpManualTarget(m.id));   // 이 계정에 보이는 화면만(권한 밖 설명·열기 없음)
+        return { q, manual: searchManual(q, ok, TIPS), tips: TIPS, here: ok.some(m => m.id === id) ? id : null, open: this._help?.mOpen || null, icons };
     }
     toggleHelp() { if (this._help?.open) this.closeHelp(); else this.openHelp(); }
     openHelp(tab) {
@@ -6992,7 +7014,7 @@ class BhasApp {
         if (act === 'fb-st') return this._helpSetStatus(id, b.dataset.st);
         if (act === 'fb-img') return this._helpOpenImage(id);
         if (act === 'm-tile') { h.mOpen = h.mOpen === id ? null : id; return this._paintHelp(); }   // 한 번에 하나만 펼침
-        if (act === 'm-go') { if (!MANUAL.some(m => m.id === id)) return; this.closeHelp(); return this.switchView(id); }
+        if (act === 'm-go') { const v = this._helpManualTarget(id); if (!v) return; this.closeHelp(); return this.switchView(v); }   // 누를 때 권한 다시 확인
     }
     async _helpSaveNotice() {
         const h = this._help; if (!h || !h.editing || this._helpRole() !== 'MASTER') return;

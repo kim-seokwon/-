@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mockData } from '../mockData.js';
 import { TIPS, MANUAL, searchManual } from '../helpDict.js';
 import { tipHTML, placeTip, escHTML } from '../helpWidget.js';
 import {
@@ -182,13 +183,74 @@ test('사용설명서 찾기: 타일이 걸러지고 1개만 남으면 자동 �
 test('main.js 연결: 지금 화면 → 묶음 머리, 타일 토글, 이 화면 열기 → switchView', () => {
     const src = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
     assert.match(src, /_helpManual\(q\) \{\n        const v = this\._helpScreen\(\), g = this\._groupOf\(v\), id = g \? g\.head : v;/);
-    assert.match(src, /here: MANUAL\.some\(m => m\.id === id\) \? id : null, open: this\._help\?\.mOpen \|\| null, icons/);
+    assert.match(src, /const ok = MANUAL\.filter\(m => this\._helpManualTarget\(m\.id\)\);/);
+    assert.match(src, /manual: searchManual\(q, ok, TIPS\), tips: TIPS, here: ok\.some\(m => m\.id === id\) \? id : null, open: this\._help\?\.mOpen \|\| null, icons/);
     assert.match(src, /if \(act === 'm-tile'\) \{ h\.mOpen = h\.mOpen === id \? null : id; return this\._paintHelp\(\); \}/);
-    assert.match(src, /if \(act === 'm-go'\) \{ if \(!MANUAL\.some\(m => m\.id === id\)\) return; this\.closeHelp\(\); return this\.switchView\(id\); \}/);
+    assert.match(src, /if \(act === 'm-go'\) \{ const v = this\._helpManualTarget\(id\); if \(!v\) return; this\.closeHelp\(\); return this\.switchView\(v\); \}/);
+    assert.match(src, /const menuItems = this\._menuItems\(\);/, '사이드 목록과 같은 판정 함수');
     assert.match(src, /manualListHTML\(this\._helpManual\(q\)\)/);
     //  MANUAL id 는 전부 독 화면 id(이 화면 열기가 갈 곳)
     const dock = [...src.matchAll(/\{ id: '([a-z_]+)', label: '[^']+', icon: '[a-z]+'(?:, desktop: true)? \}/g)].map(x => x[1]);
     for (const m of MANUAL) assert.ok(dock.includes(m.id), `${m.id} 독에 있음`);
+});
+
+//  main.js 의 권한 판정·사용설명서 함수를 그대로 떼어 가짜 앱에 붙여 돌린다(사이드 목록과 같은 함수)
+const method = (name) => {
+    const i = MAIN.indexOf(`\n    ${name}(`); assert.ok(i > 0, name);
+    const a = MAIN.indexOf('{', i); let d = 0, j = a;
+    for (; j < MAIN.length; j++) { if (MAIN[j] === '{') d++; else if (MAIN[j] === '}' && --d === 0) break; }
+    return MAIN.slice(i + 1, j + 1).trim();
+};
+const field = (name) => {
+    const i = MAIN.indexOf(`\n    ${name} = [`); assert.ok(i > 0, name);
+    const a = MAIN.indexOf('[', i); let d = 0, j = a;
+    for (; j < MAIN.length; j++) { if (MAIN[j] === '[') d++; else if (MAIN[j] === ']' && --d === 0) break; }
+    return MAIN.slice(a, j + 1);
+};
+const GO = MAIN.match(/if \(act === 'm-go'\) \{[^\n]*\}/)[0];
+const App = new Function('mockData', 'MANUAL', 'TIPS', 'searchManual', `return class {
+    APP_GROUPS = ${field('APP_GROUPS')};
+    MAC_DOCK = ${field('MAC_DOCK')};
+    ${method('_menuItems')}
+    ${method('_menuViewSet')}
+    ${method('_helpManualTarget')}
+    ${method('_groupOf')}
+    ${method('_helpManual')}
+    _helpScreen() { return this.view; }
+    closeHelp() { this.closed = true; }
+    switchView(v) { this.went = v; }
+    go(id) { const act = 'm-go'; ${GO} }
+};`)(mockData, MANUAL, TIPS, searchManual);
+const app = (role, menu_access = null, view = 'home') => Object.assign(new App(), { currentUser: { role, menu_access }, view });
+const ids = (a) => a._helpManual('').manual.map(m => m.id);
+
+test('권한: 고객사는 홈·생산(시즌)·설정만 — 판매·SNS·뉴스·연락처 설명도 열기도 없음', () => {
+    const c = app('CLIENT');
+    assert.deepEqual(ids(c), ['home', 'items', 'settings']);
+    assert.equal(c._helpManualTarget('items'), 'dashboard', '생산 묶음은 고객사가 볼 수 있는 시즌 탭으로');
+    for (const v of ['orders', 'sns', 'news', 'contacts', 'documents', 'notes', 'calendar']) {
+        const a = app('CLIENT'); a.go(v);
+        assert.equal(a.went, undefined, v + ' 열리면 안 됨'); assert.ok(!a.closed, v);
+    }
+    const g = app('CLIENT'); g.go('items'); assert.equal(g.went, 'dashboard');
+    const h = manualListHTML(c._helpManual(''));
+    assert.ok(!/data-id="(orders|sns|news|contacts)"/.test(h), '권한 밖 타일 없음');
+    assert.equal(app('CLIENT', null, 'orders')._helpManual('').here, null, '권한 밖 화면이면 지금 화면 카드 없음');
+    assert.ok(!app('CLIENT')._helpManual('송장').manual.length, '찾기로도 권한 밖 설명 안 나옴');
+    // 고객사에 menu_access 가 있어도 CS·메모·연락처를 억지로 켜지 않는다
+    assert.deepEqual(ids(app('CLIENT', ['dashboard'])), ['home', 'items', 'settings']);
+});
+
+test('권한: menu_access 로 좁힌 직원은 받은 메뉴만 · 관리자는 11개 전부', () => {
+    const s = app('STAFF', ['calendar']);
+    const got = ids(s);
+    assert.ok(got.includes('calendar') && !got.includes('documents') && !got.includes('sns'), got.join());
+    assert.equal(s._helpManualTarget('orders'), 'cs', '판매 묶음에서 주문을 못 받았으면 허용된 CS 탭으로');
+    const n = app('STAFF', []); n.go('sns'); assert.equal(n.went, undefined, 'SNS 안 받았으면 열기 막힘');
+    const o = app('STAFF', ['orders']); o.go('orders'); assert.equal(o.went, 'orders'); assert.ok(o.closed);
+    assert.equal(app('STAFF', ['calendar'], 'sns')._helpManual('').here, null);
+    assert.equal(app('STAFF', ['calendar'], 'calendar')._helpManual('').here, 'calendar');
+    assert.deepEqual(ids(app('MASTER')), MANUAL.map(m => m.id));
 });
 
 test('? 도움말 버튼: 안 읽은 공지 점', () => {
