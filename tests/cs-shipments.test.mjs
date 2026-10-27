@@ -50,7 +50,7 @@ test('상세 구역 — 연결 안 됨 · 실패·다시 · 송장별 상품 · 
     const html = method('_csShipHtml');
     assert.match(html.call(ctx, { channel_order_id: null }), /주문 연결되면 표시/);
     ctx._csShipErr.o9 = true;
-    assert.match(html.call(ctx, { channel_order_id: 'o9' }), /불러오기 실패[\s\S]*_csShipRetry\('o9'\)[\s\S]*다시/);
+    assert.match(html.call(ctx, { channel_order_id: 'o9' }), /불러오기 실패[\s\S]*data-cs-retry="o9"[\s\S]*다시/);
     ctx.csShip.o1 = groupShipments([r('6890175291569', 'Classic Blouson', { option_name: 'color=크림, size=XL' }), r('6890175291569', 'Blouse'), r(null, 'Vest')]);
     const h = html.call(ctx, { channel_order_id: 'o1' });
     assert.match(h, /우체국[\s\S]*6890175291569[\s\S]*복사[\s\S]*epost\.go\.kr[^"]*sid1=6890175291569[\s\S]*조회/);
@@ -58,6 +58,36 @@ test('상세 구역 — 연결 안 됨 · 실패·다시 · 송장별 상품 · 
     assert.match(h, /Classic Blouson[\s\S]*크림 · XL[\s\S]*Blouse[\s\S]*미출고 1[\s\S]*Vest/);
     ctx.csShip.o2 = groupShipments([{ channel: 'eland' }]);
     assert.match(html.call(ctx, { channel_order_id: 'o2' }), /송장 정보 없음/);
+});
+
+test('외부 송장값 주입 회귀 — 작은따옴표·<script> 가 핸들러를 깨지 않음', () => {
+    // 실제 main.js 의 _vesc(작은따옴표는 안 바꿈)로 그린다
+    const vesc = eval('(' + /\n    _vesc\(s\)\{[^\n]*\}/.exec(src)[0].trim().replace(/^_vesc\(/, 'function _vesc(') + ')');
+    const ctx = { _vesc: vesc, csShip: {}, _csShipErr: {} };
+    const html = method('_csShipHtml');
+    const BAD = `68'9);alert(1)//"<script>alert(2)</script>`;
+    ctx.csShip.o1 = groupShipments([r(BAD, `상품'<script>x</script>`)]);
+    const h = html.call(ctx, { channel_order_id: 'o1' });
+    assert.doesNotMatch(h, /onclick/i, '인라인 핸들러 없음');
+    assert.doesNotMatch(h, /<script/i, '<script> 는 글자로만');
+    const m = /data-cs-copy="([^"]*)"/.exec(h); assert.ok(m, '복사 버튼은 data-cs-copy');
+    const unesc = v => v.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    assert.equal(unesc(m[1]), BAD, '속성값은 원래 송장 그대로 복원');
+    ctx._csShipErr["o'9"] = true;
+    const hr = html.call(ctx, { channel_order_id: "o'9" });
+    assert.doesNotMatch(hr, /onclick/i); assert.match(hr, /data-cs-retry="o'9"/);
+    // 위임 클릭: data-* 값을 그대로 넘긴다
+    const click = method('_csShipClick'); const calls = [];
+    const app = { _csCopy: v => calls.push(['copy', v]), _csShipRetry: v => calls.push(['retry', v]) };
+    const ev = attr => { const el = { hasAttribute: k => k === attr.k, getAttribute: k => (k === attr.k ? attr.v : null) };
+        return { prevented: false, preventDefault() { this.prevented = true; }, target: { closest: () => el } }; };
+    const e1 = ev({ k: 'data-cs-copy', v: BAD }); assert.equal(click.call(app, e1), true); assert.ok(e1.prevented);
+    click.call(app, ev({ k: 'data-cs-retry', v: "o'9" }));
+    assert.deepEqual(calls, [['copy', BAD], ['retry', "o'9"]]);
+    assert.equal(click.call(app, { target: { closest: () => null } }), false, '다른 클릭은 건드리지 않음');
+    // 연결: init 에서 한 번만 document 위임, 원송장 onclick 은 남아 있지 않음
+    assert.match(src, /if \(!this\._csShipBound\) \{ this\._csShipBound = true; document\.addEventListener\('click', e => this\._csShipClick\(e\)\); \}/);
+    assert.doesNotMatch(src, /onclick="[^"]*(_csCopy|_csShipRetry)/);
 });
 
 test('목록·상세 연결 — 보이는 행만 RPC · 실패는 그 구역만', async () => {

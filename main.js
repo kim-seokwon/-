@@ -189,6 +189,7 @@ class BhasApp {
     }
 
     init() {
+        if (!this._csShipBound) { this._csShipBound = true; document.addEventListener('click', e => this._csShipClick(e)); }
         // ===== [임시] 샘플 제작 미리보기용 인증 우회 (Supabase 일시중단 중) =====
         // 원복: 아래 DEV_PREVIEW_SAMPLE = false 로만 바꾸면 됨.
         // Supabase 재가동 완료 → 실제 로그인/데이터 로드 사용(false).
@@ -10705,6 +10706,15 @@ class BhasApp {
         }
         this.requestRender();
     }
+    //  원송장 칸 클릭 — 송장(외부값)을 JS 문자열에 넣지 않고 data-* 로만 읽는다
+    _csShipClick(e) {
+        const el = e.target && e.target.closest ? e.target.closest('[data-cs-copy],[data-cs-retry]') : null;
+        if (!el) return false;
+        e.preventDefault();
+        if (el.hasAttribute('data-cs-copy')) this._csCopy(el.getAttribute('data-cs-copy'));
+        else this._csShipRetry(el.getAttribute('data-cs-retry'));
+        return true;
+    }
     _csShipRetry(id) { if (this._csShipErr) delete this._csShipErr[id]; this._csShipLoad([id]); this.requestRender(); }
     async _csCopy(text) {
         try { await navigator.clipboard.writeText(String(text)); this.showToast('송장번호를 복사했습니다'); }
@@ -10725,7 +10735,7 @@ class BhasApp {
         const head = '<div class="dt-sec">원송장</div>';
         if (!t.channel_order_id) return `${head}<div class="cs-shp-no">주문 연결되면 표시</div>`;
         const id = String(t.channel_order_id);
-        if ((this._csShipErr || {})[id]) return `${head}<div class="cs-shp-no">불러오기 실패 · <a href="#" onclick="event.preventDefault();app._csShipRetry('${esc(id)}')">다시</a></div>`;
+        if ((this._csShipErr || {})[id]) return `${head}<div class="cs-shp-no">불러오기 실패 · <a href="#" data-cs-retry="${esc(id)}">다시</a></div>`;
         const g = (this.csShip || {})[id];
         if (!g) return `${head}<div class="cs-shp-no">불러오는 중…</div>`;
         if (g.none) return `${head}<div class="cs-shp-no">송장 정보 없음</div>`;
@@ -10734,7 +10744,7 @@ class BhasApp {
             const url = trackUrl(s.courier, s.tracking_no);
             return `<div class="cs-shp">
                 <div class="cs-shp-h"><b>${esc(courierShort(s.courier) || '택배')}</b><span class="cs-tn">${esc(s.tracking_no)}</span>
-                    <button class="mbtn cs-mini" onclick="app._csCopy('${esc(s.tracking_no)}')">복사</button>
+                    <button type="button" class="mbtn cs-mini" data-cs-copy="${esc(s.tracking_no)}">복사</button>
                     ${url ? `<a class="mbtn cs-mini" href="${esc(url)}" target="_blank" rel="noopener">조회</a>` : ''}</div>
                 <div class="cs-shp-m">${s.shipped_date ? `${esc(String(s.shipped_date).slice(0, 10))} 출고` : '출고일 없음'}${s.items.length > 1 ? ` · 합배송 ${s.items.length}개` : ''}</div>
                 ${s.items.map(li).join('')}
