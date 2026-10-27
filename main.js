@@ -27,6 +27,7 @@ import {
 import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
+import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { TP_BUCKET, TP_ACCEPT, validateTpFile, tpFilePath, tpDefaultName, isUploadPack, hasPackConfig, tpKind, tpKindLabel, tpSizeText } from './techPackFile.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
@@ -252,7 +253,8 @@ class BhasApp {
             const list = { select: () => list, order: () => list, limit: () => list,
                 then: (ok, ng) => Promise.resolve({ data: (fx.cs_tickets || []).slice(), error: null }).then(ok, ng) };
             this.supabase = { from: () => list,
-                rpc: async (fn, a) => ({ data: fn === 'cs_order_shipments' ? (fx.shipments || []).filter(r => (a.p_ids || []).includes(r.channel_order_id)) : [], error: null }) };
+                rpc: async (fn, a) => ({ data: fn === 'cs_order_shipments' ? (fx.shipments || []).filter(r => (a.p_ids || []).includes(r.channel_order_id))
+                    : fn === 'cs_order_pick' ? (fx.picks || {})[a.p_order] || null : [], error: null }) };
             this._prefetched = true; this._isInitialLoading = false;
             this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
             this.currentView = 'cs'; this.csFilter = '전체';
@@ -4226,6 +4228,7 @@ class BhasApp {
             return wrap(t.customer_name || '고객', `${t.kind} · ${t.status}`, `
                 ${f('주문번호', t.order_no)}
                 ${f('상품', t.product_name)}
+                ${this._csItemsHtml(t)}
                 ${f('구매처', t.purchase_from)}
                 ${f('회수·재발송 송장', t.invoice_no)}
                 ${f('접수 경로', t.contact_channel)}
@@ -4236,7 +4239,9 @@ class BhasApp {
                 ${this._csShipHtml(t)}
             `, `${this.CS_STATUSES.map(st => `<button class="mbtn${t.status === st ? ' pri' : ''}"
                     onclick="app.setCSStatus('${t.id}','${st}')">${st}</button>`).join('')}
-                <button class="mbtn" onclick="app.editCSMemo('${t.id}')">메모</button>`);
+                <button class="mbtn" onclick="app.editCSMemo('${t.id}')">메모</button>
+                ${t.channel_order_id ? `<button type="button" class="mbtn" data-cs-act="pick" data-id="${esc(String(t.id))}">신청 상품 고르기</button>` : ''}
+                ${canTrash(t, this.currentUser) ? `<button type="button" class="mbtn cs-del" data-cs-act="trash" data-id="${esc(String(t.id))}">삭제</button>` : ''}`);
         }
         if (view === 'inventory') {
             const data = this.inventory || { items: [], listings: [], ledger: [] };
@@ -10708,10 +10713,13 @@ class BhasApp {
     }
     //  원송장 칸 클릭 — 송장(외부값)을 JS 문자열에 넣지 않고 data-* 로만 읽는다
     _csShipClick(e) {
-        const el = e.target && e.target.closest ? e.target.closest('[data-cs-copy],[data-cs-retry]') : null;
+        const el = e.target && e.target.closest ? e.target.closest('[data-cs-copy],[data-cs-retry],[data-cs-act]') : null;
         if (!el) return false;
         e.preventDefault();
-        if (el.hasAttribute('data-cs-copy')) this._csCopy(el.getAttribute('data-cs-copy'));
+        const act = el.getAttribute('data-cs-act'), id = el.getAttribute('data-id');
+        if (act === 'trash') this.csTrash(id);
+        else if (act === 'pick') this.csPickItems(id);
+        else if (el.hasAttribute('data-cs-copy')) this._csCopy(el.getAttribute('data-cs-copy'));
         else this._csShipRetry(el.getAttribute('data-cs-retry'));
         return true;
     }
@@ -10730,6 +10738,14 @@ class BhasApp {
         return `<div class="cs-shl${sm.kind === 'unshipped' ? ' un' : ''}">${this._vesc(sm.text)}</div>`;
     }
     //  오른쪽 상세 "원송장" 구역 — 송장별로 같이 나간 상품(합배송), 아래 미출고
+    //  상세 "신청 상품" — 고객이 반품·교환 신청한 줄(옵션·수량·사유). 주문 전체가 아니면 "6개 중 3개"
+    _csItemsHtml(t) {
+        const esc = s => this._vesc(s), items = Array.isArray(t.items) ? t.items : [];
+        if (!items.length) return t.items_total > 1 ? `<div class="dt-sec">신청 상품</div><div class="cs-shp-no">주문 상품 ${esc(String(t.items_total))}개 중 아직 안 고름 · [신청 상품 고르기]</div>` : '';
+        const pl = partLabel(items, t.items_total);
+        return `<div class="dt-sec">신청 상품 ${pl ? `<span class="cs-part">${esc(pl)}</span>` : `${items.length}`}</div>
+            ${items.map(i => `<div class="dt-li"><span>${esc(i.name || '-')}${optionText(i.option) ? ` <em class="cs-opt">${esc(optionText(i.option))}</em>` : ''}${i.reason ? `<br><small class="mu">사유 ${esc(i.reason)}</small>` : ''}${CLAIM_LABEL(i.status) ? ` <small class="cs-claim">${esc(CLAIM_LABEL(i.status))}</small>` : ''}</span><b>${esc(String(i.qty ?? 1))}</b></div>`).join('')}`;
+    }
     _csShipHtml(t) {
         const esc = s => this._vesc(s);
         const head = '<div class="dt-sec">원송장</div>';
@@ -10788,7 +10804,11 @@ class BhasApp {
             const mall = (this.malls || []).find(m => m.mall_key === o.mall_key);
             const { data: items } = await this.supabase.from('channel_order_items')
                 .select('product_name').eq('channel_order_id', o.id).limit(3);
+            //  줄 목록·카페24 클레임 줄(098) — 못 받으면 예전처럼 앞 3개
+            let pick = null;
+            try { const r = await this.supabase.rpc('cs_order_pick', { p_order: o.id }); if (!r.error) pick = r.data; } catch (_e) {}
             return {
+                pick,
                 channel_order_id: o.id,
                 brand_id: mall?.brand_id || null,
                 purchase_from: o.channel === 'eland' ? '키디키디' : (o.channel === '29cm' ? '29cm' : '공홈'),
@@ -10798,18 +10818,24 @@ class BhasApp {
         } catch (e) { return null; }
     }
     // 주문 화면에서 그 주문으로 바로 교환·반품을 올린다
-    csFromOrder(orderNo, mallKey = '') {
+    async csFromOrder(orderNo, mallKey = '') {
         const esc = s => this._vesc(s);
         const c = document.getElementById('global-modal-container'); if (!c) return;
+        //  카페24 에 이미 반품·교환 신청이 있으면 그 종류를 먼저 보여 준다(직원이 고르는 건 그대로)
+        const found = await this._csLookupOrder(orderNo, mallKey);
+        this._csPrefetch = { orderNo, found };
+        const plan = pickPlan(found?.pick);
         c.innerHTML = `
         <div class="glass modal-content fade-in" style="width:92%;max-width:400px;padding:1.6rem;border-radius:18px">
             <h2 style="margin:0 0 .4rem;font-size:1.1rem">CS 접수</h2>
             <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.1rem">
                 ${mallKey ? `${esc(this._mallLabel(mallKey))} · ` : ''}주문번호 <b style="font-family:monospace;color:var(--text-main)">${esc(orderNo)}</b><br>
                 고객·상품·구매처는 주문에서 자동으로 끌어옵니다.
+                ${plan.mode === 'claim' ? `<div class="cs-claim-hint">카페24 ${esc(plan.kind ? plan.kind + ' 신청' : '신청')} · ${esc(partLabel(plan.items, plan.total) || plan.items.length + '개 전부')} — 신청한 상품만 담습니다</div>`
+                    : plan.mode === 'choose' ? `<div class="cs-claim-hint">상품 ${plan.total}개 — 다음에 신청 상품을 고릅니다</div>` : ''}
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:8px">
-                ${this.CS_KINDS.map(k => `<button class="btn-secondary cs-kind" style="padding:9px 16px;border-radius:10px"
+                ${this.CS_KINDS.map(k => `<button class="${plan.kind === k ? 'btn-primary' : 'btn-secondary'} cs-kind" style="padding:9px 16px;border-radius:10px"
                     onclick="app.addCSForOrder('${esc(orderNo)}','${k}','${esc(mallKey)}')">${k}</button>`).join('')}
             </div>
             <div style="text-align:right;margin-top:1.3rem">
@@ -10821,7 +10847,9 @@ class BhasApp {
     async addCSForOrder(orderNo, kind, mallKey = '') {
         this.track?.('orders', 'cs_create_order');
         this.closeGlobalModal();
-        const found = await this._csLookupOrder(orderNo, mallKey);
+        const found = this._csPrefetch?.orderNo === orderNo ? this._csPrefetch.found : await this._csLookupOrder(orderNo, mallKey);
+        this._csPrefetch = null;
+        const it = await this._csItemsFor(found, kind); if (!it) return;
         try {
             const { error } = await this.supabase.from('cs_tickets').insert([{
                 customer_name: found?.customer_name || '(이름없음)',
@@ -10831,7 +10859,7 @@ class BhasApp {
                 brand_id: found?.brand_id || null,
                 purchase_from: found?.purchase_from || '공홈',
                 contact_channel: '카톡채널',
-                product_name: found?.product_name || null,
+                ...it,
                 created_by: this.currentUser?.name || null,
             }]);
             if (error) throw error;
@@ -10852,6 +10880,7 @@ class BhasApp {
         const found = orderNo ? await this._csLookupOrder(orderNo) : null;
         //  결제 직후 접수면 주문이 아직 수집 전(카페24 5분 주기) — 095 트리거가 주문이 들어올 때 빈칸을 채운다
         if (orderNo && !found) this.showToast('주문이 아직 안 들어왔어요(5분마다 수집). 들어오면 고객·상품이 자동으로 채워집니다');
+        const it = await this._csItemsFor(found, kind); if (!it) return;
         try {
             const { error } = await this.supabase.from('cs_tickets').insert([{
                 customer_name: name || found?.customer_name || '(이름없음)',
@@ -10861,7 +10890,7 @@ class BhasApp {
                 brand_id: found?.brand_id || null,
                 purchase_from: found?.purchase_from || '공홈',
                 contact_channel: '카톡채널',
-                product_name: found?.product_name || null,
+                ...it,
                 created_by: this.currentUser?.name || null,
             }]);
             if (error) throw error;
@@ -10869,6 +10898,114 @@ class BhasApp {
             this._csLoaded = false; this.loadCS();
             this.showToast(`${kind} 접수됐습니다`);
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
+    }
+    //  끌어온 주문에서 CS 에 담을 상품 — 클레임 줄 > 1줄 주문 > 직원이 고름(098 cs_order_pick)
+    //   돌려주는 것: insert 칸 { product_name, items, items_total, auto_fill } · 고르다 닫으면 null(접수 안 함)
+    async _csItemsFor(found, kind) {
+        const base = { product_name: found?.product_name || null };
+        const plan = pickPlan(found?.pick);
+        if (plan.mode === 'none') return base;
+        let items = plan.items, auto = true;
+        if (plan.mode === 'choose') {
+            const r = await this._csPicker(found.pick.lines, [], kind);
+            if (r === null) return null;
+            if (r === 'later') return { ...base, items_total: plan.total };
+            items = r; auto = false;
+        }
+        if (plan.mode === 'claim' && plan.kind && plan.kind !== kind) this.showToast(`카페24에는 ${plan.kind} 신청으로 들어와 있어요 — 고른 ${kind}(으)로 접수합니다`);
+        const pt = itemsPatch(items, plan.total, auto);
+        return { product_name: pt.product_name, items: pt.items, items_total: pt.items_total, auto_fill: pt.auto };
+    }
+    //  신청 상품 고르기 — 앱 안 창. 옵션·수량이 보이게, 기본은 전부 해제(1줄 주문은 여기 안 옴)
+    //   돌려주는 것: 고른 줄 배열 · 'later'(나중에 고르기) · null(닫기)
+    _csPicker(lines, chosenKeys = [], kind = '') {
+        const esc = s => this._vesc(s);
+        const c = document.getElementById('global-modal-container');
+        if (!c) return Promise.resolve(null);
+        const on = new Set(chosenKeys);
+        c.innerHTML = `<div class="glass modal-content fade-in cs-pick" onclick="event.stopPropagation()">
+            <h2>신청 상품 고르기</h2>
+            <div class="cs-pick-sub">${esc(kind ? kind + ' · ' : '')}주문 상품 ${lines.length}개 중 고객이 신청한 것만 체크하세요</div>
+            <div class="cs-pick-list">${lines.map((l, i) => `<label class="cs-pick-li">
+                <input type="checkbox" data-cs-line="${i}"${on.has(lineKey(l, i)) ? ' checked' : ''}>
+                <span><b>${esc(l.name || '-')}</b>${optionText(l.option) ? ` <em class="cs-opt">${esc(optionText(l.option))}</em>` : ''}</span>
+                <small>${esc(String(l.qty ?? 1))}개${CLAIM_LABEL(l.status) ? ` · ${esc(CLAIM_LABEL(l.status))}` : ''}</small></label>`).join('')}</div>
+            <div class="cs-pick-btns">
+                <button type="button" class="mbtn" data-cs-pick="all">전체</button>
+                <span style="flex:1"></span>
+                <button type="button" class="mbtn" data-cs-pick="later">나중에</button>
+                <button type="button" class="mbtn pri" data-cs-pick="ok" disabled>담기</button>
+            </div></div>`;
+        c.style.display = 'flex';
+        return new Promise(resolve => {
+            const boxes = () => [...c.querySelectorAll('[data-cs-line]')];
+            const okBtn = c.querySelector('[data-cs-pick="ok"]');
+            const sync = () => { okBtn.disabled = !boxes().some(b => b.checked); okBtn.textContent = `담기 ${boxes().filter(b => b.checked).length || ''}`.trim(); };
+            const done = v => { c.onclick = null; c.onchange = null; this.closeGlobalModal(); resolve(v); };
+            sync();
+            c.onchange = sync;
+            c.onclick = e => {
+                if (e.target === c) return done(null);
+                const b = e.target.closest?.('[data-cs-pick]'); if (!b) return;
+                const a = b.getAttribute('data-cs-pick');
+                if (a === 'all') { const all = boxes().every(x => x.checked); boxes().forEach(x => { x.checked = !all; }); sync(); }
+                else if (a === 'later') done('later');
+                else if (a === 'ok') done(boxes().filter(x => x.checked).map(x => lines[Number(x.getAttribute('data-cs-line'))]));
+            };
+        });
+    }
+    //  상세 [신청 상품 고르기] — 고친 건 직원 값(auto_fill 에서 상품·줄을 빼 트리거가 안 덮는다)
+    async csPickItems(id) {
+        const t = (this.csList || []).find(x => String(x.id) === String(id)); if (!t?.channel_order_id) return;
+        const { data: pick, error: pe } = await this.supabase.rpc('cs_order_pick', { p_order: t.channel_order_id });
+        if (pe || !pick?.lines?.length) { this.showToast('주문 상품을 불러오지 못했습니다' + (pe ? ': ' + pe.message : '')); return; }
+        const keyOf = it => pick.lines.findIndex((l, i) => (it.code && l.code === it.code) || (!it.code && l.name === it.name && (l.option || null) === (it.option || null)));
+        const chosen = (t.items || []).map(keyOf).filter(i => i >= 0).map(i => lineKey(pick.lines[i], i));
+        const r = await this._csPicker(pick.lines, chosen, t.kind);
+        if (!Array.isArray(r)) return;
+        const pt = itemsPatch(r, pick.lines.length, false);
+        const af = { ...(t.auto_fill || {}) }; delete af.items; delete af.product_name;
+        const patch = { items: pt.items, items_total: pt.items_total, product_name: pt.product_name, auto_fill: Object.keys(af).length ? af : null };
+        const { error } = await this.supabase.from('cs_tickets').update(patch).eq('id', t.id);
+        if (error) { this.showToast('저장 실패: ' + error.message); return; }
+        Object.assign(t, patch); this.requestRender();
+        this.showToast(`신청 상품 ${r.length}개로 바꿨습니다`);
+    }
+    //  잘못 쓴 CS 지우기 — 완료건·남의 건은 서버(cs_trash)가 다시 막는다. 지운 건 휴지통에 남아 되돌릴 수 있다.
+    async csTrash(id) {
+        const t = (this.csList || []).find(x => String(x.id) === String(id)); if (!t) return;
+        if (!canTrash(t, this.currentUser)) { this.showToast(t.status === '완료' ? '완료된 CS 는 지울 수 없습니다' : '직접 쓴 CS 만 지울 수 있습니다'); return; }
+        const esc = s => this._vesc(s);
+        const ok = await this.showConfirm(`이 CS를 지울까요?\n고객 ${esc(t.customer_name || '-')} · 주문번호 ${esc(t.order_no || '없음')}\n(지운 뒤 잠깐 [되돌리기]가 나옵니다)`, 'CS 삭제');
+        if (!ok) return;
+        const { error } = await this.supabase.rpc('cs_trash', { p_id: t.id });
+        if (error) { this.showToast('지우지 못했습니다: ' + error.message); return; }
+        this.csList = (this.csList || []).filter(x => String(x.id) !== String(t.id));
+        if (String(this.csSel) === String(t.id)) this.csSel = null;
+        this.requestRender();
+        this._csUndoToast(t);
+    }
+    async csRestore(id) {
+        const { error } = await this.supabase.rpc('cs_restore', { p_id: id });
+        if (error) { this.showToast('되돌리지 못했습니다: ' + error.message); return; }
+        this._csLoaded = false; await this.loadCS();
+        this.csSel = id; this.requestRender(); this.showToast('CS 를 되돌렸습니다');
+    }
+    //  지운 직후 [되돌리기] — 8초(누르기 전에 사라지지 않게 일반 알림보다 길게)
+    _csUndoToast(t) {
+        const box = document.getElementById('toast-container'); if (!box) return;
+        box.querySelector('.cs-undo')?.remove();
+        const el = document.createElement('div');
+        el.className = 'toast cs-undo';
+        el.innerHTML = `<i class="ph ph-trash" style="font-size:1.2rem;color:var(--primary)"></i> <span>CS 를 지웠습니다 · ${this._vesc(t.customer_name || '')}</span>
+            <button type="button" class="mbtn cs-mini" data-cs-undo="${this._vesc(String(t.id))}">되돌리기</button>`;
+        box.appendChild(el); el.offsetHeight; el.classList.add('show');
+        const gone = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
+        const tm = setTimeout(gone, 8000);
+        el.addEventListener('click', e => {
+            const b = e.target.closest?.('[data-cs-undo]'); if (!b) return;
+            clearTimeout(tm); gone(); this.csRestore(b.getAttribute('data-cs-undo'));
+        });
     }
     async setCSStatus(id, status) {
         try {
@@ -10986,7 +11123,7 @@ class BhasApp {
                 <td>${esc(this._brandNameById(t.brand_id) === '-' ? '' : this._brandNameById(t.brand_id))}</td>
                 <td>${esc(t.purchase_from || '')}</td>
                 <td class="nw">${t.order_no ? `${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨" style="color:#0a84ff"></i>' : ''}${this._csShipLine(t)}` : ''}</td>
-                <td>${esc(t.product_name || '')}${t.exchange_product ? ` <span class="mu">→</span> ${esc(t.exchange_product)}` : ''}</td>
+                <td>${esc(t.product_name || '')}${partLabel(t.items, t.items_total) ? ` <span class="cs-part">${esc(partLabel(t.items, t.items_total))}</span>` : ''}${t.exchange_product ? ` <span class="mu">→</span> ${esc(t.exchange_product)}` : ''}</td>
                 <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
                         onclick="event.stopPropagation()" onchange="app.setCSStatus('${t.id}',this.value)">
                     ${stOf(t).map(x => `<option value="${esc(x)}"${t.status === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></td>
