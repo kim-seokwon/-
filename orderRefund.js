@@ -44,3 +44,29 @@ export function claimSummary(orders) {
     }
     return { cnt, refund };
 }
+
+//  반품·교환률 카드·'취소 N건 제외' 한 줄이 볼 몰 — null = 회사 전체(제한 없음), [] = 몰 없음(→ 0건, 조회 안 함)
+//   bf: 'ALL' 또는 브랜드 이름 · allowed: 계정이 볼 수 있는 브랜드 이름 Set(제한 없으면 null)
+export function claimMallKeys(malls, brands, bf, allowed) {
+    const nameOf = m => { const b = (brands || []).find(x => x.id === m.brand_id); return b ? b.name : (m.label || m.mall_key); };
+    if (bf === 'ALL') return allowed ? (malls || []).filter(m => allowed.has(nameOf(m))).map(m => m.mall_key) : null;
+    return (malls || []).filter(m => nameOf(m) === bf).map(m => m.mall_key);
+}
+
+//  그 범위 클레임 주문을 받아 센다. 실패는 던진다(화면이 '다시 시도'를 띄운다).
+export async function fetchClaims(sb, { mallKeys, fromISO, toISO }) {
+    if (Array.isArray(mallKeys) && !mallKeys.length) return { cnt: 0, refund: 0 };
+    //  한 번에 최대 1000줄(PostgREST) — 연간·전체는 넘을 수 있어 나눠 받는다
+    const PAGE = 1000, rows = [];
+    for (let from = 0; ; from += PAGE) {
+        let q = sb.from('channel_orders').select('id, op_status, fin_unpaid, refund_amount')
+            .in('op_status', ['cancel', 'return', 'exchange'])
+            .gte('order_date', fromISO).lt('order_date', toISO);
+        if (mallKeys) q = q.in('mall_key', mallKeys);
+        const { data, error } = await q.order('id').range(from, from + PAGE - 1);
+        if (error) throw error;
+        rows.push(...(data || []));
+        if (!data || data.length < PAGE) break;
+    }
+    return claimSummary(rows);
+}

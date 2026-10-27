@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { isUnpaidCancel, isRefund, stateLabel, markUnpaid, claimCount, claimSummary } from '../orderRefund.js';
+import { isUnpaidCancel, isRefund, stateLabel, markUnpaid, claimCount, claimSummary, claimMallKeys, fetchClaims } from '../orderRefund.js';
 
 const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 
@@ -60,12 +60,14 @@ test('반품·교환률 카드 — 10월 모양: 클레임 159건(결제금액 �
     assert.equal(r.refund, 85 * 50000 + 27 * 80000 + 20 * 60000);
 });
 
-test('main.js — 반품·교환률 카드는 sales_monthly 가 아니라 클레임 원본(salesScoped.claims)을 쓴다', () => {
+test('main.js — 반품·교환률 카드·취소 N건 제외는 sales_monthly 가 아니라 클레임 원본(_claimView)을 쓴다', () => {
     const a = src.indexOf("const cancelThis = (cancelledOrders");
     const card = src.slice(a, src.indexOf('// 브랜드 색상은', a));
-    assert.match(card, /this\.salesScoped\.claims/);
-    assert.doesNotMatch(card, /cancelThisAmt \+=/);   // 서버 월집계 pay_amount 를 환불로 더하지 않는다
-    assert.match(src, /claims: claimSummary\(claimRows\)/);
+    assert.match(card, /this\._claimView\(bf\)/);
+    assert.doesNotMatch(card, /salesAggData/);          // 반려2①: 전체 보기도 서버 월집계로 세지 않는다
+    assert.doesNotMatch(card, /cancelThisAmt \+=/);
+    assert.match(src, /' · 취소 \$\{cancelThisCnt\}건 제외'|` · 취소 \$\{cancelThisCnt\}건 제외`/);
+    assert.match(src, /app\.retryClaims\(\)/);         // 반려2④: 실패면 다시 시도 버튼
 });
 
 test('slim 주문에 미입금 표시를 붙인다', () => {
@@ -104,7 +106,105 @@ test('_loadSalesScope — 입금 전 취소는 반품·취소 목록에도 매�
     assert.equal(t.salesScoped.cancelled.length, 5);
     assert.equal(t.salesScoped.orders.length, 5);   // 교환 1 + 정상 4
     assert.ok(!t.salesScoped.cancelled.some(o => o.id.startsWith('u')));
-    //  카드: 결제 후 취소 3 + 반품 2 + 교환 1 = 6건, 환불 = 취소·반품 refund_amount 70,000
-    assert.deepEqual(t.salesScoped.claims, { cnt: 6, refund: 70000 });
-    assert.equal(t.salesScoped.brand, '하이헤이호');
+});
+
+// ── 반려2: 클레임 집계(_loadClaimScope) 네 경우 ──
+const grab = name => {
+    const a = src.indexOf(`    ${name}(`) >= 0 ? src.indexOf(`    ${name}(`) : src.indexOf(`    async ${name}(`);
+    const b = src.indexOf('\n    }\n', a) + 6;
+    const body = src.slice(a, b).trim().replace(/^async /, '');
+    return eval('(' + (src.slice(a, b).includes(`async ${name}(`) ? 'async function ' : 'function ') + body + ')');
+};
+const loadClaim = grab('_loadClaimScope');
+const claimKey = grab('_claimKey');
+const claimView = src.slice(src.indexOf('    _claimView(bf)'), src.indexOf('\n', src.indexOf('    _claimView(bf)')));
+const claimViewFn = eval('(function ' + claimView.trim().replace(/^_claimView/, '_claimView') + ')');
+const retry = eval('(function ' + src.slice(src.indexOf('    retryClaims()'), src.indexOf('\n', src.indexOf('    retryClaims()'))).trim() + ')');
+const mockData = { brands: [{ id: 'b1', name: '하이헤이호' }, { id: 'b2', name: '토비' }] };   // eval 된 함수가 찾는 이름
+const octClaims = [
+    ...Array.from({ length: 56 }, () => ({ op_status: 'cancel', fin_unpaid: true, refund_amount: 0, mall_key: 'hey' })),
+    ...Array.from({ length: 112 }, () => ({ op_status: 'cancel', fin_unpaid: false, refund_amount: 1000, mall_key: 'hey' })),
+    ...Array.from({ length: 20 }, () => ({ op_status: 'return', fin_unpaid: false, refund_amount: 500, mall_key: 'hey' })),
+    ...Array.from({ length: 27 }, () => ({ op_status: 'exchange', fin_unpaid: false, refund_amount: 0, mall_key: 'hey' })),
+    ...Array.from({ length: 4 }, () => ({ op_status: 'return', fin_unpaid: false, refund_amount: 700, mall_key: 'tobi' })),
+];
+//  가짜 supabase — 호출 기록, mall_key 필터 반영, 실패·지연 조절
+const mkSb = (opts = {}) => {
+    const calls = [];
+    return { calls, from: () => { const f = { malls: null }; const q = {
+        select: () => q, gte: () => q, lt: () => q, order: () => q, range: (a, b) => { f.a = a; f.b = b; return q; },
+        in: (col, v) => { if (col === 'mall_key') f.malls = v; return q; },
+        then: (res) => { calls.push(f.malls); const src = opts.rows || octClaims; const go = () => opts.fail?.() ? res({ data: null, error: new Error('timeout') })
+            : res({ data: src.filter(r => !f.malls || f.malls.includes(r.mall_key)).slice(f.a ?? 0, (f.b ?? 1e9) + 1), error: null });
+            opts.gate ? opts.gate.then(go) : go(); },
+    }; return q; } };
+};
+const mkApp = (sb) => {
+    const t = { supabase: sb, malls: [{ mall_key: 'hey', brand_id: 'b1' }, { mall_key: 'tobi', brand_id: 'b2' }],
+        range: { from: '2026-10-01T00:00:00+09:00', to: '2026-11-01T00:00:00+09:00' }, renders: 0, ensured: 0,
+        requestRender() { this.renders++; }, _salesAllowed: null };
+    t._salesScopeRange = function () { return this.range; };
+    t._claimKey = claimKey; t._claimView = claimViewFn; t._loadClaimScope = loadClaim; t.retryClaims = retry;
+    t.ensureViewData = function () { this.ensured++; return this._loadClaimScope(this._salesBf); };
+    return t;
+};
+
+test('반려2① 전체 보기 — 회사 전체 클레임(입금 전 취소 제외)을 센다', async () => {
+    const sb = mkSb(), t = mkApp(sb);
+    await t._loadClaimScope('ALL');
+    assert.deepEqual(sb.calls, [null]);                          // 몰 필터 없이 전체
+    assert.equal(t._claimView('ALL').cnt, 112 + 20 + 27 + 4);
+    assert.equal(t._claimView('ALL').refund, 112 * 1000 + 20 * 500 + 4 * 700);
+    //  볼 수 있는 브랜드가 제한된 계정은 그 몰만
+    const sb2 = mkSb(), t2 = mkApp(sb2); t2._salesAllowed = new Set(['토비']);
+    await t2._loadClaimScope('ALL');
+    assert.deepEqual(sb2.calls, [['tobi']]);
+    assert.equal(t2._claimView('ALL').cnt, 4);
+});
+
+test('반려2② 몰 없는 브랜드(브하스 컨설팅) — 0건, 회사 전체가 붙지 않는다', async () => {
+    const sb = mkSb(), t = mkApp(sb);
+    await t._loadClaimScope('브하스 (컨설팅)');
+    assert.deepEqual(sb.calls, []);                              // 조회 자체를 안 한다
+    assert.deepEqual({ cnt: t._claimView('브하스 (컨설팅)').cnt, refund: t._claimView('브하스 (컨설팅)').refund }, { cnt: 0, refund: 0 });
+    assert.deepEqual(claimMallKeys([{ mall_key: 'hey', brand_id: 'b1' }], mockData.brands, '브하스 (컨설팅)', null), []);
+    assert.deepEqual(await fetchClaims(null, { mallKeys: [], fromISO: 'a', toISO: 'b' }), { cnt: 0, refund: 0 });
+});
+
+test('반려2③ 월→연간 전환 — 새 값 받기 전엔 이전 범위 값을 안 보이고, 늦게 온 이전 응답도 버린다', async () => {
+    let open; const gate = new Promise(r => (open = r));
+    const sb = mkSb(), t = mkApp(sb);
+    await t._loadClaimScope('하이헤이호');
+    assert.equal(t._claimView('하이헤이호').cnt, 159);
+    t.range = { from: '2026-01-01T00:00:00+09:00', to: '2027-01-01T00:00:00+09:00' };   // 연간으로
+    assert.equal(t._claimView('하이헤이호'), null);              // 159 를 연간 카드에 재사용하지 않는다
+    const sbSlow = mkSb({ gate }); t.supabase = sbSlow;
+    const p = t._loadClaimScope('하이헤이호');
+    assert.equal(t._claimView('하이헤이호').status, 'loading');
+    t.range = { from: '2026-10-01T00:00:00+09:00', to: '2026-11-01T00:00:00+09:00' };   // 받는 중에 다시 월로
+    t.claimScope = { key: t._claimKey('하이헤이호'), status: 'ok', cnt: 1, refund: 1 };
+    open(); await p;
+    assert.equal(t._claimView('하이헤이호').cnt, 1);              // 늦게 온 연간 응답이 덮지 않는다
+});
+
+test('반려2④ 조회 실패 — 오류 상태로 남고 저절로 무한 재요청 안 함, 다시 시도하면 받아온다', async () => {
+    let failing = true;
+    const sb = mkSb({ fail: () => failing }), t = mkApp(sb); t._salesBf = '하이헤이호';
+    await t._loadClaimScope('하이헤이호');
+    assert.equal(t._claimView('하이헤이호').status, 'error');   // '불러오는 중' 아님
+    await t._loadClaimScope('하이헤이호');                       // 렌더마다 다시 부르지 않는다
+    assert.equal(sb.calls.length, 1);
+    failing = false;
+    t.retryClaims(); await new Promise(r => setTimeout(r, 0));
+    assert.equal(sb.calls.length, 2);
+    assert.equal(t._claimView('하이헤이호').status, 'ok');
+    assert.equal(t._claimView('하이헤이호').cnt, 159);
+});
+
+test('클레임 1000줄 넘는 범위(연간·전체)도 나눠 받아 다 센다', async () => {
+    const rows = Array.from({ length: 2345 }, (_, i) => ({ op_status: i % 2 ? 'cancel' : 'return', fin_unpaid: i < 300, refund_amount: 10, mall_key: 'hey' }));
+    const sb = mkSb({ rows });
+    const r = await fetchClaims(sb, { mallKeys: null, fromISO: 'a', toISO: 'b' });
+    assert.equal(sb.calls.length, 3);
+    assert.equal(r.cnt, 2345 - rows.filter((o, i) => i < 300 && o.op_status === 'cancel').length);
 });

@@ -28,7 +28,7 @@ import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } 
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
-import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimSummary } from './orderRefund.js';
+import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
 import { TP_BUCKET, TP_ACCEPT, validateTpFile, tpFilePath, tpDefaultName, isUploadPack, hasPackConfig, tpKind, tpKindLabel, tpSizeText } from './techPackFile.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
@@ -5238,19 +5238,16 @@ class BhasApp {
         let cancelThisCnt = cancelThis.length;
         //  '환불' 금액 = 결제 후 취소·반품의 실제 환불액(교환·입금 전 취소는 환불 아님 — 10-27)
         let cancelThisAmt = cancelThis.filter(o => this._isRefund(o)).reduce((s, o) => s + (Number(o.refund_amount) || 0), 0);
-        //  브랜드 상세: 그 브랜드+기간 클레임 주문 원본으로 센다(sales_monthly 는 결제금액 빈 취소가 빠져 틀린다 — 반려1)
-        const _cl = bf !== 'ALL' && this.salesScoped?.brand === bf ? this.salesScoped.claims : null;
+        //  전체·브랜드 모두 그 범위 클레임 주문 원본으로 센다(sales_monthly 는 결제금액 빈 취소가 빠져 틀린다 — 반려1·2)
+        //   지금 범위(브랜드+기간) 값만 쓴다 — 이전 범위 값을 잠깐이라도 보여주지 않는다
+        this._salesBf = bf; this._salesAllowed = _allowedNames;
+        const _cs = this._claimView(bf);
+        const _cl = _cs?.status === 'ok' ? _cs : null;
+        const _clNote = _cs?.status === 'error'
+            ? `불러오지 못함 · <button onclick="app.retryClaims()" style="font:inherit;color:var(--primary);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">다시 시도</button>`
+            : '불러오는 중…';
         if (_cl) ({ cnt: cancelThisCnt, refund: cancelThisAmt } = _cl);
-        else if (this.salesAggData?.monthly) {
-            //  전체 보기('취소 N건 제외' 한 줄)는 예전처럼 서버 집계 건수(입금 전 취소는 결제금액이 없어 원래 안 들어간다)
-            cancelThisCnt = 0;
-            this.salesAggData.monthly.forEach(r => {
-                if (!['cancel', 'return', 'exchange'].includes(r.state) || !scopeMonths.includes(r.ym)) return;
-                if (_allowedNames && !_allowedNames.has(r.brand_name)) return;
-                if (bf !== 'ALL' && r.brand_name !== bf) return;
-                cancelThisCnt += r.cnt || 0;
-            });
-        }
+        else cancelThisCnt = 0;
 
         // 브랜드 색상은 이름 기준으로 고정(차트·카드·매트릭스가 항상 같은 색을 쓰게)
         const colorOf = (name) => { const i = brands.findIndex(b => b.name === name); return palette[(i < 0 ? 0 : i) % palette.length]; };
@@ -5326,7 +5323,7 @@ class BhasApp {
         </div>`;
         const cards = `<div class="kpi-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:1.3rem">
             ${kpi(`${shortLabel} 매출`, `${won(thisM)}<span style="font-size:1rem;font-weight:600">원</span>`,
-                (momSane ? `전월 대비 ${delta >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta / prevM * 100))}%` : (prevM > 0 ? `지난달 ${wonMan(prevM)}원` : '집계 시작')) + (cancelThisCnt ? ` · 취소 ${cancelThisCnt}건 제외` : ''),
+                (momSane ? `전월 대비 ${delta >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta / prevM * 100))}%` : (prevM > 0 ? `지난달 ${wonMan(prevM)}원` : '집계 시작')) + (_cl ? (cancelThisCnt ? ` · 취소 ${cancelThisCnt}건 제외` : '') : _cs?.status === 'error' ? ` · 취소 건수 ${_clNote}` : ''),
                 momSane ? (delta >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)')}
             ${kpi(`${shortLabel} 주문`, `${ordersThisMonth.toLocaleString()}<span style="font-size:1rem;font-weight:600">건</span>`, (() => {
                 //  누적은 서버 집계본(sales_monthly)에서 센다.
@@ -5348,7 +5345,7 @@ class BhasApp {
                 // 브랜드 상세에선 '브랜드 개수'가 무의미 → 반품·교환률로 대체
                 //  클레임 원본(_cl)을 받기 전엔 틀린 숫자 대신 '불러오는 중'
                 : kpi('반품·교환률', `${!_cl ? '—' : (ordersThisMonth + cancelThisCnt) ? Math.round(cancelThisCnt / (ordersThisMonth + cancelThisCnt) * 100) : 0}<span style="font-size:1rem;font-weight:600">%</span>`,
-                    _cl ? `${cancelThisCnt}건 · 환불 ${wonMan(cancelThisAmt)}원` : '불러오는 중…',
+                    _cl ? `${cancelThisCnt}건 · 환불 ${wonMan(cancelThisAmt)}원` : _clNote,
                     _cl && (ordersThisMonth + cancelThisCnt) && cancelThisCnt / (ordersThisMonth + cancelThisCnt) >= 0.15 ? '#ef4444' : undefined)}
         </div>`;
 
@@ -6797,6 +6794,8 @@ class BhasApp {
         if (v === 'sales' && !this._ordersLoaded && !this._ordersLoading) this.loadOrders();
         if (v === 'sales' && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
         // 브랜드 상세는 상품·옵션·재구매·반품 카드용으로 그 브랜드+기간 주문만 따로 받아온다
+        //  반품·교환률 카드·'취소 N건 제외' — 지금 화면 범위(전체/브랜드 + 월/연간) 클레임
+        if (v === 'sales' && this._ordersLoaded && this._mallsLoaded && this._salesBf) this._loadClaimScope(this._salesBf);
         if (v === 'sales' && this._ordersLoaded && this._mallsLoaded && this.salesViewBrand && this.salesViewBrand !== 'ALL') {
             const r = this._salesScopeRange();
             if (r) this._loadSalesScope(this.salesViewBrand, r.from, r.to);
@@ -11692,6 +11691,31 @@ class BhasApp {
 
     // 브랜드 상세용 주문 슬라이스 — 인기상품·옵션·재구매·반품 카드는 원본 주문이 필요하다.
     // 전체가 아니라 '선택 브랜드 + 선택 기간'만 받으므로 수백 건이면 끝난다.
+    //  클레임 집계 범위 키 — 브랜드(또는 ALL)+기간+볼 수 있는 브랜드
+    _claimKey(bf) {
+        const r = this._salesScopeRange(); if (!r) return null;
+        const al = this._salesAllowed ? [...this._salesAllowed].sort().join(',') : '*';
+        return `${bf}|${r.from}|${r.to}|${al}`;
+    }
+    //  지금 범위의 클레임 상태 — 키가 다르면(범위가 바뀌었으면) 없는 것으로 본다
+    _claimView(bf) { const k = this._claimKey(bf); return k && this.claimScope?.key === k ? this.claimScope : null; }
+    async _loadClaimScope(bf) {
+        const key = this._claimKey(bf); if (!key) return;
+        if (this.claimScope?.key === key) return;            // 받는 중·받음·실패 — 실패는 '다시 시도'로만 다시 부른다
+        const r = this._salesScopeRange();
+        this.claimScope = { key, status: 'loading' };
+        try {
+            const mallKeys = claimMallKeys(this.malls, mockData.brands, bf, this._salesAllowed);
+            const res = await fetchClaims(this.supabase, { mallKeys, fromISO: r.from, toISO: r.to });
+            if (this.claimScope?.key !== key) return;          // 그사이 범위가 바뀌었다
+            this.claimScope = { key, status: 'ok', ...res };
+        } catch (e) {
+            if (this.claimScope?.key !== key) return;
+            this.claimScope = { key, status: 'error', error: String(e?.message || e) };
+        }
+        this.requestRender();
+    }
+    retryClaims() { this.claimScope = null; this.requestRender(); this.ensureViewData(); }
     async _loadSalesScope(brandName, fromISO, toISO) {
         const key = `${brandName}|${fromISO}|${toISO}`;
         if (this._salesScopeKey === key || this._salesScopeLoading) return;
@@ -11706,9 +11730,8 @@ class BhasApp {
             let q = this.supabase.from('channel_orders_slim').select('*')
                 .gte('order_date', fromISO).lt('order_date', toISO);
             if (mallKeys.length) q = q.in('mall_key', mallKeys);
-            //  slim 뷰엔 fin_unpaid·refund_amount 가 없어 클레임 주문만 따로 받는다
-            //   → 입금 전 취소 표시(반품·취소 목록에서 뺀다) + 반품·교환률 카드 건수·환불액
-            let uq = this.supabase.from('channel_orders').select('id, op_status, fin_unpaid, refund_amount')
+            //  slim 뷰엔 fin_unpaid 가 없어 클레임 주문만 따로 받는다 → 입금 전 취소 표시(반품·취소 목록에서 뺀다)
+            let uq = this.supabase.from('channel_orders').select('id, op_status, fin_unpaid')
                 .in('op_status', ['cancel', 'return', 'exchange'])
                 .gte('order_date', fromISO).lt('order_date', toISO);
             if (mallKeys.length) uq = uq.in('mall_key', mallKeys);
@@ -11723,7 +11746,6 @@ class BhasApp {
             this.salesScoped = {
                 orders: withItems.filter(o => o.pay_amount != null && !this._isCancelled(o)),
                 cancelled: withItems.filter(o => this._isCancelled(o) && !this._isUnpaidCancel(o)),
-                brand: brandName, claims: claimSummary(claimRows),
             };
             this._salesScopeKey = key;
         } catch (e) {
