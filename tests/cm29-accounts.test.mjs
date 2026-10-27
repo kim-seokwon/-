@@ -71,9 +71,9 @@ test('주문 매핑: 실제 API(상품 줄) → 주문번호로 묶기 · 금액
     assert.equal(g.length, 2);
     const r = mapOrder(g.find(x => x.orderSerial === 'A1'), '29cm-rohi');
     assert.equal(r.mall_key, '29cm-rohi'); assert.equal(r.channel, '29cm'); assert.equal(r.order_id, 'A1');
-    assert.equal(r.pay_amount, 20000); assert.equal(r.order_amount, 24000); assert.equal(r.raw.items.length, 2);
+    assert.equal(r.pay_amount, 20000); assert.equal(r.actual_paid_amount, 20000); assert.equal(r.order_amount, 24000); assert.equal(r.raw.items.length, 2);
     const b = mapOrder(g.find(x => x.orderSerial === 'B2'), '29cm');
-    assert.equal(b.channel_status, '2:취소'); assert.equal(b.pay_amount, 0);
+    assert.equal(b.channel_status, '2:취소'); assert.equal(b.pay_amount, 0); assert.equal(b.actual_paid_amount, 0);
     assert.equal(r.channel_status, '1:배송완료');
 });
 

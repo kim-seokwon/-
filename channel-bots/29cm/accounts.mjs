@@ -200,6 +200,8 @@ export function mapOrder(order, mallKey) {
     //  실결제 = saleAmount. 칸이 아예 없을 때만 sellAmount 로 대신한다(0원 결제를 정가로 바꾸지 않게)
     pay_amount: live.some(l => l.saleAmount != null) ? sum('saleAmount') : sum('sellAmount'),
     order_amount: sum('sellAmount'),
+    //  홈·재무·주간보고 매출은 actual_paid_amount 로 센다 — 안 넣으면 기본값 0 이라 29CM 매출이 0원이었다(10-27)
+    actual_paid_amount: live.some(l => l.saleAmount != null) ? sum('saleAmount') : sum('sellAmount'),
     channel_status: `${code}:` + [...new Set(items.map(l => l.orderStatusDescription).filter(Boolean))].join(','),
     invoice_no: f.invoiceNo ?? null, courier: f.deliveryCompanyName ?? null,
     raw: { orderSerial: orderKey(f), items },   // status 는 안 보낸다 — 재수집 때 직원 처리상태를 덮지 않게(신규는 DB 기본 new)
