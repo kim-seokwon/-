@@ -5250,7 +5250,7 @@ b.sp-nm.dup{color:#ff453a}
 .hk-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .hk-num { font-size: clamp(1.2rem, 1.7vw, 1.6rem); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-main); }
 .hk-num small { font-size: 0.8rem; font-weight: 700; margin-left: 2px; color: var(--text-muted); }
-.hk-sub { font-size: 0.76rem; line-height: 1.5; min-height: 1.5em; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hk-sub { font-size: 0.76rem; line-height: 1.5; min-height: 3em; color: var(--text-muted); word-break: keep-all; overflow-wrap: anywhere; }
 .hk-sub b { color: var(--text-main); font-variant-numeric: tabular-nums; }
 @media screen and (max-width: 1100px) { .hk-grid5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media screen and (max-width: 768px) { .hk-grid5, .hk-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; } .hk-num { font-size: 1.3rem; } }
