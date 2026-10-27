@@ -5254,3 +5254,18 @@ b.sp-nm.dup{color:#ff453a}
 .hk-sub b { color: var(--text-main); font-variant-numeric: tabular-nums; }
 @media screen and (max-width: 1100px) { .hk-grid5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media screen and (max-width: 768px) { .hk-grid5, .hk-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; } .hk-num { font-size: 1.3rem; } }
+
+/* 제품 목록 출고일자 칸(10-27) — 비면 다른 빈칸처럼 '—', 눌러서 날짜 고르기 */
+.it-tbl td.it-dt{white-space:nowrap;width:1%}
+.it-dtw{position:relative;display:inline-flex;align-items:center;gap:2px}
+.it-dtw input[type=date]{font:inherit;font-size:12px;color:var(--text-main);background:transparent;border:1px solid transparent;
+  border-radius:6px;padding:2px 4px;min-width:0;width:118px;cursor:pointer}
+.it-dtw input[type=date]:hover,.it-dtw input[type=date]:focus{border-color:var(--card-border);outline:none}
+.it-dtw.empty input[type=date]{color:transparent;width:34px}
+.it-dtw.empty input[type=date]::-webkit-calendar-picker-indicator{opacity:0}
+.it-dtw.empty::before{content:'—';position:absolute;left:8px;color:var(--text-muted);opacity:.5;pointer-events:none}
+.it-dtw.empty:focus-within::before{display:none}
+.it-dtw.empty:focus-within input[type=date]{color:var(--text-main);width:118px}
+.it-dtx{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:13px;line-height:1;padding:0 2px;opacity:0}
+.it-row:hover .it-dtx,.it-dtw:focus-within .it-dtx{opacity:1}
+@media (hover:none){.it-dtx{opacity:.6}}

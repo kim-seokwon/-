@@ -10243,7 +10243,7 @@ class BhasApp {
         rows = this._sortItemRows(rows);
         const srt = this.itemSort || { k: '', dir: 1 };
         const cols = [['brand_id', '브랜드'], ['name', '판매명'], ['pattern_no', '패턴명'],
-            ['status', '제작현황'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
+            ['status', '제작현황'], ['ship_date', '출고일자', 'it-dt'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
             ['checked', '확인', 'it-c'], ['vendor_id', '공장'], ['product_id', '시즌']];
         const mu = v => v ? esc(v) : '<span class="it-mu">—</span>';
         const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''}
@@ -10276,6 +10276,7 @@ class BhasApp {
                 <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}55;background:${sc}12"
                     onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','status',this.value,1)">
                     ${this.ITEM_STATUSES.map(s => `<option value="${esc(s)}"${s === it.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
+                <td class="it-dt">${this._itemDateCell(it, 'ship_date', '출고일자')}</td>
                 <td class="it-memo" title="${esc(it.memo || '')}">${mu(it.memo)}</td>
                 <td class="it-c">${chk(it, 'trims')}</td><td class="it-c">${chk(it, 'checked')}</td>
                 <td class="it-mu">${mu(vn)}</td><td class="it-mu">${mu(se)}</td>
@@ -10298,8 +10299,8 @@ class BhasApp {
                     onclick="app.sortItems('${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
                     onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${(this.itemColF || {})[k] ? '-fill' : ''}"></i></button></th>`).join('')}<th>연동</th>
             </tr></thead><tbody>${rows.length ? rows.map(row).join('')
-                : `<tr><td colspan="11" class="it-none">${filter.empty || '제품이 없습니다'}</td></tr>`}
-                ${more > 0 ? `<tr><td colspan="11" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}
+                : `<tr><td colspan="12" class="it-none">${filter.empty || '제품이 없습니다'}</td></tr>`}
+                ${more > 0 ? `<tr><td colspan="12" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}
             </tbody></table></div>`;
         if (el) {
             const node = typeof el === 'string' ? document.querySelector(el) : el;
@@ -15648,6 +15649,14 @@ class BhasApp {
     _isTestSeason(p) { return String(p?.name || '').includes('[테스트]'); }
 
     // 표의 칸을 고치면 바로 저장한다. redraw=1 은 색·집계가 바뀌는 칸(상태·체크·날짜·고르기)만.
+    //  표 안에서 바로 고치는 날짜 칸 — 비면 '—', 눌러서 고르고 ×로 지운다
+    _itemDateCell(it, f, label) {
+        const v = it[f] ? String(it[f]).slice(0, 10) : '';
+        return `<span class="it-dtw${v ? '' : ' empty'}" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()">
+            <input type="date" value="${v}" title="${label}${v ? '' : ' 넣기'}" aria-label="${label}"
+                onclick="try{this.showPicker()}catch(_){}" onchange="app.setItem('${it.id}','${f}',this.value,1)">${v ? `<button class="it-dtx" title="${label} 지우기" aria-label="${label} 지우기"
+                onclick="app.setItem('${it.id}','${f}','',1)">×</button>` : ''}</span>`;
+    }
     async setItem(id, field, value, redraw) {
         const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return false;
         const v = (value === '' ? null : value);
@@ -15948,6 +15957,8 @@ class BhasApp {
         if (!srt.k) return [...rows];
         return [...rows].sort((a, b) => {
             let A = this._itemColVal(a, srt.k), B = this._itemColVal(b, srt.k);
+            //  날짜 칸은 빈칸을 오름·내림 어느 쪽이든 맨 아래로(122개 중 9개만 값이 있다)
+            if (srt.k === 'ship_date' && (!A || !B)) return !A && !B ? 0 : !A ? 1 : -1;
             if (srt.k === 'status') {
                 A = this.ITEM_STATUSES.indexOf(a.status);
                 B = this.ITEM_STATUSES.indexOf(b.status);
