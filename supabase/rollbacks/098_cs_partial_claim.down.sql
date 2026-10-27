@@ -11,6 +11,8 @@ begin
   insert into public.cs_tickets select (jsonb_populate_record(null::public.cs_tickets, r.row_data)).*
     from public.cs_tickets_trash r where not exists (select 1 from public.cs_tickets c where c.id = r.id);
 end $$;
+drop trigger if exists trg_cs_tickets_owner on public.cs_tickets;
+drop function if exists public.cs_tickets_owner();
 drop function if exists public.cs_trash(uuid);
 drop function if exists public.cs_restore(uuid);
 drop table if exists public.cs_tickets_trash;

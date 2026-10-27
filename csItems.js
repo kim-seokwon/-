@@ -45,9 +45,10 @@ export function itemsPatch(items, total, auto) {
 export const lineKey = (l, i) => l?.code ? `c:${l.code}` : `i:${i}`;
 
 //  지울 수 있나(화면 판정 — 서버 cs_trash 가 다시 확인): 완료 아님 · 작성자 본인 또는 관리자
+//   작성자 = created_by_uid(서버가 로그인 id 로 찍은 값). 표시 이름(created_by)은 고칠 수 있고 동명이인도 있어 쓰지 않는다.
 export function canTrash(t, user) {
     if (!t || !user || t.status === '완료') return false;
-    return user.role === 'MASTER' || (!!user.name && t.created_by === user.name);
+    return user.role === 'MASTER' || (!!user.id && !!t.created_by_uid && t.created_by_uid === user.id);
 }
 
 export const CLAIM_LABEL = s => /^R/.test(s || '') ? '반품 신청' : /^E/.test(s || '') ? '교환 신청' : /^C/.test(s || '') ? '취소 신청' : '';

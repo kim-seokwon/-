@@ -177,9 +177,11 @@ create trigger trg_channel_orders_cs_claim after update of raw on public.channel
 create table if not exists public.cs_tickets_trash (
   id uuid primary key,                -- 원래 cs_tickets.id(되돌리면 같은 id)
   row_data jsonb not null,
-  deleted_by text,
+  deleted_by text,                    -- 표시용 이름
+  deleted_by_uid uuid,                -- 되돌리기 판정용(로그인 id)
   deleted_at timestamptz not null default now()
 );
+alter table public.cs_tickets_trash add column if not exists deleted_by_uid uuid;
 alter table public.cs_tickets_trash enable row level security;   -- 정책 없음 = 화면에서 직접 못 읽고 못 씀(RPC 만)
 
 --  날짜 가드(운영 본문 그대로) + 되돌리기 중엔 INSERT 를 막지 않는다(원래 있던 행을 돌려놓는 것뿐)
@@ -209,7 +211,26 @@ begin
   return new;
 end $function$;
 
---  지울 수 있나: 완료 아님 · 작성자 본인 또는 관리자
+--  작성자 판정은 표시 이름(created_by)이 아니라 로그인 id 로 — 이름은 누구나 고칠 수 있고(cs_update 정책 true) 동명이인도 있다.
+--  넣을 때 서버가 auth.uid() 로 찍고, 고칠 때는 원래 값 그대로(화면이 무엇을 보내도). 되돌리기 때만 지운 행의 값을 그대로 돌려놓는다.
+--  098 이전 행은 비어 있다 → 관리자만 지울 수 있다.
+alter table public.cs_tickets add column if not exists created_by_uid uuid;
+create or replace function public.cs_tickets_owner()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' then
+    new.created_by_uid := old.created_by_uid;
+  elsif coalesce(current_setting('cs.restoring', true), '') <> '1' then
+    new.created_by_uid := auth.uid();
+  end if;
+  return new;
+end $$;
+revoke all on function public.cs_tickets_owner() from public, anon, authenticated;
+drop trigger if exists trg_cs_tickets_owner on public.cs_tickets;
+create trigger trg_cs_tickets_owner before insert or update on public.cs_tickets
+  for each row execute function public.cs_tickets_owner();
+
+--  지울 수 있나: 완료 아님 · 작성자 본인(로그인 id) 또는 관리자
 create or replace function public.cs_trash(p_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare t cs_tickets; me text;
@@ -217,24 +238,25 @@ begin
   select * into t from cs_tickets where id = p_id for update;
   if not found then raise exception '없는 CS 입니다'; end if;
   if t.status = '완료' then raise exception '완료된 CS 는 지울 수 없습니다'; end if;
-  select name into me from companies where username = current_username();
-  if not (is_master() or (me is not null and t.created_by is not distinct from me)) then
+  if not coalesce(is_master() or t.created_by_uid = auth.uid(), false) then   -- NULL(098 전 행·비로그인)은 거절
     raise exception '직접 쓴 CS 만 지울 수 있습니다(관리자는 모두)';
   end if;
-  insert into cs_tickets_trash (id, row_data, deleted_by) values (t.id, to_jsonb(t), coalesce(me, current_username()))
-    on conflict (id) do update set row_data = excluded.row_data, deleted_by = excluded.deleted_by, deleted_at = now();
+  select name into me from companies where username = current_username() limit 1;
+  insert into cs_tickets_trash (id, row_data, deleted_by, deleted_by_uid)
+    values (t.id, to_jsonb(t), coalesce(me, current_username()), auth.uid())
+    on conflict (id) do update set row_data = excluded.row_data, deleted_by = excluded.deleted_by,
+      deleted_by_uid = excluded.deleted_by_uid, deleted_at = now();
   delete from cs_tickets where id = p_id;
 end $$;
 
 --  되돌리기: 지운 사람 본인 또는 관리자 — 같은 id·같은 값으로
 create or replace function public.cs_restore(p_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
-declare r cs_tickets_trash; me text;
+declare r cs_tickets_trash;
 begin
   select * into r from cs_tickets_trash where id = p_id for update;
   if not found then raise exception '되돌릴 CS 가 없습니다'; end if;
-  select name into me from companies where username = current_username();
-  if not (is_master() or (me is not null and r.deleted_by is not distinct from me)) then
+  if not coalesce(is_master() or r.deleted_by_uid = auth.uid(), false) then
     raise exception '지운 사람만 되돌릴 수 있습니다(관리자는 모두)';
   end if;
   perform set_config('cs.restoring', '1', true);

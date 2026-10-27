@@ -36,12 +36,14 @@ test('csItems: 클레임 줄 있으면 그 줄만 · 1줄 자동 · 여러 줄�
 });
 
 test('csItems: 지우기 — 완료건 안 됨 · 작성자 본인 또는 관리자', () => {
-    const t = { status: '접수', created_by: '조영신' };
-    assert.ok(canTrash(t, { role: 'STAFF', name: '조영신' }));
-    assert.ok(!canTrash(t, { role: 'STAFF', name: '안소영' }));
-    assert.ok(canTrash(t, { role: 'MASTER', name: '방보경' }));
-    assert.ok(!canTrash({ ...t, status: '완료' }, { role: 'MASTER', name: '방보경' }));
-    assert.ok(!canTrash({ status: '접수', created_by: null }, { role: 'STAFF', name: '' }));
+    const t = { status: '접수', created_by: '조영신', created_by_uid: 'u-sin' };
+    assert.ok(canTrash(t, { id: 'u-sin', role: 'STAFF', name: '조영신' }));
+    assert.ok(!canTrash(t, { id: 'u-young', role: 'STAFF', name: '안소영' }));
+    assert.ok(!canTrash(t, { id: 'u-sin2', role: 'STAFF', name: '조영신' }), '동명이인 안 됨 — 이름이 아니라 로그인 id');
+    assert.ok(!canTrash({ ...t, created_by: '안소영' }, { id: 'u-young', role: 'STAFF', name: '안소영' }), '이름 바꿔치기 안 됨');
+    assert.ok(canTrash(t, { id: 'u-bk', role: 'MASTER', name: '방보경' }));
+    assert.ok(!canTrash({ ...t, status: '완료' }, { id: 'u-bk', role: 'MASTER', name: '방보경' }));
+    assert.ok(!canTrash({ status: '접수', created_by: '조영신', created_by_uid: null }, { id: 'u-sin', role: 'STAFF', name: '조영신' }), '098 이전 행은 관리자만');
 });
 
 test('main.js 연결: 끌어올 때 cs_order_pick · 상세 신청 상품/고르기/삭제(위임 클릭) · 목록 부분 표시 · 앱 안 확인창', () => {
@@ -81,9 +83,10 @@ test('098 부분 클레임 · 나중 도착 · 직원 값 보존 · 지우기/�
 create role anon nologin; create role authenticated nologin; create role service_role nologin;
 create schema auth;
 create function auth.jwt() returns jsonb language sql stable as $$ select nullif(current_setting('request.jwt.claims', true), '')::jsonb $$;
+create function auth.uid() returns uuid language sql stable as $$ select nullif(auth.jwt()->>'sub', '')::uuid $$;
 create function current_username() returns text language sql stable as $$ select split_part(auth.jwt()->>'email','@',1) $$;
 create table companies (username text primary key, name text, role text);
-insert into companies values ('sin','조영신','STAFF'), ('young','안소영','STAFF'), ('bokyung','방보경','MASTER');
+insert into companies values ('sin','조영신','STAFF'), ('young','안소영','STAFF'), ('bokyung','방보경','MASTER'), ('sin2','조영신','STAFF');
 create table malls (mall_key text primary key, brand_id uuid);
 insert into malls values ('hiheiho', '11111111-1111-4111-8111-111111111111'), ('kidikidi', null);
 create table channel_orders (id uuid primary key default gen_random_uuid(), channel text default 'cafe24', order_id text,
@@ -197,23 +200,46 @@ create trigger trg_cs_tickets_guard_date before insert or update on cs_tickets f
     r = await get(tF); assert.equal(r.items.length, 4, '자동값은 최신 클레임 줄로');
 
     // 5) 지우기 — 작성자 본인 · 관리자 / 남의 것·완료건 거절 / 되돌리면 같은 id · 집계에서 빠짐
-    const as = (u) => db.exec(`select set_config('request.jwt.claims', '${JSON.stringify({ email: u + '@x' })}', false)`);
+    //  작성자 = 로그인 id(auth.uid) — 표시 이름은 누구나 고칠 수 있고(cs_update 정책 true) 동명이인(sin2 = 조영신)도 있다
+    const UID = { sin: '00000000-0000-4000-8000-00000000000a', young: '00000000-0000-4000-8000-00000000000b',
+                  bokyung: '00000000-0000-4000-8000-00000000000c', sin2: '00000000-0000-4000-8000-00000000000d' };
+    const as = (u) => db.exec(`select set_config('request.jwt.claims', '${JSON.stringify({ email: u + '@x', sub: UID[u] })}', false)`);
+    const tLegacy = await cs('20261014-0009355', { order: o1, by: '조영신' });             // 098 전 행 흉내(로그인 id 없음)
+    await as('sin');
     const tG = await cs('20261014-0009355', { order: o1, by: '조영신' });
     const tH = await cs('20261014-0009355', { order: o1, by: '조영신', status: '완료' });
+    assert.equal((await get(tG)).created_by_uid, UID.sin, '서버가 로그인 id 를 찍음');
+    await db.query(`insert into cs_tickets (order_no, customer_name, created_by, created_by_uid) values ('fake','x','안소영',$1)`, [UID.young]);
+    assert.equal((await db.query(`select created_by_uid from cs_tickets where order_no='fake'`)).rows[0].created_by_uid, UID.sin, '넣을 때 남의 id 못 박음');
     await as('young');
     await assert.rejects(db.query(`select cs_trash($1)`, [tG]), /직접 쓴 CS 만/);
+    //  우회 ①: 작성자 이름·id 를 자기로 바꿔치기 → id 는 그대로 → 여전히 거절
+    await db.query(`update cs_tickets set created_by = '안소영', created_by_uid = $2 where id = $1`, [tG, UID.young]);
+    r = await get(tG); assert.equal(r.created_by, '안소영'); assert.equal(r.created_by_uid, UID.sin, '작성자 id 는 못 고침');
+    await assert.rejects(db.query(`select cs_trash($1)`, [tG]), /직접 쓴 CS 만/, '이름 바꿔치기로 못 지움');
+    await db.query(`update cs_tickets set created_by = '조영신' where id = $1`, [tG]);
+    //  우회 ②: 동명이인
+    await as('sin2');
+    await assert.rejects(db.query(`select cs_trash($1)`, [tG]), /직접 쓴 CS 만/, '동명이인은 못 지움');
+    //  098 전 행: 이름이 같아도 직원은 못 지움(관리자만)
+    await assert.rejects(db.query(`select cs_trash($1)`, [tLegacy]), /직접 쓴 CS 만/);
     await as('sin');
+    await assert.rejects(db.query(`select cs_trash($1)`, [tLegacy]), /직접 쓴 CS 만/);
     await assert.rejects(db.query(`select cs_trash($1)`, [tH]), /완료된 CS 는 지울 수 없습니다/);
     const before = (await db.query(`select count(*)::int n from cs_tickets`)).rows[0].n;
     await db.query(`select cs_trash($1)`, [tG]);
     assert.equal((await db.query(`select count(*)::int n from cs_tickets`)).rows[0].n, before - 1, '목록·집계에서 빠짐');
     await as('young');
     await assert.rejects(db.query(`select cs_restore($1)`, [tG]), /지운 사람만/);
+    await as('sin2');
+    await assert.rejects(db.query(`select cs_restore($1)`, [tG]), /지운 사람만/, '동명이인은 못 되돌림');
     await as('sin');
     await db.query(`select cs_restore($1)`, [tG]);
-    r = await get(tG); assert.equal(r.created_by, '조영신'); assert.equal(r.status, '접수');
-    await as('bokyung');                                                          // 관리자는 남의 것도
+    r = await get(tG); assert.equal(r.created_by, '조영신'); assert.equal(r.status, '접수'); assert.equal(r.created_by_uid, UID.sin);
+    await as('bokyung');                                                          // 관리자는 남의 것도 · 098 전 행도
     await db.query(`select cs_trash($1)`, [tG]); await db.query(`select cs_restore($1)`, [tG]);
+    assert.equal((await get(tG)).created_by_uid, UID.sin, '관리자가 되돌려도 작성자는 원래 사람');
+    await db.query(`select cs_trash($1)`, [tLegacy]); await db.query(`select cs_restore($1)`, [tLegacy]);
     //  옛 날짜 의심건(접수일<주문일)도 되돌릴 수 있다 — 가드는 새로 넣을 때만 막는다
     const tI = await cs('20261014-0009355', { on: '2026-10-20' });
     await db.exec(`alter table cs_tickets disable trigger trg_cs_tickets_guard_date`);   // 운영 124건 같은 옛 행 흉내
