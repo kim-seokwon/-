@@ -28,6 +28,7 @@ import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } 
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
+import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimSummary } from './orderRefund.js';
 import { TP_BUCKET, TP_ACCEPT, validateTpFile, tpFilePath, tpDefaultName, isUploadPack, hasPackConfig, tpKind, tpKindLabel, tpSizeText } from './techPackFile.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
@@ -2248,8 +2249,11 @@ class BhasApp {
 
     // 취소/반품만 매출에서 제외. 교환은 결제금액이 유지되므로 매출을 제거하면 안 된다.
     _isCancelled(o) { const s = this._orderState(o); return s === 'cancel' || s === 'return'; }
-    // 환불(취소+반품 = 금액 환급)
-    _isRefund(o) { const s = this._orderState(o); return s === 'cancel' || s === 'return'; }
+    // 환불(결제 후 취소+반품 = 금액 환급). 입금 전 취소는 돈이 안 들어와 환불이 아니다(10-27).
+    _isRefund(o) { return isRefund(o, this._orderState(o)); }
+    _isUnpaidCancel(o) { return isUnpaidCancel(o, this._orderState(o)); }
+    //  주문 한 건의 상태 이름 — 입금 전 취소는 '취소'와 따로 보인다
+    _orderLabel(o, base) { const s = this._orderState(o); return unpaidStateLabel(o, s, base ?? this._opLabel(s)); }
     // 교환(금액 환급 없음)
     _isExchange(o) { return this._orderState(o) === 'exchange'; }
 
@@ -2323,7 +2327,7 @@ class BhasApp {
         const allOrders = srcOrders.filter(o => o.order_date && o.pay_amount != null);
         // 교환은 결제금액이 유지되는 정상 매출이다.
         const orders = allOrders.filter(o => !this._isCancelled(o));
-        const cancelledOrders = allOrders.filter(o => this._isCancelled(o));
+        const cancelledOrders = allOrders.filter(o => this._isCancelled(o) && !this._isUnpaidCancel(o));
         const events = [];
         orders.forEach(o => events.push({ m: ym(o.order_date), brand: mallBrand(o), amt: Number(o.pay_amount) || 0, kind: 'order' }));
         // 브하스 컨설팅 = 실현 매출(세금계산서 발행분). 발행 데이터 없으면 견적 총액으로 폴백.
@@ -2600,7 +2604,7 @@ class BhasApp {
             stShip = allO.filter(o => st(o) === 'shipping').length;
             const monthO = allO.filter(inThisMonth);
             stExchange = monthO.filter(o => st(o) === 'exchange').length;
-            const refundO = monthO.filter(o => st(o) === 'cancel' || st(o) === 'return');
+            const refundO = monthO.filter(o => this._isRefund(o));   // 입금 전 취소 제외
             stRefund = refundO.length;
             refundTotal = refundO.reduce((s, o) => s + (Number(o.refund_amount) || 0), 0);
         }
@@ -2617,7 +2621,7 @@ class BhasApp {
                 `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">주문일</span><b>${o.order_date ? localYMD(o.order_date) : '-'}</b></div>` +
                 `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">고객</span><b>${this._vesc(o.receiver_name || o.buyer_name || '-')}</b></div>` +
                 `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">결제</span><b>${won(o.pay_amount || 0)}원</b></div>` +
-                `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">상태</span><b>${stateLabel[stt] || stt || '-'}</b></div>` +
+                `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">상태</span><b>${this._orderLabel(o, stateLabel[stt] || stt || '-')}</b></div>` +
                 `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--card-border);color:var(--text-muted)">${this._vesc(this._orderItemsSummary(o))}</div>`,
                 link: { label: '주문 전체', action: "app.switchView('orders')" } };
             return `<div onclick="app._pop(event,'ord_${_oi}')" style="padding:7px 0 7px 10px;border-top:1px solid var(--card-border);border-left:3px solid ${bcol};margin-left:1px;cursor:pointer">
@@ -2792,7 +2796,7 @@ class BhasApp {
         this._homePops.st_pre = listPop('배송전 (미출고)', stOrder, o => this._orderState(o) === 'pre', '아직 출고 전 · 송장 발번 대상');
         this._homePops.st_ship = listPop('배송중', stShip, o => this._orderState(o) === 'shipping', '송장 등록 후 배송 진행 중');
         this._homePops.st_exchange = listPop(`교환 · ${mm}월`, stExchange, o => this._orderState(o) === 'exchange' && localYMD(o.order_date).startsWith(monthKey), '');
-        this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => Number(o.refund_amount) > 0 && o.raw?.paid !== 'F' && localYMD(o.refunded_at || o.order_date).startsWith(monthKey), `입금 전 취소 제외 · 환불총액 ${won(refundTotal)}원`);
+        this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => Number(o.refund_amount) > 0 && o.raw?.paid !== 'F' && o.fin_unpaid !== true && localYMD(o.refunded_at || o.order_date).startsWith(monthKey), `입금 전 취소 제외 · 환불총액 ${won(refundTotal)}원`);
 
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
@@ -3207,7 +3211,7 @@ class BhasApp {
                 ${R(m === 'ALL' && f === 'target', '배송대상', sc ? sc.target : n(o => this._orderState(o) === 'pre'), `app.navPick('orders','st','target')`, 0, 'ph-package')}
                 ${R(m === 'ALL' && f === 'shipping', '배송중', sc ? sc.shipping : n(o => this._orderState(o) === 'shipping'), `app.navPick('orders','st','shipping')`, 0, 'ph-truck')}
                 ${R(m === 'ALL' && f === 'done', '완료', sc ? sc.done : n(o => this._orderState(o) === 'done'), `app.navPick('orders','st','done')`, 0, 'ph-check-circle')}
-                ${R(m === 'ALL' && f === 'claim', '취소·반품·교환', sc ? sc.claim : n(o => ['cancel', 'return', 'exchange'].includes(this._orderState(o))), `app.navPick('orders','st','claim')`, 0, 'ph-arrow-u-up-left')}
+                ${R(m === 'ALL' && f === 'claim', '취소·반품·교환', sc ? sc.claim : n(o => ['cancel', 'return', 'exchange'].includes(this._orderState(o)) && !this._isUnpaidCancel(o)), `app.navPick('orders','st','claim')`, 0, 'ph-arrow-u-up-left')}
                 ${R(m === 'ALL' && f === 'all', '전체', sc ? sc.all : all.length, `app.navPick('orders','st','all')`, 0, 'ph-tray')}
                 ${S('몰별', 'omall', malls.map(k => R(String(m) === String(k), mallName(k),
                     mallCnt(k), `app.navPick('orders','mall','${esc(k)}')`, 1)).join(''))}`;
@@ -4231,7 +4235,7 @@ class BhasApp {
             return wrap(o.receiver_name || o.buyer_name || '주문', o.order_id, `
                 ${f('주문일', o.order_date)}
                 ${f('채널', o.mall_key || o.channel)}
-                ${f('상태', this._opLabel(this._orderState(o)) + (this._orderState(o) === 'pre' && o.status === 'ready' ? (this._isCafe24Order(o) ? ' (카페24 배송대기)' : ' (송장 등록대기)') : ''))}
+                ${f('상태', this._orderLabel(o) + (this._orderState(o) === 'pre' && o.status === 'ready' ? (this._isCafe24Order(o) ? ' (카페24 배송대기)' : ' (송장 등록대기)') : ''))}
                 ${f('받는분', o.receiver_name)}
                 ${f('연락처', o.receiver_phone)}
                 ${f('주소', [o.receiver_zipcode && `(${o.receiver_zipcode})`, o.receiver_address].filter(Boolean).join(' '))}
@@ -5232,18 +5236,12 @@ class BhasApp {
         const cancelThis = (cancelledOrders || []).filter(o => inScope(o.order_date));
         // 취소·반품·교환 건수/금액도 서버 집계본에서(슬라이스가 없어도 정확)
         let cancelThisCnt = cancelThis.length;
-        let cancelThisAmt = cancelThis.reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
+        //  '환불' 금액 = 결제 후 취소·반품만(교환·입금 전 취소는 환불 아님 — 10-27)
+        let cancelThisAmt = cancelThis.filter(o => this._isRefund(o)).reduce((s, o) => s + (Number(o.pay_amount) || 0), 0);
         if (this.salesAggData?.monthly) {
-            const CANCELLED = new Set(['cancel', 'return', 'exchange']);
-            cancelThisCnt = 0; cancelThisAmt = 0;
-            this.salesAggData.monthly.forEach(r => {
-                if (!CANCELLED.has(r.state)) return;
-                if (!scopeMonths.includes(r.ym)) return;
-                if (_allowedNames && !_allowedNames.has(r.brand_name)) return;
-                if (bf !== 'ALL' && r.brand_name !== bf) return;
-                cancelThisCnt += r.cnt || 0;
-                cancelThisAmt += Number(r.amt) || 0;
-            });
+            //  sales_monthly 는 결제금액 있는 주문만 센다 → 입금 전 취소는 처음부터 없다
+            ({ cnt: cancelThisCnt, refund: cancelThisAmt } = claimSummary(this.salesAggData.monthly.filter(r =>
+                scopeMonths.includes(r.ym) && (!_allowedNames || _allowedNames.has(r.brand_name)) && (bf === 'ALL' || r.brand_name === bf))));
         }
 
         // 브랜드 색상은 이름 기준으로 고정(차트·카드·매트릭스가 항상 같은 색을 쓰게)
@@ -11464,7 +11462,8 @@ class BhasApp {
             if (filter === 'target') sel = sel.eq('op_status', 'pre');
             else if (filter === 'shipping') sel = sel.eq('op_status', 'shipping');
             else if (filter === 'done') sel = sel.eq('op_status', 'done');
-            else if (filter === 'claim') sel = sel.in('op_status', ['cancel', 'return', 'exchange']);
+            //  입금 전 취소는 클레임이 아니다(돈이 안 오갔다) — '전체'에서만 '입금 전 취소'로 보인다
+            else if (filter === 'claim') sel = sel.in('op_status', ['cancel', 'return', 'exchange']).not('fin_unpaid', 'is', true);
             if (q) sel = sel.or(`order_id.ilike.%${q}%,buyer_name.ilike.%${q}%,receiver_name.ilike.%${q}%,invoice_no.ilike.%${q}%`);
             const from = pg.page * SIZE;
             const { data, error, count } = await sel.order('order_date', { ascending: false }).range(from, from + SIZE - 1);
@@ -11477,10 +11476,15 @@ class BhasApp {
             pg.total = count ?? pg.rows.length;
             pg.unknown = await this._loadShipUnknown(pg.rows);
             //  탭 숫자는 따로 센다 — 지금 쪽에 없는 건까지 포함한 진짜 숫자여야 한다
-            const [{ data: cts }, { data: mcs }] = await Promise.all([
+            //  입금 전 취소 수 — order_tab_counts 는 상태별로만 세서 따로 센다(탭 숫자에서 뺀다)
+            let uq = this.supabase.from('channel_orders').select('id', { count: 'exact', head: true }).eq('op_status', 'cancel').eq('fin_unpaid', true);
+            if (mall !== 'ALL') uq = uq.eq('mall_key', mall);
+            if (q) uq = uq.or(`order_id.ilike.%${q}%,buyer_name.ilike.%${q}%,receiver_name.ilike.%${q}%,invoice_no.ilike.%${q}%`);
+            const [{ data: cts }, { data: mcs }, { count: unpaidCancel }] = await Promise.all([
                 this.supabase.rpc('order_tab_counts', { p_mall: mall === 'ALL' ? null : mall, p_q: q || null }),
                 //  왼쪽 '몰별' 메뉴도 서버에서 센다. 최근 500건으로 만들면 키디키디가 통째로 사라진다.
                 this.supabase.rpc('order_mall_counts', { p_q: q || null }),
+                uq,
             ]);
             if (mcs) pg.malls = mcs.map(r => ({ mall_key: r.mall_key, cnt: Number(r.cnt) || 0 }))
                                   .sort((a, b) => b.cnt - a.cnt);
@@ -11488,7 +11492,7 @@ class BhasApp {
                 const m = {}; cts.forEach(r => { m[r.op_status] = Number(r.cnt) || 0; });
                 pg.counts = {
                     target: m.pre || 0, shipping: m.shipping || 0, done: m.done || 0,
-                    claim: (m.cancel || 0) + (m.return || 0) + (m.exchange || 0),
+                    claim: claimCount(m, unpaidCancel),
                     all: Object.values(m).reduce((a, b) => a + b, 0),
                 };
             }
@@ -11693,16 +11697,20 @@ class BhasApp {
             let q = this.supabase.from('channel_orders_slim').select('*')
                 .gte('order_date', fromISO).lt('order_date', toISO);
             if (mallKeys.length) q = q.in('mall_key', mallKeys);
-            const { data, error } = await q.order('order_date', { ascending: false });
+            //  slim 뷰엔 fin_unpaid 가 없어 입금 전 취소 id 만 따로 받는다(반품·취소 목록에서 뺀다)
+            let uq = this.supabase.from('channel_orders').select('id').eq('op_status', 'cancel').eq('fin_unpaid', true)
+                .gte('order_date', fromISO).lt('order_date', toISO);
+            if (mallKeys.length) uq = uq.in('mall_key', mallKeys);
+            const [{ data, error }, { data: unpaid }] = await Promise.all([q.order('order_date', { ascending: false }), uq]);
             if (error) throw error;
-            const rows = data || [];
+            const rows = markUnpaid(data || [], (unpaid || []).map(r => r.id));
             const items = await this._itemsFor(rows.map(o => o.id));
             const byOrder = {};
             items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
             const withItems = rows.map(o => ({ ...o, items: byOrder[o.id] || [] }));
             this.salesScoped = {
                 orders: withItems.filter(o => o.pay_amount != null && !this._isCancelled(o)),
-                cancelled: withItems.filter(o => this._isCancelled(o)),
+                cancelled: withItems.filter(o => this._isCancelled(o) && !this._isUnpaidCancel(o)),
             };
             this._salesScopeKey = key;
         } catch (e) {
@@ -11757,7 +11765,8 @@ class BhasApp {
                                 return: ['rgba(239,68,68,0.18)', '#ef4444'], exchange: ['rgba(99,102,241,0.18)', '#6366f1'] }[s] || ['rgba(148,163,184,0.18)', '#94a3b8'];
                     //  송장까지 찍어 둔 건은 따로 표시한다 — 채널엔 아직 반영 전이다.
                     const wait = s === 'pre' && o.status === 'ready' ? `<span style="font-size:0.66rem;color:var(--text-muted);margin-left:4px">${this._isCafe24Order(o) ? '배송대기' : '등록대기'}</span>` : '';
-                    return `<span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${C[0]};color:${C[1]}">${this._opLabel(s)}</span>${wait}${this._shipUnknownCell(o)}`;
+                    const U = this._isUnpaidCancel(o) ? ['rgba(148,163,184,0.18)', '#94a3b8'] : C;
+                    return `<span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${U[0]};color:${U[1]}">${this._orderLabel(o)}</span>${wait}${this._shipUnknownCell(o)}`;
                 })()}</td>
                 <td style="padding:10px;font-size:0.8rem;color:var(--text-muted)">${o.invoice_no ? `${o.courier || ''} ${o.invoice_no}` : '-'}</td>
             </tr>${detail}`;
