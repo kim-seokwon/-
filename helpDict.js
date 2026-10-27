@@ -25,11 +25,11 @@ export const TIPS = {
     },
     //  홈 KPI '환불'
     refund_split: {
-        title: '환불(취소·반품)',
+        title: '환불',
         lines: [
-            '결제·입금 뒤에 돌려준 돈 전부입니다. 배송 전 취소와 반품(받은 뒤 돌려보냄)으로 나눠 보여줍니다.',
+            '고객에게 실제로 돌려준 돈입니다 — 카드 결제 취소, 무통장입금 고객 계좌로 재입금.',
             '날짜는 환불일(한국 시간) 기준입니다. 환불일이 없으면 주문일로 셉니다.',
-            '입금 전 취소는 돈이 오가지 않아 환불에 넣지 않습니다. \'처리중\'은 반품 접수 후 아직 환불 안 된 건수입니다.',
+            '돈을 받기 전에 없어진 주문은 돌려준 돈이 없으니 넣지 않습니다.',
         ],
         basis: 'main.js renderHome hasRefundSplit(cancel_amount / return_refund_amount, is_return) · 086 refunded_at → order_date',
     },

@@ -2765,11 +2765,10 @@ class BhasApp {
         const salesLink = { label: '매출 상세', action: "app.switchView('sales')" };
         const ordersLink = { label: '주문에서 보기', action: "app.switchView('orders')" };
         this._homePops.k_today = { title: '오늘 매출', rows: rowsOf([['오늘', won(todaySales) + '원'], ['어제', won(ydaySales) + '원'], ['이번주(7일)', won(weekSales) + '원'], [`${mm}월 누적`, won(monthSales) + '원']]) + (todayDelta != null ? `<div style="margin-top:7px;font-size:0.76rem;font-weight:700;color:${todayDelta >= 0 ? '#16a34a' : '#dc2626'}">어제 대비 ${todayDelta >= 0 ? '▲' : '▼'} ${Math.abs(todayDelta)}%</div>` : ''), link: salesLink };
-        this._homePops.k_order = { title: '주문금액', rows: rowsOf([[`${mm}월 주문금액`, won(hasFinancial ? monthFinancial.order : monthSales) + '원'], ['오늘 주문금액', won(todayFinancial.order) + '원'], ...(monthFinancial.unpaidN ? [['└ 입금 전 취소', `${monthFinancial.unpaidN.toLocaleString()}건 · ${won(monthFinancial.unpaid)}원`]] : []), [`${mm}월 주문건수`, monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">취소·입금 전 주문까지 포함한 최초 주문액 · 매출엔 안 들어감</div>' + nrNote };
-        this._homePops.k_paid = { title: '결제금액', rows: rowsOf([[`${mm}월 결제(취소 전)`, won(hasFinancial ? monthFinancial.gross : monthSales) + '원'], ['오늘 결제(취소 전)', won(todayFinancial.gross) + '원'], [`${mm}월 실결제(취소 후)`, won(hasFinancial ? monthFinancial.paid : monthSales) + '원']]) };
-        this._homePops.k_refund = { title: '환불', rows: rowsOf([[`${mm}월 환불`, won(hasFinancial ? monthFinancial.refund : refundTotal) + '원'], ['환불 건수', stRefund.toLocaleString() + '건'],
-            ...(hasRefundSplit ? [['└ 배송 전 취소', `${won(monthFinancial.cancel)}원 · ${monthFinancial.cancelN}건`], ['└ 반품', `${won(monthFinancial.ret)}원 · ${monthFinancial.retN}건${monthFinancial.retPend ? ` (처리중 ${monthFinancial.retPend})` : ''}`]] : [])])
-            + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">결제·입금 후 취소한 금액(환불일 기준). 입금 전 취소는 환불 아님</div>', link: ordersLink };
+        this._homePops.k_order = { title: '주문금액', rows: rowsOf([[`${mm}월 주문금액`, won(hasFinancial ? monthFinancial.order : monthSales) + '원'], ['오늘 주문금액', won(todayFinancial.order) + '원'], [`${mm}월 주문건수`, monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">들어온 주문 금액 그대로 · 매출은 결제·환불 반영</div>' + nrNote };
+        this._homePops.k_paid = { title: '결제금액', rows: rowsOf([[`${mm}월 결제(환불 전)`, won(hasFinancial ? monthFinancial.gross : monthSales) + '원'], ['오늘 결제(환불 전)', won(todayFinancial.gross) + '원'], [`${mm}월 실결제(환불 후)`, won(hasFinancial ? monthFinancial.paid : monthSales) + '원']]) };
+        this._homePops.k_refund = { title: '환불', rows: rowsOf([[`${mm}월 환불`, won(hasFinancial ? monthFinancial.refund : refundTotal) + '원'], ['환불 건수', stRefund.toLocaleString() + '건']])
+            + '<div style="margin-top:6px;color:var(--text-muted);font-size:0.73rem">고객에게 돌려준 돈(결제 취소·계좌 재입금) · 환불일 기준</div>', link: ordersLink };
         this._homePops.k_net = { title: `${mm}월 매출`, rows: rowsOf([['매출(실결제)', won(monthSales) + '원'], ['전월 대비', sa.mom != null ? `${sa.mom >= 0 ? '▲' : '▼'} ${Math.abs(sa.mom)}%` : '기준 없음'], ['객단가', acup + '원'], ['주문건수', monthOrdersCnt.toLocaleString() + '건'], ...nrRows]) + nrNote, link: salesLink };
         this._homePops.k_cnt = { title: `${mm}월 주문건수`, rows: rowsOf([['주문건수', monthOrdersCnt.toLocaleString() + '건'], ...nrRows, ['객단가', acup + '원'], ['순매출', won(monthSales) + '원']]) + nrNote };
         CHAN_FIXED.forEach(c => {
@@ -2796,7 +2795,7 @@ class BhasApp {
         this._homePops.st_pre = listPop('배송전 (미출고)', stOrder, o => this._orderState(o) === 'pre', '아직 출고 전 · 송장 발번 대상');
         this._homePops.st_ship = listPop('배송중', stShip, o => this._orderState(o) === 'shipping', '송장 등록 후 배송 진행 중');
         this._homePops.st_exchange = listPop(`교환 · ${mm}월`, stExchange, o => this._orderState(o) === 'exchange' && localYMD(o.order_date).startsWith(monthKey), '');
-        this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => Number(o.refund_amount) > 0 && o.raw?.paid !== 'F' && o.fin_unpaid !== true && localYMD(o.refunded_at || o.order_date).startsWith(monthKey), `입금 전 취소 제외 · 환불총액 ${won(refundTotal)}원`);
+        this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => Number(o.refund_amount) > 0 && o.raw?.paid !== 'F' && o.fin_unpaid !== true && localYMD(o.refunded_at || o.order_date).startsWith(monthKey), `환불총액 ${won(refundTotal)}원`);
 
         return `
         <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
@@ -2814,10 +2813,10 @@ class BhasApp {
             <div class="hk-grid hk-grid5" style="margin-bottom:0.9rem">
                 ${kpiCard('오늘 매출', wonF(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
                 ${hasFinancial
-                    ? kpiCard('주문금액', won(monthFinancial.order), '원', `${mm}월 · 취소${monthFinancial.unpaidN ? `·입금 전 ${monthFinancial.unpaidN.toLocaleString()}건` : ''} 포함`, '#3b82f6', 'sales')
+                    ? kpiCard('주문금액', won(monthFinancial.order), '원', `${mm}월 주문 기준`, '#3b82f6', 'sales')
                     : kpiCard(`실결제금액 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
                 ${kpiCard(`환불 ${tipHTML('refund_split', TIPS)}`, wonF(hasFinancial ? monthFinancial.refund : 0), '원', hasRefundSplit
-                    ? `${monthFinancial.refundN.toLocaleString()}건 · 취소 ${won(monthFinancial.cancel)} · 반품 ${won(monthFinancial.ret)}${monthFinancial.retPend ? `(처리중 ${monthFinancial.retPend})` : ''}`
+                    ? `${mm}월 · ${monthFinancial.refundN.toLocaleString()}건`
                     : `${mm}월 환불 기준`, '#a855f7', 'orders')}
                 ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
                 ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', `${nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}${nr.unk ? ` · 미분류 ${nr.unk}` : ''} · ` : ''}객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원`, '#10b981', 'orders')}
