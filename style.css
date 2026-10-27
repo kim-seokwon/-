@@ -4855,7 +4855,8 @@ b.sp-nm.dup{color:#ff453a}
   overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
 .pc-track::-webkit-scrollbar{display:none}
 .pc-card{flex:0 0 100%;aspect-ratio:1/1;scroll-snap-align:start;scroll-snap-stop:always;box-sizing:border-box;
-  background:#fbf8f1;padding:1.6em 1.5em 1.3em;display:flex;flex-direction:column;gap:.55em;overflow:hidden;min-width:0}
+  background:#fbf8f1;padding:1.6em 1.5em 1.3em;display:flex;flex-direction:column;gap:.55em;min-width:0;
+  overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}  /* 목록이 길면 카드 안에서 세로 스크롤(10-27) */
 .pc-card>*{flex-shrink:0}
 .pc-k{font-size:.72em;font-weight:800;color:#b3261e;letter-spacing:.02em}
 .pc-t{margin:0;font-size:1.32em;line-height:1.3;font-weight:800;word-break:keep-all;
@@ -4881,7 +4882,7 @@ b.sp-nm.dup{color:#ff453a}
 .pc-card.end .pc-foot{color:rgba(251,248,241,.6)}
 .pc-card.end .pp-done{background:#fbf8f1;color:#17150f;border-color:#fbf8f1;margin-top:.6em;align-self:stretch;font-size:.9em;padding:.8em}
 /* 목록 카드(오픈·TOP5·이슈) */
-.pc-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;flex:1;min-height:0}
+.pc-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;flex:1 0 auto}
 .pc-rows li{border-top:1px solid #e3dccd;min-width:0}
 .pc-rows li:first-child{border-top:2px solid #17150f}
 .pc-rows a{color:inherit;text-decoration:none}
