@@ -26,6 +26,7 @@ import {
 } from './meetingNote.js';
 import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
+import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { TP_BUCKET, TP_ACCEPT, validateTpFile, tpFilePath, tpDefaultName, isUploadPack, hasPackConfig, tpKind, tpKindLabel, tpSizeText } from './techPackFile.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
@@ -242,6 +243,22 @@ class BhasApp {
                 const sp = new URLSearchParams(location.search);
                 if (sp.get('paper')) this.openPaper(); else if (sp.get('morning')) this._maybeMorning();   // 첫 접속 자동 조간 검수
             });
+            this.requestRender(); return;
+        }
+        //  CS 원송장 화면 검수 — Playwright 가 넣어 준 읽기 전용 데이터(window.__CS_PREVIEW: cs_tickets · shipments)로만 그린다. DB 에 쓰지 않는다.
+        if (devPreview === 'cs') {
+            const fx = window.__CS_PREVIEW || {};
+            const list = { select: () => list, order: () => list, limit: () => list,
+                then: (ok, ng) => Promise.resolve({ data: (fx.cs_tickets || []).slice(), error: null }).then(ok, ng) };
+            this.supabase = { from: () => list,
+                rpc: async (fn, a) => ({ data: fn === 'cs_order_shipments' ? (fx.shipments || []).filter(r => (a.p_ids || []).includes(r.channel_order_id)) : [], error: null }) };
+            this._prefetched = true; this._isInitialLoading = false;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            this.currentView = 'cs'; this.csFilter = '전체';
+            const sel = new URLSearchParams(location.search).get('sel');
+            if (sel) this.csSel = sel;
+            this.wins = [{ id: 'preview-cs', view: 'cs', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
+            this.loadCS();
             this.requestRender(); return;
         }
         if (devPreview === 'calendar') {
@@ -4204,15 +4221,18 @@ class BhasApp {
         if (view === 'cs') {
             const t = (this.csList || []).find(x => String(x.id) === String(this.csSel));
             if (!t) return empty();
+            if (t.channel_order_id && !(this.csShip && t.channel_order_id in this.csShip)) setTimeout(() => this._csShipLoad([t.channel_order_id]), 0);
             return wrap(t.customer_name || '고객', `${t.kind} · ${t.status}`, `
                 ${f('주문번호', t.order_no)}
                 ${f('상품', t.product_name)}
                 ${f('구매처', t.purchase_from)}
+                ${f('회수·재발송 송장', t.invoice_no)}
                 ${f('접수 경로', t.contact_channel)}
                 ${f('접수일', (t.occurred_on || t.created_at || '').slice(0, 10)
                     + (t.date_suspect ? '  ⚠ 주문일보다 빠름 — 이관 때 일괄로 들어간 날짜입니다(확인 필요)' : ''))}
                 ${f('담당', t.created_by)}
                 ${t.memo ? `<div class="dt-sec">메모</div><div class="dt-memo">${esc(t.memo)}</div>` : ''}
+                ${this._csShipHtml(t)}
             `, `${this.CS_STATUSES.map(st => `<button class="mbtn${t.status === st ? ' pri' : ''}"
                     onclick="app.setCSStatus('${t.id}','${st}')">${st}</button>`).join('')}
                 <button class="mbtn" onclick="app.editCSMemo('${t.id}')">메모</button>`);
@@ -10663,6 +10683,66 @@ class BhasApp {
     CS_CHANNELS = ['카톡채널', '카톡오픈채팅', '게시판', 'DM', '전화'];
     CS_SOURCES = ['공홈', '키디키디', '29cm', '팝업', '기타'];
 
+    // ── CS 원송장(처음 출고 송장) + 합배송 ─────────────────────
+    //  주문별 송장·같이 나간 상품을 cs_order_shipments(097)로. raw 를 통째로 받지 않는다(건당 ~3.6KB).
+    //  화면에 보이는 행의 주문만, 아직 안 받은 것만 한 번에(최대 200개씩). 실패해도 CS 화면은 그대로 — 그 구역만 "다시".
+    async _csShipLoad(ids) {
+        this.csShip = this.csShip || {}; this._csShipErr = this._csShipErr || {}; this._csShipPend = this._csShipPend || new Set();
+        const need = [...new Set((ids || []).filter(Boolean).map(String))]
+            .filter(id => !(id in this.csShip) && !this._csShipErr[id] && !this._csShipPend.has(id));
+        if (!need.length || !this.supabase) return;
+        need.forEach(id => this._csShipPend.add(id));
+        for (let i = 0; i < need.length; i += 200) {
+            const part = need.slice(i, i + 200);
+            try {
+                const { data, error } = await this.supabase.rpc('cs_order_shipments', { p_ids: part });
+                if (error) throw error;
+                const by = {};
+                (data || []).forEach(r => { (by[r.channel_order_id] = by[r.channel_order_id] || []).push(r); });
+                part.forEach(id => { this.csShip[id] = groupShipments(by[id] || []); });
+            } catch (e) { part.forEach(id => { this._csShipErr[id] = true; }); }
+            part.forEach(id => this._csShipPend.delete(id));
+        }
+        this.requestRender();
+    }
+    _csShipRetry(id) { if (this._csShipErr) delete this._csShipErr[id]; this._csShipLoad([id]); this.requestRender(); }
+    async _csCopy(text) {
+        try { await navigator.clipboard.writeText(String(text)); this.showToast('송장번호를 복사했습니다'); }
+        catch (e) { this.showToast('복사하지 못했습니다'); }
+    }
+    //  목록 주문번호 아래 작은 줄
+    _csShipLine(t) {
+        if (!t.channel_order_id) return '';
+        const g = (this.csShip || {})[t.channel_order_id];
+        if (!g) return '';
+        const sm = shipSummary(g);
+        if (!sm.text) return '';
+        return `<div class="cs-shl${sm.kind === 'unshipped' ? ' un' : ''}">${this._vesc(sm.text)}</div>`;
+    }
+    //  오른쪽 상세 "원송장" 구역 — 송장별로 같이 나간 상품(합배송), 아래 미출고
+    _csShipHtml(t) {
+        const esc = s => this._vesc(s);
+        const head = '<div class="dt-sec">원송장</div>';
+        if (!t.channel_order_id) return `${head}<div class="cs-shp-no">주문 연결되면 표시</div>`;
+        const id = String(t.channel_order_id);
+        if ((this._csShipErr || {})[id]) return `${head}<div class="cs-shp-no">불러오기 실패 · <a href="#" onclick="event.preventDefault();app._csShipRetry('${esc(id)}')">다시</a></div>`;
+        const g = (this.csShip || {})[id];
+        if (!g) return `${head}<div class="cs-shp-no">불러오는 중…</div>`;
+        if (g.none) return `${head}<div class="cs-shp-no">송장 정보 없음</div>`;
+        const li = i => `<div class="dt-li"><span>${esc(i.product_name)}${i.option_name && optionText(i.option_name) ? ` <em class="cs-opt">${esc(optionText(i.option_name))}</em>` : ''}</span><b>${esc(String(i.quantity ?? 1))}</b></div>`;
+        const box = s => {
+            const url = trackUrl(s.courier, s.tracking_no);
+            return `<div class="cs-shp">
+                <div class="cs-shp-h"><b>${esc(courierShort(s.courier) || '택배')}</b><span class="cs-tn">${esc(s.tracking_no)}</span>
+                    <button class="mbtn cs-mini" onclick="app._csCopy('${esc(s.tracking_no)}')">복사</button>
+                    ${url ? `<a class="mbtn cs-mini" href="${esc(url)}" target="_blank" rel="noopener">조회</a>` : ''}</div>
+                <div class="cs-shp-m">${s.shipped_date ? `${esc(String(s.shipped_date).slice(0, 10))} 출고` : '출고일 없음'}${s.items.length > 1 ? ` · 합배송 ${s.items.length}개` : ''}</div>
+                ${s.items.map(li).join('')}
+            </div>`;
+        };
+        return `${head}${g.shipments.map(box).join('')}
+            ${g.unshipped.length ? `<div class="dt-sec">미출고 ${g.unshipped.length}</div>${g.unshipped.map(li).join('')}` : ''}`;
+    }
     async loadCS() {
         this._csLoading = true;
         try {
@@ -10895,7 +10975,7 @@ class BhasApp {
                 <td class="bd">${esc(t.customer_name || '')}</td>
                 <td>${esc(this._brandNameById(t.brand_id) === '-' ? '' : this._brandNameById(t.brand_id))}</td>
                 <td>${esc(t.purchase_from || '')}</td>
-                <td class="nw">${t.order_no ? `${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨" style="color:#0a84ff"></i>' : ''}` : ''}</td>
+                <td class="nw">${t.order_no ? `${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨" style="color:#0a84ff"></i>' : ''}${this._csShipLine(t)}` : ''}</td>
                 <td>${esc(t.product_name || '')}${t.exchange_product ? ` <span class="mu">→</span> ${esc(t.exchange_product)}` : ''}</td>
                 <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
                         onclick="event.stopPropagation()" onchange="app.setCSStatus('${t.id}',this.value)">
@@ -10910,6 +10990,10 @@ class BhasApp {
             purchase_from: t.purchase_from || '', order_no: t.order_no || '',
             product_name: t.product_name || '', status: t.status || '', memo: t.memo || '',
         })[k2] ?? '', all);
+        const shown = list.slice(0, 300);
+        //  보이는 행의 원송장만 받는다(그린 뒤 — 받으면 다시 그림)
+        const shipIds = shown.map(t => t.channel_order_id).filter(id => id && !(this.csShip && id in this.csShip));
+        if (shipIds.length) setTimeout(() => this._csShipLoad(shipIds), 0);
         const cnt = k => all.filter(t => t.kind === k).length;
         const suspectCnt = all.filter(t => t.date_suspect).length;
         const pill = (k, label, n) => `<button class="it-pill${filter === k ? ' on' : ''}" onclick="app.setCSFilter('${k}')"
@@ -10936,7 +11020,7 @@ class BhasApp {
                     ['purchase_from', '구매처'], ['order_no', '주문번호'], ['product_name', '상품'],
                     ['status', '상태'], ['memo', '메모']])}
                 </tr></thead>
-                <tbody>${list.length ? list.slice(0, 300).map(row).join('')
+                <tbody>${list.length ? shown.map(row).join('')
                     : `<tr><td colspan="9" class="it-none">해당하는 건이 없습니다</td></tr>`}</tbody></table>
                 ${list.length > 300 ? `<div class="it-more">최근 300건만 보입니다 · 전체 ${list.length}건</div>` : ''}
             </div>
