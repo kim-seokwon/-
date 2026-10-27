@@ -4,6 +4,11 @@ on:
   # ⚠️ 스케줄 중지(2026-08-18): 키디키디(이랜드) 봇이 2026-03 이후 수집 중단 상태라 매시간 실패 알림만 옴.
   #   봇 복구(로그인/API) 후 schedule 복구할 것. 그때까지 수동 실행만.
   workflow_dispatch:        # 수동 실행 버튼
+    inputs:
+      extend:
+        description: '이랜드 계정 연장 요청 [확인] 누르기 (사장님 승인 후 1회)'
+        type: boolean
+        default: false
 
 concurrency:
   group: kidikidi-order-sync
@@ -28,5 +33,6 @@ jobs:
           ELAND_ID: ${{ secrets.ELAND_ID }}
           ELAND_PW: ${{ secrets.ELAND_PW }}
           ELAND_TOTP_SECRET: ${{ secrets.ELAND_TOTP_SECRET }}
+          ELAND_EXTEND: ${{ inputs.extend && '1' || '' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

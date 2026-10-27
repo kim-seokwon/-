@@ -48,7 +48,14 @@ async function login(browser) {
   page.on('dialog', async d => {
     seen.dialogs.push(`${d.type()}: ${d.message().slice(0, 200)}`);
     console.log(`[kidikidi] 대화상자 ${d.type()}: ${d.message().slice(0, 200)}`);
-    await d.dismiss().catch(() => {});   // 계정 연장 요청 등 상태를 바꾸는 confirm 은 누르지 않는다
+    //  기본은 누르지 않는다(상태를 바꾸는 confirm). 사장님 승인 후 ELAND_EXTEND=1 로 돌린 1회만
+    //  '계정 연장 요청' confirm 에 [확인] — 문구에 '연장'이 있을 때만, 다른 대화상자는 그대로 닫는다.
+    if (process.env.ELAND_EXTEND === '1' && d.type() === 'confirm' && /연장/.test(d.message())) {
+      console.log('[kidikidi] 연장 요청 confirm → [확인] (ELAND_EXTEND=1)');
+      await d.accept().catch(() => {});
+      return;
+    }
+    await d.dismiss().catch(() => {});
   });
   page.on('response', async res => {
     if (res.request().method() !== 'POST' || !/\/(login|otp|[^/]*certif)/i.test(new URL(res.url()).pathname)) return;
