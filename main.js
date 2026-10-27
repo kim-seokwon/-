@@ -6856,7 +6856,7 @@ class BhasApp {
         }
         if (!this._tipsOn) { this._tipsOn = true; initTips(TIPS); }
         if (this._help && this._help.user === this.currentUser.id) return;
-        this._help = { user: this.currentUser.id, open: false, tab: null, q: '', notices: null, readIds: [], feedback: null, unread: 0, editing: null, error: '', busy: false };
+        this._help = { user: this.currentUser.id, open: false, tab: null, q: '', notices: null, readIds: [], feedback: null, unread: 0, editing: null, error: '', busy: false, mOpen: null };
         if (!document.getElementById('help-slot')) {
             const el = document.createElement('div'); el.id = 'help-slot'; document.body.appendChild(el);
             el.addEventListener('click', e => this._helpClick(e));
@@ -6879,6 +6879,12 @@ class BhasApp {
     _helpScreen() {
         const front = (this.wins || []).filter(x => !x.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0];
         return String(front ? front.view : this.macMode ? 'home' : this.currentView || '').slice(0, 200);   // 창이 다 내려가 있으면 바탕화면(홈)
+    }
+    //  사용설명서 — 지금 화면을 MANUAL id 로(판매·생산 묶음 안의 탭은 묶음 머리로), 독 아이콘, 펼친 타일
+    _helpManual(q) {
+        const v = this._helpScreen(), g = this._groupOf(v), id = g ? g.head : v;
+        const icons = Object.fromEntries((this.MAC_DOCK || []).filter(d => !d.tool && !d.launcher).map(d => [d.id, d.icon]));
+        return { q, manual: searchManual(q, MANUAL, TIPS), tips: TIPS, here: MANUAL.some(m => m.id === id) ? id : null, open: this._help?.mOpen || null, icons };
     }
     toggleHelp() { if (this._help?.open) this.closeHelp(); else this.openHelp(); }
     openHelp(tab) {
@@ -6914,7 +6920,7 @@ class BhasApp {
         }
         el.innerHTML = helpPanelHTML({
             role: this._helpRole(), tab: h.tab, unread: h.unread, notices: h.notices, readIds: h.readIds,
-            q: h.q, manual: searchManual(h.q, MANUAL, TIPS), tips: TIPS, feedback: h.feedback,
+            ...this._helpManual(h.q), feedback: h.feedback,
             editing: h.editing, error: h.error, busy: h.busy, screen: this._helpScreen(),
         });
         const back = key && el.querySelector(key);
@@ -6926,7 +6932,7 @@ class BhasApp {
         const h = this._help; if (!h) return;
         h.q = q;
         const box = document.getElementById('hc-manual-list');
-        if (box) box.innerHTML = manualListHTML({ q, manual: searchManual(q, MANUAL, TIPS), tips: TIPS });
+        if (box) box.innerHTML = manualListHTML(this._helpManual(q));
     }
     async _helpLoadNotices() {
         const h = this._help; if (!h) return;
@@ -6985,6 +6991,8 @@ class BhasApp {
         if (act === 'fb-send') return this._helpSendFeedback();
         if (act === 'fb-st') return this._helpSetStatus(id, b.dataset.st);
         if (act === 'fb-img') return this._helpOpenImage(id);
+        if (act === 'm-tile') { h.mOpen = h.mOpen === id ? null : id; return this._paintHelp(); }   // 한 번에 하나만 펼침
+        if (act === 'm-go') { if (!MANUAL.some(m => m.id === id)) return; this.closeHelp(); return this.switchView(id); }
     }
     async _helpSaveNotice() {
         const h = this._help; if (!h || !h.editing || this._helpRole() !== 'MASTER') return;

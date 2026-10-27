@@ -6,7 +6,7 @@ import { TIPS, MANUAL, searchManual } from '../helpDict.js';
 import { tipHTML, placeTip, escHTML } from '../helpWidget.js';
 import {
     helpTabs, unreadCount, sortNotices, validateFeedback, validateNotice, feedbackPath,
-    helpPanelHTML, manualListHTML, helpFabHTML, helpFocusKey, FB_IMG_MAX,
+    helpPanelHTML, manualListHTML, manualLineHTML, helpFabHTML, helpFocusKey, FB_IMG_MAX,
 } from '../helpCenter.js';
 
 const MAIN = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
@@ -131,7 +131,64 @@ test('사용설명서 찾기: 낱말 + TIPS 원문까지, 목록만 다시 그�
     assert.match(list, /맞는 설명이 없습니다/);
     assert.ok(!list.includes('hc-q'), '목록만(찾기 칸은 안 다시 그림)');
     const full = manualListHTML({ q: '', manual: MANUAL, tips: TIPS });
-    assert.equal((full.match(/class="hc-card"/g) || []).length, MANUAL.length);
+    assert.equal((full.match(/data-hc="m-tile"/g) || []).length, MANUAL.length, '화면마다 타일 1개');
+});
+
+const ICONS = { home: 'home', orders: 'sales', items: 'prod', sns: 'mkt', news: 'news', documents: 'finder', calendar: 'cal', reminders: 'rem', notes: 'notes', contacts: 'contacts', settings: 'set' };
+const ms = (o = {}) => ({ q: '', manual: MANUAL, tips: TIPS, icons: ICONS, here: null, open: null, ...o });
+const opened = h => [...h.matchAll(/class="hc-tile on"[\s\S]*?data-id="([^"]+)"/g)].map(x => x[1]);
+
+test('사용설명서: 지금 보는 화면 카드 + 타일 격자(요약·아이콘) · 한 번에 하나만 펼침', () => {
+    for (const m of MANUAL) assert.ok(m.summary && m.summary.length <= 20, `${m.id} 요약 한 줄`);
+    const h0 = manualListHTML(ms());
+    assert.ok(!h0.includes('hc-here'), '지금 화면이 없으면 카드 생략');
+    assert.equal((h0.match(/class="hc-tile"/g) || []).length, MANUAL.length);
+    assert.equal(opened(h0).length, 0, '처음엔 다 접힘');
+    assert.match(h0, /src="icons\/sales\.png"[\s\S]*<b>판매<\/b><small>주문·송장·CS·재고·정산<\/small>/);
+    const h1 = manualListHTML(ms({ here: 'orders' }));
+    assert.match(h1, /^<article class="hc-card hc-here">[\s\S]*지금 보는 화면[\s\S]*<b>판매<\/b>[\s\S]*①<[\s\S]*②<[\s\S]*③</, '맨 위 카드에 판매가 펼쳐짐');
+    assert.match(h1, /<\/article><div class="hc-sub">전체 화면<\/div><div class="hc-tiles">/);
+    const h2 = manualListHTML(ms({ here: 'orders', open: 'news' }));
+    assert.deepEqual(opened(h2), ['news'], '누른 타일 하나만 펼침');
+    assert.match(h2, /data-id="news" aria-expanded="true"/);
+    assert.match(h2, /data-id="sns" aria-expanded="false"/);
+    assert.ok(!manualListHTML(ms({ here: 'cs' })).includes('hc-here'), 'MANUAL 에 없는 id 는 카드 없음(묶음 변환은 main.js)');
+});
+
+test('사용설명서: [버튼] 칩 · 동그라미 번호 · 숫자 설명 칩 · 이 화면 열기(data-hc 위임)', () => {
+    assert.equal(manualLineHTML('[동기화]로 받습니다'), '<span class="hc-kbd">동기화</span>로 받습니다');
+    assert.equal(manualLineHTML('[송장양식] → [송장 업로드](CSV)'), '<span class="hc-kbd">송장양식</span> → <span class="hc-kbd">송장 업로드</span>(CSV)');
+    assert.equal(manualLineHTML('메모에 [ ]로 적은 줄'), '메모에 [ ]로 적은 줄', '빈칸 체크 표기는 그대로');
+    assert.equal(manualLineHTML('<b>[x]</b>'), '&lt;b&gt;<span class="hc-kbd">x</span>&lt;/b&gt;', '이스케이프 먼저');
+    const h = manualListHTML(ms({ open: 'orders' }));
+    assert.match(h, /<span class="hc-kbd">우체국 발번\+등록<\/span>/);
+    assert.match(h, /class="hc-no" aria-hidden="true">①</);
+    assert.match(h, /class="hc-nums"[\s\S]*class="hc-num"/, '판매의 숫자 설명 칩');
+    assert.match(h, /<button type="button" class="hc-btn sm pri" data-hc="m-go" data-id="orders">[\s\S]*이 화면 열기<\/button>/);
+    assert.ok(!/onclick/i.test(manualListHTML(ms({ here: 'home', open: 'orders' }))), '인라인 onclick 없음');
+    assert.ok(!manualListHTML(ms({ open: 'orders', icons: {} })).includes('m-go'), '갈 곳 모르면 열기 버튼 없음');
+});
+
+test('사용설명서 찾기: 타일이 걸러지고 1개만 남으면 자동 펼침 · 찾는 중엔 지금 화면 카드 숨김', () => {
+    const one = manualListHTML(ms({ q: '송장', manual: searchManual('송장'), here: 'home' }));
+    assert.equal((one.match(/data-hc="m-tile"/g) || []).length, 1);
+    assert.deepEqual(opened(one), ['orders'], '1개면 바로 펼침');
+    assert.ok(!one.includes('hc-here'));
+    const many = manualListHTML(ms({ q: '팔로워', manual: searchManual('팔로워') }));
+    assert.ok((many.match(/data-hc="m-tile"/g) || []).length >= 2);
+    assert.equal(opened(many).length, 0, '여러 개면 접힌 채');
+});
+
+test('main.js 연결: 지금 화면 → 묶음 머리, 타일 토글, 이 화면 열기 → switchView', () => {
+    const src = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+    assert.match(src, /_helpManual\(q\) \{\n        const v = this\._helpScreen\(\), g = this\._groupOf\(v\), id = g \? g\.head : v;/);
+    assert.match(src, /here: MANUAL\.some\(m => m\.id === id\) \? id : null, open: this\._help\?\.mOpen \|\| null, icons/);
+    assert.match(src, /if \(act === 'm-tile'\) \{ h\.mOpen = h\.mOpen === id \? null : id; return this\._paintHelp\(\); \}/);
+    assert.match(src, /if \(act === 'm-go'\) \{ if \(!MANUAL\.some\(m => m\.id === id\)\) return; this\.closeHelp\(\); return this\.switchView\(id\); \}/);
+    assert.match(src, /manualListHTML\(this\._helpManual\(q\)\)/);
+    //  MANUAL id 는 전부 독 화면 id(이 화면 열기가 갈 곳)
+    const dock = [...src.matchAll(/\{ id: '([a-z_]+)', label: '[^']+', icon: '[a-z]+'(?:, desktop: true)? \}/g)].map(x => x[1]);
+    for (const m of MANUAL) assert.ok(dock.includes(m.id), `${m.id} 독에 있음`);
 });
 
 test('? 도움말 버튼: 안 읽은 공지 점', () => {

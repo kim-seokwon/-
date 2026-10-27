@@ -64,7 +64,7 @@ const when = t => {
 const STATUS_CLS = { '접수': 'st-new', '처리중': 'st-doing', '완료': 'st-done' };
 const TAB_LABEL = { notice: '공지', manual: '사용설명서', feedback: '불편접수' };
 
-//  패널 전체. s = { role, tab, unread, notices, readIds, q, manual, tips, feedback, editing, error, busy, screen }
+//  패널 전체. s = { role, tab, unread, notices, readIds, q, manual, tips, here, open, icons, feedback, editing, error, busy, screen }
 export function helpPanelHTML(s) {
     const tabs = helpTabs(s.role);
     const tab = tabs.includes(s.tab) ? s.tab : tabs[0];
@@ -100,23 +100,51 @@ function noticeHTML(s) {
     return form + add + items;
 }
 
-function manualHTML(s) {
+//  사용설명서 — 맨 위 '지금 보는 화면' 카드 + 화면 타일 격자(2열, 누르면 그 자리에서 펼침·한 번에 하나).
+//  s.here = 지금 화면의 MANUAL id(없으면 카드 생략) · s.open = 펼친 타일 id · s.icons = { id: 독 아이콘 파일 }
+const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩';
+//  문장 속 [버튼이름] → 버튼 모양 칩. 이스케이프한 뒤에 바꾼다(문구는 helpDict 고정값). '[ ]'(빈칸 체크) 는 글자 그대로
+export const manualLineHTML = l => esc(l).replace(/\[([^\[\]\s][^\[\]]{0,29})\]/g, '<span class="hc-kbd">$1</span>');
+function manualBodyHTML(m, s) {
     const tips = s.tips || {};
-    const list = s.manual || [];
-    const items = list.length ? list.map(m => `<article class="hc-card">
-        <div class="hc-card-h"><b>${esc(m.title)}</b></div>
-        <ol class="hc-steps">${m.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ol>
+    const go = (s.icons || {})[m.id] !== undefined;
+    return `<ol class="hc-steps">${m.lines.map((l, i) => `<li><span class="hc-no" aria-hidden="true">${CIRCLED[i] || i + 1}</span><span>${manualLineHTML(l)}</span></li>`).join('')}</ol>
         ${m.tips.length ? `<div class="hc-nums">${m.tips.filter(k => tips[k]).map(k => `<span class="hc-num">${esc(tips[k].title)} ${tipHTML(k, tips)}</span>`).join('')}</div>` : ''}
-    </article>`).join('') : `<div class="hc-empty">'${esc(s.q)}' 에 맞는 설명이 없습니다.</div>`;
+        ${go ? `<div class="hc-row end"><button type="button" class="hc-btn sm pri" data-hc="m-go" data-id="${esc(m.id)}"><i class="ph ph-arrow-square-out"></i> 이 화면 열기</button></div>` : ''}`;
+}
+function manualIconHTML(m, s) {
+    const f = (s.icons || {})[m.id];
+    return f ? `<img class="hc-ico" src="icons/${esc(f)}.png" alt="" draggable="false">` : '<i class="hc-ico ph ph-book-open"></i>';
+}
+function manualItemsHTML(s) {
+    const list = s.manual || [];
+    if (!list.length) return `<div class="hc-empty">'${esc(s.q)}' 에 맞는 설명이 없습니다.</div>`;
+    const searching = !!String(s.q || '').trim();
+    const open = searching && list.length === 1 ? list[0].id : s.open;   // 찾아서 하나만 남으면 바로 펼친다
+    const here = !searching && s.here ? list.find(m => m.id === s.here) : null;
+    const card = here ? `<article class="hc-card hc-here">
+        <div class="hc-sub">지금 보는 화면</div>
+        <div class="hc-card-h">${manualIconHTML(here, s)}<b>${esc(here.title)}</b></div>
+        ${manualBodyHTML(here, s)}
+    </article>` : '';
+    const tile = m => {
+        const on = m.id === open;
+        return `<div class="hc-tile${on ? ' on' : ''}">
+            <button type="button" class="hc-tile-b" data-hc="m-tile" data-id="${esc(m.id)}" aria-expanded="${on}">
+                ${manualIconHTML(m, s)}<span class="hc-tile-t"><b>${esc(m.title)}</b><small>${esc(m.summary || '')}</small></span>
+            </button>
+            ${on ? `<div class="hc-tile-d">${manualBodyHTML(m, s)}</div>` : ''}
+        </div>`;
+    };
+    return `${card}${here ? '<div class="hc-sub">전체 화면</div>' : ''}<div class="hc-tiles">${list.map(tile).join('')}</div>`;
+}
+function manualHTML(s) {
     return `<input class="hc-in" id="hc-q" type="search" placeholder="찾기 — 예: 송장, 환불, 팔로워" value="${esc(s.q || '')}" autocomplete="off">
-        <div id="hc-manual-list">${items}</div>`;
+        <div id="hc-manual-list">${manualItemsHTML(s)}</div>`;
 }
 
 //  사용설명서 목록만(찾기 칸에 치는 동안 칸은 두고 목록만 바꾼다 — 글자가 안 날아가게)
-export function manualListHTML(s) {
-    const html = manualHTML(s);
-    return html.slice(html.indexOf('<div id="hc-manual-list">') + '<div id="hc-manual-list">'.length, -'</div>'.length);
-}
+export function manualListHTML(s) { return manualItemsHTML(s); }
 
 function feedbackHTML(s) {
     const admin = s.role === 'MASTER';
