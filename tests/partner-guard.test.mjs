@@ -223,6 +223,7 @@ const grab = name => {
 };
 
 const grabNotices = () => eval(src.match(/\n    PARTNER_NOTICES = (\[[\s\S]*?\]);/)[1]);
+const grabDateLabel = () => eval('(' + src.match(/\n    ITEM_DATE_LABEL = (\{[^}]*\});/)[1] + ')');
 
 test('파트너 제품 목록은 partner_items 로 받고, 직원은 그대로 product_items', async () => {
     const calls = [];
@@ -241,9 +242,9 @@ test('파트너 제품 목록은 partner_items 로 받고, 직원은 그대로 p
     assert.deepEqual(s.pItems, [{ id: 2 }]);
 });
 
-test('파트너 화면 — 시즌·제품·제작현황·출고일자·오픈일만, 고치는 칸·메모·공장 없음', () => {
+test('파트너 화면 — 시즌·제품·제작현황·출고예정일·오픈예정일만, 고치는 칸·메모·공장 없음', () => {
     const t = {
-        _itemsLoaded: true, PARTNER_NOTICES: grabNotices(), ITEM_SC: { '메인투입': '#ff9f0a' },
+        _itemsLoaded: true, PARTNER_NOTICES: grabNotices(), ITEM_DATE_LABEL: grabDateLabel(), ITEM_SC: { '메인투입': '#ff9f0a' },
         pItems: [
             { id: 'a', season_name: '머문 26SS', name: '하렘팬츠', sale_names: ['머문 하렘팬츠'], status: '메인투입', ship_date: '2026-11-03', open_date: null },
             { id: 'b', season_name: '머문 25FW', name: '<b>조끼', sale_names: null, status: '출고완료', ship_date: null, open_date: '2026-09-01' },
@@ -329,4 +330,15 @@ test('파트너 로그인·첫 자료는 함수로 — companies 못 읽으면 m
     assert.deepEqual(t.seasonSteps.map(s => s.name), ['공통 틀']);
     assert.equal(t.synced, 1);
     delete globalThis.mockData;
+});
+
+test('같은 날짜는 어느 화면이든 같은 이름 — ITEM_DATE_LABEL 한 곳(10-28 공통 기준)', () => {
+    assert.deepEqual(grabDateLabel(), { ship_date: '출고예정일', open_date: '오픈예정일' });
+    //  제품 날짜를 보여주는 자리(직원 표·정렬 머리·제품 페이지·상세 칸·새 제품 칸·파트너 표)는 이름을 따로 적지 않는다
+    for (const re of [/\['ship_date', '[^']+'/, /'ship_date', '출고/, /f\('출고[^']*', it\.ship_date\)/, /f\('오픈[^']*', it\.open_date\)/,
+        /field\('출고[^']*', inp\('ship_date'/, /field\('오픈[^']*', inp\('open_date'/, /<th>출고예정일<\/th>/, /<th>오픈예정일<\/th>/, /'출고일자'/]) {
+        assert.doesNotMatch(src, re, String(re));
+    }
+    assert.ok((src.match(/ITEM_DATE_LABEL\.ship_date/g) || []).length >= 6);
+    assert.ok((src.match(/ITEM_DATE_LABEL\.open_date/g) || []).length >= 4);
 });

@@ -4229,8 +4229,8 @@ class BhasApp {
                 ${f('제작현황', it.status)}
                 ${f('시즌', season ? season.name : '')}
                 ${f('공장', vendor ? vendor.name : '')}
-                ${f('출고예정일', it.ship_date)}
-                ${f('오픈일', it.open_date)}
+                ${f(this.ITEM_DATE_LABEL.ship_date, it.ship_date)}
+                ${f(this.ITEM_DATE_LABEL.open_date, it.open_date)}
                 ${f('부자재', it.trims ? '준비됨' : '아직')}
                 <div class="dt-sec">판매명 <em style="font-style:normal;font-weight:600;opacity:.6">카페24 최종 상품명</em></div>
                 ${(it.sale_names || []).length
@@ -8472,7 +8472,7 @@ class BhasApp {
                         <div class="ip-fs">
                             ${f('브랜드', this._brandNameById(it.brand_id))}${f('패턴명', it.pattern_no)}
                             ${f('시즌', sea ? sea.name : '')}${f('공장', ven ? ven.name : '')}
-                            ${f('출고예정', it.ship_date)}${f('오픈', it.open_date)}
+                            ${f(this.ITEM_DATE_LABEL.ship_date, it.ship_date)}${f(this.ITEM_DATE_LABEL.open_date, it.open_date)}
                             ${(it.sale_names || []).length ? f('판매명', (it.sale_names || []).join(' · ')) : ''}
                         </div>
                         <div class="ip-tools">
@@ -10251,8 +10251,8 @@ class BhasApp {
                 ${field('제작현황', sel('status', STATUSES, '상태'))}
                 ${field('공장', sel('vendor_id', vendors.map(v => ({ v: v.id, t: v.name })), '공장'))}
                 ${field('패턴명', inp('pattern_no', '패턴'))}
-                ${field('출고예정일', inp('ship_date', '', 'date'))}
-                ${field('오픈일', inp('open_date', '', 'date'))}
+                ${field(this.ITEM_DATE_LABEL.ship_date, inp('ship_date', '', 'date'))}
+                ${field(this.ITEM_DATE_LABEL.open_date, inp('open_date', '', 'date'))}
                 ${field('판매명', `<button class="ip2-in as-btn" onclick="app.pickSaleName('${it.id}')">${(it.sale_names || []).length ? esc((it.sale_names || []).join(' · ')) : '카페24 상품명 붙이기'}</button>`)}
                 ${field('메모', inp('memo', '메모'))}
                 ${field('부자재·확인', `<label class="ip2-ck"><input type="checkbox"${it.trims ? ' checked' : ''}
@@ -10288,7 +10288,7 @@ class BhasApp {
         rows = this._sortItemRows(rows);
         const srt = this.itemSort || { k: '', dir: 1 };
         const cols = [['brand_id', '브랜드'], ['name', '판매명'], ['pattern_no', '패턴명'],
-            ['status', '제작현황'], ['ship_date', '출고일자', 'it-dt'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
+            ['status', '제작현황'], ['ship_date', this.ITEM_DATE_LABEL.ship_date, 'it-dt'], ['memo', '메모'], ['trims', '부자재', 'it-c'],
             ['checked', '확인', 'it-c'], ['vendor_id', '공장'], ['product_id', '시즌']];
         const mu = v => v ? esc(v) : '<span class="it-mu">—</span>';
         const chk = (it, f) => `<input class="it-ck" type="checkbox"${it[f] ? ' checked' : ''}
@@ -10321,7 +10321,7 @@ class BhasApp {
                 <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}55;background:${sc}12"
                     onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','status',this.value,1)">
                     ${this.ITEM_STATUSES.map(s => `<option value="${esc(s)}"${s === it.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
-                <td class="it-dt">${this._itemDateCell(it, 'ship_date', '출고일자')}</td>
+                <td class="it-dt">${this._itemDateCell(it, 'ship_date', this.ITEM_DATE_LABEL.ship_date)}</td>
                 <td class="it-memo" title="${esc(it.memo || '')}">${mu(it.memo)}</td>
                 <td class="it-c">${chk(it, 'trims')}</td><td class="it-c">${chk(it, 'checked')}</td>
                 <td class="it-mu">${mu(vn)}</td><td class="it-mu">${mu(se)}</td>
@@ -16275,7 +16275,10 @@ class BhasApp {
         '원부자재 입고일이 작업시작일이 아닙니다.',
         '출고예정일자는 예정된 날짜로, 확정이 아닙니다.',
     ];
-    //  파트너(CLIENT) 제품 목록 — 자기 브랜드 제품의 시즌·이름·판매명·제작현황·출고일자·오픈일만 '보기'.
+    //  제품 날짜 이름 — 직원 표·제품 페이지·새 제품 칸·파트너 화면이 다 이걸 쓴다(같은 칸은 같은 이름, 10-28 공통 기준).
+    //   둘 다 '예정' — 확정은 제작현황 '출고완료' 하나로 본다(사장님 10-28 "출고예정일자는 예정된 날짜로, 확정이 아닙니다.").
+    ITEM_DATE_LABEL = { ship_date: '출고예정일', open_date: '오픈예정일' };
+    //  파트너(CLIENT) 제품 목록 — 자기 브랜드 제품의 시즌·이름·판매명·제작현황·출고예정일·오픈예정일만 '보기'.
     //   자료는 partner_items()(099)가 보여도 되는 열만 준다. 고치기·공장·견적·메모 칸 없음.
     renderPartnerItems() {
         if (!this._itemsLoaded) return this._loadingSkeleton('제품');
@@ -16307,7 +16310,7 @@ class BhasApp {
                 ${pill(sKey === 'ALL', '모든 시즌', 'app.setPartnerFilter(\'season\',\'ALL\')')}
                 ${seasons.map((n, k) => pill(sKey === n, n || '시즌 없음', `app.setPartnerFilter('season',${k})`)).join('')}
             </div>
-            <div class="it-scroll"><table class="it-tbl"><thead><tr><th>시즌</th><th>제품</th><th>제작현황</th><th>출고예정일</th><th>오픈예정일</th></tr></thead>
+            <div class="it-scroll"><table class="it-tbl"><thead><tr><th>시즌</th><th>제품</th><th>제작현황</th><th>${esc(this.ITEM_DATE_LABEL.ship_date)}</th><th>${esc(this.ITEM_DATE_LABEL.open_date)}</th></tr></thead>
                 <tbody>${body || '<tr><td colspan="5" style="padding:2rem;color:var(--text-muted)">보여드릴 제품이 없습니다.</td></tr>'}</tbody></table></div>
         </div>`;
     }

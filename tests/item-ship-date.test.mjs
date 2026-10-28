@@ -1,4 +1,4 @@
-// 제품 목록 출고일자 열(사장님 10-27 "출고일자도 있어야 돼. 제작현황 옆에") — main.js 실제 함수를 떼어 가짜 앱으로 그린다.
+// 제품 목록 출고일자 열(사장님 10-27 "출고일자도 있어야 돼. 제작현황 옆에") — 10-28부터 이름은 ITEM_DATE_LABEL('출고예정일') — main.js 실제 함수를 떼어 가짜 앱으로 그린다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,7 +15,7 @@ const grab = (name) => {
 const mkApp = (items) => {
     const t = {
         pItems: items, vendors: [], _techPacks: [], itemSort: { k: '', dir: 1 }, itemColF: {}, saves: [], renders: 0,
-        ITEM_SC: {}, ITEM_STATUSES: ['샘플', '생산중', '출고완료'],
+        ITEM_SC: {}, ITEM_DATE_LABEL: { ship_date: '출고예정일', open_date: '오픈예정일' }, ITEM_STATUSES: ['샘플', '생산중', '출고완료'],
         _vesc: s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
         _seasons: () => [], _saleParts: () => null, _itemSold: () => null, _itemPhotos: () => [], _brandNameById: () => '-',
         _itemLabel: i => i.name, _itemIssues: () => [], requestRender() { this.renders++; }, showToast() {},
@@ -39,11 +39,11 @@ test('출고일자 열이 제작현황 바로 오른쪽(머리줄·칸 순서 �
     const t = mkApp(items());
     const html = t.renderItemTable(null, {});
     const h = ths(html);
-    assert.equal(h[h.indexOf('제작현황') + 1], '출고일자');
-    assert.equal(h[h.indexOf('출고일자') + 1], '메모');
+    assert.equal(h[h.indexOf('제작현황') + 1], '출고예정일');
+    assert.equal(h[h.indexOf('출고예정일') + 1], '메모');
     const cells = rowCells(html, 'a');
     assert.equal(cells.length, h.length);                         // 칸 수 = 머리 수(다른 열 안 밀림)
-    assert.match(cells[h.indexOf('출고일자')], /it-dt/);
+    assert.match(cells[h.indexOf('출고예정일')], /it-dt/);
     assert.match(cells[h.indexOf('메모')], /it-memo/);
     const empty = mkApp([]).renderItemTable(null, {});            // 빈 표 안내 줄도 표 너비 그대로
     assert.equal(+empty.match(/colspan="(\d+)"/)[1], h.length);
