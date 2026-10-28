@@ -1,5 +1,5 @@
 -- 운영 DB 10-28 읽기 전용 스냅숏: public 표(열만) · RLS 켜짐 여부 · 정책 156개 원문 · public 함수 정의 원문(트리거 제외).
--- 099 파트너 계정 막기 테스트가 이 위에 099 를 깔아 본다. 데이터·비밀값 없음. 다시 뜨려면 .work 기록 참고.
+-- 099 파트너 계정 막기 테스트가 이 위에 099 를 깔아 본다. 데이터·비밀값 없음. 다시 뜨려면 .work 기록 참고. 줄 끝 공백만 지움(본문 같음).
 set check_function_bodies = off;
 create table public."_bak_20261010_channel_orders" ("id" uuid default gen_random_uuid(), "mall_key" text, "order_id" text, "status" text, "channel_status" text);
 alter table public."_bak_20261010_channel_orders" enable row level security;
@@ -1057,14 +1057,14 @@ CREATE OR REPLACE FUNCTION public.get_user_brand_id()
  LANGUAGE sql
  STABLE SECURITY DEFINER
 AS $function$
-    SELECT brand_id::text FROM companies WHERE username = split_part(auth.jwt()->>'email', '@', 1)                                                                      
-    LIMIT 1;      
+    SELECT brand_id::text FROM companies WHERE username = split_part(auth.jwt()->>'email', '@', 1)
+    LIMIT 1;
   $function$;
 CREATE OR REPLACE FUNCTION public.get_user_company_id()
  RETURNS text
  LANGUAGE sql
  STABLE SECURITY DEFINER
-AS $function$                                                                                                                                                    
+AS $function$
     SELECT id::text FROM companies WHERE username = split_part(auth.jwt()->>'email', '@', 1)
     LIMIT 1;
   $function$;
@@ -1072,8 +1072,8 @@ CREATE OR REPLACE FUNCTION public.get_user_role()
  RETURNS text
  LANGUAGE sql
  STABLE SECURITY DEFINER
-AS $function$                                                                                                                                                    
-    SELECT role FROM companies WHERE username = split_part(auth.jwt()->>'email', '@', 1)                                                                                
+AS $function$
+    SELECT role FROM companies WHERE username = split_part(auth.jwt()->>'email', '@', 1)
     LIMIT 1;
   $function$;
 CREATE OR REPLACE FUNCTION public.is_master()

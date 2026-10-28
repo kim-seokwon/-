@@ -1096,7 +1096,33 @@ class BhasApp {
         return by;
     }
 
+    //  파트너(CLIENT)는 원표를 못 읽는다(099) → partner_data() 하나로 자기 브랜드 시즌·단계·사진·브랜드·단계 틀을 받는다.
+    //   메모·할 일·기록·문서·단계 메모(note)·담당자는 안 온다 — 화면 모양만 직원 것과 맞춘다.
+    async _loadPartnerData() {
+        const { data, error } = await this.supabase.rpc('partner_data');
+        if (error) throw error;
+        const d = data || {};
+        const by = (rows) => { const m = new Map(); (rows || []).forEach(r => { if (!m.has(r.product_id)) m.set(r.product_id, []); m.get(r.product_id).push(r); }); return m; };
+        const stagesBy = by(d.stages), photosBy = by(d.photos);
+        mockData.products = (d.seasons || []).map(p => {
+            const stagesData = {};
+            (stagesBy.get(p.id) || []).forEach(e => { stagesData[e.stage_id] = { status: e.status, due_date: e.due_date }; });
+            return { ...p, currentStage: 'consulting', stages_data: stagesData, todos: [], photos: photosBy.get(p.id) || [],
+                     documents: [], memos: [], history: [] };
+        });
+        const u = this.currentUser || {};
+        mockData.companies = [{ id: u.company_id, name: u.name, role: 'CLIENT', brand_id: u.brand_id }];
+        mockData.brands = d.brands || [];
+        mockData.globalDocuments = [];
+        this.seasonSteps = d.steps || [];
+        this.syncStagesData();
+    }
+
     async loadInitialData() {
+        if (this.currentUser?.role === 'CLIENT') {
+            try { await this._loadPartnerData(); } catch (_e) { this.showToast('데이터를 불러오는 중 오류가 발생했습니다.'); }
+            return;
+        }
         try {
             // 시즌 데이터 로드
             let query = this.supabase
@@ -1257,11 +1283,16 @@ class BhasApp {
 
                 if (!authError && authData.user) {
                     // 로그인 성공 후 기업 프로필 조회
-                    const { data: companyProfile } = await this.supabase
+                    let { data: companyProfile } = await this.supabase
                         .from('companies')
                         .select('*')
                         .eq('username', identifier.includes('@') ? identifier.split('@')[0] : identifier)
                         .single();
+                    //  파트너는 companies 를 직접 못 읽는다(099) → 자기 계정의 보여도 되는 열만 주는 my_profile()
+                    if (!companyProfile) {
+                        const { data: mine } = await this.supabase.rpc('my_profile');
+                        companyProfile = (mine && mine[0]) || null;
+                    }
 
                     this.currentUser = authData.user;
                     if (companyProfile) {

@@ -1,4 +1,4 @@
--- 099 되돌리기: RESTRICTIVE 정책·직원 검사 줄·partner_items·require_staff 를 걷어내 10-28 운영 상태로.
+-- 099 되돌리기: RESTRICTIVE 정책·직원 검사 줄·partner_items·partner_data·my_profile·require_staff 를 걷어내 10-28 운영 상태로.
 --   기존 PERMISSIVE 정책은 099 가 안 건드렸으니 그대로 남아 있다.
 --   함수 6개는 지금 깔린 정의에서 099 가 끼운 줄만 정확히 빼고 다시 만든다(나머지 본문은 그대로).
 
@@ -36,4 +36,6 @@ begin
 end $$;
 
 drop function if exists public.partner_items();
+drop function if exists public.partner_data();
+drop function if exists public.my_profile();
 drop function if exists public.require_staff();

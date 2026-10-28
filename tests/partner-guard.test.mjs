@@ -31,21 +31,22 @@ const U = { boss: 'cccccccc-0000-4000-8000-000000000001', sin: 'cccccccc-0000-40
 //  비밀번호 칸은 비워 둔다(테스트에도 비밀번호를 적지 않는다)
 const SEED = `
 insert into brands (id, name) values ('${MUMUN}', '머문'), ('${OTHER}', '다른브랜드');
-insert into companies (id, name, role, username, brand_id, brand_access) values
-  ('${U.boss}', '대표', 'MASTER', 'boss', null, null),
-  ('${U.sin}', '직원', 'STAFF', 'sin', null, array['${MUMUN}', '${OTHER}']::uuid[]),
-  ('${U.mumun}', '머문', 'CLIENT', 'mumun', '${MUMUN}', null);
-insert into products (id, name, brand_id, company_id, access) values
-  ('${S_MINE}', '머문 26SS', '${MUMUN}', '${U.boss}', 'all'),
-  ('${S_OTHER}', '다른 26SS', '${OTHER}', '${U.boss}', 'all'),
-  ('${S_NULL}', '브랜드 없는 시즌', null, '${U.boss}', 'all');
+--  LEAK_* 는 진짜 값이 아니라 '새면 안 되는 칸' 표시(파트너 응답에 나오면 실패)
+insert into companies (id, name, role, username, brand_id, brand_access, password, menu_access) values
+  ('${U.boss}', '대표', 'MASTER', 'boss', null, null, null, null),
+  ('${U.sin}', '직원', 'STAFF', 'sin', null, array['${MUMUN}', '${OTHER}']::uuid[], null, null),
+  ('${U.mumun}', '머문', 'CLIENT', 'mumun', '${MUMUN}', null, 'LEAK_PW', array['LEAK_MENU']);
+insert into products (id, name, brand_id, company_id, access, members) values
+  ('${S_MINE}', '머문 26SS', '${MUMUN}', '${U.boss}', 'all', array['LEAK_MEMBER']),
+  ('${S_OTHER}', '다른 26SS', '${OTHER}', '${U.boss}', 'all', null),
+  ('${S_NULL}', '브랜드 없는 시즌', null, '${U.boss}', 'all', null);
 insert into product_items (brand_id, product_id, name, status, memo, vendor_id, quote_id, pattern_no, ship_date, sale_names) values
   ('${MUMUN}', '${S_MINE}', '하렘팬츠', '메인투입', '공장 단가 메모', gen_random_uuid(), gen_random_uuid(), 'P-01', '2026-11-03', array['머문 하렘팬츠']),
   ('${MUMUN}', '${S_OTHER}', '섞인 시즌 제품', '샘플 중', '', null, null, null, null, null),
   ('${OTHER}', '${S_OTHER}', '다른 브랜드 제품', '샘플 중', '비밀', null, null, null, null, null);
-insert into product_stages (product_id, stage_id, status) values ('${S_MINE}', 'design', 'done'), ('${S_OTHER}', 'design', 'done');
-insert into photos (product_id, url) values ('${S_MINE}', 'mine.jpg'), ('${S_OTHER}', 'other.jpg');
-insert into season_steps (brand_id, name) values (null, '공통 틀'), ('${MUMUN}', '머문 틀'), ('${OTHER}', '다른 틀');
+insert into product_stages (product_id, stage_id, status, note) values ('${S_MINE}', 'design', 'done', 'LEAK_NOTE'), ('${S_OTHER}', 'design', 'done', null);
+insert into photos (product_id, url, created_by) values ('${S_MINE}', 'mine.jpg', '${U.boss}'), ('${S_OTHER}', 'other.jpg', null);
+insert into season_steps (brand_id, name, active) values (null, '공통 틀', true), ('${MUMUN}', '머문 틀', true), ('${OTHER}', '다른 틀', true);
 insert into memos (product_id, text) values ('${S_MINE}', '내부 메모');
 insert into todos (product_id, text) values ('${S_MINE}', '내부 할 일');
 insert into history (product_id, note) values ('${S_MINE}', '기록');
@@ -121,26 +122,37 @@ test('099 파트너 막기(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE_PAT
         assert.equal(await err('boss', 'select public.reap_apify_runs()'), null);
     });
 
-    await t.test('파트너: 자기 브랜드 시즌·단계·사진·자기 계정 행만', async () => {
-        assert.deepEqual((await as('mumun', 'select name from products order by 1')).rows.map(r => r.name), ['머문 26SS']);
-        assert.equal(await n('mumun', 'select * from product_stages'), 1);
-        assert.deepEqual((await as('mumun', 'select url from photos')).rows.map(r => r.url), ['mine.jpg']);
-        assert.deepEqual((await as('mumun', 'select name from brands')).rows.map(r => r.name), ['머문']);
-        assert.deepEqual((await as('mumun', 'select username from companies')).rows.map(r => r.username), ['mumun']);
-        assert.deepEqual((await as('mumun', 'select name from season_steps order by 1')).rows.map(r => r.name), ['공통 틀', '머문 틀']);
-    });
-
-    await t.test('파트너: 내부 자료·다른 브랜드는 0줄', async () => {
-        for (const tb of ['memos', 'todos', 'history', 'documents', 'ig_accounts', 'cs_tickets', 'news_items', 'sync_log', 'product_items']) {
-            assert.equal(await n('mumun', `select * from ${tb}`), 0, tb);
-        }
-        //  RLS 켜진 표 전부: 위에서 허용한 6개 말고는 한 줄도 안 보인다
-        const ok = new Set(['companies', 'brands', 'products', 'product_stages', 'photos', 'season_steps']);
-        for (const tb of tables.filter(x => !ok.has(x))) {
-            const r = await err('mumun', `select 1 from public."${tb}" limit 1`) ?? (await n('mumun', `select 1 from public."${tb}"`));
+    await t.test('파트너: 원표는 RLS 켜진 표 전부 0줄(행만이 아니라 열도 새지 않게)', async () => {
+        for (const tb of tables) {
+            const r = await err('mumun', `select 1 from public."${tb}" limit 1`) ?? (await n('mumun', `select * from public."${tb}"`));
             assert.ok(r === 0 || r === '42501', `${tb}: ${r}`);
         }
+        //  반려1에서 짚은 열을 직접 API 로 집어 물어도 아무것도 안 나온다
+        for (const q of ['select members, company_id from products', 'select note from product_stages', 'select created_by from photos',
+            'select password, menu_access, auth_user_id from companies', 'select memo, vendor_id, quote_id from product_items', 'select checklist from season_steps']) {
+            assert.equal(await n('mumun', q), 0, q);
+        }
         assert.equal(await n('mumun', 'select * from storage.objects'), 0);
+    });
+
+    await t.test('파트너 자기 계정 my_profile · 화면 자료 partner_data — 자기 브랜드, 보여도 되는 열만', async () => {
+        const me = await as('mumun', 'select * from public.my_profile()');
+        assert.deepEqual(me.fields.map(f => f.name), ['id', 'name', 'role', 'username', 'brand_id', 'brand_access']);
+        assert.equal(me.rows.length, 1);
+        assert.equal(me.rows[0].role, 'CLIENT'); assert.equal(me.rows[0].brand_id, MUMUN);
+        const d = (await as('mumun', 'select public.partner_data() d')).rows[0].d;
+        assert.deepEqual(d.brands.map(b => b.name), ['머문']);
+        assert.deepEqual(d.seasons.map(x => x.name), ['머문 26SS']);
+        assert.deepEqual(Object.keys(d.seasons[0]).sort(), ['brand_id', 'created_at', 'deadline', 'id', 'name', 'start_date']);
+        assert.equal(d.stages.length, 1); assert.ok(!('note' in d.stages[0]));
+        assert.deepEqual(d.photos.map(x => x.url), ['mine.jpg']); assert.ok(!('created_by' in d.photos[0]));
+        assert.deepEqual(d.steps.map(x => x.name).sort(), ['공통 틀', '머문 틀']);
+        //  씨앗에 심은 표시값이 파트너가 받을 수 있는 어디에도 없다
+        const got = JSON.stringify([me.rows, d, (await as('mumun', 'select * from public.partner_items()')).rows]);
+        for (const m of ['LEAK_MEMBER', 'LEAK_NOTE', 'LEAK_PW', 'LEAK_MENU', U.boss, '공장 단가 메모', 'P-01', '다른']) assert.ok(!got.includes(m), m);
+        //  다른 브랜드 파트너가 아니면(직원) 함수도 자기 범위 — 비로그인은 못 부른다
+        assert.ok(await err(null, 'set role anon; select public.partner_data()')); await db.exec('reset role');
+        assert.ok(await err(null, 'set role anon; select public.my_profile()')); await db.exec('reset role');
     });
 
     await t.test('파트너 제품 목록 partner_items — 자기 브랜드, 안전한 열만', async () => {
@@ -284,4 +296,37 @@ test('파트너는 허용 화면만 열고, 직원 메뉴는 그대로', () => {
     assert.match(src, /MAC_DOCK\.filter\(d => !d\.tool && \(d\.launcher \|\| this\._viewAllowed\(d\.id\)\)\)/);
     assert.match(src, /items = items\.filter\(i => this\._viewAllowed\(i\[0\]\)\)/);
     assert.match(src, /if \(this\.currentUser\?\.role === 'CLIENT'\) return this\.renderPartnerItems\(\);/);
+});
+
+test('파트너 로그인·첫 자료는 함수로 — companies 못 읽으면 my_profile, 화면 자료는 partner_data 하나', async () => {
+    //  로그인: 직접 조회가 비면 my_profile() 로 역할·브랜드를 잡는다(CLIENT 폴백보다 먼저)
+    const login = src.slice(src.indexOf("// 로그인 성공 후 기업 프로필 조회"), src.indexOf('// 프로필이 없는 경우 기본 권한'));
+    assert.match(login, /if \(!companyProfile\) \{[\s\S]*rpc\('my_profile'\)[\s\S]*mine\[0\]/);
+    //  첫 자료: CLIENT 는 원표 대신 partner_data 로만
+    const init = grab('loadInitialData').toString();
+    assert.match(init.slice(0, 300), /role === 'CLIENT'[\s\S]*_loadPartnerData\(\)[\s\S]*return;/);
+    globalThis.mockData = {};
+    const calls = [];
+    const t = {
+        currentUser: { role: 'CLIENT', company_id: 'c1', name: '머문', brand_id: 'b1' }, synced: 0,
+        syncStagesData() { this.synced++; },
+        supabase: { rpc: async (fn) => { calls.push(fn); return { data: {
+            brands: [{ id: 'b1', name: '머문' }],
+            seasons: [{ id: 's1', name: '머문 26SS', brand_id: 'b1' }],
+            stages: [{ product_id: 's1', stage_id: 'design', status: 'done', due_date: '2026-11-01' }],
+            photos: [{ id: 'f1', product_id: 's1', url: 'mine.jpg' }],
+            steps: [{ id: 't1', name: '공통 틀' }] }, error: null }; } },
+    };
+    await grab('_loadPartnerData').call(t);
+    assert.deepEqual(calls, ['partner_data']);
+    const p = mockData.products[0];
+    assert.equal(p.name, '머문 26SS');
+    assert.deepEqual(p.stages_data, { design: { status: 'done', due_date: '2026-11-01' } });
+    assert.deepEqual(p.photos.map(f => f.url), ['mine.jpg']);
+    assert.deepEqual([p.todos, p.memos, p.history, p.documents], [[], [], [], []]);
+    assert.deepEqual(mockData.companies, [{ id: 'c1', name: '머문', role: 'CLIENT', brand_id: 'b1' }]);
+    assert.deepEqual(mockData.brands.map(b => b.name), ['머문']);
+    assert.deepEqual(t.seasonSteps.map(s => s.name), ['공통 틀']);
+    assert.equal(t.synced, 1);
+    delete globalThis.mockData;
 });

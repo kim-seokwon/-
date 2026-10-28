@@ -5,14 +5,15 @@
 --
 -- 방법: 기존 정책(전부 PERMISSIVE)은 하나도 안 건드리고, public 의 RLS 켜진 모든 표에 RESTRICTIVE 정책 4개(읽기·넣기·고치기·지우기)를 얹는다.
 --   RESTRICTIVE 는 기존 정책과 AND 로 묶인다 → 직원(MASTER·STAFF, is_staff())은 지금과 똑같고, 그 밖의 로그인 계정은
---   아래 '파트너가 읽어도 되는 것'만 읽고 아무것도 못 쓴다. 대상은 authenticated 만 — anon·service_role(엣지함수)은 지금 그대로.
---   파트너가 읽어도 되는 것(그것도 기존 정책을 통과한 것 중에서만):
---     companies      자기 계정 행 하나
---     brands         자기 브랜드(can_access_brand)
---     products       자기 브랜드 시즌(brand_id NULL 시즌은 안 보임)
---     product_stages·photos  자기 브랜드 시즌에 붙은 것
---     season_steps   시즌 단계 틀(공통 틀 = brand_id NULL 포함)
---   product_items 는 표를 막고, 안전한 열만 내주는 partner_items() 로 준다(memo·vendor_id·quote_id·tech_pack_id·pattern_no·trims·checked·created_by 빠짐).
+--   원표를 한 줄도 못 읽고 아무것도 못 쓴다. 대상은 authenticated 만 — anon·service_role(엣지함수)은 지금 그대로.
+--   (행만 거르면 열이 샌다 — products.members·company_id, product_stages.note, photos.created_by,
+--    companies.password·menu_access·auth_user_id. 코덱스 검수 반려1, 10-28)
+--   파트너가 보는 것은 보여도 되는 열만 골라 내주는 함수 셋으로만 준다:
+--     my_profile()     자기 계정: id·name·role·username·brand_id·brand_access
+--     partner_data()   자기 브랜드: 브랜드(id·name·brand_color·status) · 시즌(id·name·deadline·brand_id·start_date·created_at)
+--                      · 단계(product_id·stage_id·status·due_date·updated_at, note 빠짐) · 사진(id·product_id·url·created_at)
+--                      · 시즌 단계 틀(공통 + 자기 브랜드)
+--     partner_items()  자기 브랜드 제품(memo·vendor_id·quote_id·tech_pack_id·pattern_no·trims·checked·created_by 빠짐)
 --   보기는 security_invoker 라 밑 표의 막힘을 그대로 따른다(10-28 확인: 17개 모두 security_invoker=true).
 -- SECURITY DEFINER 함수(RLS 를 안 탄다) 중 로그인 계정이 부를 수 있고 직원 전용 자료를 돌려주는 6개는 첫머리에 직원 검사(require_staff)를 넣는다:
 --   morning_brief · get_channel_operational_status · reap_apify_runs · brand_customers · brand_gone_counts · brand_vip_rank_changes
@@ -50,32 +51,60 @@ $$;
 revoke all on function public.partner_items() from public, anon;
 grant execute on function public.partner_items() to authenticated, service_role;
 
--- 3) 모든 표에 RESTRICTIVE 정책
+-- 2-1) 자기 계정 — 로그인 직후 역할·브랜드를 잡는 데 필요한 열만(비밀번호·메뉴권한·auth 연결 빠짐)
+create or replace function public.my_profile()
+returns table (id uuid, name text, role text, username text, brand_id uuid, brand_access uuid[])
+language sql stable security definer set search_path = public as $$
+  select c.id, c.name, c.role, c.username, c.brand_id, c.brand_access
+    from companies c
+   where c.username = split_part(auth.jwt()->>'email', '@', 1)
+   limit 1
+$$;
+revoke all on function public.my_profile() from public, anon;
+grant execute on function public.my_profile() to authenticated, service_role;
+
+-- 2-2) 파트너 화면 자료 한 번에 — 자기 브랜드(brand_id NULL 시즌 제외) 것만, 보여도 되는 열만
+create or replace function public.partner_data()
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  with s as (
+    select p.id, p.name, p.deadline, p.brand_id, p.start_date, p.created_at
+      from products p
+     where p.brand_id is not null and public.can_access_brand(p.brand_id)
+  )
+  select jsonb_build_object(
+    'brands',  coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name, 'brand_color', b.brand_color, 'status', b.status) order by b.name)
+                           from brands b where public.can_access_brand(b.id)), '[]'::jsonb),
+    'seasons', coalesce((select jsonb_agg(to_jsonb(s) order by s.created_at desc) from s), '[]'::jsonb),
+    'stages',  coalesce((select jsonb_agg(jsonb_build_object('product_id', g.product_id, 'stage_id', g.stage_id, 'status', g.status,
+                                                             'due_date', g.due_date, 'updated_at', g.updated_at))
+                           from product_stages g where g.product_id in (select id from s)), '[]'::jsonb),
+    'photos',  coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'product_id', f.product_id, 'url', f.url, 'created_at', f.created_at) order by f.created_at)
+                           from photos f where f.product_id in (select id from s)), '[]'::jsonb),
+    'steps',   coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'brand_id', t.brand_id, 'name', t.name, 'offset_days', t.offset_days,
+                                                             'checklist', t.checklist, 'icon', t.icon, 'color', t.color, 'sort', t.sort,
+                                                             'on_default', t.on_default, 'active', t.active, 'kind', t.kind) order by t.sort)
+                           from season_steps t where t.active and (t.brand_id is null or public.can_access_brand(t.brand_id))), '[]'::jsonb)
+  )
+$$;
+revoke all on function public.partner_data() from public, anon;
+grant execute on function public.partner_data() to authenticated, service_role;
+
+-- 3) 모든 표에 RESTRICTIVE 정책 — 직원이 아니면 원표는 읽기도 쓰기도 없음
 do $$
 declare
   t text;
-  allow text;
-  own_season text := 'exists (select 1 from public.products p where p.id = %I.product_id and p.brand_id is not null and public.can_access_brand(p.brand_id))';
 begin
   for t in
     select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind in ('r', 'p') and c.relrowsecurity
      order by 1
   loop
-    allow := case t
-      when 'companies'      then 'id::text = (select public.get_user_company_id())'
-      when 'brands'         then 'public.can_access_brand(id)'
-      when 'products'       then 'brand_id is not null and public.can_access_brand(brand_id)'
-      when 'product_stages' then format(own_season, t)
-      when 'photos'         then format(own_season, t)
-      when 'season_steps'   then 'brand_id is null or public.can_access_brand(brand_id)'
-      else 'false'
-    end;
     execute format('drop policy if exists partner_guard_select on public.%I', t);
     execute format('drop policy if exists partner_guard_insert on public.%I', t);
     execute format('drop policy if exists partner_guard_update on public.%I', t);
     execute format('drop policy if exists partner_guard_delete on public.%I', t);
-    execute format('create policy partner_guard_select on public.%I as restrictive for select to authenticated using ((select public.is_staff()) or (%s))', t, allow);
+    execute format('create policy partner_guard_select on public.%I as restrictive for select to authenticated using ((select public.is_staff()))', t);
     execute format('create policy partner_guard_insert on public.%I as restrictive for insert to authenticated with check ((select public.is_staff()))', t);
     execute format('create policy partner_guard_update on public.%I as restrictive for update to authenticated using ((select public.is_staff())) with check ((select public.is_staff()))', t);
     execute format('create policy partner_guard_delete on public.%I as restrictive for delete to authenticated using ((select public.is_staff()))', t);
