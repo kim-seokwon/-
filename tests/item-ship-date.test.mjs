@@ -21,7 +21,9 @@ const mkApp = (items) => {
         _itemLabel: i => i.name, _itemIssues: () => [], requestRender() { this.renders++; }, showToast() {},
         supabase: { from: () => ({ update: (patch) => ({ eq: async (_c, id) => { t.saves.push({ id, ...patch }); return { error: null }; } }) }) },
     };
-    for (const n of ['renderItemTable', '_itemDateCell', '_sortItemRows', '_itemColVal', 'setItem']) t[n] = grab(n);
+    t.noteList = []; t._noteText = n => String(n.body || '').replace(/^<!--p (.*?)-->\n?/, '');
+    t._itemMemoLine = it => String(it.memo || '');
+    for (const n of ['renderItemTable', '_itemDateCell', '_sortItemRows', '_itemColVal', 'setItem', '_itemNoteOf', '_itemMemoText', '_itemMemoPlain']) t[n] = grab(n);
     return t;
 };
 const items = () => [
