@@ -3894,7 +3894,7 @@ class BhasApp {
         const seasonName = id => (this._seasons().find(p => String(p.id) === String(id)) || {}).name || '';
 
         (this.pItems || []).forEach(i => {
-            if (hit(i.name, i.pattern_no, i.memo, i.status)) {
+            if (hit(i.name, i.pattern_no, this._itemMemoPlain(i), i.status)) {
                 add('제품', 'ph-t-shirt', '#0a84ff', i.name || '이름 없는 제품',
                     [this._brandNameById(i.brand_id), seasonName(i.product_id), i.status].filter(x => x && x !== '-').join(' · '),
                     `app.findGo('items','${i.id}')`);
@@ -4247,8 +4247,7 @@ class BhasApp {
                 ${link('견적', !!qt, qt ? (qt.quote_no || qt.client_name || '열기') : '', `app.itemOpenQuote('${it.id}')`, `app.itemNewQuote('${it.id}')`)}
                 <div class="dt-li"><span>생산 투입</span><b>${jobs.length ? jobs.length + '건' : '없음'}</b></div>
                 ${jobs.map(j => `<div class="dt-li"><span>${esc(j.vname || '')} · ${esc(j.stage || '')}</span><b>${esc(j.due_date || '')}</b></div>`).join('')}
-                ${it.memo ? `<div class="dt-sec">한 줄 메모</div><div class="dt-memo">${esc(it.memo)}</div>` : ''}
-                <div class="dt-sec">제품 메모
+                <div class="dt-sec">메모
                     <span class="dt-tools">
                         <button onclick="app.itemNoteInsert('todo')" title="할 일 [ ]"><i class="ph ph-check-square"></i></button>
                         <button onclick="app.pickItemPhoto('${it.id}')" title="사진 넣기"><i class="ph ph-image"></i></button>
@@ -4261,7 +4260,7 @@ class BhasApp {
                     return this.ipPreview
                         ? `<div class="dt-doc nb">${note ? this._noteBodyHTML(note) : '<div class="dt-none sm">아직 적은 게 없습니다</div>'}</div>`
                         : `<textarea id="item-note-d" class="dt-ta" placeholder="여기에 적으세요 · [ ] 로 할 일"
-                            oninput="app.itemNoteTyping()" onblur="app.saveItemNote('${it.id}')">${esc(note ? this._noteText(note) : '')}</textarea>`;
+                            oninput="app.itemNoteTyping()" onblur="app.saveItemNote('${it.id}')">${esc(this._itemMemoText(it))}</textarea>`;
                 })()}
             `, `${tp ? `<button class="mbtn pri" onclick="app.openTechPack('${tp.id}')">작업지시서 열기</button>`
                      : `<button class="mbtn pri" onclick="app.itemNewTechPack('${it.id}')">작업지시서 만들기</button>
@@ -8049,6 +8048,8 @@ class BhasApp {
                 .order('pinned', { ascending: false }).order('updated_at', { ascending: false }).limit(200);
             if (error) throw error;
             this.noteList = data || []; this._noteLoaded = true;
+            //  200장 밖으로 밀린 제품 메모 장을 다시 붙인다
+            if (this._itemNotesLoaded) { this._itemNotesLoaded = false; this._loadItemNotes().then(() => this.requestRender()).catch(() => {}); }
             if (!this.noteSel && this.noteList.length) this.noteSel = this.noteList[0].id;
             //  폴더 권한 (045 를 안 돌렸으면 조용히 비워 둔다 — 화면은 그대로 돈다)
             try {
@@ -8459,7 +8460,7 @@ class BhasApp {
                 const tp = (this._techPacks || []).find(t => String(t.id) === String(it.tech_pack_id));
                 const col = this.ITEM_SC[it.status] || '#8e8e93';
                 const note = this._itemNoteOf(it.id);
-                const text = note ? this._noteText(note) : '';
+                const text = this._itemMemoText(it);
                 const f = (k, v) => v ? `<span class="ip-f"><em>${esc(k)}</em>${esc(String(v))}</span>` : '';
                 return `<aside class="npv wide">
                     <div class="npv-top">${back(`app.npOpen('${it.product_id || ''}')`, sea ? sea.name : '제품')}
@@ -8548,7 +8549,71 @@ class BhasApp {
     npOpen(pid) { this.npSea = (pid === null ? null : pid); this.npItem = null; this._itemPhotoFor = null; this.requestRender(); }
     //  제품 페이지의 글은 그 제품에 붙은 메모 한 장에 담는다
     //  (새 표를 만들지 않는다 — 메모엔 사진·[ ] 할 일이 이미 붙어 있다)
-    _itemNoteOf(id) { return (this.noteList || []).find(n => String(n.item_id) === String(id)); }
+    //  같은 제품에 장이 둘이면(옛 경합으로 생긴 것) 먼저 만든 장 — 100 마이그레이션도 먼저 만든 장에 합친다
+    _itemNoteOf(id) {
+        const all = (this.noteList || []).filter(n => String(n.item_id) === String(id));
+        return all.length > 1 ? all.sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))[0] : all[0];
+    }
+    //  제품 메모는 제품마다 한 곳 — item_id 로 묶인 notes 한 장(사진·[ ] 할 일 포함)에만 적는다(사장님 10-28 "메모랑 기록 두번씩쓰고있네").
+    //   예전 한 줄 메모(product_items.memo)는 100 마이그레이션이 이 장으로 옮긴다. 옮기기 전 줄은 같은 규칙으로 앞에 붙여 보여주고
+    //   처음 저장할 때 장으로 들어가며 한 줄 칸은 비운다. 규칙(SQL 100 과 같음): 이미 들어 있으면 그대로 · 장이 비었으면 한 줄만 · 아니면 한 줄 + 줄바꿈 + 장 글.
+    _itemMemoText(it) {
+        const n = this._itemNoteOf(it.id);
+        const text = n ? this._noteText(n) : '';
+        const memo = String(it.memo || '').trim();
+        if (!memo || this._memoHas(text, memo)) return text;
+        return text.trim() ? memo + '\n' + text : memo;
+    }
+    //  '이미 들어 있음' = 줄 단위로 통째 들어 있을 때만(앞뒤 공백 뺀 줄끼리) — '미입고' 안의 '입고'는 들어 있는 게 아니다(검수 10-28)
+    //   SQL 100·101 pg_temp.memo_has 와 같은 규칙
+    _memoHas(text, part) {
+        const norm = s => String(s || '').split('\n').map(l => l.replace(/^[ \t\r]+|[ \t\r]+$/g, '')).join('\n').replace(/^\n+|\n+$/g, '');
+        const p = norm(part);
+        return !p || ('\n' + norm(text) + '\n').includes('\n' + p + '\n');
+    }
+    //  목록·검색·거르기용 — 사진 줄 뺀 글, 그 첫 줄
+    _itemMemoPlain(it) {
+        return this._itemMemoText(it).split('\n').filter(l => !/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(l)).join('\n').trim();
+    }
+    _itemMemoLine(it) { return (this._itemMemoPlain(it).split('\n').find(l => l.trim()) || '').trim(); }
+    //  제품 메모 장은 메모 앱 목록(200장)과 따로 전부 받는다 — 목록에서 밀려난 장을 '없다'고 보고 새로 만들지 않게
+    async _loadItemNotes(force) {
+        if (this._itemNotesLoaded && !force) return;
+        if (!this._itemNotesP) this._itemNotesP = (async () => {
+            const { data, error } = await this.supabase.from('notes').select('*').not('item_id', 'is', null);
+            if (error) throw error;
+            const fresh = new Map((data || []).map(r => [String(r.id), r]));
+            this.noteList = [...(this.noteList || []).filter(n => !fresh.has(String(n.id))), ...fresh.values()];
+            this._itemNotesLoaded = true;
+        })().finally(() => { this._itemNotesP = null; });
+        return this._itemNotesP;
+    }
+    _itemNoteRow(it, body) {
+        const sea = this._seasons().find(p => String(p.id) === String(it.product_id));
+        return {
+            title: it.name || '제품', body, item_id: it.id,
+            product_id: it.product_id || null, brand_id: it.brand_id || null,
+            folder: sea ? sea.name : '제품', scope: it.product_id ? 'project' : 'shared',
+            created_by: this._actor(),
+        };
+    }
+    //  같은 제품의 메모 저장은 줄 세워 하나씩 — 입력 멈춤(0.9초) 저장과 칸 벗어남 저장이 겹쳐
+    //   장이 두 개 생기던 것(헨리넥 셋업, 10-26 0.015초 차)을 막는다. 사진 붙이기도 같은 줄을 탄다.
+    _itemNoteQueue(id, fn) {
+        this._itemNoteQ = this._itemNoteQ || new Map();
+        const k = String(id);
+        const run = (this._itemNoteQ.get(k) || Promise.resolve()).catch(() => {}).then(fn);
+        this._itemNoteQ.set(k, run);
+        run.catch(() => {}).finally(() => { if (this._itemNoteQ.get(k) === run) this._itemNoteQ.delete(k); });
+        return run;
+    }
+    //  장에 담고 나면 옛 한 줄 칸은 비운다(두 곳에 남기지 않는다)
+    async _dropLegacyMemo(it) {
+        if (!String(it.memo || '').trim()) return;
+        const { error } = await this.supabase.from('product_items').update({ memo: null }).eq('id', it.id);
+        if (error) throw error;   // 못 비우면 부른 쪽이 '부분 실패'로 알린다(두 곳에 남은 걸 숨기지 않는다)
+        it.memo = null;
+    }
     toggleItemPreview() { this.ipPreview = !this.ipPreview; this.requestRender(); }
     itemNoteTyping() {
         clearTimeout(this._ipT);
@@ -8568,35 +8633,50 @@ class BhasApp {
         ta.focus(); ta.setSelectionRange(np, np);
         this.itemNoteTyping();
     }
-    async saveItemNote(id, textOverride) {
-        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return null;
+    saveItemNote(id, textOverride) {
         const ta = this._ipTa();
-        const text = textOverride != null ? textOverride : (ta ? ta.value : null);
+        const text = textOverride != null ? textOverride : (ta ? ta.value : null);   // 부른 때의 글을 잡아 둔다
+        return this._itemNoteQueue(id, () => this._saveItemNoteNow(id, text));
+    }
+    async _saveItemNoteNow(id, text) {
+        const it = (this.pItems || []).find(x => String(x.id) === String(id)); if (!it) return null;
         if (text == null) return this._itemNoteOf(id);
-        let n = this._itemNoteOf(id);
         const sv = document.getElementById('ip-sv') || document.getElementById('ip-sv-d');
+        const fail = (msg) => { if (sv) sv.textContent = '저장 못 함'; this.showToast('저장 실패: ' + msg); return null; };
+        //  장은 저장됐는데 옛 한 줄 칸을 못 비움 = 부분 실패 — 알리고 장은 돌려준다(다음 저장 때 다시 비운다)
+        const drop = async () => {
+            try { await this._dropLegacyMemo(it); return true; }
+            catch (e) { if (sv) sv.textContent = '일부 저장'; this.showToast('메모는 저장됐지만 옛 한 줄 칸을 못 비움: ' + (e.message || e)); return false; }
+        };
+        try { await this._loadItemNotes(); } catch (e) { return fail(e.message || e); }   // 있는지 모르면 안 만든다
+        let n = this._itemNoteOf(id);
         if (n) {
             const body = this._joinNote(this._noteMeta(n), text);
-            if (body === n.body) { if (sv) sv.textContent = ''; return n; }
-            n.body = body; n.updated_at = new Date().toISOString();
+            if (body === n.body) { if ((await drop()) && sv) sv.textContent = ''; return n; }
             const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
-            if (sv) sv.textContent = error ? '저장 못 함' : '저장됨';
-            if (error) this.showToast('저장 실패: ' + error.message);
+            if (error) return fail(error.message);
+            n.body = body; n.updated_at = new Date().toISOString();
+            if (!(await drop())) return n;
+            if (sv) sv.textContent = '저장됨';
             setTimeout(() => { const s2 = document.getElementById('ip-sv') || document.getElementById('ip-sv-d');
                 if (s2) s2.textContent = ''; }, 1400);
             return n;
         }
-        if (!text.trim()) return null;
-        const sea = this._seasons().find(p => String(p.id) === String(it.product_id));
-        const row = {
-            title: it.name || '제품', body: text, item_id: it.id,
-            product_id: it.product_id || null, brand_id: it.brand_id || null,
-            folder: sea ? sea.name : '제품', scope: it.product_id ? 'project' : 'shared',
-            created_by: this._actor(),
-        };
-        const { data, error } = await this.supabase.from('notes').insert([row]).select().single();
-        if (error) { this.showToast('저장 실패 (047 SQL 필요): ' + error.message); return null; }
+        if (!text.trim()) { await drop(); return null; }   // 옛 한 줄을 지운 것
+        if (text === this._itemMemoText(it)) return null;                       // 옛 한 줄을 그대로 둔 채 벗어남 — 쓸 것 없음
+        //  다른 창·다른 사람이 방금 만든 장이 있으면 새로 안 만들고 거기에 잇는다
+        const { data: had, error: hErr } = await this.supabase.from('notes').select('*').eq('item_id', it.id)
+            .order('created_at', { ascending: true }).limit(1);
+        if (hErr) return fail(hErr.message);
+        if (had && had[0]) {
+            this.noteList = [had[0], ...(this.noteList || []).filter(x => x.id !== had[0].id)];
+            const cur = this._noteText(had[0]);
+            return this._saveItemNoteNow(id, this._memoHas(cur, text) ? cur : (cur.trim() ? cur.replace(/\s*$/, '') + '\n' + text : text));
+        }
+        const { data, error } = await this.supabase.from('notes').insert([this._itemNoteRow(it, text)]).select().single();
+        if (error) return fail('(047 SQL 필요) ' + error.message);
         this.noteList = [data, ...(this.noteList || [])];
+        if (!(await drop())) return data;
         if (sv) sv.textContent = '저장됨';
         return data;
     }
@@ -10223,8 +10303,7 @@ class BhasApp {
         const sea = seasons.find(p => String(p.id) === String(it.product_id));
         const brands = mockData.brands || [];
         const vendors = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
-        const note = this._itemNoteOf(it.id);
-        const text = note ? this._noteText(note) : '';
+        const text = this._itemMemoText(it);
         const photos = this._itemPhotos(it.id);
         const col = (this.ITEM_SC || {})[it.status] || '#8e8e93';
         const sel = (f, list, ph) => `<select class="ip2-in" onchange="app.setItem('${it.id}','${f}',this.value,1)">
@@ -10254,7 +10333,6 @@ class BhasApp {
                 ${field(this.ITEM_DATE_LABEL.ship_date, inp('ship_date', '', 'date'))}
                 ${field(this.ITEM_DATE_LABEL.open_date, inp('open_date', '', 'date'))}
                 ${field('판매명', `<button class="ip2-in as-btn" onclick="app.pickSaleName('${it.id}')">${(it.sale_names || []).length ? esc((it.sale_names || []).join(' · ')) : '카페24 상품명 붙이기'}</button>`)}
-                ${field('메모', inp('memo', '메모'))}
                 ${field('부자재·확인', `<label class="ip2-ck"><input type="checkbox"${it.trims ? ' checked' : ''}
                         onchange="app.setItem('${it.id}','trims',this.checked,1)"> 부자재</label>
                     <label class="ip2-ck"><input type="checkbox"${it.checked ? ' checked' : ''}
@@ -10262,7 +10340,7 @@ class BhasApp {
             </div>
             ${photos.length ? `<div class="ip2-ph">${photos.map(u => `<img src="${esc(u)}" alt="">`).join('')}</div>` : ''}
             <div class="ip2-note">
-                <div class="ip2-nh">기록 <span>[ ] 로 적으면 할 일이 됩니다 · 자동 저장</span></div>
+                <div class="ip2-nh">메모 <span>목록에는 첫 줄이 보입니다 · [ ] 로 적으면 할 일 · 자동 저장</span></div>
                 <textarea id="item-page-note" class="ip2-ta" placeholder="원단·부자재·수정사항·전달내용을 자유롭게 적으세요"
                     onblur="app.saveItemPageNote('${it.id}', this.value)">${esc(text)}</textarea>
             </div>
@@ -10270,7 +10348,7 @@ class BhasApp {
         </div>`;
     }
     async saveItemPageNote(id, text) {
-        try { await this.saveItemNote(id, text); } catch (e) { this.showToast('기록 저장 실패: ' + (e.message || e)); }
+        try { await this.saveItemNote(id, text); } catch (e) { this.showToast('메모 저장 실패: ' + (e.message || e)); }
     }
 
     // 제품리스트·시즌 기본 페이지·메모 임베드가 함께 쓰는 단 하나의 표 렌더러.
@@ -10322,7 +10400,7 @@ class BhasApp {
                     onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','status',this.value,1)">
                     ${this.ITEM_STATUSES.map(s => `<option value="${esc(s)}"${s === it.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
                 <td class="it-dt">${this._itemDateCell(it, 'ship_date', this.ITEM_DATE_LABEL.ship_date)}</td>
-                <td class="it-memo" title="${esc(it.memo || '')}">${mu(it.memo)}</td>
+                <td class="it-memo" title="${esc(this._itemMemoPlain(it).slice(0, 300))}">${mu(this._itemMemoLine(it))}</td>
                 <td class="it-c">${chk(it, 'trims')}</td><td class="it-c">${chk(it, 'checked')}</td>
                 <td class="it-mu">${mu(vn)}</td><td class="it-mu">${mu(se)}</td>
                 <td class="it-lk">
@@ -10416,26 +10494,27 @@ class BhasApp {
                 .upload(path, blob, { contentType: file.type || 'image/jpeg', upsert: false });
             if (upErr) throw upErr;
             const url = this.supabase.storage.from('bhas').getPublicUrl(path).data.publicUrl;
-            //  제품 페이지가 없으면 만들어서 거기에 붙인다
-            let n = (this.noteList || []).find(x => String(x.item_id) === String(itemId));
-            if (!n) {
-                const sea = this._seasons().find(p => String(p.id) === String(it.product_id));
-                const brand = (mockData.brands || []).find(b => String(b.id) === String(it.brand_id));
-                const r = await this.supabase.from('notes').insert([{
-                    title: it.name || '제품', folder: brand ? brand.name : '공용', scope: 'shared',
-                    product_id: it.product_id || null, item_id: itemId,
-                    body: this._joinNote({ proj: it.product_id ? String(it.product_id) : '' }, ''),
-                    created_by: this.currentUser?.name || null, owner: this._me ? this._me() : null,
-                }]).select().single();
-                if (r.error) throw r.error;
-                n = r.data; this.noteList = [n, ...(this.noteList || [])];
-            }
-            const text = this._noteText(n);
-            const body = this._joinNote(this._noteMeta(n), (text ? text.replace(/\s*$/, '') + '\n' : '') + `![사진](${url})`);
-            const up = await this.supabase.from('notes').update({ body }).eq('id', n.id);
-            if (up.error) throw up.error;
-            n.body = body;
-            this.showToast('사진을 올렸습니다');
+            //  제품 메모 장에 붙인다(없으면 만든다) — 글 저장과 같은 줄을 타서 장이 둘 생기지 않는다
+            let partial = '';
+            await this._itemNoteQueue(itemId, async () => {
+                await this._loadItemNotes();
+                let n = this._itemNoteOf(itemId);
+                const text = this._itemMemoText(it);
+                const next = (text ? text.replace(/\s*$/, '') + '\n' : '') + `![사진](${url})`;
+                if (!n) {
+                    const r = await this.supabase.from('notes').insert([this._itemNoteRow(it, next)]).select().single();
+                    if (r.error) throw r.error;
+                    n = r.data; this.noteList = [n, ...(this.noteList || [])];
+                } else {
+                    const nb = this._joinNote(this._noteMeta(n), next);
+                    const up = await this.supabase.from('notes').update({ body: nb }).eq('id', n.id);
+                    if (up.error) throw up.error;
+                    n.body = nb;
+                }
+                try { await this._dropLegacyMemo(it); }
+                catch (e) { partial = '사진은 올렸지만 옛 한 줄 칸을 못 비움: ' + (e.message || e); }
+            });
+            this.showToast(partial || '사진을 올렸습니다');
         } catch (e) { this.showToast('사진 올리기 실패: ' + (e.message || e)); }
     }
     //  제품 페이지로 — 옆 패널에서 그 제품을 연다
@@ -15685,6 +15764,7 @@ class BhasApp {
                     .order('sort', { ascending: true }).order('created_at', { ascending: false });
             if (error) throw error;
             this.pItems = data || [];
+            try { await this._loadItemNotes(true); } catch (_e) { /* 메모 칸만 비고 표는 돈다 */ }
         } catch (e) {
             this.showToast('제품리스트를 불러오지 못했습니다. (041_product_items.sql 설치 필요)');
             this.pItems = [];
@@ -15922,18 +16002,16 @@ class BhasApp {
     setItemSeason(v) { this.itemSeason = v; this._unpickItems(); this.itemLimit = 50; this.requestRender(); }
     setItemStatus(v) { this.itemStatus = v; this._unpickItems(); this.itemLimit = 50; this.requestRender(); }
     moreItems() { this.itemLimit = (this.itemLimit || 50) + 50; this.requestRender(); }
-    //  B2. 데이터는 고치지 않는다 — 이상한 줄을 가려내 보여만 준다.
-    //   · 이름이 비었다 (표에서 한 줄 추가하고 이름을 안 적은 것)
-    //   · '출고완료'인데 메모는 아직 준비 중이라고 말한다
-    //   · 테스트로 만든 줄
-    _itemIssues(it) {
+    //  B2. 데이터는 고치지 않는다 — 지금 틀려서 고쳐야 하는 줄만 '확인'으로 가려낸다(10-28 기준).
+    //   · 이름이 비었다 · 브랜드가 없다 · 테스트로 만든 줄 · 출고예정일이 지났는데 출고완료가 아니다(날짜나 현황 둘 중 하나가 틀림)
+    //   뺀 것: '시즌 없음'(123개 중 114개 — 경고가 아니라 배경이 됨. 시즌 거르개 '시즌 없음'으로 따로 모아 본다),
+    //          '출고완료인데 메모에 요청·샘플'(메모는 지난 경과를 적는 곳이라 11개 중 10개가 헛경보).
+    _itemIssues(it, today = new Date().toLocaleDateString('sv-SE')) {
         const out = [];
         if (!String(it.name || '').trim()) out.push('이름 없음');
         if (!it.brand_id) out.push('브랜드 없음');
-        //  103개 중 100개가 시즌이 없다. 제일 큰 구멍인데 안 보이면 영영 안 고친다.
-        if (!it.product_id) out.push('시즌 없음');
-        if (it.status === '출고완료' && /(요청|해야|시작 ?전|샘플)/.test(String(it.memo || ''))) out.push('상태와 메모가 어긋남');
         if (/테스트|test/i.test(String(it.name || ''))) out.push('테스트 항목');
+        if (it.ship_date && String(it.ship_date).slice(0, 10) < today && it.status !== '출고완료') out.push('출고예정일 지남');
         return out;
     }
     pickRow(id, on) {
@@ -15994,7 +16072,7 @@ class BhasApp {
         const S = id => (this._seasons().find(p => String(p.id) === String(id)) || {}).name || '';
         return ({
             brand_id: B(i.brand_id), name: this._itemLabel(i), sale: (i.sale_names || [])[0] || '',
-            pattern_no: i.pattern_no || '', status: i.status || '', memo: i.memo || '',
+            pattern_no: i.pattern_no || '', status: i.status || '', memo: this._itemMemoLine(i),
             trims: i.trims ? '예' : '아니오', checked: i.checked ? '예' : '아니오',
             vendor_id: V(i.vendor_id), product_id: S(i.product_id),
             ship_date: i.ship_date || '', open_date: i.open_date || '',
@@ -16261,13 +16339,28 @@ class BhasApp {
             if (error) { fail += Math.min(100, out.length - i); continue; }
             made2.push(...(data || []));
         }
+        //  노션 '메모' 열은 제품 메모 장으로 옮긴다(한 곳에만) — 장을 못 만들면 한 줄 칸에 그대로 둔다(안 잃음)
+        const withMemo = made2.filter(i => String(i.memo || '').trim());
+        let memoLeft = 0;
+        for (let i = 0; i < withMemo.length; i += 100) {
+            const part = withMemo.slice(i, i + 100);
+            const { data: ns, error: nErr } = await this.supabase.from('notes')
+                .insert(part.map(it => this._itemNoteRow(it, String(it.memo).trim()))).select();
+            if (nErr || !ns) continue;
+            this.noteList = [...ns, ...(this.noteList || [])];
+            const done = part.filter(it => ns.some(n => String(n.item_id) === String(it.id))).map(it => it.id);
+            const { error: cErr } = await this.supabase.from('product_items').update({ memo: null }).in('id', done);
+            if (cErr) memoLeft += done.length;
+            else part.forEach(it => { if (done.includes(it.id)) it.memo = null; });
+        }
         this.pItems = [...made2, ...(this.pItems || [])];
         this._vendorsLoaded = false; this.loadVendors();
         this.requestRender();
         this.showToast(`제품 ${made2.length}줄 가져옴` +
             (made.season ? ` · 시즌 ${made.season}개 새로 만듦` : '') +
             (made.vendor ? ` · 공장 ${made.vendor}곳 새로 만듦` : '') +
-            (fail ? ` · ${fail}줄 실패` : ''));
+            (fail ? ` · ${fail}줄 실패` : '') +
+            (memoLeft ? ` · 메모 ${memoLeft}줄은 장에 담았지만 한 줄 칸을 못 비움` : ''));
     }
 
     //  파트너 생산 화면 맨 위 안내 — 문구는 사장님 원문(10-28) 그대로. 늘릴 땐 여기에 한 줄 더.
@@ -16341,7 +16434,7 @@ class BhasApp {
         if (stKey === 'ACTIVE') rows = rows.filter(i => (i.status || '') !== '출고완료');
         else if (stKey === 'CHECK') rows = rows.filter(i => this._itemIssues(i).length);
         else if (stKey !== 'ALL') rows = rows.filter(i => (i.status || '') === stKey);
-        if (q) rows = rows.filter(i => [i.name, i.pattern_no, i.memo].some(v => String(v || '').toLowerCase().includes(q)));
+        if (q) rows = rows.filter(i => [i.name, i.pattern_no, this._itemMemoPlain(i)].some(v => String(v || '').toLowerCase().includes(q)));
         //  칸마다 걸어 둔 거르기
         const colF = this.itemColF || {};
         Object.keys(colF).forEach(k => {
