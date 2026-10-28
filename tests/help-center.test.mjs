@@ -227,12 +227,13 @@ const ids = (a) => a._helpManual('').manual.map(m => m.id);
 test('권한: 고객사는 홈·생산(시즌)·설정만 — 판매·SNS·뉴스·연락처 설명도 열기도 없음', () => {
     const c = app('CLIENT');
     assert.deepEqual(ids(c), ['home', 'items', 'settings']);
-    assert.equal(c._helpManualTarget('items'), 'dashboard', '생산 묶음은 고객사가 볼 수 있는 시즌 탭으로');
+    //  099 뒤로 고객사(파트너)는 자기 브랜드 제품 목록(읽기 전용)을 연다 — 생산 묶음 머리 = 제품
+    assert.equal(c._helpManualTarget('items'), 'items', '생산 묶음은 고객사가 볼 수 있는 제품 목록으로');
     for (const v of ['orders', 'sns', 'news', 'contacts', 'documents', 'notes', 'calendar']) {
         const a = app('CLIENT'); a.go(v);
         assert.equal(a.went, undefined, v + ' 열리면 안 됨'); assert.ok(!a.closed, v);
     }
-    const g = app('CLIENT'); g.go('items'); assert.equal(g.went, 'dashboard');
+    const g = app('CLIENT'); g.go('items'); assert.equal(g.went, 'items');
     const h = manualListHTML(c._helpManual(''));
     assert.ok(!/data-id="(orders|sns|news|contacts)"/.test(h), '권한 밖 타일 없음');
     assert.equal(app('CLIENT', null, 'orders')._helpManual('').here, null, '권한 밖 화면이면 지금 화면 카드 없음');

@@ -525,8 +525,10 @@ class BhasApp {
     // 권한 반영된 가시 시즌 목록 (CLIENT는 본인 회사만)
     _visibleProducts() {
         const list = mockData.products || [];
+        //  파트너 계정 행(companies)과 시즌의 company_id 는 따로 논다 → 배정 브랜드로 거른다
         if (this.currentUser && this.currentUser.role === 'CLIENT') {
-            return list.filter(p => p.company_id === this.currentUser.company_id);
+            const ab = this._allowedBrandIds();
+            return list.filter(p => ab.has(p.brand_id));
         }
         return list;
     }
@@ -1319,6 +1321,8 @@ class BhasApp {
         const perms = mockData.permissions[role] || [];
         const menuItems = [
             { id: 'dashboard', label: '시즌', icon: '<i class="ph ph-chart-bar"></i>', group: 'prod', visible: perms.includes('dashboard') },
+            //  파트너(CLIENT)는 자기 브랜드 제품 목록을 보기만(099 partner_items). 직원은 _menuViewSet 이 제품리스트를 넣는다
+            { id: 'items', label: '제품', icon: '<i class="ph ph-t-shirt"></i>', group: 'prod', visible: role === 'CLIENT' },
             { id: 'timeline', label: '타임라인', icon: '<i class="ph ph-calendar-check"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'sample_maker', label: '샘플', icon: '<i class="ph ph-scissors"></i>', group: 'prod', visible: perms.includes('dashboard') },
             { id: 'tech_packs', label: '작업지시서', icon: '<i class="ph ph-clipboard-text"></i>', group: 'prod', visible: role === 'MASTER' || role === 'STAFF' },
@@ -1352,7 +1356,7 @@ class BhasApp {
                 // 새로 생긴 메뉴는 기존 menu_access 목록에 없으므로 역할 기본값을 유지한다
                 // (안 그러면 권한을 다시 저장하기 전까지 아무에게도 안 보인다).
                 //  (전엔 여기서 true 로 켜서 고객사에도 CS·메모·연락처가 열렸다 → 역할 기본값 그대로 둔다)
-                else if (['all_todos', 'cs', 'expenses', 'notes', 'reminders', 'settings', 'contacts'].includes(it.id)) { /* 역할 기본값 유지 */ }
+                else if (['all_todos', 'cs', 'expenses', 'notes', 'reminders', 'settings', 'contacts', 'items'].includes(it.id)) { /* 역할 기본값 유지 */ }
                 else it.visible = ma.includes(it.id);
             });
         }
@@ -1365,6 +1369,11 @@ class BhasApp {
         set.add('home');
         if (role === 'MASTER' || role === 'STAFF') ['items', 'news', 'crm'].forEach(v => set.add(v));
         return set;
+    }
+    //  파트너(CLIENT)는 허용된 화면만 연다 — 독·전체 메뉴·모두 찾기 어디로 와도 막는다(자료는 099 가 DB 에서 막는다)
+    _viewAllowed(view) {
+        if (this.currentUser?.role !== 'CLIENT') return true;
+        return view === 'home' || this._menuViewSet().has(view);
     }
     //  사용설명서 항목 → 실제로 열 화면. 판매·생산 묶음은 묶음 안에서 허용된 첫 탭, 아니면 그 id. 허용된 게 없으면 null
     _helpManualTarget(id) {
@@ -1399,7 +1408,7 @@ class BhasApp {
 
         let products = mockData.products;
         if (role === 'CLIENT') {
-            products = mockData.products.filter(p => p.company_id === this.currentUser.company_id);
+            products = mockData.products;   // 아래 브랜드 접근 게이트(_allowedBrandIds)가 배정 브랜드만 남긴다
         } else if (this.selectedCompanyId !== 'all') {
             // brand_id 기준 필터링 (브랜드 관리 연동)
             products = mockData.products.filter(p => p.brand_id === this.selectedCompanyId);
@@ -4021,6 +4030,7 @@ class BhasApp {
         this.LAUNCH.forEach(sec => {
             let items = sec.items;
             if (sec.g === '관리' && role !== 'MASTER') items = items.filter(i => i[0] === 'settings');
+            items = items.filter(i => this._viewAllowed(i[0]));
             if (k) items = items.filter(i => i[1].toLowerCase().includes(k));
             if (!items.length) return;
             html += `<div class="lc-g">${esc(sec.g)}</div><div class="lc-grid">` + items.map(([id, label, icon]) =>
@@ -5099,6 +5109,7 @@ class BhasApp {
                 </div>
             `;
         } else if (this.currentView === 'items') {
+            if (this.currentUser?.role === 'CLIENT') return this.renderPartnerItems();
             return this._appShell('items', this.renderItems());
         } else if (this.currentView === 'tech_packs') {
             return this._appShell('tech_packs', this.renderTechPacks());
@@ -6787,6 +6798,7 @@ class BhasApp {
         if ((v === 'tech_packs' || v === 'vendors' || v === 'dashboard') && !this._itemsLoaded && !this._itemsLoading) this.loadItems();
         if (v === 'items') {
             if (!this._itemsLoaded && !this._itemsLoading) this.loadItems();
+            if (this.currentUser?.role === 'CLIENT') return;   // 파트너는 제품 목록만(주문·공장·견적·작업지시서 안 받음)
             if (!this._ordersLoaded && !this._ordersLoading) this.loadOrders();
             if (!this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
             if (!this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
@@ -7737,6 +7749,7 @@ class BhasApp {
     }
     macOpen(view) {
         if (view === 'home') { this.macShowDesktop(); return; }   // 홈은 바탕화면 자체다
+        if (!this._viewAllowed(view)) { this.showToast('이 계정으로는 열 수 없는 화면입니다.'); return; }
         this.track?.(view, 'open');
         this.wins = this.wins || [];
         const found = this.wins.find(w => w.view === view);
@@ -7909,7 +7922,7 @@ class BhasApp {
         let deskboard = '';
         try { deskboard = (this._devPreviewContacts || this._devPreviewCRM) ? '' : (this.renderHome(products) || ''); }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
-        const dock = this.MAC_DOCK.filter(d => !d.tool).map(d => {
+        const dock = this.MAC_DOCK.filter(d => !d.tool && (d.launcher || this._viewAllowed(d.id))).map(d => {
             const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this.wins.find(w => w.view === d.id));
             const act = d.launcher ? 'app.openLauncher()' : `app.macOpen('${d.id}')`;
             return `<button class="mdi${open ? ' open' : ''}" onclick="${act}" title="${esc(d.label)}">
@@ -15634,8 +15647,11 @@ class BhasApp {
     async loadItems() {
         this._itemsLoading = true;
         try {
-            const { data, error } = await this.supabase.from('product_items').select('*')
-                .order('sort', { ascending: true }).order('created_at', { ascending: false });
+            //  파트너는 표를 직접 못 읽는다(099) → 보여도 되는 열만 내주는 partner_items()
+            const { data, error } = this.currentUser?.role === 'CLIENT'
+                ? await this.supabase.rpc('partner_items')
+                : await this.supabase.from('product_items').select('*')
+                    .order('sort', { ascending: true }).order('created_at', { ascending: false });
             if (error) throw error;
             this.pItems = data || [];
         } catch (e) {
@@ -16223,6 +16239,46 @@ class BhasApp {
             (fail ? ` · ${fail}줄 실패` : ''));
     }
 
+    //  파트너(CLIENT) 제품 목록 — 자기 브랜드 제품의 시즌·이름·판매명·제작현황·출고일자·오픈일만 '보기'.
+    //   자료는 partner_items()(099)가 보여도 되는 열만 준다. 고치기·공장·견적·메모 칸 없음.
+    renderPartnerItems() {
+        if (!this._itemsLoaded) return this._loadingSkeleton('제품');
+        const esc = s => this._vesc(s);
+        const all = this.pItems || [];
+        const seasons = [...new Set(all.map(i => i.season_name || ''))].sort((a, b) => a.localeCompare(b, 'ko'));
+        const sKey = this.ptnSeason ?? 'ALL', act = this.ptnAll ? 'ALL' : 'ACTIVE';
+        let rows = all;
+        if (sKey !== 'ALL') rows = rows.filter(i => (i.season_name || '') === sKey);
+        if (act === 'ACTIVE') rows = rows.filter(i => (i.status || '') !== '출고완료');
+        const d = v => v ? String(v).slice(0, 10) : '—';
+        const pill = (on, label, onclick) => `<button class="it-pill${on ? ' on' : ''}" onclick="${onclick}">${esc(label)}</button>`;
+        const body = rows.map(i => {
+            const c = this.ITEM_SC[i.status] || '#8e8e93';
+            const sale = (i.sale_names || []).filter(Boolean);
+            return `<tr data-id="${esc(i.id)}"><td>${esc(i.season_name || '—')}</td>
+                <td><b>${esc(i.name || '')}</b>${sale.length ? `<div style="font-size:.78rem;color:var(--text-muted)">${sale.map(esc).join(' · ')}</div>` : ''}</td>
+                <td>${i.status ? `<span style="color:${c};font-weight:700">● ${esc(i.status)}</span>` : '—'}</td>
+                <td>${d(i.ship_date)}</td><td>${d(i.open_date)}</td></tr>`;
+        }).join('');
+        return `<div class="mp it-wrap">
+            ${this._mpTop('제품', `${rows.length}/${all.length}`, '')}
+            <div class="it-pills">
+                ${pill(act === 'ACTIVE', '진행 중', 'app.setPartnerFilter(\'all\',0)')}${pill(act === 'ALL', '전체', 'app.setPartnerFilter(\'all\',1)')}
+                <span style="width:10px"></span>
+                ${pill(sKey === 'ALL', '모든 시즌', 'app.setPartnerFilter(\'season\',\'ALL\')')}
+                ${seasons.map((n, k) => pill(sKey === n, n || '시즌 없음', `app.setPartnerFilter('season',${k})`)).join('')}
+            </div>
+            <div class="it-scroll"><table class="it-tbl"><thead><tr><th>시즌</th><th>제품</th><th>제작현황</th><th>출고일자</th><th>오픈일</th></tr></thead>
+                <tbody>${body || '<tr><td colspan="5" style="padding:2rem;color:var(--text-muted)">보여드릴 제품이 없습니다.</td></tr>'}</tbody></table></div>
+        </div>`;
+    }
+    //  시즌 이름에 따옴표가 섞여도 깨지지 않게 단추엔 순번만 싣는다
+    setPartnerFilter(kind, v) {
+        if (kind === 'all') this.ptnAll = !!v;
+        else this.ptnSeason = v === 'ALL' ? 'ALL'
+            : [...new Set((this.pItems || []).map(i => i.season_name || ''))].sort((a, b) => a.localeCompare(b, 'ko'))[v];
+        this.requestRender();
+    }
     renderItems() {
         if (!this._itemsLoaded) return this._loadingSkeleton('제품리스트');
         if (this.itemPage) return this._itemPageHTML(this.itemPage);
