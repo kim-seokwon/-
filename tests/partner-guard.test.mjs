@@ -210,6 +210,8 @@ const grab = name => {
     return eval('(' + (body.startsWith('async ') ? 'async function ' + body.slice(6) : 'function ' + body) + ')');
 };
 
+const grabNotices = () => eval(src.match(/\n    PARTNER_NOTICES = (\[[\s\S]*?\]);/)[1]);
+
 test('파트너 제품 목록은 partner_items 로 받고, 직원은 그대로 product_items', async () => {
     const calls = [];
     const mk = role => ({
@@ -229,7 +231,7 @@ test('파트너 제품 목록은 partner_items 로 받고, 직원은 그대로 p
 
 test('파트너 화면 — 시즌·제품·제작현황·출고일자·오픈일만, 고치는 칸·메모·공장 없음', () => {
     const t = {
-        _itemsLoaded: true, ITEM_SC: { '메인투입': '#ff9f0a' },
+        _itemsLoaded: true, PARTNER_NOTICES: grabNotices(), ITEM_SC: { '메인투입': '#ff9f0a' },
         pItems: [
             { id: 'a', season_name: '머문 26SS', name: '하렘팬츠', sale_names: ['머문 하렘팬츠'], status: '메인투입', ship_date: '2026-11-03', open_date: null },
             { id: 'b', season_name: '머문 25FW', name: '<b>조끼', sale_names: null, status: '출고완료', ship_date: null, open_date: '2026-09-01' },
@@ -242,7 +244,12 @@ test('파트너 화면 — 시즌·제품·제작현황·출고일자·오픈일
     t.setPartnerFilter = grab('setPartnerFilter');
     let html = t.renderPartnerItems();
     const ths = [...html.matchAll(/<th>([^<]*)<\/th>/g)].map(m => m[1]);
-    assert.deepEqual(ths, ['시즌', '제품', '제작현황', '출고일자', '오픈일']);
+    //  날짜는 '확정'으로 읽히지 않게 예정일로
+    assert.deepEqual(ths, ['시즌', '제품', '제작현황', '출고예정일', '오픈예정일']);
+    //  안내문 2줄은 사장님 원문 그대로, 표보다 위에 늘 보인다
+    const note = html.split('<table')[0];
+    assert.ok(note.includes('<div>*원부자재 입고일이 작업시작일이 아닙니다.</div>'));
+    assert.ok(note.includes('<div>*출고예정일자는 예정된 날짜로, 확정이 아닙니다.</div>'));
     assert.match(html, /하렘팬츠/); assert.match(html, /2026-11-03/);
     assert.doesNotMatch(html, /조끼/);                         // 기본은 진행 중만
     assert.doesNotMatch(html, /<input|<select|contenteditable|setItem|memo|vendor/);

@@ -16239,6 +16239,11 @@ class BhasApp {
             (fail ? ` · ${fail}줄 실패` : ''));
     }
 
+    //  파트너 생산 화면 맨 위 안내 — 문구는 사장님 원문(10-28) 그대로. 늘릴 땐 여기에 한 줄 더.
+    PARTNER_NOTICES = [
+        '원부자재 입고일이 작업시작일이 아닙니다.',
+        '출고예정일자는 예정된 날짜로, 확정이 아닙니다.',
+    ];
     //  파트너(CLIENT) 제품 목록 — 자기 브랜드 제품의 시즌·이름·판매명·제작현황·출고일자·오픈일만 '보기'.
     //   자료는 partner_items()(099)가 보여도 되는 열만 준다. 고치기·공장·견적·메모 칸 없음.
     renderPartnerItems() {
@@ -16262,13 +16267,16 @@ class BhasApp {
         }).join('');
         return `<div class="mp it-wrap">
             ${this._mpTop('제품', `${rows.length}/${all.length}`, '')}
+            <div class="ptn-note" role="note" style="flex:0 0 auto;margin:8px 14px 0;padding:9px 12px;border-radius:10px;
+                background:rgba(255,159,10,.12);border:.5px solid rgba(255,159,10,.45);font-size:.84rem;line-height:1.55">
+                ${(this.PARTNER_NOTICES || []).map(t => `<div>*${esc(t)}</div>`).join('')}</div>
             <div class="it-pills">
                 ${pill(act === 'ACTIVE', '진행 중', 'app.setPartnerFilter(\'all\',0)')}${pill(act === 'ALL', '전체', 'app.setPartnerFilter(\'all\',1)')}
                 <span style="width:10px"></span>
                 ${pill(sKey === 'ALL', '모든 시즌', 'app.setPartnerFilter(\'season\',\'ALL\')')}
                 ${seasons.map((n, k) => pill(sKey === n, n || '시즌 없음', `app.setPartnerFilter('season',${k})`)).join('')}
             </div>
-            <div class="it-scroll"><table class="it-tbl"><thead><tr><th>시즌</th><th>제품</th><th>제작현황</th><th>출고일자</th><th>오픈일</th></tr></thead>
+            <div class="it-scroll"><table class="it-tbl"><thead><tr><th>시즌</th><th>제품</th><th>제작현황</th><th>출고예정일</th><th>오픈예정일</th></tr></thead>
                 <tbody>${body || '<tr><td colspan="5" style="padding:2rem;color:var(--text-muted)">보여드릴 제품이 없습니다.</td></tr>'}</tbody></table></div>
         </div>`;
     }
