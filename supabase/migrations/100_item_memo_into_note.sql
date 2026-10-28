@@ -7,7 +7,7 @@
 -- 옮기는 규칙(화면 main.js _itemMemoText 와 같다 — 옮기기 전에 화면이 보여주던 글 = 옮긴 뒤 장의 글):
 --   한 줄 메모 m(앞뒤 공백 뺌), 장의 글 t(맨 앞 메타 줄 <!--p …--> 은 그대로 둔다)
 --   · 장이 없으면 m 만 담은 장을 새로 만든다
---   · t 안에 m 이 이미 있으면 t 그대로
+--   · t 안에 m 이 줄 단위로 통째 있으면 t 그대로(부분 글자 일치는 '있음' 아님 — 옛 '입고' + 장 '미입고' → 둘 다 남김)
 --   · t 가 비었으면 m
 --   · 아니면 m + 줄바꿈 + t
 --   그리고 product_items.memo 를 비운다. 장이 둘인 제품(헨리넥)은 먼저 만든 장에 붙인다 — 두 장 합치기는 101(승인 뒤).
@@ -26,6 +26,14 @@ create table if not exists public.item_memo_merge_100 (
 );
 alter table public.item_memo_merge_100 enable row level security;
 revoke all on public.item_memo_merge_100 from public, anon, authenticated;
+
+--  '이미 들어 있음' = 줄 단위로 통째 들어 있을 때만(각 줄 앞뒤 공백·탭 뺌) — '미입고' 안의 '입고'는 아니다. 화면 main.js _memoHas 와 같다.
+create or replace function pg_temp.memo_norm(s text) returns text language sql immutable as $$
+  select btrim(coalesce(string_agg(btrim(x, E' \t\r'), E'\n' order by o), ''), E'\n')
+    from unnest(string_to_array(coalesce(s, ''), E'\n')) with ordinality as u(x, o) $$;
+create or replace function pg_temp.memo_has(t text, m text) returns boolean language sql immutable as $$
+  select pg_temp.memo_norm(m) = ''
+      or position(E'\n' || pg_temp.memo_norm(m) || E'\n' in E'\n' || pg_temp.memo_norm(t) || E'\n') > 0 $$;
 
 do $$
 declare
@@ -56,7 +64,7 @@ begin
         if substr(n.body, k + 3, 1) = E'\n' then meta := meta || E'\n'; end if;
       end if;
       t := substr(coalesce(n.body, ''), length(meta) + 1);
-      if position(m in t) > 0 then nt := t;
+      if pg_temp.memo_has(t, m) then nt := t;
       elsif t ~ '^\s*$' then nt := m;
       else nt := m || E'\n' || t;
       end if;

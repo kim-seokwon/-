@@ -18,7 +18,7 @@ const grab = (name) => {
 const META = /^<!--p (.*?)-->\n?/;
 
 //  가짜 DB — notes·product_items 두 표. 넣기는 일부러 늦게 끝나 겹침을 만든다.
-const fakeDb = (notes, items) => {
+const fakeDb = (notes, items, failItems) => {
     const log = [];
     let seq = 0;
     const later = v => new Promise(r => setTimeout(() => r(v), 5));
@@ -31,6 +31,7 @@ const fakeDb = (notes, items) => {
             not(c) { q.f.push(r => r[c] != null); return chain; },
             eq(c, v) {
                 q.f.push(r => String(r[c]) === String(v));
+                if (q.patch && failItems && tbl === 'product_items') return later({ error: { message: '권한 없음' } });
                 if (q.patch) { run().forEach(r => Object.assign(r, q.patch)); log.push(['update', tbl, v, q.patch]); return later({ error: null }); }
                 return chain;
             },
@@ -48,8 +49,8 @@ const fakeDb = (notes, items) => {
     return { supabase: { from }, log };
 };
 
-const mkApp = ({ items, notes = [], seasons = [] }) => {
-    const db = fakeDb(notes, items);
+const mkApp = ({ items, notes = [], seasons = [], failItems = false }) => {
+    const db = fakeDb(notes, items, failItems);
     const t = {
         pItems: items, noteList: [], supabase: db.supabase, toasts: [],
         _seasons: () => seasons, _actor: () => '직원', showToast(m) { this.toasts.push(m); }, requestRender() {},
@@ -58,7 +59,7 @@ const mkApp = ({ items, notes = [], seasons = [] }) => {
         _joinNote: (meta, text) => (meta && Object.keys(meta).length ? `<!--p ${JSON.stringify(meta)}-->\n` : '') + text,
         _itemMemoLine(it) { return (this._itemMemoPlain(it).split('\n').find(l => l.trim()) || '').trim(); },
     };
-    for (const n of ['_itemNoteOf', '_itemMemoText', '_itemMemoPlain', '_loadItemNotes', '_itemNoteRow', '_itemNoteQueue',
+    for (const n of ['_itemNoteOf', '_memoHas', '_itemMemoText', '_itemMemoPlain', '_loadItemNotes', '_itemNoteRow', '_itemNoteQueue',
         '_dropLegacyMemo', 'saveItemNote', '_saveItemNoteNow', '_itemIssues']) t[n] = grab(n);
     t._ipTa = () => null;
     return { t, db };
@@ -85,6 +86,35 @@ test('합쳐 보이는 글: 이미 들어 있으면 그대로 · 장이 비면 �
     assert.equal(txt('none'), '');
     assert.equal(t._itemMemoLine(items[3]), '둘째 줄', '사진 줄은 목록 첫 줄이 아니다');
     assert.equal(t._itemMemoLine(items[1]), '샘플 요청');
+});
+
+test('반례(검수 10-28): 옛 메모 "입고" + 장 "미입고" → 부분 글자 일치는 들어 있는 게 아님, 둘 다 남는다', () => {
+    const notes = [{ id: 'y1', item_id: 'mi', body: '미입고', created_at: '1' }];
+    const items = [{ id: 'mi', memo: '입고' }];
+    const { t } = mkApp({ items, notes });
+    t.noteList = notes;
+    assert.equal(t._itemMemoText(items[0]), '입고\n미입고');
+    assert.equal(t._memoHas('미입고', '입고'), false);
+    assert.equal(t._memoHas('a\n  입고 \nb', '입고'), true, '줄 통째면 있음(앞뒤 공백 무시)');
+    assert.equal(t._memoHas('10/27 오리지널 전달 (노스 벤투스)', '10/27 오리지널 전달'), false, '운영 벤투스 — 둘 다 남김');
+    assert.equal(t._memoHas('x\n샘플\n요청\ny', '샘플\n요청'), true, '여러 줄도 이어진 줄 통째');
+});
+
+test('옛 한 줄 칸을 못 비우면 "저장됨"으로 숨기지 않고 부분 실패로 알린다 · 장은 저장됨', async () => {
+    const items = [{ id: 'k', name: 'K', memo: '옛 한 줄' }];
+    const { t } = mkApp({ items, failItems: true });
+    const n = await t.saveItemNote('k', '옛 한 줄\n새 글');
+    assert.ok(n && n.body === '옛 한 줄\n새 글', '장은 저장');
+    assert.equal(items[0].memo, '옛 한 줄', '칸은 그대로(지우지 못함)');
+    assert.equal(t.toasts.length, 1);
+    assert.match(t.toasts[0], /메모는 저장됐지만 옛 한 줄 칸을 못 비움: 권한 없음/);
+    assert.equal(t._itemMemoText(items[0]), '옛 한 줄\n새 글', '화면엔 두 번 안 보임');
+    const { t: t2 } = mkApp({ items: [{ id: 'k', name: 'K', memo: '옛' }], failItems: true });
+    await t2.saveItemNote('k', '');
+    assert.match(t2.toasts[0], /못 비움/, '지운 경우도 알림');
+    assert.match(src, /if \(error\) throw error;   \/\/ 못 비우면/);
+    assert.match(src, /partial = '사진은 올렸지만 옛 한 줄 칸을 못 비움/, '사진 붙이기도 부분 실패 알림');
+    assert.match(src, /메모 \$\{memoLeft\}줄은 장에 담았지만 한 줄 칸을 못 비움/, '노션 가져오기도');
 });
 
 test('같은 제품 저장이 겹쳐도(입력 멈춤 + 칸 벗어남) 장은 하나 · 옛 한 줄 칸은 비움', async () => {
@@ -170,13 +200,18 @@ const seed = `
       ('00000000-0000-0000-0000-000000000004', '하렘팬츠', '공장 컨펌', '00000000-0000-0000-0000-0000000000a1', null),
       ('00000000-0000-0000-0000-000000000005', '헨리넥 셋업 어덜트', '본사 확인', null, null),
       ('00000000-0000-0000-0000-000000000006', '빈칸', E'  \n ', null, null),
-      ('00000000-0000-0000-0000-000000000007', '없음', null, null, null);
+      ('00000000-0000-0000-0000-000000000007', '없음', null, null, null),
+      ('00000000-0000-0000-0000-000000000008', '미입고 반례', '입고', null, null),
+      ('00000000-0000-0000-0000-000000000009', '겹친 장 반례', null, null, null);
     insert into notes (id, body, item_id, created_at) values
       ('00000000-0000-0000-0000-00000000f001', '', '00000000-0000-0000-0000-000000000001', '2026-10-01'),
       ('00000000-0000-0000-0000-00000000f002', '실 색 바꿈', '00000000-0000-0000-0000-000000000002', '2026-10-01'),
       ('00000000-0000-0000-0000-00000000f003', E'<!--p {"pin":1}-->\n원단 입고 10/20\n재단', '00000000-0000-0000-0000-000000000003', '2026-10-01'),
       ('00000000-0000-0000-0000-00000000f005', E'상의 기존 맨투맨 수정\n', '00000000-0000-0000-0000-000000000005', '2026-10-26 08:20:26.859'),
       ('00000000-0000-0000-0000-00000000f006', E'\n상의)패턴 솔리드맨투맨-기장 2cm\n![사진](https://x/h.jpg)', '00000000-0000-0000-0000-000000000005', '2026-10-26 08:20:26.874'),
+      ('00000000-0000-0000-0000-00000000f008', '미입고', '00000000-0000-0000-0000-000000000008', '2026-10-01'),
+      ('00000000-0000-0000-0000-00000000f00a', '미입고', '00000000-0000-0000-0000-000000000009', '2026-10-01'),
+      ('00000000-0000-0000-0000-00000000f00b', '입고', '00000000-0000-0000-0000-000000000009', '2026-10-02'),
       ('00000000-0000-0000-0000-00000000f009', '메모 앱 일반 장', null, '2026-10-01');
 `;
 const snap = async db => JSON.stringify({
@@ -206,9 +241,10 @@ test('100·101 무손실 옮기기 · 다시 돌려도 같음 · 하나 규칙 �
         ['공장 컨펌', '하렘팬츠', '26FW', 'project', null]);
     assert.deepEqual(await body(I(5)), ['본사 확인\n상의 기존 맨투맨 수정\n', '\n상의)패턴 솔리드맨투맨-기장 2cm\n![사진](https://x/h.jpg)'], '장 둘이면 먼저 만든 장에');
     assert.deepEqual((await db.query(`select count(*)::int c from notes where item_id = $1`, [I(6)])).rows[0].c, 0, '빈칸 한 줄은 장 안 만듦');
+    assert.deepEqual(await body(I(8)), ['입고\n미입고'], '반례: 부분 글자 일치는 있음 아님 — 옛 "입고" 안 잃음');
     const left = (await db.query(`select count(*)::int c from product_items where memo is not null and memo !~ '^\\s*$'`)).rows[0].c;
     assert.equal(left, 0, '한 줄 칸은 다 비움');
-    assert.equal((await db.query(`select count(*)::int c from item_memo_merge_100`)).rows[0].c, 5);
+    assert.equal((await db.query(`select count(*)::int c from item_memo_merge_100`)).rows[0].c, 6);
 
     //  잃지 않음: 원래 한 줄 메모 글이 전부 그 제품 장 어딘가에 있다
     for (const r of JSON.parse(before).items.filter(r => r.memo && r.memo.trim())) {
@@ -221,6 +257,7 @@ test('100·101 무손실 옮기기 · 다시 돌려도 같음 · 하나 규칙 �
     const pre101 = await snap(db);
     await db.exec(up101);
     assert.deepEqual(await body(I(5)), ['본사 확인\n상의 기존 맨투맨 수정\n\n상의)패턴 솔리드맨투맨-기장 2cm\n![사진](https://x/h.jpg)'], '헨리넥 한 장으로(사진 줄 포함)');
+    assert.deepEqual(await body(I(9)), ['미입고\n입고'], '101 반례: 둘째 장 "입고"도 안 잃음');
     await db.exec(up101);
     await assert.rejects(db.query(`insert into notes (body, item_id) values ('둘째', $1)`, [I(2)]), /notes_item_one|duplicate/, '제품당 장 하나');
     await db.query(`insert into notes (body) values ('item 없는 장은 여럿 가능')`);

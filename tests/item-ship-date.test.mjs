@@ -23,7 +23,7 @@ const mkApp = (items) => {
     };
     t.noteList = []; t._noteText = n => String(n.body || '').replace(/^<!--p (.*?)-->\n?/, '');
     t._itemMemoLine = it => String(it.memo || '');
-    for (const n of ['renderItemTable', '_itemDateCell', '_sortItemRows', '_itemColVal', 'setItem', '_itemNoteOf', '_itemMemoText', '_itemMemoPlain']) t[n] = grab(n);
+    for (const n of ['renderItemTable', '_itemDateCell', '_sortItemRows', '_itemColVal', 'setItem', '_itemNoteOf', '_memoHas', '_itemMemoText', '_itemMemoPlain']) t[n] = grab(n);
     return t;
 };
 const items = () => [

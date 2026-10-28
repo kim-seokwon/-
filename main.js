@@ -8517,8 +8517,15 @@ class BhasApp {
         const n = this._itemNoteOf(it.id);
         const text = n ? this._noteText(n) : '';
         const memo = String(it.memo || '').trim();
-        if (!memo || text.includes(memo)) return text;
+        if (!memo || this._memoHas(text, memo)) return text;
         return text.trim() ? memo + '\n' + text : memo;
+    }
+    //  '이미 들어 있음' = 줄 단위로 통째 들어 있을 때만(앞뒤 공백 뺀 줄끼리) — '미입고' 안의 '입고'는 들어 있는 게 아니다(검수 10-28)
+    //   SQL 100·101 pg_temp.memo_has 와 같은 규칙
+    _memoHas(text, part) {
+        const norm = s => String(s || '').split('\n').map(l => l.replace(/^[ \t\r]+|[ \t\r]+$/g, '')).join('\n').replace(/^\n+|\n+$/g, '');
+        const p = norm(part);
+        return !p || ('\n' + norm(text) + '\n').includes('\n' + p + '\n');
     }
     //  목록·검색·거르기용 — 사진 줄 뺀 글, 그 첫 줄
     _itemMemoPlain(it) {
@@ -8560,7 +8567,8 @@ class BhasApp {
     async _dropLegacyMemo(it) {
         if (!String(it.memo || '').trim()) return;
         const { error } = await this.supabase.from('product_items').update({ memo: null }).eq('id', it.id);
-        if (!error) it.memo = null;
+        if (error) throw error;   // 못 비우면 부른 쪽이 '부분 실패'로 알린다(두 곳에 남은 걸 숨기지 않는다)
+        it.memo = null;
     }
     toggleItemPreview() { this.ipPreview = !this.ipPreview; this.requestRender(); }
     itemNoteTyping() {
@@ -8591,21 +8599,26 @@ class BhasApp {
         if (text == null) return this._itemNoteOf(id);
         const sv = document.getElementById('ip-sv') || document.getElementById('ip-sv-d');
         const fail = (msg) => { if (sv) sv.textContent = '저장 못 함'; this.showToast('저장 실패: ' + msg); return null; };
+        //  장은 저장됐는데 옛 한 줄 칸을 못 비움 = 부분 실패 — 알리고 장은 돌려준다(다음 저장 때 다시 비운다)
+        const drop = async () => {
+            try { await this._dropLegacyMemo(it); return true; }
+            catch (e) { if (sv) sv.textContent = '일부 저장'; this.showToast('메모는 저장됐지만 옛 한 줄 칸을 못 비움: ' + (e.message || e)); return false; }
+        };
         try { await this._loadItemNotes(); } catch (e) { return fail(e.message || e); }   // 있는지 모르면 안 만든다
         let n = this._itemNoteOf(id);
         if (n) {
             const body = this._joinNote(this._noteMeta(n), text);
-            if (body === n.body) { if (sv) sv.textContent = ''; await this._dropLegacyMemo(it); return n; }
+            if (body === n.body) { if ((await drop()) && sv) sv.textContent = ''; return n; }
             const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
             if (error) return fail(error.message);
             n.body = body; n.updated_at = new Date().toISOString();
-            await this._dropLegacyMemo(it);
+            if (!(await drop())) return n;
             if (sv) sv.textContent = '저장됨';
             setTimeout(() => { const s2 = document.getElementById('ip-sv') || document.getElementById('ip-sv-d');
                 if (s2) s2.textContent = ''; }, 1400);
             return n;
         }
-        if (!text.trim()) { await this._dropLegacyMemo(it); return null; }   // 옛 한 줄을 지운 것
+        if (!text.trim()) { await drop(); return null; }   // 옛 한 줄을 지운 것
         if (text === this._itemMemoText(it)) return null;                       // 옛 한 줄을 그대로 둔 채 벗어남 — 쓸 것 없음
         //  다른 창·다른 사람이 방금 만든 장이 있으면 새로 안 만들고 거기에 잇는다
         const { data: had, error: hErr } = await this.supabase.from('notes').select('*').eq('item_id', it.id)
@@ -8614,12 +8627,12 @@ class BhasApp {
         if (had && had[0]) {
             this.noteList = [had[0], ...(this.noteList || []).filter(x => x.id !== had[0].id)];
             const cur = this._noteText(had[0]);
-            return this._saveItemNoteNow(id, cur.includes(text) ? cur : (cur.trim() ? cur.replace(/\s*$/, '') + '\n' + text : text));
+            return this._saveItemNoteNow(id, this._memoHas(cur, text) ? cur : (cur.trim() ? cur.replace(/\s*$/, '') + '\n' + text : text));
         }
         const { data, error } = await this.supabase.from('notes').insert([this._itemNoteRow(it, text)]).select().single();
         if (error) return fail('(047 SQL 필요) ' + error.message);
         this.noteList = [data, ...(this.noteList || [])];
-        await this._dropLegacyMemo(it);
+        if (!(await drop())) return data;
         if (sv) sv.textContent = '저장됨';
         return data;
     }
@@ -10438,6 +10451,7 @@ class BhasApp {
             if (upErr) throw upErr;
             const url = this.supabase.storage.from('bhas').getPublicUrl(path).data.publicUrl;
             //  제품 메모 장에 붙인다(없으면 만든다) — 글 저장과 같은 줄을 타서 장이 둘 생기지 않는다
+            let partial = '';
             await this._itemNoteQueue(itemId, async () => {
                 await this._loadItemNotes();
                 let n = this._itemNoteOf(itemId);
@@ -10453,9 +10467,10 @@ class BhasApp {
                     if (up.error) throw up.error;
                     n.body = nb;
                 }
-                await this._dropLegacyMemo(it);
+                try { await this._dropLegacyMemo(it); }
+                catch (e) { partial = '사진은 올렸지만 옛 한 줄 칸을 못 비움: ' + (e.message || e); }
             });
-            this.showToast('사진을 올렸습니다');
+            this.showToast(partial || '사진을 올렸습니다');
         } catch (e) { this.showToast('사진 올리기 실패: ' + (e.message || e)); }
     }
     //  제품 페이지로 — 옆 패널에서 그 제품을 연다
@@ -16279,6 +16294,7 @@ class BhasApp {
         }
         //  노션 '메모' 열은 제품 메모 장으로 옮긴다(한 곳에만) — 장을 못 만들면 한 줄 칸에 그대로 둔다(안 잃음)
         const withMemo = made2.filter(i => String(i.memo || '').trim());
+        let memoLeft = 0;
         for (let i = 0; i < withMemo.length; i += 100) {
             const part = withMemo.slice(i, i + 100);
             const { data: ns, error: nErr } = await this.supabase.from('notes')
@@ -16287,7 +16303,8 @@ class BhasApp {
             this.noteList = [...ns, ...(this.noteList || [])];
             const done = part.filter(it => ns.some(n => String(n.item_id) === String(it.id))).map(it => it.id);
             const { error: cErr } = await this.supabase.from('product_items').update({ memo: null }).in('id', done);
-            if (!cErr) part.forEach(it => { if (done.includes(it.id)) it.memo = null; });
+            if (cErr) memoLeft += done.length;
+            else part.forEach(it => { if (done.includes(it.id)) it.memo = null; });
         }
         this.pItems = [...made2, ...(this.pItems || [])];
         this._vendorsLoaded = false; this.loadVendors();
@@ -16295,7 +16312,8 @@ class BhasApp {
         this.showToast(`제품 ${made2.length}줄 가져옴` +
             (made.season ? ` · 시즌 ${made.season}개 새로 만듦` : '') +
             (made.vendor ? ` · 공장 ${made.vendor}곳 새로 만듦` : '') +
-            (fail ? ` · ${fail}줄 실패` : ''));
+            (fail ? ` · ${fail}줄 실패` : '') +
+            (memoLeft ? ` · 메모 ${memoLeft}줄은 장에 담았지만 한 줄 칸을 못 비움` : ''));
     }
 
     renderItems() {
