@@ -293,7 +293,7 @@ test('파트너는 허용 화면만 열고, 직원 메뉴는 그대로', () => {
     assert.ok(!s._menuItems().find(i => i.id === 'items').visible);
     delete globalThis.mockData;
     //  독·전체 메뉴·창 열기가 같은 문을 지난다
-    assert.match(src, /macOpen\(view\) \{\n[^\n]*\n\s+if \(!this\._viewAllowed\(view\)\)/);
+    assert.match(src, /macOpen\(view, opts\) \{\n[^\n]*\n\s+if \(!this\._viewAllowed\(view\)\)/);
     assert.match(src, /MAC_DOCK\.filter\(d => !d\.tool && \(d\.launcher \|\| this\._viewAllowed\(d\.id\)\)\)/);
     assert.match(src, /items = items\.filter\(i => this\._viewAllowed\(i\[0\]\)\)/);
     assert.match(src, /if \(this\.currentUser\?\.role === 'CLIENT'\) return this\.renderPartnerItems\(\);/);

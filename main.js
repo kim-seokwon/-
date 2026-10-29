@@ -1,5 +1,5 @@
 import { mockData, STAGES } from './mockData.js';
-import { makeTracker, trackAllowed, usageNotice, ORDER_FILTER_ACTION, INV_TAB_ACTION } from './uiTrack.js';
+import { makeTracker, trackAllowed, usageNotice, ORDER_FILTER_ACTION, INV_TAB_ACTION, PAPER_CLOSE_ACTION, paperSeenAction } from './uiTrack.js';
 import { TIPS, MANUAL, searchManual } from './helpDict.js';
 import { tipHTML, initTips } from './helpWidget.js';
 import { helpTabs, helpFocusKey, unreadCount, validateFeedback, validateNotice, feedbackPath, helpPanelHTML, manualListHTML, helpFabHTML } from './helpCenter.js';
@@ -1071,7 +1071,7 @@ class BhasApp {
                 if (!this.paper || !document.getElementById('pc-track') || /INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')) return;
                 if (e.key === 'ArrowRight') { e.preventDefault(); this.pcGo(1); }
                 if (e.key === 'ArrowLeft') { e.preventDefault(); this.pcGo(-1); }
-                if (e.key === 'Escape') { e.preventDefault(); this.closePaper(); }
+                if (e.key === 'Escape') { e.preventDefault(); this.closePaper('esc'); }
             });
         }
     }
@@ -4348,13 +4348,30 @@ class BhasApp {
         const hit = x => k.includes('|') ? this._ordKey(x) === k : String(x.order_id) === k;   // 옛 키(주문번호만)도 받는다
         return ((this.opage && this.opage.rows) || []).find(hit) || (this.orders || []).find(hit) || null;
     }
-    selectCS(id) { if (String(this.csSel) === String(id)) return; this.track?.('cs', 'cs_select'); this.csSel = id; this.requestRender(); }
+    selectCS(id) {
+        if (this._csPick(id)) this.requestRender();
+    }
+    //  CS 줄 고르기 — 목록 줄을 누르든 상세 단추로 오든 여기 한 곳에서 cs_select 를 남긴다(같은 줄 다시 누름은 안 셈)
+    _csPick(id) {
+        if (String(this.csSel) === String(id)) return false;
+        this.track?.('cs', 'cs_select');
+        this.csSel = id;
+        return true;
+    }
     selectInv(id) { if (String(this.invSel) === String(id)) return; this.invSel = id; this.requestRender(); }
     // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
     switchAppTab(winId, view) {
         const w = (this.wins || []).find(x => x.id === winId);
-        if (w) { w.view = view; this.requestRender(); return; }
+        if (w) { this._winView(w, view); this.requestRender(); return; }
         this.switchView(view);
+    }
+    //  창 안 화면 바꾸기(판매·생산 탭 · 주문→CS · 시즌→제품) — 바뀔 때만 그 화면 '열기'로 남긴다.
+    //  091 지표(첫 화면·자주 여는 화면·한 일 클릭 수)는 같은 화면 open 을 시작점으로 센다 — 탭 안 화면도 여기서 잡혀야 이어진다.
+    _winView(w, view) {
+        if (w.view === view) return false;
+        w.view = view;
+        this.track?.(view, 'open');
+        return true;
     }
     renderSubView(products) {
         const { role, id: currentUserId, name: currentUserName } = this.currentUser;
@@ -7777,19 +7794,29 @@ class BhasApp {
                   feedback: '불편사항', pages: '페이지', kanban: '보드', table: '표',
                   all_todos: '할일', timeline: '타임라인', sample_maker: '샘플' })[view] || view;
     }
-    macOpen(view) {
+    //  이미 떠 있는 창 — 같은 화면 창이 먼저, 없으면 같은 묶음(판매·생산) 창. 묶음 창은 탭만 바꿔 쓰므로 하나면 된다.
+    _winOf(view) {
+        const wins = this.wins || [];
+        const g = this._groupOf(view);
+        return wins.find(w => w.view === view) || (g ? wins.find(w => this._groupOf(w.view) === g) : null) || null;
+    }
+    //  opts.app — 독의 앱 아이콘: 그 묶음 창을 앞으로, 보던 탭 그대로(맥 독과 같다).
+    //  그 밖(바탕화면 블록·알림·링크)은 그 화면을 보려는 것 — 같은 묶음 창이 있으면 그 창을 그 탭으로 바꾼다(창을 하나 더 만들지 않는다).
+    macOpen(view, opts) {
         if (view === 'home') { this.macShowDesktop(); return; }   // 홈은 바탕화면 자체다
         if (!this._viewAllowed(view)) { this.showToast('이 계정으로는 열 수 없는 화면입니다.'); return; }
-        this.track?.(view, 'open');
         this.wins = this.wins || [];
-        const found = this.wins.find(w => w.view === view);
+        const found = this._winOf(view);
         if (found) {
             const wasMin = found.min;
             found.min = false;
+            const moved = !(opts && opts.app) && this._winView(found, view);
+            if (!moved) this.track?.(found.view, 'open');
             this.macFocus(found.id);
-            if (wasMin) this.requestRender();   // 내려둔 창은 다시 그려야 올라온다
+            if (wasMin || moved) this.requestRender();   // 내려둔 창·탭을 바꾼 창은 다시 그려야 보인다
             return;
         }
+        this.track?.(view, 'open');
         const n = this.wins.length;
         const vw = window.innerWidth, vh = window.innerHeight;
         const w = Math.min(1180, Math.round(vw * 0.74)), h = Math.min(760, Math.round(vh * 0.74));
@@ -7953,8 +7980,8 @@ class BhasApp {
         try { deskboard = (this._devPreviewContacts || this._devPreviewCRM) ? '' : (this.renderHome(products) || ''); }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
         const dock = this.MAC_DOCK.filter(d => !d.tool && (d.launcher || this._viewAllowed(d.id))).map(d => {
-            const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this.wins.find(w => w.view === d.id));
-            const act = d.launcher ? 'app.openLauncher()' : `app.macOpen('${d.id}')`;
+            const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this._winOf(d.id));
+            const act = d.launcher ? 'app.openLauncher()' : `app.macOpen('${d.id}',{app:1})`;
             return `<button class="mdi${open ? ' open' : ''}" onclick="${act}" title="${esc(d.label)}">
                 ${this._dockFace(d)}<em>${esc(d.label)}</em></button>`;
         }).join('');
@@ -8622,6 +8649,12 @@ class BhasApp {
         const who = document.getElementById('item-note') ? this.npItem : this.itemSel;
         this._ipT = setTimeout(() => this.saveItemNote(who), 900);
     }
+    //  기록은 치는 동안 0.9초마다 저장된다 — 저장마다 세지 않고 '이 상세에서 기록을 고쳤다'를 한 번만 남긴다
+    _itemNoteSaved(id) {
+        if (this._itemNoteMark === String(id)) return;
+        this._itemNoteMark = String(id);
+        this.track?.('items', 'item_note');
+    }
     _ipTa() { return document.getElementById('item-note') || document.getElementById('item-note-d'); }
     itemNoteInsert(kind) {
         const ta = this._ipTa(); if (!ta) return;
@@ -8656,6 +8689,7 @@ class BhasApp {
             const { error } = await this.supabase.from('notes').update({ body }).eq('id', n.id);
             if (error) return fail(error.message);
             n.body = body; n.updated_at = new Date().toISOString();
+            this._itemNoteSaved(id);
             if (!(await drop())) return n;
             if (sv) sv.textContent = '저장됨';
             setTimeout(() => { const s2 = document.getElementById('ip-sv') || document.getElementById('ip-sv-d');
@@ -8678,6 +8712,7 @@ class BhasApp {
         this.noteList = [data, ...(this.noteList || [])];
         if (!(await drop())) return data;
         if (sv) sv.textContent = '저장됨';
+        this._itemNoteSaved(id);
         return data;
     }
     //  사진은 그 제품 메모에 붙인다
@@ -10293,7 +10328,12 @@ class BhasApp {
 
     // ── 제품 페이지 — 리스트에서 이름을 누르면 넓게 펼친다 ────────
     //  칸이 좁은 표 대신 한 장짜리 페이지에서 속성·사진·기록을 다 본다. 기록은 [ ] 로 할 일도 된다.
-    openItemPage(id) { this.itemPage = id; this.requestRender(); window.scrollTo(0, 0); }
+    //  dbl — 목록 줄을 두 번 눌러 온 것(참), 아니면 이름 단추. 둘을 나눠 센다(어느 쪽으로 들어가나)
+    openItemPage(id, dbl) {
+        this.track?.('items', dbl ? 'item_open_dbl' : 'item_open');
+        this.itemPage = id; this._itemNoteMark = null;
+        this.requestRender(); window.scrollTo(0, 0);
+    }
     closeItemPage() { this.itemPage = null; this.requestRender(); }
     _itemPageHTML(id) {
         const esc = s => this._vesc(s);
@@ -10380,9 +10420,10 @@ class BhasApp {
             const vn = (vendors.find(v => String(v.id) === String(it.vendor_id)) || {}).name || '';
             const se = (seasons.find(p => String(p.id) === String(it.product_id)) || {}).name || '';
             const open = compact ? `app.openItemFromNote('${it.id}')` : `app.openItemPage('${it.id}')`;
+            const openDbl = compact ? open : `app.openItemPage('${it.id}',1)`;
             const photos = compact ? this._itemPhotos(it.id) : [];
             return `<tr class="it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}"
-                onclick="app.rowPick(event,'${it.id}')" ondblclick="${open}">
+                onclick="app.rowPick(event,'${it.id}')" ondblclick="${openDbl}">
                 <td class="it-c"><input class="it-ck" type="checkbox" ${this._itemPicked?.has(it.id) ? 'checked' : ''}
                     onclick="event.stopPropagation()" onchange="app.pickRow('${it.id}',this.checked)"></td>
                 <td class="it-mu">${mu(this._brandNameById(it.brand_id) === '-' ? '' : this._brandNameById(it.brand_id))}</td>
@@ -11028,7 +11069,7 @@ class BhasApp {
             this.csQuery = orderNo;
             // CS 탭으로 넘겨서 방금 올린 건을 보여준다
             const w = (this.wins || []).find(x => x.view === 'orders');
-            if (w) { w.view = 'cs'; } else if (!this.macMode) { this.currentView = 'cs'; }
+            if (w) { this._winView(w, 'cs'); } else if (!this.macMode) { this.currentView = 'cs'; this.track?.('cs', 'open'); }
             this.requestRender();
             this.showToast(`${kind} 접수됐습니다 · ${orderNo}`);
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
@@ -14545,7 +14586,13 @@ class BhasApp {
         return !!(E.lead || (E.moves || []).length || (E.worked || []).length || (E.cal || []).some(x => x.items.length)
             || (d && ((d.customer || []).length || (d.resale || []).length)));
     }
-    closePaper() {
+    //  how — 'done'(다 봤습니다) · 'x'(✕) · 'esc'. 닫는 법과 본 장 수(구간)만 남긴다 — 무엇을 봤는지는 남기지 않는다.
+    closePaper(how) {
+        const P = this.paper;
+        if (P) {
+            this.track?.('news', PAPER_CLOSE_ACTION[how]);
+            if (!P.loading) this.track?.('news', paperSeenAction(P.seen || 1, P.n));
+        }
         try { localStorage.setItem(this._paperKey(), this._ymdSeoul()); } catch (_e) {}
         this.paper = null; this.requestRender();
     }
@@ -14644,7 +14691,7 @@ class BhasApp {
                 : `<div class="pc-mast">오늘 조간 끝</div>
                     ${c.summary ? `<p class="pc-sum">${esc(c.summary)}</p>` : ''}
                     <p class="pc-foot">문장은 숫자로 자동으로 씁니다(AI 아님) · 우리 계정 글·중복·날짜 없는 기사는 뺍니다</p>
-                    <button class="pp-done" onclick="app.closePaper()">다 봤습니다 — 업무 시작</button>`;
+                    <button class="pp-done" onclick="app.closePaper('done')">다 봤습니다 — 업무 시작</button>`;
             return `<section class="pc-card ${c.type}" data-i="${i}" aria-label="${i + 1}/${deck.length}">${inner}</section>`;
         };
 
@@ -14652,7 +14699,7 @@ class BhasApp {
         <div class="pc" onclick="event.stopPropagation()">
             <div class="pc-bar"><span>아동복 조간 · ${esc(longDate)}</span>
                 <span class="pc-pg">${(P.idx || 0) + 1} / ${deck.length}</span>
-                <button class="pc-x" onclick="app.closePaper()" aria-label="닫기">✕</button></div>
+                <button class="pc-x" onclick="app.closePaper('x')" aria-label="닫기">✕</button></div>
             <div class="pc-track" id="pc-track" onscroll="app._pcScroll(this)">${deck.map(card).join('')}</div>
             <div class="pc-nav">
                 <button class="pc-arw" data-d="-1" onclick="app.pcGo(-1)" aria-label="이전">‹</button>
@@ -14671,6 +14718,7 @@ class BhasApp {
         if (!this.paper) return;
         const i = Math.round(t.scrollLeft / t.clientWidth); if (i === this.paper.idx) return;
         this.paper.idx = i;
+        this.paper.seen = Math.max(this.paper.seen || 1, i + 1);   // 가장 멀리 넘긴 장(닫을 때 구간으로만 남긴다)
         const box = t.closest('.pc');
         box.querySelectorAll('.pc-dots i').forEach((d, k) => d.classList.toggle('on', k === i));
         box.querySelector('.pc-pg').textContent = `${i + 1} / ${this.paper.n}`;
@@ -15794,6 +15842,7 @@ class BhasApp {
         try { ({ error } = await this.supabase.from('product_items').update({ [field]: v }).eq('id', id)); }
         catch (e) { error = { message: e?.message || String(e) }; }
         if (error) { it[field] = old; this.showToast('저장 실패: ' + error.message); this.requestRender(); return false; }
+        if (field === 'memo') this.track?.('items', 'item_memo');
         // 시즌을 고르면 그 시즌의 브랜드를 따라간다 (비어 있을 때만)
         if (field === 'product_id' && v && !it.brand_id) {
             const s = this._seasons().find(p => String(p.id) === String(v));
@@ -15948,7 +15997,16 @@ class BhasApp {
         this.requestRender();
     }
 
-    selItem(id) { if (String(this.itemSel) === String(id)) return; this.itemSel = id; this.requestRender(); }
+    selItem(id) {
+        if (this._itemPick(id)) this.requestRender();
+    }
+    //  제품 줄 고르기 → 옆 상세 칸. 같은 줄 다시 누름은 안 셈. 기록 저장 표시(item_note)는 상세를 새로 볼 때마다 한 번.
+    _itemPick(id) {
+        if (String(this.itemSel) === String(id)) return false;
+        this.track?.('items', 'item_select');
+        this.itemSel = id; this._itemNoteMark = null;
+        return true;
+    }
     //  상세 칸 접기 — 고른 걸 놓으면 칸이 사라진다
     closeDetail(view) {
         ({ items: () => this.itemSel = null, cs: () => this.csSel = null,
@@ -15963,7 +16021,7 @@ class BhasApp {
         const ctl = t && t.closest('input,select,textarea,button,label,a');
         //  펼친 드롭다운은 다시 그리면 닫힌다 — 고르기만 하고 그리지 않는다
         if (ctl && ctl.tagName === 'SELECT') {
-            if (what === 'cs') this.csSel = id; else if (what === 'inv') this.invSel = id; else this.itemSel = id;
+            if (what === 'cs') this._csPick(id); else if (what === 'inv') this.invSel = id; else this._itemPick(id);
             return;
         }
         //  글자 칸·날짜 칸은 눌러도 줄이 골라져야 한다. 그린 뒤 커서를 제자리에 돌려놓는다.
@@ -15971,7 +16029,7 @@ class BhasApp {
             if (ctl.type === 'checkbox' || ctl.type === 'radio') return;
             this._cellBack = { row: id, f: ctl.dataset.f || '', at: ctl.selectionStart };
         } else if (ctl) return;   // 단추는 제 할 일만
-        if (what === 'cs') { if (String(this.csSel) !== String(id)) { this.csSel = id; this.requestRender(); } return; }
+        if (what === 'cs') { if (this._csPick(id)) this.requestRender(); return; }
         if (what === 'inv') { this.selectInv(id); return; }
         this.selItem(id);
     }
@@ -15992,7 +16050,7 @@ class BhasApp {
         this.itemSeason = pid; this.itemBrand = 'ALL'; this.itemStatus = 'ALL'; this.itemQ = '';
         this._unpickItems(); this.itemLimit = 50;
         const w = (this.wins || []).find(x => this._groupOf(x.view) === this._groupOf('items'));
-        if (this.macMode && w) { w.view = 'items'; w.min = false; this.macFocus(w.id); this.requestRender(); return; }
+        if (this.macMode && w) { this._winView(w, 'items'); w.min = false; this.macFocus(w.id); this.requestRender(); return; }
         this.switchView('items');
     }
     //  거르개·검색·정렬이 바뀌면 골라 둔 것을 반드시 푼다.

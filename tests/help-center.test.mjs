@@ -264,7 +264,7 @@ test('main.js 연결: 옛 불편 버튼 → 도움말, 조간 Esc 닫힘, 패널
     assert.ok(!/class="feedback-fab"/.test(MAIN), '옛 불편사항 버튼은 내림');
     assert.match(MAIN, /\$\{helpFabHTML\(this\._help \? this\._help\.unread : 0\)\}/);
     assert.match(MAIN, /mac-ver[^\n]*\n\s*\$\{helpFabHTML\(/, '맥 화면(기본) 메뉴바에 ? 가 있다 — 옛 불편 버튼은 맥 화면에 없었다');
-    assert.match(MAIN, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); this\.closePaper\(\); \}/);
+    assert.match(MAIN, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); this\.closePaper\('esc'\); \}/);
     assert.match(MAIN, /this\._paintPaper\(\);\s*this\._helpBoot\(\);/);
     assert.match(MAIN, /el\.id = 'help-slot'; document\.body\.appendChild\(el\)/);
     assert.match(MAIN, /createSignedUrl\(f\.image_path, 600\)/);

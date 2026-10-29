@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { makeTracker, trackAllowed, usageNotice, UI_ID, UI_ACTIONS, ORDER_FILTER_ACTION, INV_TAB_ACTION } from '../uiTrack.js';
+import { makeTracker, trackAllowed, usageNotice, UI_ID, UI_ACTIONS, UI_ACTIONS_091, UI_ACTIONS_NEXT, ORDER_FILTER_ACTION, INV_TAB_ACTION, PAPER_CLOSE_ACTION } from '../uiTrack.js';
 
 const read = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
 const flush = () => new Promise(r => setTimeout(r, 5));
@@ -66,7 +66,7 @@ test('동작은 고정 목록만 — 형식이 맞아도 목록 밖이면 버린
     assert.equal(track('orders', ORDER_FILTER_ACTION.claim), true);
     await flush();
     assert.deepEqual(sent, [{ screen: 'orders', action: 'filter_claim' }]);
-    for (const v of [...Object.values(ORDER_FILTER_ACTION), ...Object.values(INV_TAB_ACTION)]) assert.ok(UI_ACTIONS.has(v), v);
+    for (const v of [...Object.values(ORDER_FILTER_ACTION), ...Object.values(INV_TAB_ACTION), ...Object.values(PAPER_CLOSE_ACTION)]) assert.ok(UI_ACTIONS.has(v), v);
 });
 
 test('수집 기간 확인 전에는 들고 있다가 — 기간 안이면 보내고, 끝났으면 버리고 그 뒤로 끈다', async () => {
@@ -121,26 +121,28 @@ test('미리보기·검수·dev 서버·고객사·로그아웃은 기록 대상
 
 test('main.js 부착: 업무 흐름(주문·CS·재고·할 일·캘린더)까지, 고정 동작만, 검수 모드는 끈다', () => {
     const m = read('main.js');
-    assert.match(m, /import \{ makeTracker, trackAllowed, usageNotice, ORDER_FILTER_ACTION, INV_TAB_ACTION \} from '\.\/uiTrack\.js'/);
+    assert.match(m, /import \{ makeTracker, trackAllowed, usageNotice, ORDER_FILTER_ACTION, INV_TAB_ACTION, PAPER_CLOSE_ACTION, paperSeenAction \} from '\.\/uiTrack\.js'/);
     assert.match(m, /if \(devPreview\) this\._noTrack = true/);
     assert.match(m, /send: row => this\.supabase\.from\('ui_events'\)\.insert\(row\)/);
     assert.match(m, /this\.supabase\.rpc\('ui_events_until'\)/);
     assert.match(m, /txt\.textContent = usageNotice\(until\)/, '안내는 textContent 로(HTML 아님)');
     const calls = [...m.matchAll(/this\.track\?\.\(([^;]*?)\);/g)].map(x => x[1]);   // ?. — 다른 테스트처럼 메서드만 떼어 돌려도 안 깨지게
-    const need = ["view, 'open'", "viewId, 'open'", "'home', 'open'", "cw.view, 'close'", "this.currentView || 'home', 'refresh'",
-        "'news', auto ? 'paper_auto' : 'paper'", "'news', 'brand_open'",
+    //  view, 'open' 은 둘 — 새 창(macOpen) · 창 안 화면 바꾸기(_winView: 판매·생산 탭 · 주문→CS · 시즌→제품)
+    const need = ["view, 'open'", "view, 'open'", "found.view, 'open'", "viewId, 'open'", "'home', 'open'", "cw.view, 'close'", "this.currentView || 'home', 'refresh'",
+        "'news', auto ? 'paper_auto' : 'paper'", "'news', 'brand_open'", "'news', PAPER_CLOSE_ACTION[how]", "'news', paperSeenAction(P.seen || 1, P.n)",
+        "'cs', 'open'", "'items', 'item_select'", "'items', dbl ? 'item_open_dbl' : 'item_open'", "'items', 'item_memo'", "'items', 'item_note'",
         "'orders', ORDER_FILTER_ACTION[t.dataset.f]", "'orders', 'order_sync'", "'orders', 'invoice_export'", "'orders', 'ship_issue'", "'orders', 'invoice_upload'",
         "'orders', 'cs_create_order'", "'cs', 'cs_create'", "'cs', 'cs_status'", "'cs', 'cs_filter'", "'cs', 'cs_select'", "'cs', 'cs_memo'",
         "'inventory', INV_TAB_ACTION[tab]", "'inventory', 'inv_save'",
         "'reminders', 'todo_add'", "'reminders', done ? 'todo_done' : 'todo_undo'", "'calendar', 'cal_add'"];
-    for (const c of need) assert.ok(calls.includes(c), c);
+    for (const c of new Set(need)) assert.equal(calls.filter(x => x === c).length, need.filter(x => x === c).length, c);
     assert.equal(calls.length, need.length, '목록에 없는 부착이 생기면 여기 먼저 적는다');
     //  두 번째 인자는 따옴표 고정 낱말(목록 안) · 고정 표 조회 · 삼항의 고정 낱말뿐 — 이어 붙이기·템플릿 금지
     for (const c of calls) {
         const act = c.slice(c.indexOf(',') + 1).trim();
         assert.doesNotMatch(act, /\+|`/, c);
         for (const w of act.match(/'([^']*)'/g) || []) assert.ok(UI_ACTIONS.has(w.slice(1, -1)), `${c} → ${w}`);
-        if (!/'/.test(act)) assert.match(act, /^(ORDER_FILTER_ACTION|INV_TAB_ACTION)\[/, c);
+        if (!/'/.test(act)) assert.match(act, /^(ORDER_FILTER_ACTION|INV_TAB_ACTION|PAPER_CLOSE_ACTION)\[|^paperSeenAction\(P\.seen \|\| 1, P\.n\)$/, c);
         assert.doesNotMatch(c, /value|input|name|phone|query|search|\.text|orderNo|\bid\b/i, c);
     }
     //  CS 메모는 저장 성공 뒤에만, 할 일 완료도 저장 성공 뒤에만
@@ -152,7 +154,10 @@ test('091: 형식/고정목록 CHECK · 서버값만 · 기간 강제 · 관리�
     const sql = read('supabase/migrations/091_ui_events.sql'), down = read('supabase/rollbacks/091_ui_events.down.sql');
     assert.match(sql, /screen\s+text not null check \(screen ~ '\^\[a-z0-9_\.:-\]\{1,60\}\$'\)/);
     const list = sql.match(/ui_events_action_check check \(action in \(([^)]*)\)\)/)[1].match(/'([^']+)'/g).map(x => x.slice(1, -1));
-    assert.deepEqual([...list].sort(), [...UI_ACTIONS].sort(), 'DB 동작 목록 = 앱 UI_ACTIONS');
+    assert.deepEqual([...list].sort(), [...UI_ACTIONS_091].sort(), 'DB 동작 목록 = 앱 UI_ACTIONS_091');
+    //  새 낱말(UI_ACTIONS_NEXT)은 091 에 없다 — 다음 수집 마이그레이션이 CHECK 에 더할 몫. 겹치지 않고, 합치면 앱 사전 전체.
+    for (const a of UI_ACTIONS_NEXT) assert.ok(!list.includes(a), a);
+    assert.deepEqual([...UI_ACTIONS].sort(), [...list, ...UI_ACTIONS_NEXT].sort());
     assert.match(sql, /grant select, insert \(screen, action\) on public\.ui_events to authenticated/);
     assert.match(sql, /with check \(public\.is_staff\(\) and user_id = auth\.uid\(\) and now\(\) < public\.ui_events_until\(\)\)/);
     assert.match(sql, /using \(public\.is_master\(\) and now\(\) < public\.ui_events_until\(\) \+ interval '14 days'\)/);
@@ -212,6 +217,7 @@ test('091 RLS(PGlite)', { skip: !P && 'PGLITE_PATH 없음 — 건너뜀' }, asyn
     await t.test('목록 밖 동작은 DB 도 거절한다', async () => {
         await denied(as('kim', `insert into ui_events (screen, action) values ('news', 'tab_brands')`));
         await denied(as('kim', `insert into ui_events (screen, action) values ('orders', 'filter_x')`));
+        for (const a of UI_ACTIONS_NEXT) await denied(as('kim', `insert into ui_events (screen, action) values ('items', '${a}')`));   // 새 낱말은 다음 마이그레이션 전까지 DB 가 거절
     });
     await t.test('기간: 다시 깔아도 안 늘고, 끝나면 쓰기 거절, 끝난 뒤 14일이 지나면 관리자도 원자료를 못 본다', async () => {
         const before = (await q1(`select ends_at from ui_events_config`))[0].ends_at;

@@ -60,7 +60,8 @@ const mkApp = ({ items, notes = [], seasons = [], failItems = false }) => {
         _itemMemoLine(it) { return (this._itemMemoPlain(it).split('\n').find(l => l.trim()) || '').trim(); },
     };
     for (const n of ['_itemNoteOf', '_memoHas', '_itemMemoText', '_itemMemoPlain', '_loadItemNotes', '_itemNoteRow', '_itemNoteQueue',
-        '_dropLegacyMemo', 'saveItemNote', '_saveItemNoteNow', '_itemIssues']) t[n] = grab(n);
+        '_dropLegacyMemo', 'saveItemNote', '_saveItemNoteNow', '_itemNoteSaved', '_itemIssues']) t[n] = grab(n);
+    t.track = () => {};
     t._ipTa = () => null;
     return { t, db };
 };
