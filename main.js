@@ -12,6 +12,7 @@ import {
 } from './competitorBoard.js';
 import { leadStory, openCalendar, topWorked, brandMoves, weekSummary } from './paperEdition.js';
 import { cardDeck } from './paperCards.js';
+import { installColResize } from './colResize.js';
 // 29CM 몰 판별 — 봇(계정별 몰 29cm · 29cm-rohi)과 같은 규칙
 import { is29cmKey } from './channel-bots/29cm/accounts.mjs';
 import { magazine, MAG, reactBits, kNum } from './newsMagazine.js';
@@ -192,6 +193,7 @@ class BhasApp {
 
     init() {
         if (!this._csShipBound) { this._csShipBound = true; document.addEventListener('click', e => this._csShipClick(e)); }
+        try { installColResize(); } catch (_e) { /* 칸 너비 조절은 편의 — 실패해도 목록은 그대로 */ }   // 모든 it-tbl 목록 칸 너비 끌어서 조절(colResize.js)
         // ===== [임시] 샘플 제작 미리보기용 인증 우회 (Supabase 일시중단 중) =====
         // 원복: 아래 DEV_PREVIEW_SAMPLE = false 로만 바꾸면 됨.
         // Supabase 재가동 완료 → 실제 로그인/데이터 로드 사용(false).
@@ -219,6 +221,19 @@ class BhasApp {
                 { id: 'preview-3', status: '거래중단', name: '올드 부자재', category: '부자재', contact_name: '이수진', phone: '02-987-6543', fax: '', email: 'trim@example.com', address: '서울 종로구', memo: '대체처 확인', jobs: [] },
             ];
             this.wins = [{ id: 'preview-contacts', view: 'contacts', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
+        //  CS 목록 칸 너비 조절 검수 — 가짜 행만(DB 안 읽고 안 쓴다)
+        if (devPreview === 'cs') {
+            this._prefetched = true; this._isInitialLoading = false; this._csLoaded = true;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            this.currentView = 'cs';
+            const st = ['접수', '수거접수', '수거완료', '접수', '접수', '수거접수'];
+            this.csList = st.map((s, i) => ({ id: `preview-cs-${i}`, occurred_on: `2026-10-${String(29 - i).padStart(2, '0')}`, kind: i % 2 ? '반품' : '교환',
+                customer_name: ['김하늘', '이도윤', '박서연', '최민준', '정지우', '한예린'][i], purchase_from: ['스마트스토어', '자사몰', '쿠팡'][i % 3],
+                order_no: `2026102${i}-000${i}12345`, product_name: ['하이헤이호 기모 맨투맨 아이보리 L', '로하이 데님 와이드 팬츠', '토비 니트 가디건 차콜'][i % 3],
+                status: s, memo: i === 0 ? '사이즈 교환 — L→XL, 수거 기사님 오후 방문' : '' }));
+            this.wins = [{ id: 'preview-cs', view: 'cs', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
         }
         //  뉴스·조간 화면 검수 — Playwright 가 넣어 준 읽기 전용 데이터(window.__NEWS_PREVIEW)로만 그린다. DB 에 쓰지 않는다.

@@ -5270,3 +5270,18 @@ b.sp-nm.dup{color:#ff453a}
 .it-dtx{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:13px;line-height:1;padding:0 2px;opacity:0}
 .it-row:hover .it-dtx,.it-dtw:focus-within .it-dtx{opacity:1}
 @media (hover:none){.it-dtx{opacity:.6}}
+
+/* 목록 칸 너비 조절(colResize.js) — 머리글 오른쪽 경계를 끌면 그 칸만 바뀐다. 두 번 누르면 원래대로 */
+.it-tbl th .th-rz{position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;touch-action:none;z-index:3}
+.it-tbl th .th-rz::after{content:"";position:absolute;top:22%;bottom:22%;right:3px;width:2px;border-radius:2px;background:transparent}
+.it-tbl th:hover .th-rz::after{background:var(--card-border)}
+.it-tbl th .th-rz:hover::after,.it-tbl th .th-rz.on::after{background:var(--primary,#0a84ff)}
+.it-tbl.rz-on th,.it-tbl.rz-on td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}   /* 너비 정한 표는 엑셀처럼 한 줄 + … */
+.it-tbl.rz-on td .it-in,.it-tbl.rz-on td .it-sel{max-width:100%}
+.rz-drag,.rz-drag *{cursor:col-resize!important;user-select:none!important}
+@media (pointer:coarse){.it-tbl th .th-rz{width:16px}}
+/* 손잡이(오른쪽 9px)와 깔때기가 겹치지 않게 깔때기를 손잡이 왼쪽으로 */
+/* 창 안(.macwin thead th, padding 9px !important) 보다 우선하도록 선택자를 더 구체적으로 */
+.it-tbl thead th,.macwin .it-tbl thead th{padding-right:26px !important}
+.it-tbl th .th-f{right:9px}
+@media (max-width:640px){.it-tbl td{white-space:nowrap}}   /* 폰: 줄바꿈으로 행이 길어지지 않게 — 넘치는 건 가로 스크롤 */
