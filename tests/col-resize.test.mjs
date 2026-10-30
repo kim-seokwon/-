@@ -93,5 +93,6 @@ test('연결: main.js 가 시작할 때 설치하고, CSS 에 손잡이·깔때�
     assert.match(main, /try \{ installColResize\(\); \}/);
     assert.match(css, /\.it-tbl th \.th-rz\{[^}]*cursor:col-resize/);
     assert.match(css, /\.it-tbl th \.th-f\{right:9px\}/);
+    assert.match(css, /\.macwin \.it-tbl thead th\{padding-right:26px !important\}/);   // 반려1: 창 안 .macwin thead th(9px) 에 덮이지 않게
     assert.match(css, /\.it-scroll\{[^}]*overflow:auto/);          // 넓어지면 목록 칸이 가로 스크롤
 });

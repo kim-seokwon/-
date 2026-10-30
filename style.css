@@ -5276,11 +5276,12 @@ b.sp-nm.dup{color:#ff453a}
 .it-tbl th .th-rz::after{content:"";position:absolute;top:22%;bottom:22%;right:3px;width:2px;border-radius:2px;background:transparent}
 .it-tbl th:hover .th-rz::after{background:var(--card-border)}
 .it-tbl th .th-rz:hover::after,.it-tbl th .th-rz.on::after{background:var(--primary,#0a84ff)}
-.it-tbl.rz-on th,.it-tbl.rz-on td{overflow:hidden;text-overflow:ellipsis}
+.it-tbl.rz-on th,.it-tbl.rz-on td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}   /* 너비 정한 표는 엑셀처럼 한 줄 + … */
 .it-tbl.rz-on td .it-in,.it-tbl.rz-on td .it-sel{max-width:100%}
 .rz-drag,.rz-drag *{cursor:col-resize!important;user-select:none!important}
 @media (pointer:coarse){.it-tbl th .th-rz{width:16px}}
 /* 손잡이(오른쪽 9px)와 깔때기가 겹치지 않게 깔때기를 손잡이 왼쪽으로 */
-.it-tbl th{padding-right:26px !important}
+/* 창 안(.macwin thead th, padding 9px !important) 보다 우선하도록 선택자를 더 구체적으로 */
+.it-tbl thead th,.macwin .it-tbl thead th{padding-right:26px !important}
 .it-tbl th .th-f{right:9px}
 @media (max-width:640px){.it-tbl td{white-space:nowrap}}   /* 폰: 줄바꿈으로 행이 길어지지 않게 — 넘치는 건 가로 스크롤 */

@@ -6,7 +6,7 @@
 //  머리글 정렬·깔때기 클릭과 겹치지 않게, 손잡이에서 시작한 클릭은 문서 맨 앞(캡처)에서 멈춘다.
 
 export const COLW_PREFIX = 'colw:';
-export const COLW_MIN = 36;
+export const COLW_MIN = 48;   // 깔때기·손잡이 몫(26px) + 여백 9px 를 빼고도 글자 한 자는 보이게
 export const COLW_MAX = 1200;
 
 export const clampW = w => Math.max(COLW_MIN, Math.min(COLW_MAX, Math.round(Number(w) || 0)));
