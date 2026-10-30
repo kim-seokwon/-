@@ -62,6 +62,8 @@ test('main.js 연결: 끌어올 때 cs_order_pick · 상세 신청 상품/고르
     assert.match(trash, /esc\(t\.customer_name/, '확인창 문구의 고객 이름은 이스케이프');
     assert.match(MAIN, /partLabel\(t\.items, t\.items_total\)/);
     assert.doesNotMatch(MAIN.slice(MAIN.indexOf('_csPicker(lines'), MAIN.indexOf('async csPickItems(')), /onclick="app\./, '고르기 창은 값 박은 onclick 없음');
+    // 10-30 담기 먹통: 안쪽 상자가 stopPropagation 하므로 버튼은 안쪽 상자에서 받아야 한다
+    assert.match(MAIN.slice(MAIN.indexOf('_csPicker(lines'), MAIN.indexOf('async csPickItems(')), /box\.onclick = e => \{\s*e\.stopPropagation\(\);\s*const b = e\.target\.closest\?\.\('\[data-cs-pick\]'\)/, '고르기 버튼은 안쪽 상자에서 받는다');
 });
 
 test('098 정적: 되돌리기 파일 · RPC 권한 · 트리거는 raw 줄이 바뀔 때만', () => {
