@@ -10979,11 +10979,14 @@ class BhasApp {
             const boxes = () => [...c.querySelectorAll('[data-cs-line]')];
             const okBtn = c.querySelector('[data-cs-pick="ok"]');
             const sync = () => { okBtn.disabled = !boxes().some(b => b.checked); okBtn.textContent = `담기 ${boxes().filter(b => b.checked).length || ''}`.trim(); };
-            const done = v => { c.onclick = null; c.onchange = null; this.closeGlobalModal(); resolve(v); };
+            //  안쪽 상자의 onclick(stopPropagation) 때문에 버튼 누름이 바깥(c)까지 안 올라왔다(담기·전체·나중에 먹통) → 안쪽 상자에서 받는다
+            const box = c.querySelector('.cs-pick');
+            const done = v => { c.onclick = null; c.onchange = null; box.onclick = null; this.closeGlobalModal(); resolve(v); };
             sync();
             c.onchange = sync;
-            c.onclick = e => {
-                if (e.target === c) return done(null);
+            c.onclick = e => { if (e.target === c) done(null); };
+            box.onclick = e => {
+                e.stopPropagation();
                 const b = e.target.closest?.('[data-cs-pick]'); if (!b) return;
                 const a = b.getAttribute('data-cs-pick');
                 if (a === 'all') { const all = boxes().every(x => x.checked); boxes().forEach(x => { x.checked = !all; }); sync(); }
