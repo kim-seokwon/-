@@ -1,10 +1,15 @@
-// 서버 비밀키 — 엣지함수 전용 새 키(edge_functions)를 쓴다 (11-03 비밀키 교체).
-// SUPABASE_SECRET_KEYS 는 플랫폼이 넣어 주는 {이름: 키} JSON. 예전 SUPABASE_SERVICE_ROLE_KEY 는 옛 default 키라 지운다.
-// 새 키가 안 들어와 있을 때만(교체 전 배포 등) 예전 변수로 돌아간다.
-export function serviceKey(): string {
-  try {
-    const keys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
-    if (typeof keys?.edge_functions === "string" && keys.edge_functions) return keys.edge_functions;
-  } catch (_e) { /* 형식이 깨졌으면 아래로 */ }
-  return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// 서버 키 — 플랫폼이 넣어 주는 JSON 변수에서만 읽는다 (11-03 비밀키 교체: legacy JWT·옛 default 키 의존 0).
+//   SUPABASE_SECRET_KEYS      {이름: sb_secret_…}      → 엣지함수 전용 edge_functions
+//   SUPABASE_PUBLISHABLE_KEYS {이름: sb_publishable_…} → default (사용자 로그인 토큰 확인용)
+// 없거나 깨졌거나 새 형식 키가 아니면 예전 변수(SUPABASE_SERVICE_ROLE_KEY/ANON_KEY)로 돌아가지 않고 바로 오류(fail-closed).
+function fromJson(env: string, name: string, prefix: string): string {
+  let keys: unknown = null;
+  try { keys = JSON.parse(Deno.env.get(env) ?? ""); } catch (_e) { /* 아래에서 오류 */ }
+  const v = keys && typeof keys === "object" ? (keys as Record<string, unknown>)[name] : undefined;
+  if (typeof v !== "string" || !v.startsWith(prefix)) {
+    throw new Error(`${env}.${name} 키가 없습니다 — 엣지함수 키 설정을 확인하세요(예전 키로 돌아가지 않음)`);
+  }
+  return v;
 }
+export const serviceKey = (): string => fromJson("SUPABASE_SECRET_KEYS", "edge_functions", "sb_secret_");
+export const publishableKey = (): string => fromJson("SUPABASE_PUBLISHABLE_KEYS", "default", "sb_publishable_");

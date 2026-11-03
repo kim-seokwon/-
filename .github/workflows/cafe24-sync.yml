@@ -3,7 +3,7 @@ name: 카페24 주문 수집
 on:
   # ⚠️ 스케줄 중지(2026-08-18): 카페24 수집은 Supabase pg_cron(job 3, */5분)이 x-cron-secret으로 담당.
   #   이 워크플로는 x-cron-secret 없이 호출해 매번 401 실패 → 실패알림 메일 폭탄. 중복이라 스케줄 끔.
-  #   필요 시 수동 실행(workflow_dispatch)만 사용. 되살리려면 header에 x-cron-secret 추가 후 schedule 복구.
+  #   필요 시 수동 실행(workflow_dispatch)만 사용(x-cron-secret 헤더 반영됨, GitHub 시크릿 CRON_SECRET 필요).
   workflow_dispatch:          # 수동 실행 버튼
 
 concurrency:
@@ -18,9 +18,12 @@ jobs:
       - name: cafe24-sync Edge Function 호출
         run: |
           echo "카페24 주문 수집 호출..."
+          # 함수 호출 인증은 x-cron-secret(함수가 CRON_SECRET 과 대조). sb_secret 은 JWT 가 아니라 Bearer 로 보내지 않는다(11-03 키교체).
+          [ -n "$CRON_SECRET" ] || { echo "::error::CRON_SECRET 시크릿이 없습니다 — 등록 후 실행"; exit 1; }
           code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
             "$SUPABASE_URL/functions/v1/cafe24-sync" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "x-cron-secret: $CRON_SECRET" \
             -H "Content-Type: application/json" \
             -d '{}')
           echo "HTTP $code"
@@ -31,3 +34,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

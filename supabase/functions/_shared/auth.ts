@@ -5,7 +5,7 @@
 // "JWT 검증"만으로는 막히지 않는다(anon 키 자체가 유효한 서명 JWT라 통과함).
 // → 토큰이 실제 로그인 사용자(auth.users)에 매핑되는지 직접 확인해야 한다.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { serviceKey } from "./keys.ts";
+import { publishableKey, serviceKey } from "./keys.ts";
 
 export interface AuthedUser { id: string; email?: string; role: string | null }
 
@@ -28,7 +28,7 @@ export async function requireUser(req: Request, opts: { master?: boolean; roles?
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return deny("인증 필요 — 로그인 후 이용하세요");
 
-  const anon = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+  const anon = createClient(Deno.env.get("SUPABASE_URL")!, publishableKey(), {
     auth: { persistSession: false },
   });
   // anon 공개키를 그대로 보낸 경우 user 가 없으므로 여기서 걸린다.

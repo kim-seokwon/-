@@ -9,18 +9,18 @@
 //       POST <func-url> {restatus:false}       → 재동기화 건너뛰기
 //       POST <func-url> {mode:"restatus", restatus_from:"2025-01-01"}  → 재동기화만 전체기간
 import { admin, cafe24Fetch, cors, ensureToken, getActiveMalls, getMall, log, MallState, saveMall } from "../_shared/cafe24.ts";
-import { serviceKey } from "../_shared/keys.ts";
+import { publishableKey, serviceKey } from "../_shared/keys.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Dashboard 개별 함수 배포는 _shared/auth.ts를 번들에 포함하지 못하는 경우가 있어
-// 동일한 인증 검증을 함수 내부에 둔다. anon key 자체는 사용자 세션이 아니므로 getUser로 확인한다.
+// 동일한 인증 검증을 함수 내부에 둔다. publishable 키 자체는 사용자 세션이 아니므로 getUser로 확인한다.
 async function requireUser(req: Request, opts: { master?: boolean } = {}) {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   const deny = (error: string) => new Response(JSON.stringify({ ok: false, error }), {
     status: 401, headers: cors({ "Content-Type": "application/json" }),
   });
   if (!token) return deny("인증 필요 — 로그인 후 이용하세요");
-  const anon = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { auth: { persistSession: false } });
+  const anon = createClient(Deno.env.get("SUPABASE_URL")!, publishableKey(), { auth: { persistSession: false } });
   const { data, error } = await anon.auth.getUser(token);
   if (error || !data?.user) return deny("유효한 로그인 세션이 아닙니다");
   if (opts.master) {

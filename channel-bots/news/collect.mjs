@@ -24,7 +24,7 @@ async function rest(path, opt = {}) {
   const r = await fetch(`${SB}/rest/v1/${path}`, {
     ...opt,
     headers: {
-      apikey: KEY, Authorization: `Bearer ${KEY}`,
+      apikey: KEY,   // sb_secret 은 apikey 로만(Bearer 금지 — JWT 아님)
       'Content-Type': 'application/json',
       Prefer: opt.prefer || 'return=representation',
       ...(opt.headers || {}),
