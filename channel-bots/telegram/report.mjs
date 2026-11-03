@@ -19,7 +19,8 @@ export async function build({ url, key, fetch: f = globalThis.fetch, now = new D
   const yest = ymd(new Date(now.getTime() - 864e5));
   async function rest(path) {
     const r = await f(`${url}/rest/v1/${path}`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'count=exact' },
+      //  새 sb_secret 키는 apikey 헤더만 — Authorization Bearer 로 넣지 않는다(키교체 반려1)
+      headers: { apikey: key, Prefer: 'count=exact' },
     });
     if (!r.ok) throw new Error(`${path.split('?')[0]} → ${r.status} ${await r.text()}`);
     const total = Number((r.headers.get('content-range') || '').split('/')[1] || 0);
@@ -29,9 +30,9 @@ export async function build({ url, key, fetch: f = globalThis.fetch, now = new D
   const L = [];
   L.push(`*2179 운영 보고* · ${today}`);
 
-  // 어제 주문
+  // 어제 주문 — 대시보드 '유효 주문'과 같은 기준: op_status 가 취소·반품이면 뺀다(null 은 포함)
   try {
-    const { rows, total } = await rest(`channel_orders?select=order_id,mall_key,order_amount,pay_amount&order_date=gte.${kstStart(yest)}&order_date=lt.${kstStart(today)}&limit=1000`);
+    const { rows, total } = await rest(`channel_orders?select=order_id,mall_key,order_amount,pay_amount&order_date=gte.${kstStart(yest)}&order_date=lt.${kstStart(today)}&or=(op_status.is.null,op_status.not.in.(cancel,return))&limit=1000`);
     const amt = rows.reduce((s, o) => s + orderAmount(o), 0);
     L.push(`\n🧾 *어제 주문* ${total}건 · ${won(amt)}원${total > rows.length ? ` (앞 ${rows.length}건 합)` : ''}`);
     const byMall = {};
@@ -40,28 +41,29 @@ export async function build({ url, key, fetch: f = globalThis.fetch, now = new D
       .forEach(([m, n]) => L.push(`  · ${md(m)} ${n}건`));
   } catch (e) { L.push(`\n🧾 주문: 못 읽음 (${md(e.message.slice(0, 60))})`); }
 
-  // 출고 대기
+  // 출고 대기 — 주문 탭 '대상'과 같은 op_status='pre'. (status 칸은 운영에서 전부 new 라 쓰면 전체 주문 수가 나온다)
   try {
-    const { total } = await rest(`channel_orders?select=order_id&status=in.(new,ready)&limit=1`);
+    const { total } = await rest(`channel_orders?select=order_id&op_status=eq.pre&limit=1`);
     L.push(`\n📦 *출고 대기* ${total}건`);
-  } catch (_e) {}
+  } catch (e) { L.push(`\n📦 출고 대기: 못 읽음 (${md(e.message.slice(0, 60))})`); }
 
   // 오늘 마감 할 일
   try {
     const { rows } = await rest(`reminders?select=title,due_date,assignee&done=is.false&due_date=lte.${today}&order=due_date.asc&limit=10`);
     L.push(`\n✅ *오늘까지 할 일* ${rows.length}건`);
     rows.slice(0, 8).forEach(r => L.push(`  · ${md(r.title)}${r.due_date < today ? ' ⚠️지연' : ''}`));
-  } catch (_e) {}
+  } catch (e) { L.push(`\n✅ 할 일: 못 읽음 (${md(e.message.slice(0, 60))})`); }
 
   // CS 진행 중
   try {
     const { total } = await rest(`cs_tickets?select=id&status=neq.완료&limit=1`);
     if (total) L.push(`\n🔁 *CS 진행 중* ${total}건`);
-  } catch (_e) {}
+  } catch (e) { L.push(`\n🔁 CS: 못 읽음 (${md(e.message.slice(0, 60))})`); }
 
   // 수집이 멈췄는지 — sync_log 칸은 channel·type·result(001). job·ok 칸은 없다.
+  //  주문 수집(pull_orders)만 본다 — 뉴스 skipped 같은 다른 기록이 맨 위에 오면 주문 수집이 멈춰도 모른다.
   try {
-    const { rows } = await rest(`sync_log?select=run_at,channel,type,result&order=run_at.desc&limit=1`);
+    const { rows } = await rest(`sync_log?select=run_at,channel,type,result&type=like.*pull_orders&order=run_at.desc&limit=1`);
     const last = rows[0];
     if (last) {
       const mins = Math.round((now.getTime() - new Date(last.run_at).getTime()) / 60000);
@@ -71,12 +73,29 @@ export async function build({ url, key, fetch: f = globalThis.fetch, now = new D
     } else L.push(`\n🔌 수집 기록 없음`);
   } catch (e) { L.push(`\n🔌 수집: 못 읽음 (${md(e.message.slice(0, 60))})`); }
 
+  // 지난 24시간 수집 오류 — 건수는 전체(count=exact), 종류 요약은 최근 200건만 받아서
+  try {
+    const since = encodeURIComponent(new Date(now.getTime() - 864e5).toISOString());
+    const { rows, total } = await rest(`sync_log?select=channel,type&result=eq.error&run_at=gte.${since}&order=run_at.desc&limit=200`);
+    const kinds = {};
+    rows.forEach(r => { const k = [r.channel, r.type].filter(Boolean).join(' ') || '-'; kinds[k] = (kinds[k] || 0) + 1; });
+    const list = Object.entries(kinds).sort((a, b) => b[1] - a[1]);
+    const base = total > rows.length ? `최근 ${rows.length}건 기준` : '종류별';
+    if (total) L.push(`⚠️ 24시간 수집 오류 ${total}건 · ${base} ${list.slice(0, 3).map(([k, n]) => `${md(k)} ${n}`).join(', ')}`);
+  } catch (e) { L.push(`⚠️ 24시간 수집 오류: 못 읽음 (${md(e.message.slice(0, 60))})`); }
+
   L.push(`\nhttps://bhas-blue.vercel.app`);
   return L.join('\n');
 }
 
 async function main() {
   const { SUPABASE_URL, SUPABASE_SERVICE_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
+  //  --dry-run: 보고서 글만 만들어 화면에 찍는다(텔레그램 값 필요 없음, 아무것도 안 보냄)
+  if (process.argv.includes('--dry-run')) {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) { console.error('빠진 값: SUPABASE_URL·SUPABASE_SERVICE_KEY'); process.exit(1); }
+    console.log(await build({ url: SUPABASE_URL, key: SUPABASE_SERVICE_KEY }));
+    return;
+  }
   for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SERVICE_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID })) {
     if (!v) { console.error(`빠진 값: ${k}`); process.exit(1); }
   }

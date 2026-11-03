@@ -7,6 +7,9 @@ on:
 
 jobs:
   report:
+    #  등록 전에는 정기 실행을 '건너뜀'(회색)으로 — 초록 성공처럼 보이지 않게, 매일 실패 메일도 없게.
+    #  setup.mjs --apply 가 secret 2개와 함께 변수 TELEGRAM_READY=true 를 넣으면 다음 날부터 돈다. 수동 실행은 항상 돈다.
+    if: ${{ vars.TELEGRAM_READY == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -14,6 +17,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      #  돌았는데 비밀값이 없으면 보낸 척하지 않고 빨간 실패로 끝낸다
+      - name: 텔레그램 비밀값 확인
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "::error::TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID 비밀값이 없어 보고를 보내지 못했습니다 — channel-bots/telegram/setup.mjs --apply 로 등록"
+            exit 1
+          fi
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       - run: node channel-bots/telegram/report.mjs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
