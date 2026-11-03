@@ -1,4 +1,5 @@
 import { mockData, STAGES } from './mockData.js';
+import { couponMethods, couponPreviewSupabase } from './couponView.js';
 import { makeTracker, trackAllowed, usageNotice, ORDER_FILTER_ACTION, INV_TAB_ACTION, PAPER_CLOSE_ACTION, paperSeenAction } from './uiTrack.js';
 import { TIPS, MANUAL, searchManual } from './helpDict.js';
 import { tipHTML, initTips } from './helpWidget.js';
@@ -375,6 +376,18 @@ class BhasApp {
             this.crmData = { [brand.name]: crmPreview };
             this.crmState = { [brand.name]: 'ok' };
             this.wins = [{ id: 'preview-crm', view: 'crm', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
+        if (devPreview === 'coupon') {
+            const brand = (mockData.brands || [])[0] || { id: 'preview-brand', name: '하이헤이호', brand_color: '#6366f1' };
+            if (!(mockData.brands || []).length) mockData.brands = [brand];
+            this._prefetched = true; this._mallsLoaded = true;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: new URLSearchParams(location.search).get('role') || 'MASTER', company_id: 'preview' };
+            this.currentView = 'crm'; this.crmTab = 'coupon'; this._isInitialLoading = false;
+            this.malls = [{ mall_key: 'preview-mall', brand_id: brand.id, label: brand.name, channel: 'cafe24' }];
+            this.crmBrand = brand.name;
+            this.supabase = couponPreviewSupabase(brand.id);
+            this.wins = [{ id: 'preview-coupon', view: 'crm', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
         }
         // ====================================================================
@@ -6310,6 +6323,7 @@ class BhasApp {
     }
     setCRMBrand(b) { this.crmBrand = b; this.crmSegment = 'first30'; this.requestRender(); this.ensureViewData(); }
     setCRMSegment(k) { this.crmSegment = k; this.requestRender(); }
+    setCRMTab(t) { this.crmTab = t; this.requestRender(); }
     async _loadCRM(brand, force) {
         if (!brand || !this._mallsLoaded || this._devPreviewCRM) return;
         this._crmLoads = this._crmLoads || {}; this.crmState = this.crmState || {};
@@ -6386,6 +6400,12 @@ class BhasApp {
                 <span class="crm-icon"><i class="ph ${icon}"></i></span><span class="crm-count">${list.length.toLocaleString()}<small>명</small></span>
                 <b>${label}</b><span>${desc}</span><em>${ret}</em></button>`;
         }).join('');
+        const sub = `<div class="cp-sub">${[['targets', '대상 명단'], ['coupon', '재구매 쿠폰']].map(([k, t]) => `<button class="it-pill${(this.crmTab || 'targets') === k ? ' on' : ''}" id="crm-tab-${k}" onclick="app.setCRMTab('${k}')">${t}</button>`).join('')}</div>`;
+        if (this.crmTab === 'coupon') {
+            return `<div class="mp crm-page">${this._mpTop('고객 CRM', brand ? `${esc(brand)} · 재구매 쿠폰 주기 관리` : '브랜드를 고르세요', '')}
+            <div class="it-pills">${names.map(n => `<button class="it-pill${brand === n ? ' on' : ''}" onclick="app.setCRMBrand('${esc(n).replace(/'/g, "\\'")}')">${esc(n)}</button>`).join('') || '<span class="mu">연동된 판매 브랜드가 없습니다</span>'}</div>
+            <div class="mp-body">${sub}${this.renderCoupon(brand)}</div></div>`;
+        }
         const body = state === 'error' ? `<div class="crm-empty bad">불러오지 못했습니다 · ${esc((this.crmErr || {})[brand] || '')}<button onclick="app._retryCRM('${esc(brand).replace(/'/g, "\\'")}')">다시 시도</button></div>`
             : (!data ? `<div class="crm-empty">${state === 'loading' ? '고객 주문을 불러오는 중…' : '브랜드를 선택해 주세요.'}</div>`
             : `<section class="crm-list"><div class="crm-list-head"><div><b>${active[1]} 명단</b><span>${active[2]} · ${rows.length.toLocaleString()}명</span></div>
@@ -6397,7 +6417,7 @@ class BhasApp {
             <div class="it-pills">${names.map(n => `<button class="it-pill${brand === n ? ' on' : ''}" onclick="app.setCRMBrand('${esc(n).replace(/'/g, "\\'")}')">${esc(n)}</button>`).join('') || '<span class="mu">연동된 판매 브랜드가 없습니다</span>'}
                 <span class="pill-sp"></span><span class="sync-b"><i class="ph ph-shield-check"></i> 전화·이메일 제외 · 회원ID만</span></div>
             <div class="mp-body">${data ? `<div class="crm-meta"><span><i class="ph ph-clock"></i> 최근 주문 ${esc((data.latest_order || '').slice(5) || '없음')}</span>${data.own_store_only ? '<span><i class="ph ph-storefront"></i> 자사몰 주문 기준</span>' : ''}</div>` : ''}
-            <div class="crm-intro"><div><span>CRM 대상</span><b>돌아올 가능성이 있는 고객부터 봅니다</b></div><p>카드를 누르면 Cafe24 쿠폰 대상용 명단을 확인하고 CSV로 받을 수 있습니다. 실제 발송은 하지 않습니다.</p></div>
+            ${sub}<div class="crm-intro"><div><span>CRM 대상</span><b>돌아올 가능성이 있는 고객부터 봅니다</b></div><p>카드를 누르면 Cafe24 쿠폰 대상용 명단을 확인하고 CSV로 받을 수 있습니다. 실제 발송은 하지 않습니다.</p></div>
             <div class="crm-cards">${cards}</div>${body}
             <p class="crm-foot">기준일 ${data?.as_of || '—'} · 첫구매/휴면 묶음은 서로 겹치지 않음 · VIP는 별도라 다른 묶음과 겹칠 수 있음</p></div></div>`;
     }
@@ -6841,7 +6861,7 @@ class BhasApp {
         if (v === 'crm' && this._mallsLoaded) {
             const names = this._analysisBrandNames();
             const brand = (this.crmBrand && names.includes(this.crmBrand)) ? this.crmBrand : (names[0] || null);
-            if (brand) this._loadCRM(brand);
+            if (brand && this.crmTab !== 'coupon') this._loadCRM(brand);
         }
         if (v === 'feedback' && !this._fbLoaded && !this._fbLoading) this.loadFeedback();
         if ((v === 'cs' || v === 'orders') && !this._csLoaded && !this._csLoading) this.loadCS();
@@ -18558,5 +18578,6 @@ class BhasApp {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+    Object.assign(BhasApp.prototype, couponMethods);   // 재구매 쿠폰(고객 CRM 안)
     window.app = new BhasApp();
 });

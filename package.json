@@ -24,6 +24,7 @@
     "test:help-center": "node --test tests/help-center.test.mjs",
     "test:calendar-brand": "node --test tests/calendar-brand.test.mjs",
     "test:tech-pack-upload": "node --test tests/tech-pack-upload.test.mjs",
+    "test:repurchase-coupon": "node --test tests/repurchase-coupon.test.mjs",
     "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {

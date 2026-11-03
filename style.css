@@ -5285,3 +5285,36 @@ b.sp-nm.dup{color:#ff453a}
 .it-tbl thead th,.macwin .it-tbl thead th{padding-right:26px !important}
 .it-tbl th .th-f{right:9px}
 @media (max-width:640px){.it-tbl td{white-space:nowrap}}   /* 폰: 줄바꿈으로 행이 길어지지 않게 — 넘치는 건 가로 스크롤 */
+
+/* 재구매 쿠폰 1-A (couponView.js) */
+.cp-sub{display:flex;gap:6px;margin:0 0 14px}
+.cp{display:flex;flex-direction:column;gap:12px}
+.cp-warn{display:block;padding:10px 12px;border-radius:10px;background:rgba(10,132,255,.08);font-size:12.5px}
+.cp-tabs{display:flex;gap:6px}
+.cp .crm-csv,.cp-b{white-space:nowrap}
+.cp-b{border:.5px solid var(--card-border);background:var(--card-bg);color:var(--text-main);border-radius:8px;padding:6px 10px;font:600 12px inherit;cursor:pointer}
+.cp-b.pri{background:var(--primary);color:#fff;border-color:transparent}
+.cp-b:disabled{opacity:.45;cursor:not-allowed}
+.cp-act{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.cp-table{min-width:720px}.cp-table td{vertical-align:top;white-space:normal}
+.cp .mu{color:var(--text-muted);font-size:11.5px}
+.cp-st{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:rgba(127,127,127,.14)}
+.cp-st.st-active,.cp-st.rs-done{background:rgba(52,199,89,.16);color:#1f9d47}
+.cp-st.rs-awaiting_approval,.cp-st.rs-approved_for_export,.cp-st.rs-exported{background:rgba(255,159,10,.18);color:#b86e00}
+.cp-st.rs-needs_review,.cp-st.rs-export_expired,.cp-st.rs-partial{background:rgba(255,69,58,.14);color:#d63a2f}
+.cp-todo{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:rgba(255,159,10,.1)}
+.cp-edit{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:14px}
+@media (max-width:860px){.cp-edit{grid-template-columns:1fr}}
+.cp-form,.cp-prev,.cp-step{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg)}
+.cp-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cp-row label{flex:0 0 120px;font-size:12px;color:var(--text-muted)}
+.cp-row input,.cp-row select,.cp-step>input{flex:1 1 120px;min-width:0;padding:7px 9px;border:1px solid var(--card-border);border-radius:8px;background:transparent;color:var(--text-main);font:13px inherit}
+.cp-hint{font-size:12px;color:var(--text-muted)}
+.cp-bad{padding:8px 10px;border-radius:8px;background:rgba(255,69,58,.1);color:#d63a2f;font-size:12.5px}
+.cp-nums{display:flex;gap:8px;flex-wrap:wrap}
+.cp-nums>div{flex:1 1 90px;display:flex;flex-direction:column;padding:10px;border-radius:10px;background:rgba(127,127,127,.08)}
+.cp-nums b{font-size:16px;font-variant-numeric:tabular-nums}.cp-nums span{font-size:11px;color:var(--text-muted)}
+.cp-reasons{display:flex;gap:6px;flex-wrap:wrap}.cp-reasons span{font-size:11.5px;padding:2px 8px;border-radius:99px;background:rgba(127,127,127,.12)}
+.cp-run{display:flex;flex-direction:column;gap:12px}.cp-run-head{display:flex;gap:10px;align-items:center}
+.cp-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.cp-step p{margin:0;font-size:12.5px;color:var(--text-muted)}
