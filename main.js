@@ -351,18 +351,15 @@ class BhasApp {
             const ago = n => new Date(now.getTime() - n * 864e5).toISOString();
             const brand = (mockData.brands || [])[0] || { id: 'preview-brand', name: '하이헤이호', brand_color: '#6366f1' };
             if (!(mockData.brands || []).length) mockData.brands = [brand];
-            const sample = [
-                { id: 1, mem: 'member_1001', buyer_name: '김민지', order_date: ago(46), pay_amount: 69000, op_status: 'done' },
-                { id: 2, mem: 'member_1002', buyer_name: '이서윤', order_date: ago(185), pay_amount: 89000, op_status: 'done' },
-                { id: 3, mem: 'member_1002', buyer_name: '이서윤', order_date: ago(122), pay_amount: 119000, op_status: 'done' },
-                { id: 4, mem: 'vip_2179', buyer_name: '박지우', order_date: ago(540), pay_amount: 320000, op_status: 'done' },
-                { id: 5, mem: 'vip_2179', buyer_name: '박지우', order_date: ago(450), pay_amount: 410000, op_status: 'done' },
-                { id: 6, mem: 'vip_2179', buyer_name: '박지우', order_date: ago(360), pay_amount: 380000, op_status: 'done' },
-                { id: 7, mem: 'vip_2179', buyer_name: '박지우', order_date: ago(270), pay_amount: 510000, op_status: 'done' },
-                { id: 8, mem: 'member_1003', buyer_name: '정하린', order_date: ago(96), pay_amount: 79000, op_status: 'done' },
-                { id: 9, mem: 'member_1004', buyer_name: '최도윤', order_date: ago(210), pay_amount: 49000, op_status: 'done' },
-                { id: 10, mem: 'member_active', buyer_name: '윤새봄', order_date: ago(1), pay_amount: 59000, op_status: 'done' },
-            ];
+            const day = n => ago(n).slice(0, 10), mem = (member_id, name, first, last, orders, spend, avg_cycle = null) =>
+                ({ member_id, name, first: day(first), last: day(last), orders, spend, gone_days: last, avg_cycle });
+            const vip = mem('vip_2179', '박지우', 540, 270, 4, 1620000, 90);
+            const sample = {
+                first30: [mem('member_1001', '김민지', 46, 46, 1, 69000)],
+                dormant90: [mem('member_1002', '이서윤', 185, 122, 2, 208000), mem('member_1003', '정하린', 96, 96, 1, 79000)],
+                dormant180: [vip, mem('member_1004', '최도윤', 210, 210, 1, 49000)],
+                vipRisk: [vip],
+            };
             this._devPreviewCRM = true; this._prefetched = true; this._mallsLoaded = true;
             this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
             this.currentView = 'crm'; this._isInitialLoading = false;
@@ -371,8 +368,9 @@ class BhasApp {
                 { mall_key: '29cm', brand_id: brand.id, label: '29CM', channel: '29cm' },
             ];
             this.crmBrand = brand.name; this.crmSegment = 'first30';
-            const crmPreview = this._crmSegments(sample, now.toISOString());
-            Object.assign(crmPreview, { own_store_only: true });
+            //  화면 검수용 고정값 — 운영은 DB repurchase_segments 결과를 그대로 그린다
+            const crmPreview = { as_of: day(0), latest_order: day(1), previous_month_end: null, customers: 6, own_store_only: true, segments: sample,
+                return_rates: { first30: { base: 2, returned: 1, rate: 50 }, dormant90: { base: 3, returned: 1, rate: 33.3 }, dormant180: { base: 2, returned: 0, rate: 0 }, vipRisk: { base: 1, returned: 0, rate: 0 } } };
             this.crmData = { [brand.name]: crmPreview };
             this.crmState = { [brand.name]: 'ok' };
             this.wins = [{ id: 'preview-crm', view: 'crm', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
@@ -6263,64 +6261,9 @@ class BhasApp {
 
     // ============================================================
     //  고객 CRM — 발송 없이 대상만 찾고 Cafe24 쿠폰용 CSV를 만든다.
-    //  회원ID가 있는 유효 주문만 사용하며 전화·이메일은 조회하지 않는다.
+    //  묶음·복귀율은 DB repurchase_segments(KST)가 계산한다 — 재구매 쿠폰 미리보기와 같은 SQL(103).
+    //  회원ID·이름·날짜·금액만 받고 전화·이메일은 조회하지 않는다.
     // ============================================================
-    _crmSegments(rows, nowISO) {
-        const DAY = 864e5;
-        const ymd = v => String(v || '').slice(0, 10);
-        const ms = v => Date.parse(`${ymd(v)}T00:00:00Z`);
-        const now = ymd(nowISO || new Date().toISOString());
-        const nowMs = ms(now);
-        const source = (rows || []).filter(r => {
-            const d = ymd(r.order_date);
-            return d && Number.isFinite(ms(d)) && ms(d) <= nowMs
-                && (r.actual_paid_amount != null || r.pay_amount != null)
-                && !['cancel', 'return'].includes(String(r.op_status || '').toLowerCase());
-        }).sort((a, b) => ymd(a.order_date).localeCompare(ymd(b.order_date)) || String(a.id || '').localeCompare(String(b.id || ''), 'ko', { numeric: true }));
-        const valid = source.filter(r => r.mem || r.lid);
-        const build = (through) => {
-            const cut = ms(through), by = new Map();
-            valid.forEach(r => {
-                const d = ymd(r.order_date); if (ms(d) > cut) return;
-                const id = String(r.mem || r.lid).trim(); if (!id) return;
-                const x = by.get(id) || { member_id: id, name: '', dates: [], spend: 0, orders: 0 };
-                x.name = String(r.buyer_name || r.receiver_name || x.name || '').trim();
-                x.dates.push(d); x.spend += Number(r.actual_paid_amount ?? r.pay_amount) || 0; x.orders++;
-                by.set(id, x);
-            });
-            const customers = [...by.values()].map(x => {
-                const dates = [...new Set(x.dates)].sort();
-                const gaps = dates.slice(1).map((d, i) => Math.max(0, Math.round((ms(d) - ms(dates[i])) / DAY)));
-                const avg_cycle = gaps.length ? gaps.reduce((s, n) => s + n, 0) / gaps.length : null;
-                return { member_id: x.member_id, name: x.name, first: dates[0], last: dates[dates.length - 1],
-                    spend: x.spend, orders: x.orders, gone_days: Math.floor((cut - ms(dates[dates.length - 1])) / DAY), avg_cycle };
-            });
-            const spendRank = customers.filter(x => x.orders >= 2).sort((a, b) => b.spend - a.spend || a.member_id.localeCompare(b.member_id));
-            const vipN = spendRank.length ? Math.max(1, Math.ceil(spendRank.length * 0.1)) : 0;
-            const seg = {
-                first30: customers.filter(x => x.orders === 1 && x.gone_days >= 30 && x.gone_days < 90),
-                dormant90: customers.filter(x => x.gone_days >= 90 && x.gone_days < 180),
-                dormant180: customers.filter(x => x.gone_days >= 180),
-                vipRisk: spendRank.slice(0, vipN).filter(x => x.avg_cycle != null && x.gone_days >= Math.max(1, x.avg_cycle * 2)),
-            };
-            Object.values(seg).forEach(a => a.sort((x, y) => y.gone_days - x.gone_days || y.spend - x.spend));
-            return seg;
-        };
-        const cur = build(now);
-        const n = new Date(`${now}T00:00:00Z`);
-        const prevEndDate = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 0));
-        const prevEnd = prevEndDate.toISOString().slice(0, 10);
-        const old = build(prevEnd);
-        const after = new Set(valid.filter(r => ms(r.order_date) > ms(prevEnd)).map(r => String(r.mem || r.lid).trim()));
-        const returnRates = {};
-        Object.keys(cur).forEach(k => {
-            const base = old[k] || [], returned = base.filter(x => after.has(x.member_id)).length;
-            returnRates[k] = { base: base.length, returned, rate: base.length ? Math.round(returned / base.length * 1000) / 10 : 0 };
-        });
-        const latest = source.length ? ymd(source[source.length - 1].order_date) : null;
-        return { as_of: now, latest_order: latest, previous_month_end: prevEnd, segments: cur, return_rates: returnRates,
-            customers: new Set(valid.map(r => String(r.mem || r.lid).trim())).size };
-    }
     setCRMBrand(b) { this.crmBrand = b; this.crmSegment = 'first30'; this.requestRender(); this.ensureViewData(); }
     setCRMSegment(k) { this.crmSegment = k; this.requestRender(); }
     setCRMTab(t) { this.crmTab = t; this.requestRender(); }
@@ -6339,18 +6282,14 @@ class BhasApp {
                 });
                 // Cafe24 쿠폰 업로드용 CRM이므로 자사몰 회원ID만 쓴다. 외부몰은 화면에 범위를 명시한다.
                 const cafeMalls = brandMalls.filter(m => (m.channel || 'cafe24') === 'cafe24' && m.active !== false);
-                const mallKeys = cafeMalls.map(m => m.mall_key);
-                const rows = [];
-                for (let from = 0; mallKeys.length; from += 1000) {
-                    const { data, error } = await this.supabase.from('channel_orders')
-                        .select('id,mall_key,order_date,pay_amount,actual_paid_amount,op_status,buyer_name,receiver_name,mem:raw->>member_id,lid:raw->>loginId')
-                        .in('mall_key', mallKeys).order('id').range(from, from + 999);
+                const brandId = cafeMalls[0]?.brand_id || brandMalls[0]?.brand_id || (mockData.brands || []).find(x => x.name === brand)?.id;
+                let crm = { as_of: null, latest_order: null, segments: {}, return_rates: {}, customers: 0 };
+                if (cafeMalls.length && brandId) {
+                    const { data, error } = await this.supabase.rpc('repurchase_segments', { p_brand: brandId });
                     if (error) throw error;
-                    rows.push(...(data || []));
-                    if (!data || data.length < 1000) break;
+                    crm = data || crm;
                 }
                 if (gen !== (this._crmGen || 0)) return;
-                const crm = this._crmSegments(rows);
                 const hasExternal = brandMalls.some(m => (m.channel || 'cafe24') !== 'cafe24')
                     || (this.channelConnections || []).some(c => String(c.brand_id) === String(brandMalls[0]?.brand_id) && c.channel !== 'cafe24');
                 Object.assign(crm, { own_store_only: hasExternal });

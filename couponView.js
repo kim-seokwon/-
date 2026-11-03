@@ -142,9 +142,10 @@ export const couponMethods = {
             const path = `${id}/${Date.now()}_${ev.name.replace(/[^\w.가-힣-]/g, '_')}`;
             const up = await this.supabase.storage.from('coupon_evidence').upload(path, ev, { upsert: false });
             if (up.error) throw up.error;
+            //  서버가 이 경로의 실제 파일(이 회차 폴더 · 내가 올림 · CSV 뒤)을 다시 확인한다 — 경로를 직접 적어 넣는 길은 없다
             const kst = new Date(`${at}:00+09:00`).toISOString();
             const { data, error } = await this.supabase.rpc('coupon_run_confirm_manual', {
-                p_run: id, p_owner: owner, p_uploaded_at: kst, p_reported_n: n, p_evidence_path: `coupon_evidence/${path}`, p_member_ids: ids });
+                p_run: id, p_owner: owner, p_uploaded_at: kst, p_reported_n: n, p_evidence_path: `coupon_evidence/${up.data?.path || path}`, p_member_ids: ids });
             if (error) throw error;
             s.busy = false;
             this.showToast(data?.status === 'done' ? `발급 확인 ${data.issued}명 — 회차 완료` : `발급 확인 ${data?.issued}명 · 누락 ${data?.failed}명 — 일부 완료`);
@@ -297,7 +298,7 @@ export function couponPreviewSupabase(brandId) {
         arm: i === 5 ? 'control' : 'treat', status: i === 5 ? 'control' : i === 4 ? 'excluded' : 'pending', exclude_reason: i === 4 ? 'open_cs' : null, issued_at: null, last_error: null }));
     const run = { id: 'run1', rule_id: 'r1', rule_snapshot: rule, scheduled_for: iso(now - 3600e3), as_of_date: new Date(now).toISOString().slice(0, 10),
         status: 'awaiting_approval', matched_n: 6, target_n: 4, control_n: 1, excluded_n: 1, exclude_counts: { open_cs: 1 } };
-    const db = { coupon_rules: [rule], coupon_runs: [run], coupon_run_members: members };
+    const db = { coupon_rules: [rule], coupon_runs: [run], coupon_run_members: members }, uploaded = new Set();
     const query = table => { let rows = db[table] || [], q;
         return (q = { select: () => q, order: () => q, eq: (k, v) => { rows = rows.filter(r => k === 'run_id' ? true : r[k] === v); return q; }, in: (k, v) => { rows = rows.filter(r => v.includes(r[k])); return q; },
             then: (ok, ng) => Promise.resolve({ data: clone(rows), error: null }).then(ok, ng) }); };
@@ -315,6 +316,8 @@ export function couponPreviewSupabase(brandId) {
         coupon_run_export: () => { run.status = 'exported'; run.exported_at = iso(Date.now()); return { data: members.filter(m => m.status === 'pending').map(m => ({ member_id: m.member_id })), error: null }; },
         coupon_run_confirm_manual: ({ p_owner, p_uploaded_at, p_reported_n, p_evidence_path, p_member_ids }) => {
             if (!['exported', 'export_expired'].includes(run.status)) return fail('CSV를 받은 회차만 확인할 수 있습니다');
+            const obj = String(p_evidence_path || '').replace(/^coupon_evidence\//, '');
+            if (obj.split('/')[0] !== run.id || !uploaded.has(obj)) return fail('증빙 파일을 찾지 못했습니다 — 이 화면에서 파일을 올린 뒤 확인하세요');
             if (!p_member_ids && p_reported_n !== run.target_n) return fail(`카페24 발급 인원이 CSV 인원(${run.target_n})과 다릅니다`);
             let issued = 0, failed = 0;
             for (const m of members) {
@@ -330,7 +333,7 @@ export function couponPreviewSupabase(brandId) {
     return {
         from: query,
         rpc: async (name, args) => (rpcs[name] ? rpcs[name](args || {}) : fail(`미리보기에 없는 함수 ${name}`)),
-        storage: { from: () => ({ upload: async path => ({ data: { path }, error: null }) }) },
+        storage: { from: () => ({ upload: async path => (uploaded.add(path), { data: { path }, error: null }) }) },
         _db: db,
     };
 }

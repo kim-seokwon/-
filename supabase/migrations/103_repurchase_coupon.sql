@@ -6,7 +6,10 @@
 -- 카페24 API 발급(1-B)·문자·메일은 없다. 이 파일에 외부 호출(net.http_*)이 없다.
 --
 -- 표 5개: coupon_rules · coupon_rule_versions · coupon_runs · coupon_run_members · coupon_audit
--- 읽기: 직원(is_staff). 쓰기: 아래 security definer RPC 만(안에서 역할 검사). 표 직접 쓰기 정책 없음.
+-- 읽기: 직원(is_staff) 중 그 브랜드 권한(can_access_brand — 028/088 과 같은 규칙)이 있는 사람만.
+-- 쓰기: 아래 security definer RPC 만(안에서 역할 + 브랜드 검사). 표 직접 쓰기 정책 없음.
+-- 대상 판정은 한 곳(_coupon_member_stats + coupon_target_match): 미리보기·회차·repurchase_targets·CRM 탭(repurchase_segments)이 같이 쓴다.
+-- 수동 확인 증빙은 서버가 storage 에서 실제 파일(이 회차 폴더 · 확인하는 사람이 올림 · CSV 뒤)을 확인한다.
 -- 모든 날짜 판정은 KST.
 
 -- ============================================================
@@ -106,17 +109,52 @@ alter table public.coupon_runs enable row level security;
 alter table public.coupon_run_members enable row level security;
 alter table public.coupon_audit enable row level security;
 
+--  브랜드 권한 — RLS·RPC·증빙 버킷이 모두 이것만 본다. service_role 은 통과(서버 작업), 그 밖은 can_access_brand.
+create or replace function public._coupon_brand_ok(p_brand uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select p_brand is not null
+     and (coalesce(auth.jwt()->>'role', '') = 'service_role' or coalesce(public.can_access_brand(p_brand), false))
+$$;
+
+create or replace function public._coupon_guard_brand(p_brand uuid)
+returns void language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public._coupon_brand_ok(p_brand) then raise exception '이 브랜드 권한이 없습니다' using errcode = '42501'; end if;
+end $$;
+
+--  화면에서 받은 규칙 값(p_rule) 검사: brand_id 권한 + id 를 주면 그 규칙도 같은 브랜드여야 한다(남의 규칙 id 로 쿨다운·우선순위 엿보기 막음).
+create or replace function public._coupon_guard_rule_input(p_rule jsonb)
+returns void language plpgsql stable security definer set search_path = public as $$
+declare bid uuid := nullif(p_rule->>'brand_id', '')::uuid; rid uuid := nullif(p_rule->>'id', '')::uuid; rb uuid;
+begin
+  perform public._coupon_guard_brand(bid);
+  if rid is not null then
+    select brand_id into rb from coupon_rules where id = rid;
+    if rb is distinct from bid then raise exception '이 브랜드 규칙이 아닙니다' using errcode = '42501'; end if;
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin
   foreach t in array array['coupon_rules', 'coupon_rule_versions', 'coupon_runs', 'coupon_run_members', 'coupon_audit'] loop
     execute format('drop policy if exists %I on public.%I', t || '_staff_read', t);
-    execute format('create policy %I on public.%I for select to authenticated using (public.is_staff())', t || '_staff_read', t);
     execute format('revoke all on public.%I from anon', t);
     execute format('revoke insert, update, delete, truncate on public.%I from authenticated', t);
     execute format('grant select on public.%I to authenticated', t);
   end loop;
 end $$;
+create policy coupon_rules_staff_read on public.coupon_rules for select to authenticated
+  using (public.is_staff() and public._coupon_brand_ok(brand_id));
+create policy coupon_rule_versions_staff_read on public.coupon_rule_versions for select to authenticated
+  using (public.is_staff() and exists (select 1 from public.coupon_rules r where r.id = rule_id and public._coupon_brand_ok(r.brand_id)));
+create policy coupon_runs_staff_read on public.coupon_runs for select to authenticated
+  using (public.is_staff() and exists (select 1 from public.coupon_rules r where r.id = rule_id and public._coupon_brand_ok(r.brand_id)));
+create policy coupon_run_members_staff_read on public.coupon_run_members for select to authenticated
+  using (public.is_staff() and exists (select 1 from public.coupon_runs x join public.coupon_rules r on r.id = x.rule_id
+                                        where x.id = run_id and public._coupon_brand_ok(r.brand_id)));
+create policy coupon_audit_staff_read on public.coupon_audit for select to authenticated
+  using (public.is_staff() and exists (select 1 from public.coupon_rules r where r.id = rule_id and public._coupon_brand_ok(r.brand_id)));
 
 -- ============================================================
 -- 2) 다음 실행 — KST. 매월 31일처럼 없는 날은 그달 말일. p_after 보다 '뒤' 첫 시각. 종료일 넘으면 null.
@@ -328,6 +366,7 @@ begin
   if rid is not null then
     select * into old from coupon_rules where id = rid for update;
     if not found then raise exception '없는 규칙입니다' using errcode = 'P0002'; end if;
+    perform public._coupon_guard_brand(old.brand_id);
     if old.status = 'archived' then raise exception '보관한 규칙은 고칠 수 없습니다' using errcode = '22023'; end if;
     r := old;
   else
@@ -342,6 +381,7 @@ begin
   r.cooldown_days := coalesce((p->>'cooldown_days')::int, r.cooldown_days, 90);
   r.max_targets := coalesce((p->>'max_targets')::int, r.max_targets, 500);
   r.priority := coalesce((p->>'priority')::int, r.priority, 100);
+  perform public._coupon_guard_brand(r.brand_id);
   if r.name = '' then raise exception '규칙 이름을 넣어 주세요' using errcode = '22023'; end if;
   perform public._coupon_check_rule(r);
   r.version := r.version + 1; r.updated_by := auth.uid(); r.updated_at := now();
@@ -365,6 +405,7 @@ begin
   perform public.require_role('MASTER');
   select * into r from coupon_rules where id = p_rule for update;
   if not found then raise exception '없는 규칙입니다' using errcode = 'P0002'; end if;
+  perform public._coupon_guard_brand(r.brand_id);
   if not ((r.status in ('draft', 'paused') and p_status = 'active') or (r.status = 'active' and p_status = 'paused')
           or (r.status <> 'archived' and p_status = 'archived')) then
     raise exception '% 에서 % 로 바꿀 수 없습니다', r.status, p_status using errcode = '22023';
@@ -385,6 +426,7 @@ returns jsonb language plpgsql stable security definer set search_path = public 
 declare d date := (now() at time zone 'Asia/Seoul')::date; res jsonb;
 begin
   perform public.require_role('MASTER', 'STAFF');
+  perform public._coupon_guard_rule_input(p_rule);
   with t as (select * from public._coupon_targets(p_rule, d))
   select jsonb_build_object(
     'as_of', d,
@@ -398,6 +440,55 @@ begin
                           from (select * from t where exclude_reason is null and arm = 'treat' order by gone_days desc, member_id limit 10) y), '[]'::jsonb),
     'max_exposure', (select count(*) from t where exclude_reason is null and arm = 'treat') * nullif(p_rule->'coupon'->>'max_discount', '')::numeric,
     'over_limit', (select count(*) from t where exclude_reason is null and arm = 'treat') > coalesce((p_rule->>'max_targets')::int, 500)
+  ) into res;
+  return res;
+end $$;
+
+-- ============================================================
+-- 5-1) 대상 조회(직원, 브랜드 권한) — 기획 4-3 의 repurchase_targets 와 CRM 탭 숫자.
+--      둘 다 위 _coupon_member_stats(KST) + coupon_target_match 를 그대로 쓴다 → CRM 휴면90 = 휴면90 규칙 미리보기 '제외 전' 수.
+-- ============================================================
+create or replace function public.repurchase_targets(p_rule jsonb, p_as_of date default null)
+returns table (member_id text, mall_key text, gone_days int, orders int, spend numeric, segment text, arm text, exclude_reason text)
+language plpgsql stable security definer set search_path = public as $$
+#variable_conflict use_column
+begin
+  perform public.require_role('MASTER', 'STAFF');
+  perform public._coupon_guard_rule_input(p_rule);
+  return query
+  select t.member_id, t.mall_key, t.gone_days, t.orders, t.spend, coalesce(nullif(p_rule->'target'->>'preset', ''), 'custom'), t.arm, t.exclude_reason
+    from public._coupon_targets(p_rule, coalesce(p_as_of, (now() at time zone 'Asia/Seoul')::date)) t
+   order by t.gone_days desc, t.member_id;
+end $$;
+
+--  CRM 탭(고객 > 대상 명단): 묶음 4개 명단 + 지난달 말 묶음의 복귀율. 화면은 이 결과를 그대로 그린다(JS 계산 없음).
+--  복귀 = 지난달 말일(KST) 묶음 회원 중 그 뒤 유효 주문이 있는 사람. 회원 ID·이름·날짜·금액만(전화·이메일 없음).
+create or replace function public.repurchase_segments(p_brand uuid, p_as_of date default null)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d date := coalesce(p_as_of, (now() at time zone 'Asia/Seoul')::date);
+  pe date := (date_trunc('month', d) - interval '1 day')::date; res jsonb;
+begin
+  perform public.require_role('MASTER', 'STAFF');
+  perform public._coupon_guard_brand(p_brand);
+  with cur as (select * from public._coupon_member_stats(p_brand, d)),
+  old as (select * from public._coupon_member_stats(p_brand, pe)),
+  seg(k, preset) as (values ('first30', 'first30'), ('dormant90', 'dormant90'), ('dormant180', 'dormant180'), ('vipRisk', 'vip_risk'))
+  select jsonb_build_object(
+    'as_of', d, 'previous_month_end', pe,
+    'latest_order', (select max(c.last_date) from cur c),
+    'customers', (select count(*) from cur),
+    'segments', (select jsonb_object_agg(seg.k, coalesce((
+        select jsonb_agg(jsonb_build_object('member_id', c.member_id, 'name', coalesce(c.name, ''), 'first', c.first_date, 'last', c.last_date,
+                                            'spend', c.spend, 'orders', c.orders, 'gone_days', c.gone_days, 'avg_cycle', c.avg_cycle)
+                         order by c.gone_days desc, c.spend desc, c.member_id)
+          from cur c where public.coupon_target_match(jsonb_build_object('preset', seg.preset), c.gone_days, c.orders, c.spend, c.vip, c.avg_cycle)
+      ), '[]'::jsonb)) from seg),
+    'return_rates', (select jsonb_object_agg(seg.k, (
+        select jsonb_build_object('base', count(*), 'returned', count(*) filter (where c.last_date > pe),
+                                  'rate', case when count(*) > 0 then round(count(*) filter (where c.last_date > pe) * 1000.0 / count(*)) / 10 else 0 end)
+          from old o left join cur c on c.member_id = o.member_id
+         where public.coupon_target_match(jsonb_build_object('preset', seg.preset), o.gone_days, o.orders, o.spend, o.vip, o.avg_cycle)
+      )) from seg)
   ) into res;
   return res;
 end $$;
@@ -456,6 +547,7 @@ declare x coupon_runs;
 begin
   select * into x from coupon_runs where id = p_run for update;
   if not found then raise exception '없는 회차입니다' using errcode = 'P0002'; end if;
+  perform public._coupon_guard_brand((select brand_id from coupon_rules where id = x.rule_id));
   return x;
 end $$;
 
@@ -526,12 +618,26 @@ create or replace function public.coupon_run_confirm_manual(p_run uuid, p_owner 
                                                             p_evidence_path text, p_member_ids text[] default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare x coupon_runs; csv_n int; hit int; miss int; unknown_n int; st text; mode text;
+  ev text := btrim(coalesce(p_evidence_path, '')); obj text;
 begin
   perform public.require_role('MASTER');
   x := public._coupon_run_lock(p_run);
   if x.status not in ('exported', 'export_expired') then raise exception 'CSV를 받은 회차만 확인할 수 있습니다(지금: %)', x.status using errcode = '22023'; end if;
   if coalesce(btrim(p_owner), '') = '' then raise exception '담당자를 넣어 주세요' using errcode = '22023'; end if;
-  if coalesce(btrim(p_evidence_path), '') = '' then raise exception '증빙(카페24 발급 내역 캡처 또는 결과 파일)이 필요합니다' using errcode = '22023'; end if;
+  if ev = '' then raise exception '증빙(카페24 발급 내역 캡처 또는 결과 파일)이 필요합니다' using errcode = '22023'; end if;
+  --  증빙은 이 회차 폴더(coupon_evidence/<회차id>/<파일>)에 확인하는 본인이 CSV 받은 뒤 올린 실제 파일이어야 한다
+  obj := regexp_replace(ev, '^coupon_evidence/', '');
+  if split_part(obj, '/', 1) <> p_run::text or obj !~ '^[^/]+/[^/]+$' then
+    raise exception '증빙 경로가 이 회차 것이 아닙니다(coupon_evidence/%/파일)', p_run using errcode = '22023';
+  end if;
+  if to_regclass('storage.objects') is null then raise exception '증빙 저장소(storage)가 없습니다' using errcode = '55000'; end if;
+  if not exists (select 1 from storage.objects o
+                  where o.bucket_id = 'coupon_evidence' and o.name = obj
+                    and coalesce(o.owner_id, o.owner::text) = auth.uid()::text
+                    and o.created_at >= x.exported_at - interval '1 minute') then
+    raise exception '증빙 파일을 찾지 못했습니다 — 이 화면에서 파일을 올린 뒤 확인하세요' using errcode = '22023';
+  end if;
+  ev := 'coupon_evidence/' || obj;
   if p_uploaded_at is null or p_uploaded_at > now() + interval '1 minute' then raise exception '업로드 시각이 비었거나 미래입니다' using errcode = '22023'; end if;
   if p_uploaded_at < x.exported_at - interval '1 minute' then raise exception '업로드 시각이 CSV 받은 시각보다 앞섭니다' using errcode = '22023'; end if;
   if p_reported_n is null or p_reported_n < 0 then raise exception '카페24 발급 건수를 넣어 주세요' using errcode = '22023'; end if;
@@ -561,11 +667,11 @@ begin
   update coupon_run_members set status = 'control_counted', issued_at = p_uploaded_at where run_id = p_run and status = 'control';
   st := case when miss = 0 then 'done' else 'partial' end;
   update coupon_runs set status = st, issue_path = 'manual_upload', manual_owner = btrim(p_owner), manual_confirmed_by = auth.uid(),
-         manual_uploaded_at = p_uploaded_at, manual_reported_n = p_reported_n, manual_evidence_path = btrim(p_evidence_path),
+         manual_uploaded_at = p_uploaded_at, manual_reported_n = p_reported_n, manual_evidence_path = ev,
          manual_confirmed_at = now(), finished_at = now() where id = p_run;
   perform public._coupon_audit('manual_confirm', x.rule_id, p_run, jsonb_build_object(
     'owner', btrim(p_owner), 'uploaded_at', p_uploaded_at, 'reported_n', p_reported_n, 'csv_n', csv_n,
-    'evidence', btrim(p_evidence_path), 'mode', mode, 'issued', hit, 'missing', miss, 'unknown_ids', unknown_n,
+    'evidence', ev, 'mode', mode, 'issued', hit, 'missing', miss, 'unknown_ids', unknown_n,
     'after_expiry', x.status = 'export_expired'));
   return jsonb_build_object('status', st, 'issued', hit, 'failed', miss, 'unknown_ids', unknown_n);
 end $$;
@@ -581,6 +687,7 @@ language plpgsql stable security definer set search_path = public as $$
 #variable_conflict use_column
 begin
   perform public.require_role('MASTER', 'STAFF');
+  perform public._coupon_guard_brand((select brand_id from coupon_rules where id = p_rule));
   return query
   with r as (select cr.*, coalesce((cr.rule_snapshot->'coupon'->>'valid_days')::int, 7) + 7 w,
                     (cr.rule_snapshot->>'brand_id')::uuid bid from coupon_runs cr where cr.rule_id = p_rule),
@@ -612,6 +719,12 @@ revoke all on function public._coupon_member_stats(uuid, date) from public, anon
 revoke all on function public._coupon_targets(jsonb, date) from public, anon, authenticated;
 revoke all on function public._coupon_audit(text, uuid, uuid, jsonb) from public, anon, authenticated;
 revoke all on function public._coupon_run_lock(uuid) from public, anon, authenticated;
+revoke all on function public._coupon_guard_brand(uuid) from public, anon, authenticated;
+revoke all on function public._coupon_guard_rule_input(jsonb) from public, anon, authenticated;
+revoke all on function public._coupon_brand_ok(uuid) from public, anon;
+grant execute on function public._coupon_brand_ok(uuid) to authenticated;      -- RLS 정책이 부른다(참/거짓만 돌려줌)
+revoke all on function public.repurchase_targets(jsonb, date) from public, anon;
+revoke all on function public.repurchase_segments(uuid, date) from public, anon;
 revoke all on function public.coupon_runs_tick(timestamptz) from public, anon, authenticated;
 revoke all on function public.coupon_rule_save(jsonb) from public, anon;
 revoke all on function public.coupon_rule_set_status(uuid, text) from public, anon;
@@ -625,10 +738,11 @@ revoke all on function public.coupon_run_results(uuid) from public, anon;
 grant execute on function public.coupon_rule_save(jsonb), public.coupon_rule_set_status(uuid, text), public.coupon_preview(jsonb),
   public.coupon_run_approve(uuid, int), public.coupon_run_reject(uuid, text), public.coupon_run_cancel(uuid, text),
   public.coupon_run_export(uuid), public.coupon_run_confirm_manual(uuid, text, timestamptz, int, text, text[]),
-  public.coupon_run_results(uuid) to authenticated;
+  public.coupon_run_results(uuid), public.repurchase_targets(jsonb, date), public.repurchase_segments(uuid, date) to authenticated;
 
 -- ============================================================
--- 10) 증빙 버킷(비공개) — 직원 읽기, MASTER 올리기. 지우기 없음(감사 증빙).
+-- 10) 증빙 버킷(비공개) — 경로 = <회차id>/<파일>. 읽기: 그 회차 브랜드 권한 있는 직원. 올리기: MASTER, CSV 받은 회차 폴더에만.
+--     지우기·덮어쓰기 없음(감사 증빙). 수동 확인 RPC 가 파일 실재·올린 사람을 다시 확인한다.
 -- ============================================================
 do $$
 begin
@@ -643,9 +757,14 @@ begin
     drop policy if exists coupon_evidence_select on storage.objects;
     drop policy if exists coupon_evidence_insert on storage.objects;
     create policy coupon_evidence_select on storage.objects for select to authenticated
-      using (bucket_id = 'coupon_evidence' and public.is_staff());
+      using (bucket_id = 'coupon_evidence' and public.is_staff()
+             and exists (select 1 from public.coupon_runs x join public.coupon_rules r on r.id = x.rule_id
+                          where x.id::text = split_part(storage.objects.name, '/', 1) and public._coupon_brand_ok(r.brand_id)));
     create policy coupon_evidence_insert on storage.objects for insert to authenticated
-      with check (bucket_id = 'coupon_evidence' and public.is_master());
+      with check (bucket_id = 'coupon_evidence' and public.is_master() and name ~ '^[^/]+/[^/]+$'
+                  and exists (select 1 from public.coupon_runs x join public.coupon_rules r on r.id = x.rule_id
+                               where x.id::text = split_part(storage.objects.name, '/', 1) and x.status in ('exported', 'export_expired')
+                                 and public._coupon_brand_ok(r.brand_id)));
   end if;
 end $$;
 

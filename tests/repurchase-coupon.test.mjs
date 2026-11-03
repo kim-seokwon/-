@@ -22,7 +22,11 @@ create schema auth; create schema storage;
 create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
 create function auth.uid() returns uuid language sql stable as $$ select nullif(auth.jwt()->>'sub','')::uuid $$;
 grant usage on schema auth, storage, public to anon, authenticated, service_role;
-create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text,
+  owner uuid, owner_id text, created_at timestamptz default now());
+alter table storage.objects enable row level security;
+grant select, insert on storage.objects to authenticated;
 `;
 //  운영에는 brands.id 기본키가 있다(스냅숏은 칸만 떠 둠)
 const AFTER_SNAP = 'alter table brands add primary key (id);';
@@ -90,7 +94,8 @@ test('정적: 1-A 에 외부 발송·발급 호출이 없다', () => {
 
 // ---------------------------------------------------------------- DB
 const B = 'b0000000-0000-4000-8000-000000000001', B2 = 'b0000000-0000-4000-8000-000000000002';
-const U = { boss: 'cccccccc-0000-4000-8000-000000000001', staff: 'cccccccc-0000-4000-8000-000000000002', partner: 'cccccccc-0000-4000-8000-000000000003' };
+const U = { boss: 'cccccccc-0000-4000-8000-000000000001', staff: 'cccccccc-0000-4000-8000-000000000002', partner: 'cccccccc-0000-4000-8000-000000000003',
+    outsider: 'cccccccc-0000-4000-8000-000000000004' };
 
 test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE_PATH 없음 — 건너뜀' }, async t => {
     const { PGlite } = await import(pathToFileURL(P).href);
@@ -98,8 +103,10 @@ test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE
     await db.exec(STUB); await db.exec(SNAP); await db.exec(AFTER_SNAP);
     await db.exec(`
       insert into brands (id, name) values ('${B}', '하이헤이호'), ('${B2}', '다른브랜드');
-      insert into companies (id, name, role, username, brand_id) values
-        ('${U.boss}', '대표', 'MASTER', 'boss', null), ('${U.staff}', '직원', 'STAFF', 'staff', null), ('${U.partner}', '파트너', 'CLIENT', 'partner', '${B2}');
+      insert into companies (id, name, role, username, brand_id, brand_access) values
+        ('${U.boss}', '대표', 'MASTER', 'boss', null, null), ('${U.staff}', '직원', 'STAFF', 'staff', null, array['${B}'::uuid]),
+        ('${U.partner}', '파트너', 'CLIENT', 'partner', '${B2}', null),
+        ('${U.outsider}', '다른 브랜드 직원', 'STAFF', 'outsider', null, array['${B2}'::uuid]);
       insert into malls (mall_key, label, channel, brand_id, active) values
         ('hh', '하이헤이호', 'cafe24', '${B}', true), ('hh29', '29CM', '29cm', '${B}', true), ('other', '다른', 'cafe24', '${B2}', true);`);
     await db.exec(UP);
@@ -144,6 +151,10 @@ test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE
     const tick = (offsetH = 0) => db.query(`select coupon_runs_tick(now() + make_interval(hours => $1)) r`, [offsetH]).then(r => r.rows[0].r);
     const members = async run => (await db.query(`select member_id, arm, status, exclude_reason, issue_path, issued_at, last_error from coupon_run_members where run_id = $1 order by member_id`, [run])).rows;
     const runRow = async run => (await db.query(`select * from coupon_runs where id = $1`, [run])).rows[0];
+    //  증빙 올리기 = 화면이 하는 storage 업로드(올린 사람 = 로그인 사용자). 버킷 정책을 그대로 통과해야 한다.
+    const upload = async (who, run, file) => `coupon_evidence/${(await one(who,
+        `insert into storage.objects (bucket_id, name, owner, owner_id) values ('coupon_evidence', $1, auth.uid(), auth.uid()::text) returning name`,
+        [`${run}/${file}`])).name}`;
 
     await t.test('KST 경계: KST 11/1 08:30(UTC 10/31) 구매는 11/1 로 친다', async () => {
         await order('kst_edge', 0, { at: '2026-10-31T23:30:00Z' });
@@ -151,6 +162,9 @@ test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE
         assert.deepEqual(r.rows[0], { last_date: '2026-11-01', gone_days: 0 });
         const r2 = await db.query(`select count(*)::int n from _coupon_member_stats($1, '2026-10-31') where member_id = 'kst_edge'`, [B]);
         assert.equal(r2.rows[0].n, 0, '기준일 뒤 주문은 안 센다');
+        //  CRM 탭(repurchase_segments)도 같은 KST 기준(옛 JS 는 UTC 앞 10자라 10/31 로 셌다)
+        assert.equal((await one('staff', `select repurchase_segments($1, '2026-11-01') s`, [B])).s.latest_order, '2026-11-01');
+        assert.notEqual((await one('staff', `select repurchase_segments($1, '2026-10-31') s`, [B])).s.latest_order, '2026-11-01');
     });
 
     await t.test('다음 실행: SQL coupon_next_run = 화면 nextRunAt', async () => {
@@ -190,6 +204,15 @@ test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE
         assert.equal(p.sample.length, 4);
         assert.ok(p.sample.every(s => s.id_tail.length <= 3 && !('member_id' in s) && !('phone' in s)), '회원 ID·전화 통째로 안 나감');
         assert.equal(p.max_exposure, 40000);
+        //  (반려1-1) CRM 탭 휴면90 = 이 미리보기의 제외 전 수 = repurchase_targets 행 수 — 같은 SQL·KST
+        const seg = (await one('staff', `select repurchase_segments($1) s`, [B])).s;
+        assert.equal(seg.segments.dormant90.length, p.matched, 'CRM 휴면90 = 미리보기 제외 전');
+        assert.ok(seg.segments.dormant90.every(m => !('phone' in m) && !('email' in m)));
+        const rt = (await as('staff', `select * from repurchase_targets($1)`, [JSON.stringify({ ...RULE, id: ruleId })])).rows;
+        assert.equal(rt.length, p.matched);
+        assert.equal(rt.filter(r => !r.exclude_reason && r.arm === 'treat').length, p.treat);
+        assert.ok(rt.every(r => r.segment === 'dormant90'));
+        assert.deepEqual(seg.segments.dormant90.map(m => m.member_id).sort(), rt.map(r => r.member_id).sort());
     });
 
     await t.test('운영 시작 → 놓친 회차는 1개만 · 두 번 돌려도 1개(멱등) · 명단 고정', async () => {
@@ -249,9 +272,22 @@ test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE
         const C = `select coupon_run_confirm_manual($1, $2, $3, $4, $5, $6) r`;
         await denied('staff', C, [run1, '직원', up, 4, 'x.png', null]);
         await assert.rejects(as('boss', C, [run1, '대표', up, 4, '', null]), /증빙/);
-        await assert.rejects(as('boss', C, [run1, '대표', new Date(Date.now() + 3600e3).toISOString(), 4, 'e.png', null]), /미래/);
-        await assert.rejects(as('boss', C, [run1, '대표', up, 3, 'e.png', null]), /CSV 인원\(4\)과 다릅니다/);
-        const res = (await one('boss', C, [run1, '대표', up, 3, `coupon_evidence/${run1}/list.csv`, [TREAT[0], TREAT[1], TREAT[2], 'stranger']])).r;
+        //  (반려1-3) 증빙은 서버가 실제 파일을 확인한다: 아무 경로·없는 파일·다른 회차·남이 올린 파일 → 거절
+        await denied('staff', `insert into storage.objects (bucket_id, name) values ('coupon_evidence', $1)`, [`${run1}/s.png`], '42501|row-level');
+        await denied('boss', `insert into storage.objects (bucket_id, name) values ('coupon_evidence', $1)`, [`${run2}/e.png`], '42501|row-level');   // 만료(expired) 회차 폴더
+        await denied('boss', `insert into storage.objects (bucket_id, name) values ('coupon_evidence', 'loose.png')`, [], '42501|row-level');
+        await assert.rejects(as('boss', C, [run1, '대표', up, 4, 'x.png', null]), /이 회차 것이 아닙니다/);
+        await assert.rejects(as('boss', C, [run1, '대표', up, 4, `coupon_evidence/${run2}/e.png`, null]), /이 회차 것이 아닙니다/);
+        await assert.rejects(as('boss', C, [run1, '대표', up, 4, `coupon_evidence/${run1}/../x.png`, null]), /이 회차 것이 아닙니다/);
+        await assert.rejects(as('boss', C, [run1, '대표', up, 4, `coupon_evidence/${run1}/none.png`, null]), /증빙 파일을 찾지 못했습니다/);
+        await db.query(`insert into storage.objects (bucket_id, name, owner, owner_id) values ('coupon_evidence', $1, $2::uuid, $2::text)`, [`${run1}/staff.png`, U.staff]);
+        await assert.rejects(as('boss', C, [run1, '대표', up, 4, `coupon_evidence/${run1}/staff.png`, null]), /증빙 파일을 찾지 못했습니다/, '남이 올린 파일');
+        await db.query(`insert into storage.objects (bucket_id, name, owner, owner_id, created_at) values ('coupon_evidence', $1, $2::uuid, $2::text, now() - interval '30 days')`, [`${run1}/old.png`, U.boss]);
+        await assert.rejects(as('boss', C, [run1, '대표', up, 4, `coupon_evidence/${run1}/old.png`, null]), /증빙 파일을 찾지 못했습니다/, 'CSV 받기 전 파일');
+        const ev = await upload('boss', run1, 'list.csv');
+        await assert.rejects(as('boss', C, [run1, '대표', new Date(Date.now() + 3600e3).toISOString(), 4, ev, null]), /미래/);
+        await assert.rejects(as('boss', C, [run1, '대표', up, 3, ev, null]), /CSV 인원\(4\)과 다릅니다/);
+        const res = (await one('boss', C, [run1, '대표', up, 3, ev.replace('coupon_evidence/', ''), [TREAT[0], TREAT[1], TREAT[2], 'stranger']])).r;   // 접두사 없이 줘도 같은 파일
         assert.deepEqual(res, { status: 'partial', issued: 3, failed: 1, unknown_ids: 1 });
         const m = await members(run1);
         assert.deepEqual(m.filter(x => x.status === 'issued').map(x => x.issue_path), ['manual_upload', 'manual_upload', 'manual_upload']);
@@ -261,7 +297,8 @@ test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE
         const a = (await db.query(`select detail from coupon_audit where run_id = $1 and action = 'manual_confirm'`, [run1])).rows[0].detail;
         for (const k of ['owner', 'uploaded_at', 'reported_n', 'csv_n', 'evidence']) assert.ok(a[k] != null, `감사에 ${k}`);
         assert.equal(a.after_expiry, true);
-        await assert.rejects(as('boss', C, [run1, '대표', up, 3, 'e.png', null]), /CSV를 받은 회차만/);   // 두 번 확정 불가
+        assert.equal(a.evidence, ev); assert.equal((await runRow(run1)).manual_evidence_path, ev);
+        await assert.rejects(as('boss', C, [run1, '대표', up, 3, ev, null]), /CSV를 받은 회차만/);   // 두 번 확정 불가
     });
 
     await t.test('쿨다운: issued·control_counted 는 다음 회차에서 cooldown, manual_missing 은 다시 대상', async () => {
@@ -277,7 +314,8 @@ test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE
         const r3 = await runRow(run3);
         await as('boss', `select coupon_run_approve($1, $2)`, [run3, r3.target_n]);
         await as('boss', `select * from coupon_run_export($1)`, [run3]);
-        const res = (await one('boss', `select coupon_run_confirm_manual($1, '대표', now(), $2, 'e.png', null) r`, [run3, r3.target_n])).r;
+        const ev3 = await upload('boss', run3, 'cafe24.png');
+        const res = (await one('boss', `select coupon_run_confirm_manual($1, '대표', now(), $2, $3, null) r`, [run3, r3.target_n, ev3])).r;
         assert.equal(res.status, 'done');
     });
 
@@ -328,6 +366,26 @@ test('103 재구매 쿠폰 1-A(PGlite, 운영 스냅숏)', { skip: !P && 'PGLITE
         await denied('partner', `select * from coupon_run_results($1)`, [ruleId]);
     });
 
+    await t.test('(반려1-2) 브랜드 권한: 다른 브랜드 STAFF 는 규칙·회차·회원·감사·증빙·미리보기·저장 모두 막힘', async () => {
+        for (const tb of ['coupon_rules', 'coupon_rule_versions', 'coupon_runs', 'coupon_run_members', 'coupon_audit'])
+            assert.equal((await as('outsider', `select count(*)::int n from ${tb}`)).rows[0].n, 0, `outsider ${tb}`);
+        assert.equal((await as('outsider', `select count(*)::int n from storage.objects where bucket_id = 'coupon_evidence'`)).rows[0].n, 0, 'outsider 증빙');
+        assert.ok((await as('staff', `select count(*)::int n from coupon_run_members`)).rows[0].n > 0, '자기 브랜드 STAFF 는 보인다');
+        assert.ok((await as('staff', `select count(*)::int n from storage.objects where bucket_id = 'coupon_evidence'`)).rows[0].n > 0);
+        await denied('outsider', `select coupon_preview($1)`, [JSON.stringify(RULE)]);
+        await denied('outsider', `select * from repurchase_targets($1)`, [JSON.stringify(RULE)]);
+        await denied('outsider', `select repurchase_segments($1)`, [B]);
+        await denied('outsider', `select coupon_rule_save($1)`, [JSON.stringify({ ...RULE, name: '침범' })]);
+        await denied('outsider', `select coupon_rule_save($1)`, [JSON.stringify({ ...RULE, id: ruleId, brand_id: B2 })], '42501');   // 남의 규칙을 내 브랜드로 끌어오기
+        await denied('outsider', `select * from coupon_run_results($1)`, [ruleId]);
+        await denied('staff', `select coupon_rule_save($1)`, [JSON.stringify({ ...RULE, brand_id: B2, name: '남의 브랜드' })]);
+        await denied('staff', `select coupon_preview($1)`, [JSON.stringify({ ...RULE, brand_id: B2 })]);
+        await denied('staff', `select repurchase_segments($1)`, [B2]);
+        //  규칙 id 와 brand_id 를 엇갈려 주면(다른 브랜드 규칙 id) 막힘 — MASTER 도
+        await assert.rejects(as('boss', `select coupon_preview($1)`, [JSON.stringify({ ...RULE, id: ruleId, brand_id: B2 })]), /이 브랜드 규칙이 아닙니다/);
+        assert.equal((await as('staff', `select count(*)::int n from coupon_rules where brand_id = $1`, [B2])).rows[0].n, 0);
+    });
+
     await t.test('되돌리기: 회차 기록이 있으면 거절(감사 보존)', async () => {
         await assert.rejects(db.exec(DOWN), /회차 기록이 있음/);
     });
@@ -339,7 +397,7 @@ test('103 되돌리기(빈 상태) — 다 걷히고 다시 깔린다', { skip: 
     const db = new PGlite();
     await db.exec(STUB); await db.exec(SNAP); await db.exec(AFTER_SNAP);
     await db.exec(UP); await db.exec(DOWN);
-    const left = await db.query(`select count(*)::int n from pg_proc where proname like '%coupon%'`);
+    const left = await db.query(`select count(*)::int n from pg_proc where proname like '%coupon%' or proname like 'repurchase%'`);
     assert.equal(left.rows[0].n, 0);
     assert.equal((await db.query(`select to_regclass('public.coupon_runs') r`)).rows[0].r, null);
     await db.exec(UP);

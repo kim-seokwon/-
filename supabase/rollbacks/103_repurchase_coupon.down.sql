@@ -25,6 +25,8 @@ begin
   end if;
 end $$;
 
+drop function if exists public.repurchase_segments(uuid, date);
+drop function if exists public.repurchase_targets(jsonb, date);
 drop function if exists public.coupon_run_results(uuid);
 drop function if exists public.coupon_run_confirm_manual(uuid, text, timestamptz, int, text, text[]);
 drop function if exists public.coupon_run_export(uuid);
@@ -50,5 +52,8 @@ drop table if exists public.coupon_run_members;
 drop table if exists public.coupon_runs;
 drop table if exists public.coupon_rule_versions;
 drop table if exists public.coupon_rules;
+drop function if exists public._coupon_guard_rule_input(jsonb);
+drop function if exists public._coupon_guard_brand(uuid);
+drop function if exists public._coupon_brand_ok(uuid);      -- 정책(표·버킷)이 물고 있어서 표·정책 다음에
 
 select '103 repurchase coupon rolled back' as status;
