@@ -11,6 +11,7 @@
 //     매핑 로직·발행 파라미터는 팝빌 Taxinvoice 규격 기준.
 // ============================================================
 import { requireUser } from "../_shared/auth.ts";
+import { serviceKey } from "../_shared/keys.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const LINKID = Deno.env.get("POPBILL_LINKID") ?? "";
@@ -103,7 +104,7 @@ Deno.serve(async (req) => {
   // 세금계산서 발행은 법적 효력 문서다. 마스터만 실행할 수 있다.
   const auth = await requireUser(req, { master: true });
   if (auth instanceof Response) return auth;
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
   if (!LINKID || !SECRETKEY) return j({ ok: false, error: "POPBILL_LINKID/SECRETKEY 시크릿 미설정" }, 500);
   let activeQuoteId: string | null = null;
   try {

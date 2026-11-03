@@ -1,13 +1,14 @@
 // 카페24 멀티몰 연동 공용 헬퍼 (Supabase Edge Functions / Deno)
 // 몰별 자격증명·토큰을 channel_sync_state(서비스롤 전용)에서 로드한다.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serviceKey } from "./keys.ts";
 
 export const API_VERSION = "2026-03-01"; // 카페24 Admin API 버전 (앱 생성 시점 기준)
 
 export function admin() {
   return createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    serviceKey(),
     { auth: { persistSession: false } },
   );
 }

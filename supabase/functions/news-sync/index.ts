@@ -4,6 +4,7 @@
 //  구글 뉴스 RSS 는 키가 없어도 되니, 네이버 키가 없어도 이것만은 돈다.
 //  호출: pg_cron 이 x-cron-secret 헤더로 하루 1회. (instagram-sync 와 같은 패턴)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serviceKey } from "../_shared/keys.ts";
 
 const NAVER = "https://openapi.naver.com/v1/search";
 
@@ -11,7 +12,7 @@ function cors(h: HeadersInit = {}) {
   return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret", "Content-Type": "application/json", ...h };
 }
 function admin() {
-  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  return createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
 }
 // 네이버가 <b>검색어</b> 처럼 태그를 섞어 보낸다. 글자만 남긴다.
 function clean(s: string) {

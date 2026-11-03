@@ -3,11 +3,12 @@
 //  토큰: ig_token(사용자 장기토큰) → me/accounts 페이지토큰 확보 → /{ig_id}/media 조회.
 //  로그인 사용자면 누구나 조회 가능(피드 이미지 = 비민감).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serviceKey } from "../_shared/keys.ts";
 import { requireUser } from "../_shared/auth.ts";
 
 const GRAPH = "https://graph.facebook.com/v20.0";
 const cors = (h: HeadersInit = {}) => ({ "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Content-Type": "application/json", ...h });
-const admin = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+const admin = () => createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });

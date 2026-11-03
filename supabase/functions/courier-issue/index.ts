@@ -11,6 +11,7 @@
 //    EPOST_CUSTNO  : 고객번호   EPOST_APPRNO : 계약승인번호   EPOST_OFFICESER : 공급지코드
 // ============================================================
 import { seedEncryptEcbHex } from "./seed128.ts";
+import { serviceKey } from "../_shared/keys.ts";
 import { checkOrder, orderFields, plain } from "./fields.ts";
 import { epostOrderNo, EXT_TIMEOUT_MS, issueOne, type ResInfo } from "./issue.ts";
 import type { Mode } from "../_shared/ship-unknown.ts";
@@ -123,7 +124,7 @@ Deno.serve(async (req) => {
   // 운영 전환 전에는 마스터 계정만 접근하도록 잠근다.
   const auth = await requireUser(req, { master: true });
   if (auth instanceof Response) return auth;
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
   if (!REGKEY || !SECKEY) return j({ ok: false, error: "EPOST_REGKEY/EPOST_SECKEY 시크릿 미설정" }, 500);
   try {
     const body = await req.json().catch(() => ({}));

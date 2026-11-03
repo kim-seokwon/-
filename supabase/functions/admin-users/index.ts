@@ -11,6 +11,7 @@
 //  POST { action: "list" }        → companies + auth 연결 여부
 // ============================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serviceKey } from "../_shared/keys.ts";
 import { requireUser } from "../_shared/auth.ts";
 
 const cors = (extra: Record<string, string> = {}) => ({
@@ -22,7 +23,7 @@ const cors = (extra: Record<string, string> = {}) => ({
 
 const admin = () => createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  serviceKey(),
   { auth: { persistSession: false } },
 );
 

@@ -12,6 +12,7 @@
 //                         DROP_CONTACT="010-0000-0000"
 // ============================================================
 import { requireUser } from "../_shared/auth.ts";
+import { serviceKey } from "../_shared/keys.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const ENDPOINT = Deno.env.get("KAKAO_QUICK_ENDPOINT") ?? "";
@@ -35,7 +36,7 @@ Deno.serve(async (req) => {
   // 퀵 예약 = 실제 요금 발생 → MASTER 전용(직원 실수 발주로 실배송비 나가는 것 방지)
   const auth = await requireUser(req, { roles: ["MASTER"] });
   if (auth instanceof Response) return auth;
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
   try {
     const { jobId, memo } = await req.json();
     if (!jobId) return j({ ok: false, error: "jobId 필요" }, 400);

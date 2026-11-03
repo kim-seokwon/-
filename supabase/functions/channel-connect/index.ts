@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serviceKey } from "../_shared/keys.ts";
 import { requireUser } from "../_shared/auth.ts";
 
 const cors = (extra: Record<string, string> = {}) => ({
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
     const missing = spec.required.filter(k => !credentials[k]);
     if (missing.length) return json({ ok: false, error: `필수 정보가 빠졌습니다: ${missing.join(", ")}` }, 400);
 
-    const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+    const db = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
     const { data: brand, error: brandErr } = await db.from("brands").select("id,name").eq("id", brandId).single();
     if (brandErr || !brand) return json({ ok: false, error: "브랜드를 찾을 수 없습니다" }, 404);
 

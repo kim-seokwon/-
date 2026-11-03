@@ -9,6 +9,7 @@
 //       POST <func-url> {restatus:false}       → 재동기화 건너뛰기
 //       POST <func-url> {mode:"restatus", restatus_from:"2025-01-01"}  → 재동기화만 전체기간
 import { admin, cafe24Fetch, cors, ensureToken, getActiveMalls, getMall, log, MallState, saveMall } from "../_shared/cafe24.ts";
+import { serviceKey } from "../_shared/keys.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Dashboard 개별 함수 배포는 _shared/auth.ts를 번들에 포함하지 못하는 경우가 있어
@@ -23,7 +24,7 @@ async function requireUser(req: Request, opts: { master?: boolean } = {}) {
   const { data, error } = await anon.auth.getUser(token);
   if (error || !data?.user) return deny("유효한 로그인 세션이 아닙니다");
   if (opts.master) {
-    const service = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+    const service = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
     const username = (data.user.email || "").split("@")[0];
     const { data: profile } = await service.from("companies").select("role").eq("username", username).maybeSingle();
     if (profile?.role !== "MASTER") return deny("권한 없음 — 마스터 계정만 가능합니다");
