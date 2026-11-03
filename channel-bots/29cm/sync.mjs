@@ -19,7 +19,7 @@ import { chromium } from 'playwright';
 import { google } from 'googleapis';
 import { authenticator } from 'otplib';
 import { createClient } from '@supabase/supabase-js';
-import { accountsFromEnv, otpNotBefore, pollOtp, orderKey, groupOrders, mapOrder, runAccounts, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage } from './accounts.mjs';
+import { accountsFromEnv, otpNotBefore, pollOtp, orderKey, groupOrders, mapOrder, runAccounts, syncLogRows, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage } from './accounts.mjs';
 
 const {
   GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
@@ -274,7 +274,10 @@ async function run() {
   try { results = await runAccounts(ACCOUNTS, a => syncAccount(browser, a)); }
   finally { await browser.close(); }
   console.log('[29cm] 결과:', results.map(r => `${r.brand} ${r.ok ? `${r.count}건` : '실패'}`).join(' · '));
-  if (results.some(r => !r.ok)) process.exit(1);
+  //  계정별 성공/실패를 sync_log 에 — 연동관리 화면의 '마지막 동기화 성공 시각' 원천. 기록 실패도 빨간불로
+  const { error: logErr } = await db.from('sync_log').insert(syncLogRows(ACCOUNTS, results));
+  if (logErr) console.error('[29cm] sync_log 기록 실패:', logErr.message);
+  if (results.some(r => !r.ok) || logErr) process.exit(1);
 }
 
 run().catch(e => { console.error('[29cm] 실패:', e); process.exit(1); });

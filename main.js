@@ -15,7 +15,7 @@ import { leadStory, openCalendar, topWorked, brandMoves, weekSummary } from './p
 import { cardDeck } from './paperCards.js';
 import { installColResize } from './colResize.js';
 // 29CM 몰 판별 — 봇(계정별 몰 29cm · 29cm-rohi)과 같은 규칙
-import { is29cmKey } from './channel-bots/29cm/accounts.mjs';
+import { is29cmKey, cm29SyncType, cm29SyncState, kstShort } from './channel-bots/29cm/accounts.mjs';
 import { magazine, MAG, reactBits, kNum } from './newsMagazine.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
@@ -345,6 +345,44 @@ class BhasApp {
             this.tpSel = 'preview-tp2';
             this.wins = [{ id: 'preview-tp', view: 'tech_packs', x: 8, y: 8, w: 1300, h: 800, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
+        }
+        //  연동관리 29CM 동기화 시각 검수 — 가짜 supabase 로 실제 loadMalls 경로를 돈다(DB 안 읽고 안 쓴다).
+        //  &cm29= 없음: 하이헤이호 정상·로하이 오래됨+최근 실패 · none: 기록 없음 · fail: 조회 실패 · mixed: 하이헤이호만 조회 실패
+        if (devPreview === 'integrations') {
+            const sc = new URLSearchParams(location.search).get('cm29') || '';
+            const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
+            mockData.brands = [{ id: 'preview-b1', name: '하이헤이호', brand_color: '#6366f1' }, { id: 'preview-b2', name: '로하이스튜디오', brand_color: '#ff9f0a' }];
+            const malls = [
+                { mall_key: 'hiheiho', brand_id: 'preview-b1', label: '하이헤이호', channel: 'cafe24', connected: true },
+                { mall_key: 'rohi', brand_id: 'preview-b2', label: '로하이스튜디오', channel: 'cafe24', connected: true },
+                { mall_key: '29cm', brand_id: 'preview-b1', label: '29CM', channel: '29cm', connected: true },
+                { mall_key: '29cm-rohi', brand_id: 'preview-b2', label: '29CM 로하이스튜디오', channel: '29cm', connected: true },
+            ];
+            const log = sc === 'none' ? [] : [
+                { channel: 'cafe24', type: 'hiheiho:pull_orders', result: 'ok', run_at: ago(0.5) },          // 다른 채널 성공 — 29CM 로 섞이면 안 됨
+                { channel: '29cm', type: '29cm-rohi:pull_orders', result: 'error', run_at: ago(1) },
+                { channel: '29cm', type: '29cm:pull_orders', result: 'ok', run_at: ago(3) },
+                { channel: '29cm', type: '29cm-rohi:pull_orders', result: 'ok', run_at: ago(72) },
+            ];
+            const q = (table) => {
+                const f = []; let lim = Infinity;
+                const b = { select: () => b, order: () => b, eq: (k, v) => (f.push([k, v]), b), limit: n => (lim = n, b),
+                    then: (ok, ng) => Promise.resolve().then(() => {
+                        if (table === 'malls') return { data: malls, error: null };
+                        if (table !== 'sync_log') return { data: [], error: null };
+                        const type = (f.find(x => x[0] === 'type') || [])[1] || '';
+                        if (sc === 'fail' || (sc === 'mixed' && type === '29cm:pull_orders')) return { data: null, error: { message: '화면 검수 — 조회 실패' } };
+                        const rows = log.filter(r => f.every(([k, v]) => r[k] === v)).sort((a, b2) => b2.run_at.localeCompare(a.run_at));
+                        return { data: rows.slice(0, lim), error: null };
+                    }).then(ok, ng) };
+                return b;
+            };
+            this.supabase = { from: q, rpc: async () => ({ data: { sync: [{ mall_key: 'hiheiho', last_order_synced_at: ago(0.5) }, { mall_key: 'rohi', last_order_synced_at: ago(0.5) }], connections: [] }, error: null }) };
+            this._prefetched = true; this._isInitialLoading = false; this._ordersLoaded = this._bsLoaded = this._vendorsLoaded = true; this.orders = []; this.vendors = []; this.brandCouriers = {};
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            this.currentView = 'integrations';
+            this.wins = [{ id: 'preview-integ', view: 'integrations', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); this.loadMalls(); return;   // init 은 async 가 아니다 — loadMalls 가 끝나면 다시 그린다
         }
         if (devPreview === 'crm') {
             const now = new Date();
@@ -11517,6 +11555,23 @@ class BhasApp {
     // ============================================================
     //  멀티몰 (브랜드별 카페24몰)
     // ============================================================
+    //  29CM 계정별 동기화 기록 — sync_log(channel 29cm · type '<mall_key>:pull_orders')에서 몰마다 최근 성공 1건 + 최근 기록 1건.
+    //  한 몰 조회가 실패해도 그 몰만 '조회 실패'(다른 몰·화면은 그대로). 반환 { mall_key: { ok, latest } | { failed } }
+    async _loadCm29Sync(malls) {
+        const out = {};
+        await Promise.all((malls || []).filter(m => is29cmKey(m.mall_key)).map(async m => {
+            const base = () => this.supabase.from('sync_log').select('run_at,result,type').eq('channel', '29cm').eq('type', cm29SyncType(m.mall_key));
+            try {
+                const [ok, latest] = await Promise.all([
+                    base().eq('result', 'ok').order('run_at', { ascending: false }).limit(1),
+                    base().order('run_at', { ascending: false }).limit(1),
+                ]);
+                out[m.mall_key] = ok.error || latest.error ? { failed: true } : { ok: (ok.data || [])[0] || null, latest: (latest.data || [])[0] || null };
+            } catch (e) { out[m.mall_key] = { failed: true }; }
+        }));
+        return out;
+    }
+
     async loadMalls() {
         this._mallsLoading = true;
         try {
@@ -11533,6 +11588,7 @@ class BhasApp {
             (syncRes.data || []).forEach(s => { syncBy[s.mall_key] = s; });
             this.malls = (mallsRes.data || []).map(m => ({ ...m, ...(syncBy[m.mall_key] || {}) }));
             this.channelConnections = connectionRes.data || [];
+            this.cm29Sync = await this._loadCm29Sync(this.malls);
             this._mallsLoaded = true;
         } catch (e) { this.malls = []; this._mallsLoaded = true; }
         this._mallsLoading = false;
@@ -16617,9 +16673,20 @@ class BhasApp {
             kidikidi: ['파트너 계정', '비밀번호', 'OTP 설정키'],
             smartstore: ['커머스API Client ID', 'Client Secret'],
         };
-        const reqHint = (chKey) => { const r = chReq[chKey]; return r ? `<div style="font-size:0.6rem;color:var(--text-muted);margin-top:5px;line-height:1.35;max-width:128px">필요: ${r.join(' · ')}</div>` : ''; };
+        const reqHint = (chKey) => { const r = chReq[chKey]; return r ? `<div style="font-size:0.6rem;color:var(--text-muted);margin-top:5px;line-height:1.35;max-width:128px;white-space:normal">필요: ${r.join(' · ')}</div>` : ''; };
         // 팩트 배지: malls.connected(인증 플래그) 대신 실제 수집 실태(수집중/지연/중단)
         const factBadge = (mall) => { const s = this._channelStatus(mall); return s ? `<span style="font-size:0.72rem;font-weight:700;color:${s.color}">● ${s.label}</span><div style="font-size:0.58rem;color:var(--text-muted);margin-top:1px">${s.sub}</div>` : `<span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span>`;
+        };
+        //  29CM 은 계정(몰)마다 sync_log 주문수집 성공 시각 — 실패 시각은 따로 빨갛게, 성공으로 안 쓴다
+        const cm29Badge = (mall) => {
+            const s = cm29SyncState((this.cm29Sync || {})[mall?.mall_key]);
+            const head = {
+                ok: ['#22c55e', '수집중'], stale: ['#f59e0b', '수집 오래됨'],
+                none: ['#94a3b8', '기록 없음'], failed: ['#94a3b8', '기록 조회 실패'],
+            }[s.state];
+            const sub = s.okAt ? `마지막 성공 ${kstShort(s.okAt)}` : s.state === 'failed' ? '잠시 후 새로고침' : '주문 동기화 성공 기록 없음';
+            const err = s.errorAt ? `<div class="cm29-err" style="font-size:0.58rem;color:#ef4444;margin-top:1px">최근 실패 ${kstShort(s.errorAt)}</div>` : '';
+            return `<div class="cm29-sync" style="white-space:normal" data-mall="${this._vesc(mall?.mall_key || '')}" data-state="${s.state}"><span style="font-size:0.72rem;font-weight:700;color:${head[0]}">● ${head[1]}</span><div style="font-size:0.58rem;color:var(--text-muted);margin-top:1px">${sub}</div>${err}</div>`;
         };
         const cell = (brand, ch) => {
             const mall = mallFor(brand, ch.key);
@@ -16629,7 +16696,7 @@ class BhasApp {
                 return `<div style="display:inline-flex;flex-direction:column;align-items:center"><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="cafe24" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(148,163,184,0.5);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>${reqHint('cafe24')}</div>`;
             }
             const connection = (this.channelConnections || []).find(x => x.brand_id === brand.id && x.channel === ch.key);
-            if (mall?.connected || connection?.status === 'connected') return `<div style="display:inline-flex;flex-direction:column;gap:3px;align-items:center">${factBadge(mall)}<button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.66rem;border:0;background:transparent;color:var(--text-muted);cursor:pointer;margin-top:2px">설정</button></div>`;
+            if (mall?.connected || connection?.status === 'connected') return `<div style="display:inline-flex;flex-direction:column;gap:3px;align-items:center">${ch.key === '29cm' && mall ? cm29Badge(mall) : factBadge(mall)}<button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.66rem;border:0;background:transparent;color:var(--text-muted);cursor:pointer;margin-top:2px">설정</button></div>`;
             const pending = connection?.status === 'credentials_saved' || connection?.status === 'auth_required';
             const failed = connection?.status === 'error';
             if (pending || failed) return `<div style="display:inline-flex;flex-direction:column;gap:4px;align-items:center"><span style="font-size:0.7rem;font-weight:700;color:${failed ? '#ef4444' : '#f59e0b'}">${failed ? '● 오류' : '○ 인증 필요'}</span><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.7rem;padding:4px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--primary);cursor:pointer">다시 연동</button>${reqHint(ch.key)}</div>`;

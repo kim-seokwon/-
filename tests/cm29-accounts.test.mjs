@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
     accountsFromEnv, otpFromText, otpQueries, otpMailUsable, otpNotBefore, groupOrders, mapOrder, runAccounts, is29cmKey,
-    pollOtp, isQuotaError, OTP_POLL_MS, OTP_BACKOFF_MS, htmlToText, mailText, maskDigits, OTP_VALID_MS, OTP_SKEW_MS, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage,
+    pollOtp, isQuotaError, syncLogRows, cm29SyncState, cm29SyncType, kstShort, CM29_STALE_MS, CM29_ACCOUNTS, OTP_POLL_MS, OTP_BACKOFF_MS, htmlToText, mailText, maskDigits, OTP_VALID_MS, OTP_SKEW_MS, OTP_REQ_BTN_RE, OTP_COOLDOWN_RE, maskPage,
 } from '../channel-bots/29cm/accounts.mjs';
 
 const SYNC = readFileSync(new URL('../channel-bots/29cm/sync.mjs', import.meta.url), 'utf8');
@@ -80,7 +80,7 @@ test('주문 매핑: 실제 API(상품 줄) → 주문번호로 묶기 · 금액
 test('sync.mjs·yml 연결: 계정 반복 · 계정별 창 닫기 · 실패 있으면 exit 1 · 2계정 env', () => {
     assert.match(SYNC, /runAccounts\(ACCOUNTS, a => syncAccount\(browser, a\)\)/);
     assert.match(SYNC, /finally \{ await ctx\.close\(\)/);
-    assert.match(SYNC, /if \(results\.some\(r => !r\.ok\)\) process\.exit\(1\)/);
+    assert.match(SYNC, /if \(results\.some\(r => !r\.ok\) \|\| logErr\) process\.exit\(1\)/);
     assert.match(SYNC, /usedOtpIds\.add\(hit\.id\)/);
     assert.match(SYNC, /if \(selErr\) throw selErr;/, '몰 조회 실패면 upsert 안 함(브랜드 연결 보호)');
     assert.ok(!/MALL_KEY|process\.env\.CM29_ID\b|\bCM29_ID,/.test(SYNC.replace(/^\/\/.*$/gm, '')), '옛 단일 계정 상수 없음');
@@ -90,7 +90,7 @@ test('sync.mjs·yml 연결: 계정 반복 · 계정별 창 닫기 · 실패 있�
 test('화면: 29cm-rohi 도 29CM 채널로 합친다', () => {
     assert.ok(is29cmKey('29cm') && is29cmKey('29CM-rohi') && is29cmKey('29cm-x'));
     assert.ok(!is29cmKey('29cmx') && !is29cmKey('musinsa') && !is29cmKey(null));
-    assert.match(MAIN, /import \{ is29cmKey \} from '\.\/channel-bots\/29cm\/accounts\.mjs'/);
+    assert.match(MAIN, /import \{ is29cmKey[^}]*\} from '\.\/channel-bots\/29cm\/accounts\.mjs'/);
     assert.ok(!/mk === '29cm'/.test(MAIN), "mall_key === '29cm' 하드코딩이 남지 않음");
     assert.match(MAIN, /const pk = is29cmKey\(r\.platform\) \? '29cm' : r\.platform/);
     assert.match(MAIN, /chKey === '29cm' && is29cmKey\(m\.mall_key\)/);
@@ -233,4 +233,48 @@ test('saleAmount 0 이면 pay_amount 0 — 정가로 바꾸지 않는다, 칸이
     assert.equal(z.pay_amount, 0); assert.equal(z.order_amount, 30000);
     const n = mapOrder({ orderSerial: 'Z2', items: [{ orderSerial: 'Z2', orderItemManageId: 2, orderStatusDescription: '배송완료', sellAmount: 30000 }] }, '29cm');
     assert.equal(n.pay_amount, 30000);
+});
+
+//  ── 연동관리 29CM 동기화 시각 ──
+test('sync_log 기록: 계정별 channel 29cm · type <mall_key>:pull_orders · 실패는 error(숫자 가림)', () => {
+    const rows = syncLogRows(CM29_ACCOUNTS, [
+        { brand: '하이헤이호', ok: true, count: 12 },
+        { brand: '로하이스튜디오', ok: false, error: '2차인증 실패 code 123456' },
+        { brand: '없는브랜드', ok: true, count: 1 },
+    ]);
+    assert.deepEqual(rows, [
+        { channel: '29cm', type: '29cm:pull_orders', result: 'ok', detail: { stored: 12 } },
+        { channel: '29cm', type: '29cm-rohi:pull_orders', result: 'error', detail: { error: '2차인증 실패 code ******' } },
+    ]);
+    assert.equal(cm29SyncType('29cm-rohi'), '29cm-rohi:pull_orders');
+    //  봇: 결과를 sync_log 에 넣고, 넣기 실패도 exit 1
+    assert.match(SYNC, /db\.from\('sync_log'\)\.insert\(syncLogRows\(ACCOUNTS, results\)\)/);
+});
+
+test('화면 상태: 성공 시각만 성공으로 · 실패 시각 따로 · 기록 없음/조회 실패/오래됨 구분', () => {
+    const NOW = Date.parse('2026-11-04T03:00:00Z');
+    const at = h => new Date(NOW - h * 3600e3).toISOString();
+    const ok = h => ({ run_at: at(h), result: 'ok' }), err = h => ({ run_at: at(h), result: 'error' });
+    assert.deepEqual(cm29SyncState({ ok: ok(3), latest: ok(3) }, NOW), { state: 'ok', okAt: at(3), errorAt: null });
+    assert.deepEqual(cm29SyncState({ ok: ok(72), latest: err(1) }, NOW), { state: 'stale', okAt: at(72), errorAt: at(1) });
+    assert.deepEqual(cm29SyncState({ ok: null, latest: err(1) }, NOW), { state: 'none', okAt: null, errorAt: at(1) }, '실패만 있으면 성공 시각 없음');
+    assert.deepEqual(cm29SyncState({ ok: null, latest: null }, NOW), { state: 'none', okAt: null, errorAt: null });
+    assert.equal(cm29SyncState({ failed: true }, NOW).state, 'failed');
+    assert.equal(cm29SyncState(undefined, NOW).state, 'failed', '몰 기록을 못 받았으면 조회 실패(기록 없음 아님)');
+    assert.equal(cm29SyncState({ ok: { run_at: at(1), result: 'error' }, latest: null }, NOW).state, 'none', 'ok 칸에 실패가 와도 성공으로 안 씀');
+    assert.equal(cm29SyncState({ ok: ok(3), latest: err(5) }, NOW).errorAt, null, '성공보다 앞선 실패는 안 띄움');
+    assert.equal(cm29SyncState({ ok: ok(26), latest: ok(26) }, NOW).state, 'ok');
+    assert.equal(cm29SyncState({ ok: { run_at: new Date(NOW - CM29_STALE_MS - 1).toISOString(), result: 'ok' }, latest: null }, NOW).state, 'stale');
+    assert.equal(kstShort('2026-11-03T21:23:00Z'), '11/4 06:23');
+    assert.equal(kstShort('bad'), '-');
+});
+
+test('화면 연결: 몰마다 29cm 성공 1건·최근 1건 조회 · 29CM 칸만 계정 배지 · 다른 채널은 기존 배지', () => {
+    const s = MAIN.indexOf('    async _loadCm29Sync('), e = MAIN.indexOf('\n    async loadMalls(', s);
+    assert.ok(s > 0 && e > s);
+    const load = MAIN.slice(s, e);
+    assert.match(load, /\.eq\('channel', '29cm'\)\.eq\('type', cm29SyncType\(m\.mall_key\)\)/);
+    assert.match(load, /base\(\)\.eq\('result', 'ok'\)\.order\('run_at', \{ ascending: false \}\)\.limit\(1\)/);
+    assert.match(load, /\{ failed: true \}/);
+    assert.match(MAIN, /ch\.key === '29cm' && mall \? cm29Badge\(mall\) : factBadge\(mall\)/);
 });

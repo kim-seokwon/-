@@ -222,3 +222,40 @@ export async function runAccounts(accounts, fn, log = console) {
   }
   return out;
 }
+
+//  ── 동기화 기록(sync_log) — 연동관리 화면이 계정별 '마지막 주문 동기화 성공 시각'을 여기서 읽는다 ──
+//  카페24 와 같은 모양: channel '29cm' · type '<mall_key>:pull_orders' · result ok|error.
+//  ok 는 주문 저장(upsert)까지 끝난 계정만. 건너뛴 계정(비밀값 없음)은 시도가 아니라 남기지 않는다.
+export const cm29SyncType = mallKey => `${mallKey}:pull_orders`;
+export function syncLogRows(accounts, results) {
+  return (results || []).map(r => {
+    const a = (accounts || []).find(x => x.brand === r.brand);
+    if (!a) return null;
+    return {
+      channel: '29cm', type: cm29SyncType(a.mallKey), result: r.ok ? 'ok' : 'error',
+      detail: r.ok ? { stored: r.count } : { error: maskDigits(r.error).slice(0, 300) },
+    };
+  }).filter(Boolean);
+}
+
+//  하루 1번(06:17 KST) 돈다 → 마지막 성공이 26시간을 넘으면 '오래됨'
+export const CM29_STALE_MS = 26 * 3600_000;
+
+//  화면 상태 — 입력: { failed } 조회 실패 | { ok, latest } (ok = 최근 result=ok 1건, latest = 최근 기록 1건, 없으면 null)
+//  반환 state: 'failed'(조회 실패) · 'none'(성공 기록 없음) · 'ok' · 'stale'(오래됨). 실패 시각은 errorAt 으로 따로 — 성공처럼 쓰지 않는다
+export function cm29SyncState(rec, now = Date.now()) {
+  if (!rec || rec.failed) return { state: 'failed', okAt: null, errorAt: null };
+  const okAt = rec.ok?.result === 'ok' ? rec.ok.run_at : null;
+  const l = rec.latest;
+  const errorAt = l && l.result !== 'ok' && (!okAt || Date.parse(l.run_at) > Date.parse(okAt)) ? l.run_at : null;
+  if (!okAt) return { state: 'none', okAt: null, errorAt };
+  return { state: now - Date.parse(okAt) > CM29_STALE_MS ? 'stale' : 'ok', okAt, errorAt };
+}
+
+//  KST 'M/D HH:mm'
+export function kstShort(iso) {
+  const d = new Date(Date.parse(iso) + 9 * 3600_000);
+  if (Number.isNaN(d.getTime())) return '-';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
