@@ -35,14 +35,16 @@ export function claimCount(byState, unpaidCancel) {
 //   sales_monthly 는 결제금액(pay_amount) 있는 주문만 남겨 결제 후 취소 상당수(10월 112건 중 85건)가 빠진다 → 쓰지 않는다.
 //   건수 = 취소·반품·교환(입금 전 취소 제외), 환불 = 취소·반품의 실제 환불액(refund_amount). 교환은 환불 아님.
 export function claimSummary(orders) {
-    let cnt = 0, refund = 0;
+    //  cnt = 취소+반품+교환(반품·교환률 카드) · excl = 매출에서 빠지는 취소+반품 · exch = 매출에 남는 교환(반려1, 11-05)
+    let cnt = 0, refund = 0, excl = 0, exch = 0;
     for (const o of orders || []) {
         const s = o.op_status;
         if (!['cancel', 'return', 'exchange'].includes(s) || isUnpaidCancel(o, s)) continue;
         cnt += 1;
-        if (s !== 'exchange') refund += Number(o.refund_amount) || 0;
+        if (s === 'exchange') exch += 1;
+        else { excl += 1; refund += Number(o.refund_amount) || 0; }
     }
-    return { cnt, refund };
+    return { cnt, refund, excl, exch };
 }
 
 //  반품·교환률 카드·'취소 N건 제외' 한 줄이 볼 몰 — null = 회사 전체(제한 없음), [] = 몰 없음(→ 0건, 조회 안 함)
@@ -55,7 +57,7 @@ export function claimMallKeys(malls, brands, bf, allowed) {
 
 //  그 범위 클레임 주문을 받아 센다. 실패는 던진다(화면이 '다시 시도'를 띄운다).
 export async function fetchClaims(sb, { mallKeys, fromISO, toISO }) {
-    if (Array.isArray(mallKeys) && !mallKeys.length) return { cnt: 0, refund: 0 };
+    if (Array.isArray(mallKeys) && !mallKeys.length) return { cnt: 0, refund: 0, excl: 0, exch: 0 };
     //  한 번에 최대 1000줄(PostgREST) — 연간·전체는 넘을 수 있어 나눠 받는다
     const PAGE = 1000, rows = [];
     for (let from = 0; ; from += PAGE) {

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { isUnpaidCancel, isRefund, stateLabel, markUnpaid, claimCount, claimSummary, claimMallKeys, fetchClaims } from '../orderRefund.js';
+import { fetchByMonth, itemPool } from '../salesFetch.js';   // _loadSalesScope 를 떼어 eval 할 때 쓰는 이름
 
 const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 
@@ -57,6 +58,8 @@ test('반품·교환률 카드 — 10월 모양: 클레임 159건(결제금액 �
     ];
     const r = claimSummary(oct);
     assert.equal(r.cnt, 159);
+    assert.equal(r.excl, 112 + 20);                     // 매출에서 빠지는 것 = 결제 후 취소 + 반품
+    assert.equal(r.exch, 27);                           // 교환은 매출에 남는다 — 제외 건수에 넣지 않는다(반려1)
     assert.equal(r.refund, 85 * 50000 + 27 * 80000 + 20 * 60000);
 });
 
@@ -66,7 +69,10 @@ test('main.js — 반품·교환률 카드·취소 N건 제외는 sales_monthly 
     assert.match(card, /this\._claimView\(bf\)/);
     assert.doesNotMatch(card, /salesAggData/);          // 반려2①: 전체 보기도 서버 월집계로 세지 않는다
     assert.doesNotMatch(card, /cancelThisAmt \+=/);
-    assert.match(src, /' · 취소 \$\{cancelThisCnt\}건 제외'|` · 취소 \$\{cancelThisCnt\}건 제외`/);
+    //  반려1: 제외 건수는 취소+반품만, 교환은 '포함'으로 따로 — 합계(cancelThisCnt)로 '제외'라고 쓰지 않는다
+    assert.doesNotMatch(src, /cancelThisCnt\}건 제외/);
+    assert.match(src, /`취소·반품 \$\{exclCnt\}건 제외`/);
+    assert.match(src, /`교환 \$\{exchCnt\}건 포함`/);
     assert.match(src, /app\.retryClaims\(\)/);         // 반려2④: 실패면 다시 시도 버튼
 });
 
@@ -93,16 +99,19 @@ test('_loadSalesScope — 입금 전 취소는 반품·취소 목록에도 매�
     const b = src.indexOf('\n    }\n', a) + 6;
     const fn = eval('(' + src.slice(a, b).replace('async _loadSalesScope(', 'async function _loadSalesScope(').trim() + ')');
     const slim = all.map(({ fin_unpaid, ...o }) => ({ ...o, raw: {}, order_date: '2026-10-10T00:00:00Z' }));   // slim 은 fin_unpaid·paid 없음
-    const mkQ = rows => { const q = { select: () => q, eq: () => q, gte: () => q, lt: () => q, in: () => q, order: () => q,
-        then: (res) => res({ data: rows, error: null }) }; return q; };
+    //  기간 조건(gte/lt/lte)은 지킨다 — 한 달을 여러 조각으로 나눠 받으므로 무시하면 조각마다 같은 줄이 겹친다
+    const mkQ = rows => { const f = []; const t = v => new Date(v).getTime();
+        const q = { select: () => q, eq: () => q, in: () => q, order: () => q, limit: () => q,
+            gte: (c, v) => (f.push(r => t(r[c]) >= t(v)), q), lt: (c, v) => (f.push(r => t(r[c]) < t(v)), q), lte: (c, v) => (f.push(r => t(r[c]) <= t(v)), q),
+            then: (res) => res({ data: rows.filter(r => f.every(g => g(r))), error: null }) }; return q; };
     const t = {
-        malls: [], supabase: { from: tb => mkQ(tb === 'channel_orders_slim' ? slim
-            : all.filter(o => ['cancel', 'return', 'exchange'].includes(o.op_status)).map(({ id, op_status, fin_unpaid, refund_amount }) => ({ id, op_status, fin_unpaid, refund_amount }))) },
-        _itemsFor: async () => [], _orderState: o => o.op_status, requestRender() {}, showToast() {},
+        malls: [], supabase: { from: tb => mkQ(tb === 'channel_orders_slim' ? slim : tb === 'channel_order_items' ? []
+            : all.filter(o => ['cancel', 'return', 'exchange'].includes(o.op_status)).map(({ id, op_status, fin_unpaid, refund_amount }) => ({ id, op_status, fin_unpaid, refund_amount, order_date: '2026-10-10T00:00:00Z' }))) },
+        _itemsFor: async () => [], _orderState: o => o.op_status, requestRender() {}, showToast() {}, ensureViewData() {},
     };
     t._isCancelled = o => ['cancel', 'return'].includes(o.op_status);
     t._isUnpaidCancel = o => isUnpaidCancel(o, o.op_status);
-    await fn.call(t, '하이헤이호', '2026-10-01', '2026-11-01');
+    await fn.call(t, '하이헤이호', '2026-10-01T00:00:00+09:00', '2026-11-01T00:00:00+09:00');   // 화면이 넘기는 형식(KST 달 경계)
     assert.equal(t.salesScoped.cancelled.length, 5);
     assert.equal(t.salesScoped.orders.length, 5);   // 교환 1 + 정상 4
     assert.ok(!t.salesScoped.cancelled.some(o => o.id.startsWith('u')));
@@ -168,7 +177,7 @@ test('반려2② 몰 없는 브랜드(브하스 컨설팅) — 0건, 회사 전�
     assert.deepEqual(sb.calls, []);                              // 조회 자체를 안 한다
     assert.deepEqual({ cnt: t._claimView('브하스 (컨설팅)').cnt, refund: t._claimView('브하스 (컨설팅)').refund }, { cnt: 0, refund: 0 });
     assert.deepEqual(claimMallKeys([{ mall_key: 'hey', brand_id: 'b1' }], mockData.brands, '브하스 (컨설팅)', null), []);
-    assert.deepEqual(await fetchClaims(null, { mallKeys: [], fromISO: 'a', toISO: 'b' }), { cnt: 0, refund: 0 });
+    assert.deepEqual(await fetchClaims(null, { mallKeys: [], fromISO: 'a', toISO: 'b' }), { cnt: 0, refund: 0, excl: 0, exch: 0 });
 });
 
 test('반려2③ 월→연간 전환 — 새 값 받기 전엔 이전 범위 값을 안 보이고, 늦게 온 이전 응답도 버린다', async () => {

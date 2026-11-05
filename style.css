@@ -3978,6 +3978,7 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 /* 브랜드 레일 */
 .macwin .analysis-brandbar{width:138px !important;flex-shrink:0}
 .macwin .analysis-layout{gap:14px !important}
+@media screen and (max-width: 768px){.macwin .analysis-brandbar{width:100% !important}}   /* 폰: 맥창 레일 고정폭(138) 대신 가로 줄 전체 */
 
 /* ── 시즌 — 파인더 결. 시즌 하나가 폴더다 ───────────────────── */
 .mp>.fd-body{flex:1;min-height:0;overflow:auto}
@@ -5318,3 +5319,80 @@ b.sp-nm.dup{color:#ff453a}
 .cp-run{display:flex;flex-direction:column;gap:12px}.cp-run-head{display:flex;gap:10px;align-items:center}
 .cp-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
 .cp-step p{margin:0;font-size:12.5px;color:var(--text-muted)}
+
+/* ── 정산 매출(브랜드 상세·전체 통합) — 시안 .work/정산재구성/시안.html (11-05). 창 폭 기준(컨테이너)으로 접는다: 맥 창이 좁아도 모바일과 같은 배치 ── */
+.sv{container-type:inline-size;min-width:0;width:100%}
+/* 모바일에선 .analysis-layout 이 세로 + flex-start 라 내용 폭으로 줄어드는데, 컨테이너 쿼리(inline-size) 는 내용 폭이 0 이라 납작해진다 → 늘린다 */
+.analysis-content:has(> .sv){align-self:stretch;width:100%}
+.sv-card{border:1px solid var(--card-border);border-radius:16px;background:var(--card-bg);min-width:0}
+.sv-ov{display:grid;grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.sv-hero{padding:20px 22px;background:linear-gradient(132deg,rgba(49,130,246,.10),transparent 70%),var(--card-bg);border-color:rgba(49,130,246,.25);position:relative;overflow:hidden}
+.sv-eb{font-size:.8rem;color:var(--text-muted);font-weight:700}
+.sv-hero .sv-v{font-size:2.2rem;line-height:1.08;font-weight:820;letter-spacing:-.05em;margin:8px 0 12px;font-variant-numeric:tabular-nums}
+.sv-cmp{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.76rem;color:var(--text-muted)}
+.sv-cmp em{font-style:normal}
+.sv-pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 9px;font-size:.74rem;font-weight:780;white-space:nowrap}
+.sv-pill.up{background:rgba(16,185,129,.12);color:#10b981}.sv-pill.dn{background:rgba(239,68,68,.12);color:#ef4444}
+.sv-m{padding:18px 18px}.sv-m .sv-eb{font-weight:650}
+.sv-m strong{display:block;font-size:1.55rem;letter-spacing:-.04em;margin:10px 0 4px;font-variant-numeric:tabular-nums}
+.sv-m small{color:var(--text-muted);font-size:.74rem}.sv-m small.bad{color:#ef4444;font-weight:700}
+.sv-core{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,.85fr);gap:14px;align-items:start;margin-bottom:14px}
+.sv-p{padding:18px 20px}
+.sv-pt{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:14px}
+.sv-pt h3{margin:0;font-size:.95rem;font-weight:750}.sv-pt span{font-size:.72rem;color:var(--text-muted);white-space:nowrap}
+.sv-chart svg{width:100%;display:block;overflow:visible}
+/* 막대·눈금을 같은 상자 안 % 로 — 세로축 0 이 막대 바닥과 정확히 겹친다 */
+.sv-plot{position:relative;height:190px;margin:18px 0 0 46px}
+.sv-gl{position:absolute;left:0;right:0;height:0;border-top:1px dashed var(--card-border);opacity:.7}
+.sv-gl[style*="bottom:0%"]{border-top-style:solid;opacity:1}
+.sv-ax{position:absolute;left:-46px;width:40px;text-align:right;transform:translateY(50%);font-size:.66rem;color:var(--text-muted);line-height:1;font-variant-numeric:tabular-nums}
+.sv-bars{position:absolute;inset:0;display:flex;align-items:flex-end;gap:3px}
+.sv-bc{flex:1 1 0;min-width:0;height:100%;display:flex;align-items:flex-end;justify-content:center}
+.sv-bar{position:relative;display:block;width:min(70%,46px);min-height:1px;border-radius:6px 6px 0 0;background:rgba(49,130,246,.55)}
+.sv-bar.pk{background:var(--primary)}
+.sv-bar b{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);padding-bottom:3px;font-size:.66rem;font-weight:750;white-space:nowrap;font-style:normal;color:var(--text-main)}
+.sv-days{display:flex;gap:3px;margin:8px 0 0 46px}.sv-days span{flex:1 1 0;min-width:0;text-align:center;font-size:.64rem;color:var(--text-muted);white-space:nowrap;overflow:visible}
+.sv-chs{display:grid;gap:11px}
+.sv-ch{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center}
+.sv-ch b{font-weight:720;font-size:.86rem}.sv-ch .amt{text-align:right;font-weight:780;font-variant-numeric:tabular-nums;font-size:.86rem;white-space:nowrap}
+.sv-ch.zero .amt{color:var(--text-muted);font-weight:500}
+.sv-st{display:block;font-size:.7rem;margin-top:2px;color:var(--text-muted)}
+.sv-st.ok{color:#10b981}.sv-st.zero{color:#10b981;opacity:.85}.sv-st.stop{color:#ef4444;font-weight:700}.sv-st.wait{color:#8b76bd}
+.sv-tr{grid-column:1/-1;height:6px;border-radius:99px;background:rgba(148,163,184,.16);overflow:hidden}.sv-tr i{display:block;height:100%;border-radius:inherit;background:var(--primary)}
+.sv-hint{margin-top:12px;padding:8px 11px;border-radius:10px;background:rgba(148,163,184,.1);color:var(--text-muted);font-size:.7rem;line-height:1.45}
+.sv-sell{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(0,.65fr);gap:14px;align-items:start}
+.sv-va{border:0;background:transparent;color:var(--primary);font-weight:750;font-size:.75rem;cursor:pointer;padding:0}
+.sv-ph,.sv-pr{display:grid;grid-template-columns:minmax(0,1fr) 64px 112px 124px;gap:10px;align-items:center}
+.sv-ph{padding:0 10px 8px;color:var(--text-muted);font-size:.68rem}.sv-ph span:not(:first-child){text-align:right}
+.sv-pr{padding:9px 10px;border-top:1px solid var(--card-border);font-size:.78rem}
+.sv-pn{min-width:0}.sv-pn b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.82rem}
+.sv-rk{display:inline-block;width:20px;color:var(--primary);font-weight:800}
+.sv-bd{display:inline-block;margin:3px 0 0 20px;padding:1px 6px;border-radius:999px;background:rgba(148,163,184,.14);color:var(--text-muted);font-size:.64rem}
+.sv-n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.sv-n.b{font-weight:780}
+.sv-pf{border-top:1px solid var(--card-border);padding:9px 10px 0;color:var(--text-muted);font-size:.7rem;line-height:1.5}
+.sv-pf-none{padding:14px 10px;color:var(--text-muted);font-size:.8rem}
+.sv-profit{background:#10233f;color:#fff;border:0;padding:20px;position:relative;overflow:hidden}
+.sv-profit .sv-eb{color:#b8c8dd}.sv-profit strong{font-size:1.95rem;display:block;margin:12px 0 4px;letter-spacing:-.05em;font-variant-numeric:tabular-nums}
+.sv-profit .f{color:#aebdd0;font-size:.74rem;line-height:1.5}.sv-profit .f b{color:#68ddb5}
+.sv-fee{margin-top:16px}.sv-fee+.sv-fee{margin-top:10px}.sv-fee .r{display:flex;justify-content:space-between;font-size:.74rem;color:#c2cede}
+.sv-profit .sv-tr{background:#263a55;margin-top:6px}.sv-profit .sv-tr i{background:#31c995}
+.sv-sub{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.sv-sub span{border:1px solid var(--card-border);background:rgba(148,163,184,.06);border-radius:999px;padding:7px 11px;font-size:.74rem;color:var(--text-muted)}.sv-sub b{color:var(--text-main)}
+.sv-sec{margin-top:14px}
+@container (max-width:900px){
+  .sv-ov{grid-template-columns:1fr 1fr}.sv-hero{grid-column:1/-1}
+  .sv-core,.sv-sell{grid-template-columns:1fr}
+}
+@container (max-width:560px){
+  .sv-ov{gap:9px}.sv-hero{padding:18px}.sv-hero .sv-v{font-size:1.9rem}
+  .sv-m{padding:14px}.sv-m strong{font-size:1.3rem;margin:7px 0 3px}.sv-m:nth-child(4){grid-column:1/-1}
+  .sv-p{padding:15px}
+  .sv-profit{order:-1}
+  .sv-ph{display:none}
+  .sv-pr{grid-template-columns:1fr 1fr;padding:11px 2px;gap:4px 12px}.sv-pn{grid-column:1/-1}
+  .sv-pr .sv-n:before{display:block;color:var(--text-muted);font-size:.6rem;font-weight:500}
+  .sv-pr .sv-n:nth-child(2):before{content:'판매수량'}.sv-pr .sv-n:nth-child(3):before{content:var(--sv-per,'이번 달')}.sv-pr .sv-n:nth-child(4):before{content:'누적 판매금액'}
+  .sv-pr .sv-n:nth-child(2){text-align:left}.sv-pr .sv-n:nth-child(4){grid-column:2}
+  .sv-pf{padding-left:2px}
+  .sv-sub{display:grid;grid-template-columns:1fr}.sv-sub span{border-radius:10px}
+}
