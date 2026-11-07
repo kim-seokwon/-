@@ -3,6 +3,13 @@
 //  · competitors.active=true 만 · 하루 한 번(오늘 스냅샷 있는 곳은 건너뜀 — instagram-sync 는 매시 돈다)
 //  · 한 곳 실패해도 나머지는 계속, 실패 핸들·사유는 sync_log(ig:competitors) 에 남긴다
 //  · 조회 불가(개인 계정·없는 핸들·비공개)여도 competitors 는 지우지 않는다
+//  · 조회 불가는 실패와 따로 센다(unreachable) — 그날 다시 부르지 않고(매시 재시도로 실행 전체가 error 가 되던 것, 11-04),
+//    실행 결과도 그것만으론 error/partial 로 만들지 않는다. 핸들·사유는 sync_log detail.unreachable 에 남아 화면이 '조회 불가'로 보여 준다.
+//  · 단 '주체 계정이 지금 살아 있다'는 증거가 있을 때만 조회 불가로 확정한다(반려1·2 C안, 11-04):
+//    이번 실행 성공 1건 이상이면 그대로, 성공 0이면 같은 실행에서 주체 계정(/{IG_USER_ID}?fields=id,username)을 1회 확인한다.
+//    확인 실패면 주체 계정·토큰 권한 문제일 수 있어 후보를 failed(=error)·account_check 로 올리고 다음 시간에 다시 묻는다.
+//    오늘 앞서 받은 스냅샷은 '지금' 증거가 아니라 쓰지 않는다. 추가 호출은 성공 0 + 후보 있을 때만 실행당 1회(self_checked).
+//    다음 날 첫 실행에서 한 번 다시 묻는다(사람이 핸들을 고치면 핸들이 바뀌어 그 시간에 바로 다시 묻는다)
 //  · 순차 호출 + 간격, 호출 한도 오류가 나면 그 실행은 멈추고 남은 곳은 다음 시간에
 //  · dryRun 이면 DB 에 아무것도 쓰지 않는다(sync_log 포함)
 //  db·fetch 를 밖에서 받는다 — 테스트는 가짜를 꽂는다(competitors.test.ts).
@@ -24,9 +31,15 @@ export type Competitor = { id: string; handle: string; name: string; ig_business
 export type Failure = { handle: string; reason: string };
 export type CompetitorResult = {
   dry_run: boolean; active: number; skipped_today: number; tried: number; ok: number;
-  posts: number; failed: Failure[]; rate_limited: boolean; deferred: number;
+  posts: number; failed: Failure[]; unreachable: Failure[]; skipped_unreachable: number; account_check: boolean; self_checked: boolean; rate_limited: boolean; deferred: number;
   planned?: { competitor_snapshots: number; news_items: number };
 };
+
+//  핸들 자체가 안 되는 경우(다시 불러도 같은 답) — Meta 110 'Invalid user id', 사용자 없음, business_discovery 없음
+export function isUnreachable(j: { error?: { message?: string; code?: number }; business_discovery?: unknown }) {
+  if (!j.error) return !j.business_discovery;
+  return Number(j.error.code) === 110 || /invalid user id|cannot find user|does not exist/i.test(String(j.error.message || ""));
+}
 
 export const kstDate = (now = new Date()) => new Date(now.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
 
@@ -54,6 +67,11 @@ export function splitCaption(caption: string, fallback: string) {
   return { title, snippet: rest.slice(0, 260) };
 }
 
+//  주체 계정 생존 확인 — 기본 필드만(가벼운 호출 1회)
+export function selfCheckUrl(igUserId: string, token: string) {
+  return `${DISCOVERY.GRAPH}/${igUserId}?fields=${encodeURIComponent("id,username")}&access_token=${encodeURIComponent(token)}`;
+}
+
 export function discoveryUrl(igUserId: string, handle: string, token: string) {
   const f = `business_discovery.username(${handle}){id,username,followers_count,media_count,` +
     `media.limit(${DISCOVERY.MEDIA_LIMIT}){id,caption,like_count,comments_count,timestamp,permalink,media_url,thumbnail_url,media_type}}`;
@@ -72,7 +90,7 @@ export async function syncCompetitors(o: {
   const today = o.today || kstDate(now);
   const sleep = o.sleep || ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const dry = !!o.dryRun;
-  const res: CompetitorResult = { dry_run: dry, active: 0, skipped_today: 0, tried: 0, ok: 0, posts: 0, failed: [], rate_limited: false, deferred: 0 };
+  const res: CompetitorResult = { dry_run: dry, active: 0, skipped_today: 0, tried: 0, ok: 0, posts: 0, failed: [], unreachable: [], skipped_unreachable: 0, account_check: false, self_checked: false, rate_limited: false, deferred: 0 };
   if (dry) res.planned = { competitor_snapshots: 0, news_items: 0 };
 
   const { data: list, error: le } = await o.db.from("competitors").select("id, handle, name, ig_business_id").eq("active", true).order("handle");
@@ -81,14 +99,29 @@ export async function syncCompetitors(o: {
   res.active = comps.length;
 
   let todo = comps;
+  //  오늘 이미 '조회 불가'로 나온 핸들 — 사유와 함께 이어 적고, 오늘은 다시 부르지 않는다
+  const known = new Map<string, string>();
+  if (!o.force && comps.length) {
+    const { data: logs } = await o.db.from("sync_log").select("detail").eq("type", "ig:competitors").order("run_at", { ascending: false }).limit(30);
+    for (const l of logs || []) {
+      const d = (l && l.detail) || {};
+      if (d.today !== today) continue;
+      for (const u of (Array.isArray(d.unreachable) ? d.unreachable : [])) if (u && u.handle && !known.has(u.handle)) known.set(u.handle, String(u.reason || ""));
+    }
+  }
   if (!o.force && comps.length) {
     const { data: done } = await o.db.from("competitor_snapshots").select("competitor_id").eq("snap_date", today);
     const doneSet = new Set((done || []).map((d: { competitor_id: string }) => d.competitor_id));
     todo = comps.filter((c) => !doneSet.has(c.id));
     res.skipped_today = comps.length - todo.length;
+    const before = todo.length;
+    todo = todo.filter((c) => !known.has(c.handle));
+    res.skipped_unreachable = before - todo.length;
+    for (const c of comps) if (known.has(c.handle) && !doneSet.has(c.id)) res.unreachable.push({ handle: c.handle, reason: known.get(c.handle)! });
   }
   if (todo.length > DISCOVERY.MAX_PER_RUN) { res.deferred = todo.length - DISCOVERY.MAX_PER_RUN; todo = todo.slice(0, DISCOVERY.MAX_PER_RUN); }
 
+  const maybe: (Failure & { why: string })[] = []; // 110·계정 없음 후보 — 증거를 본 뒤 확정
   const cutoff = now.getTime() - DISCOVERY.RECENT_DAYS * 86400e3;
   for (let i = 0; i < todo.length; i++) {
     const c = todo[i];
@@ -112,7 +145,8 @@ export async function syncCompetitors(o: {
     }
     if (j.error || !j.business_discovery) {
       const why = j.error ? `${j.error.code ?? ""} ${j.error.message ?? ""}`.trim() : "business_discovery 없음";
-      res.failed.push({ handle: c.handle, reason: scrub(`조회 불가(비즈니스 계정 아님·없는 핸들·권한): ${why}`, o.token) });
+      if (isUnreachable(j)) maybe.push({ handle: c.handle, why, reason: scrub(`조회 불가(비즈니스 계정 아님·없는 핸들·비공개): ${why}`, o.token) });
+      else res.failed.push({ handle: c.handle, reason: scrub(`조회 실패: ${why}`, o.token) });
       continue;
     }
     const bd = j.business_discovery as { id?: string; followers_count?: number; media_count?: number; media?: { data?: Media[] } };
@@ -164,7 +198,28 @@ export async function syncCompetitors(o: {
     }
   }
 
+  if (maybe.length) {
+    let alive = res.ok > 0, selfWhy = "";
+    if (!alive && res.rate_limited) selfWhy = "호출 한도로 확인 못 함";
+    else if (!alive) {
+      res.self_checked = true;
+      try {
+        const r = await o.fetch(selfCheckUrl(o.igUserId, o.token));
+        const j = await r.json().catch(() => ({}));
+        alive = r.ok && !j.error && String(j.id || "") === String(o.igUserId);
+        if (!alive) selfWhy = j.error ? `${j.error.code ?? ""} ${j.error.message ?? ""}`.trim() : `HTTP ${r.status}`;
+      } catch (e) { selfWhy = `요청 실패: ${(e as Error).message}`; }
+    }
+    if (alive) res.unreachable.push(...maybe.map(({ handle, reason }) => ({ handle, reason })));
+    else {
+      res.account_check = true;
+      res.failed.push(...maybe.map(({ handle, why }) => ({ handle,
+        reason: scrub(`조회 실패: 이번 실행 성공 0 · 주체 계정 확인 실패(${selfWhy}) — 주체 계정(IG_USER_ID)·토큰 권한 확인: ${why}`, o.token) })));
+    }
+  }
+
   if (!dry && res.tried > 0) { // 매시 실행 — 부른 게 없으면 로그도 안 남긴다
+    //  조회 불가는 사람이 고칠 일이지 수집 실패가 아니다 — 결과는 failed 만으로 정한다
     const result = res.failed.length === 0 ? "ok" : res.ok ? "partial" : "error";
     await o.db.from("sync_log").insert([{ channel: "instagram", type: "ig:competitors", result, detail: { ...res, today } }]);
   }

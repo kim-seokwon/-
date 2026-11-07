@@ -146,3 +146,16 @@ test('style.css: 860px 이하에서 .pp-cols.four 도 1열(4열 선택자가 모
     assert.match(block, /\.pp-cols,\.pp-cols\.four,\.pp-cols\.two\{grid-template-columns:1fr\}/);
     assert.match(block, /\.pp-cols\.four \.pp-c\{border-left:0;border-top:1px solid #d6cfc0;padding:14px 0\}/);
 });
+
+//  조회 불가 핸들(11-04) — 수집기가 sync_log ig:competitors detail.unreachable 에 남긴 것을 화면이 읽는다
+import { unreachableHandles } from '../competitorBoard.js';
+test('조회 불가: 최신 로그의 unreachable 만 · 어제보다 오래되면 버림 · 없거나 깨진 로그는 빈 값', () => {
+    const log = (today, unreachable) => ({ run_at: 'x', detail: { today, unreachable } });
+    const m = unreachableHandles([log('2026-10-22', [{ handle: 'creambrulee.kr', reason: '조회 불가: 110 Invalid user id' }]), log('2026-10-22', [{ handle: 'old' }])], { now: NOW });
+    assert.deepEqual([...m], [['creambrulee.kr', '조회 불가: 110 Invalid user id']]);
+    assert.equal(unreachableHandles([log('2026-10-21', [{ handle: 'a' }])], { now: NOW }).size, 1);   // 어제 것은 아직 유효(오늘 첫 수집 전)
+    assert.equal(unreachableHandles([log('2026-10-20', [{ handle: 'a' }])], { now: NOW }).size, 0);
+    assert.equal(unreachableHandles([], { now: NOW }).size, 0);
+    assert.equal(unreachableHandles([{ detail: null }], { now: NOW }).size, 0);
+    assert.equal(unreachableHandles([{ detail: { today: '2026-10-22', failed: [{ handle: 'x' }] } }], { now: NOW }).size, 0);   // 옛 형식(failed)은 조회 불가로 단정하지 않는다
+});

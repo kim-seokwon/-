@@ -5396,3 +5396,12 @@ b.sp-nm.dup{color:#ff453a}
   .sv-pf{padding-left:2px}
   .sv-sub{display:grid;grid-template-columns:1fr}.sv-sub span{border-radius:10px}
 }
+/* 조회 불가 경쟁사 핸들 (11-04) */
+.nm-unr{flex:none;font-size:11px;font-weight:800;color:#b45309;border:1px solid currentColor;border-radius:999px;padding:2px 7px}
+.nm-unrbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 12px;padding:10px 12px;border-radius:12px;background:rgba(245,158,11,.1);color:var(--text-main,inherit);font-size:13px}
+.nm-unrbar>i{color:#b45309;font-size:16px}
+.nm-unrbar span{color:var(--text-muted,#888);flex:1 1 220px;min-width:0}
+.nm-unrbar button{border:1px solid #b45309;color:#b45309;background:transparent;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer}
+.cb-unr{margin:10px 0;padding:12px;border-radius:12px;background:rgba(245,158,11,.1);font-size:13px;line-height:1.5}
+.cb-unr b{color:#b45309}
+.cb-unr em{display:block;color:var(--text-muted,#888);font-style:normal;font-size:12px;margin:4px 0 8px;word-break:break-all}

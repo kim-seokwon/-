@@ -9,7 +9,7 @@ import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx, MAX_PER_BATCH as HX
 import { COMPETITORS, POPUP_WORDS, customerList, competitionList, oneStoryEach, validCounts, datedOnly } from './supabase/functions/_shared/news-rules.js';
 import {
     RANK_TOP, engOf, topPosts, nameOfPost, rankCompetitors, snapStart, reactionStats,
-    searchName, brandIssues, upcomingOpenings,
+    searchName, brandIssues, upcomingOpenings, unreachableHandles,
 } from './competitorBoard.js';
 import { leadStory, openCalendar, topWorked, brandMoves, weekSummary } from './paperEdition.js';
 import { cardDeck } from './paperCards.js';
@@ -245,6 +245,8 @@ class BhasApp {
                 let r = (fx[t] || []).slice();
                 const b = {
                     select: () => b, or: () => b,
+                    //  고치기 검수용 — 쓰기는 window.__NEWS_PREVIEW_WRITES 에 적기만(DB 없음)
+                    update: (p) => { (window.__NEWS_PREVIEW_WRITES ||= []).push({ table: t, set: p }); return b; },
                     eq: (k, v) => { r = r.filter(x => x[k] === v); return b; },
                     in: (k, vs) => { r = r.filter(x => vs.includes(x[k])); return b; },
                     gte: (k, v) => { r = r.filter(x => String(x[k] || '') >= v); return b; },
@@ -14787,13 +14789,17 @@ class BhasApp {
     async loadNews() {
         this._newsLoading = true;
         try {
-            const [cols, items, comps, snaps] = await Promise.all([
+            const [cols, items, comps, snaps, igLog] = await Promise.all([
                 this._newsColumns(),
                 this.supabase.from('news_items').select('*').in('kind', ['resale', 'competitor_post'])
                     .order('published_at', { ascending: false, nullsFirst: false }).limit(400),
                 this.supabase.from('competitors').select('*').order('name'),
                 this.supabase.from('competitor_snapshots').select('*').order('snap_date', { ascending: false }).limit(600),
+                //  '조회 불가' 핸들(수집기가 sync_log 에 남김) — 못 읽어도 뉴스는 그대로 뜬다
+                Promise.resolve(this.supabase.from('sync_log').select('run_at,detail').eq('type', 'ig:competitors')
+                    .order('run_at', { ascending: false }).limit(1)).catch(() => ({ data: [] })),
             ]);
+            this.compUnreach = unreachableHandles((igLog && !igLog.error && igLog.data) || []);
             this.newsItems = items.data || [];
             this.newsCols = { review: cols.customer, trend: cols.compete,
                 resale: this.newsItems.filter(i => i.kind === 'resale'),
@@ -14846,16 +14852,24 @@ class BhasApp {
             <div class="nm-meta">${bits(...reactBits(w.likes, w.comments), w.when)}</div></div>`)).join('')}</div>${moreBtn('top', M.top.length, MAG.TOP_POSTS)}` : '';
 
         const kn = n => n == null ? '' : kNum(n);
+        //  조회 불가 핸들은 더보기 뒤로 숨지 않게 칸 위에 따로 적는다(누르면 브랜드 한 장 → 핸들 고치기)
+        const unr = this.compUnreach || new Map();
+        const unrList = comps.filter(c => unr.has(c.handle));
+        const unrBar = unrList.length ? `<div class="nm-unrbar"><i class="ph ph-warning-circle"></i><b>조회 불가 ${unrList.length}곳</b>
+            <span>인스타가 계정을 못 찾습니다 · 핸들이 틀렸거나 비즈니스 계정이 아님 · 다른 곳 수집은 정상</span>
+            ${unrList.map(c => `<button onclick="app.openCompBrand('${c.id}')">@${esc(c.handle)}</button>`).join('')}</div>` : '';
         const brands = M.brands.length ? `<div class="nm-brands">${cut('brands', M.brands, MAG.BRANDS).map(b => `
             <div class="nm-bc" onclick="app.openCompBrand('${b.id}')" oncontextmenu="app.compMenu(event,'${b.id}')">
                 <div class="nm-bh"><i class="nm-av">${esc((b.name || '?').trim().slice(0, 1).toUpperCase())}</i>
                     <div><b>${esc(b.name)}</b>${b.handle ? `<em>@${esc(b.handle)}</em>` : ''}</div>
-                    ${b.newCount ? `<span class="nm-new">새 글 ${b.newCount}</span>` : ''}</div>
+                    ${b.newCount ? `<span class="nm-new">새 글 ${b.newCount}</span>` : ''}
+                    ${unr.has(b.handle) ? `<span class="nm-unr" title="${esc(unr.get(b.handle))}">조회 불가</span>` : ''}</div>
                 ${b.recent.length ? `<div class="nm-bthumbs">${b.recent.map(r => this._photo(r.thumb, 'nm-bt')).join('')}</div>` : ''}
                 <div class="nm-meta">${bits(b.followers != null ? `팔로워 ${kn(b.followers)}` : '',
                     b.delta != null ? `${b.span}일 ${b.delta >= 0 ? '+' : ''}${b.delta.toLocaleString('ko-KR')}` : '',
                     b.week ? `7일 글 ${b.week}` : '', b.lastWhen ? `최근 ${b.lastWhen}` : '')}</div>
             </div>`).join('')}</div>${moreBtn('brands', M.brands.length, MAG.BRANDS)}` : '';
+        const brandsBody = (unrBar + brands) || '';
 
         const story = (x, k) => tag(x.url, 'nm-story', `<div class="nm-st">
                 <div class="nm-meta">${x.popup ? '<span class="nm-src nm-pop">팝업</span>' : ''}${x.source ? `<span class="nm-src">${esc(x.source)}</span>` : ''}${bits(x.author, x.when)}</div>
@@ -14894,7 +14908,7 @@ class BhasApp {
             ${M.empty ? `<div class="nm-none">${q ? '찾는 글이 없습니다' : '아직 모인 게 없습니다 · 수집이 돌면 채워집니다'}</div>` : ''}
             ${sec('opens', 'ph-calendar-star', '이번주 오픈', '오늘부터 7일 · 경쟁사 글에서 날짜를 뽑음(원문 확인)', opens)}
             ${sec('top', 'ph-fire', '경쟁사 인스타, 반응 좋은 글', '최근 7일 · 브랜드 평소 대비 큰 순', top)}
-            ${sec('brands', 'ph-binoculars', '지켜보는 곳', '어제부터 새 글 많은 순 · 누르면 브랜드 한 장', brands,
+            ${sec('brands', 'ph-binoculars', '지켜보는 곳', '어제부터 새 글 많은 순 · 누르면 브랜드 한 장', brandsBody,
                 `<button class="nm-add" title="경쟁사 추가" aria-label="경쟁사 추가" onclick="app.addCompetitor()"><i class="ph ph-plus"></i></button>`)}
             ${sec('customer', 'ph-chat-circle-text', '고객 반응', '우리 브랜드 이야기 · 블로그·카페·인스타', list('customer', M.customer))}
             ${sec('trend', 'ph-article', '경쟁·유통 기사', '같은 보도자료는 하나로', list('trend', M.trend))}
@@ -14933,7 +14947,11 @@ class BhasApp {
         const head = `<div class="m3-tools">
                 <a class="mbtn pri" href="https://instagram.com/${esc(c.handle)}" target="_blank" rel="noopener" style="text-decoration:none">인스타 열기</a>
                 <span class="sp"></span><span class="nt-scope">브랜드 한 장</span></div>`;
-        if (!cd || cd.loading) return `${head}<div class="m3-none mid">불러오는 중…</div>`;
+        const why = (this.compUnreach || new Map()).get(c.handle);
+        const unrNote = why != null ? `<div class="cb-unr"><b>조회 불가</b> · 인스타가 @${esc(c.handle)} 계정을 못 찾습니다(핸들 오타·개인 계정·비공개).
+            핸들을 고치면 다음 수집(1시간 안)에 다시 읽습니다.<em>${esc(why)}</em>
+            <button class="mbtn pri" onclick="app.editCompetitorHandle('${c.id}')">핸들 고치기</button></div>` : '';
+        if (!cd || cd.loading) return `${head}${unrNote}<div class="m3-none mid">불러오는 중…</div>`;
         if (cd.err) return `${head}<div class="m3-none mid">불러오지 못했습니다 · ${esc(cd.err)}</div>`;
         const posts = cd.posts || [];
         const st = reactionStats(posts);
@@ -14944,7 +14962,7 @@ class BhasApp {
         const SRC = { naver_blog: '네이버 블로그', naver_cafe: '네이버 카페', naver_news: '네이버 뉴스', google: '구글', google_news: '구글 뉴스', instagram: '인스타그램' };
         const postLi = p => `<a class="cb-li" href="${esc(p.url || '')}" target="_blank" rel="noopener"><b>${md(p.published_at)}</b>
             <span>${esc(p.title || '제목 없음')}</span><em>${heart(p)}${st.spikes.has(p.id) ? ' · 튄 글' : ''}</em></a>`;
-        return `${head}<div class="m3-page">
+        return `${head}${unrNote}<div class="m3-page">
             <div class="cb-h"><h2 class="m3-big">${esc(c.name)}</h2><em>@${esc(c.handle)}</em></div>
             <div class="cb-kpi">
                 <span>팔로워<b>${kfmt(r.followers)}</b></span>
@@ -14984,6 +15002,7 @@ class BhasApp {
         this.ctxMenu(ev, [
             { t: '인스타 열기', icon: 'ph-instagram-logo', run: () => window.open(`https://instagram.com/${c.handle}`, '_blank') },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameCompetitor(id) },
+            { t: '핸들 고치기', icon: 'ph-at', run: () => this.editCompetitorHandle(id) },
             { sep: true },
             { t: '빼기', icon: 'ph-trash', danger: true, run: () => this.delCompetitor(id) },
         ]);
@@ -14994,6 +15013,22 @@ class BhasApp {
         c.name = v.trim(); this.requestRender();
         try { await this.supabase.from('competitors').update({ name: c.name }).eq('id', id); }
         catch (e) { this.showToast('실패: ' + (e.message || e)); }
+    }
+    //  핸들 고치기 — 조회 불가 핸들을 사람이 바로잡는다. 핸들이 바뀌면 수집기가 다음 시간에 다시 묻는다
+    async editCompetitorHandle(id) {
+        const c = (this.competitors || []).find(x => x.id === id); if (!c) return;
+        const v = await this.showPrompt('인스타 핸들 (@ 없이)', c.handle); if (v === null) return;
+        const h = v.trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/[/?#].*$/, '');
+        if (!h || h === c.handle) return;
+        if (!/^[A-Za-z0-9._]{1,30}$/.test(h)) { this.showToast('핸들은 영문·숫자·점·밑줄만 됩니다'); return; }
+        try {
+            const { error } = await this.supabase.from('competitors').update({ handle: h, ig_business_id: null }).eq('id', id);
+            if (error) throw error;
+            const old = c.handle; c.handle = h; c.ig_business_id = null;
+            if (this.compUnreach) this.compUnreach.delete(old);
+            this.requestRender();
+            this.showToast('고쳤습니다 · 다음 수집(1시간 안)에 다시 읽습니다');
+        } catch (e) { this.showToast('실패: ' + (e.message || e)); }
     }
     async delCompetitor(id) {
         if (!await this.showConfirm('이 경쟁사를 뺄까요? 쌓인 지표도 같이 지워집니다.', '삭제')) return;

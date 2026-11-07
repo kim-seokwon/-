@@ -191,3 +191,17 @@ export function upcomingOpenings(posts, comps, { days = POST_DAYS, now = Date.no
     });
     return [...by.values()].sort((a, b) => a.date.localeCompare(b.date) || String(a.time || '99').localeCompare(String(b.time || '99')));
 }
+
+// ── 조회 불가 핸들 ─────────────────────────────────────
+//  수집기(instagram-sync)가 sync_log ig:competitors detail.unreachable 에 남긴 핸들·사유.
+//  가장 최근 로그 하나만 본다 — 그날 다시 부르지 않고 이어 적으므로 최신 로그가 곧 지금 상태다.
+//  오래된 로그(어제보다 전)는 버린다: 핸들이 빠졌거나 수집이 멈춘 것이라 '조회 불가'라고 단정하지 않는다.
+export function unreachableHandles(logs, { now = Date.now() } = {}) {
+    const out = new Map();
+    const last = (logs || [])[0];
+    const d = last && last.detail;
+    if (!d || !Array.isArray(d.unreachable)) return out;
+    if (d.today && d.today < kstYmd(now - DAY)) return out;
+    for (const u of d.unreachable) if (u && u.handle) out.set(String(u.handle), String(u.reason || ''));
+    return out;
+}
