@@ -98,3 +98,12 @@ test('상태 띠 · 상세 · 이스케이프', () => {
     assert.match(h, /11-11 <span[^>]*>진행 중/); assert.match(h, /selected_ad_ids=1%2C2/); assert.ok(!h.includes('<b>x</b>'));
     assert.equal(esc('<img onerror="x">'), '&lt;img onerror=&quot;x&quot;&gt;');
 });
+test('필터 — 브랜드/기간 두 줄, 가로 스크롤 숨김 없음(반려 2b89d66: 390px 칩 잘림)', async () => {
+    const { AR_CSS } = await import('../adReport.js');
+    const h = reportHtml({ list: [], state: STATE, now: NOW, brands: [{ id: 'b', name: '하이헤이호' }], brand: 'all', period: 'active' });
+    const brandRow = h.match(/data-row="brand">([\s\S]*?)<\/div>/)[1], periodRow = h.match(/data-row="period">([\s\S]*?)<\/div>/)[1];
+    assert.match(brandRow, /하이헤이호/); assert.doesNotMatch(brandRow, /진행중/);
+    assert.match(periodRow, /class="ar-chip on"[^>]*>진행중/);
+    const rule = AR_CSS.match(/\.ar-chips\{[^}]*\}/)[0];
+    assert.match(rule, /flex-wrap:wrap/); assert.doesNotMatch(rule, /overflow-x|scrollbar/);
+});

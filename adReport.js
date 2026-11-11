@@ -124,7 +124,7 @@ export function stateBand(state, { now = Date.now(), failedCount = 0 } = {}) {
 // ── HTML ────────────────────────────────────────────────
 export const AR_CSS = `<style>
 .ar-wrap{min-width:0}
-.ar-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.ar-chips::-webkit-scrollbar{display:none}
+.ar-chips{display:flex;gap:6px;flex-wrap:wrap}.ar-filters{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .ar-chip{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:999px;font-size:.76rem;font-weight:700;border:1px solid var(--card-border);background:transparent;color:var(--text-main);cursor:pointer;white-space:nowrap}
 .ar-chip.on{background:var(--primary,#6366f1);border-color:var(--primary,#6366f1);color:#fff}
 .ar-up{display:flex;gap:5px;flex-wrap:wrap}.ar-up .ar-chip{padding:4px 8px;font-size:.72rem}
@@ -204,9 +204,9 @@ export function reportHtml({ loading = false, error = false, list = [], alerts =
     const band = stateBand(state, { now });
     const bandHtml = band.kind === 'ok' ? '' : `<div class="ar-band ${band.kind}">${esc(band.text)}</div>`;
     const chip = (on, label, call) => `<button class="ar-chip${on ? ' on' : ''}" onclick="${call}">${esc(label)}</button>`;
-    const chips = `<div class="ar-chips" style="margin-top:10px">${chip(brand === 'all', '전체', "app.adFilter('brand','all')")}${brands.map(b => chip(brand === b.id, b.name, `app.adFilter('brand','${esc(b.id)}')`)).join('')}
-        <span style="width:1px;background:var(--card-border);flex-shrink:0;margin:0 2px"></span>
-        ${chip(period === 'active', '진행중', "app.adFilter('period','active')")}${chip(period === '30', '최근 30일', "app.adFilter('period','30')")}${chip(period === 'all', '전체 기간', "app.adFilter('period','all')")}</div>`;
+    //  브랜드 줄 · 기간 줄을 나눠 감싼다(가로 스크롤 없음 — 390px에서 칩이 잘려 보이던 반려 대응)
+    const chips = `<div class="ar-filters"><div class="ar-chips" data-row="brand">${chip(brand === 'all', '전체', "app.adFilter('brand','all')")}${brands.map(b => chip(brand === b.id, b.name, `app.adFilter('brand','${esc(b.id)}')`)).join('')}</div>
+        <div class="ar-chips" data-row="period">${chip(period === 'active', '진행중', "app.adFilter('period','active')")}${chip(period === '30', '최근 30일', "app.adFilter('period','30')")}${chip(period === 'all', '전체 기간', "app.adFilter('period','all')")}</div></div>`;
     const shown = filterCards(list, { brand, period, now });
     const emptyTxt = error ? '광고 리포트를 아직 불러올 수 없어요(수집 준비 중).' : !list.length ? '아직 게시물에 연결된 광고 수치가 없어요.'
         : period === 'active' ? '지금 진행중인 광고가 없어요 — "최근 30일"에서 지난 광고를 볼 수 있어요.' : '조건에 맞는 광고가 없어요.';
