@@ -5,7 +5,7 @@
 //  호출: pg_cron이 x-cron-secret 헤더로 매시. (cafe24-sync와 동일 패턴)
 //  이어서 경쟁사 Business Discovery(competitors.ts)를 하루 한 번 돈다. ?dry_run=1 은 경쟁사만 읽기 전용.
 //  본문은 테스트를 위해 handle(req, deps)로 뺐다 — index.ts 는 실제 db·fetch 를 꽂아 띄우기만 한다.
-import { syncCompetitors } from "./competitors.ts";
+import { kstDate, syncCompetitors } from "./competitors.ts";
 
 // deno-lint-ignore no-explicit-any
 export type Deps = { db: any; fetch: (url: string) => Promise<Response>; env: (k: string) => string | undefined; sleep?: (ms: number) => Promise<unknown> };
@@ -56,7 +56,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     // 1) 등록된 인스타 계정(username→account_id) 로드
     const { data: accs } = await db.from("ig_accounts").select("id, username, brand_id");
     const byUser = new Map<string, string>();
-    (accs || []).forEach((a: { id: string; username: string | null }) => { if (a.username) byUser.set(norm(a.username), a.id); });
+    const brandOf = new Map<string, string | null>();
+    (accs || []).forEach((a: { id: string; username: string | null; brand_id?: string | null }) => { if (a.username) byUser.set(norm(a.username), a.id); brandOf.set(a.id, a.brand_id ?? null); });
 
     // 2) 브랜드 페이지별 연결된 IG 조회.
     //    ⚠️ 사용자 토큰으로 페이지를 직접 읽으면 갓 연결된 IG(connected_instagram_account)가
@@ -82,7 +83,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       return new Response(JSON.stringify({ ok: true, dry_run: true, competitors }), { headers: cors() });
     }
 
-    const igList: { username: string; followers: number; media: number; ig_id: string; comments: number; likes: number }[] = [];
+    // deno-lint-ignore no-explicit-any
+    const igList: { username: string; followers: number; media: number; ig_id: string; comments: number; likes: number; recent: any[] }[] = [];
     for (const pid of PAGE_IDS) {
       const pt = pageTok.get(pid) || token; // 페이지 토큰 우선, 없으면 사용자 토큰 폴백
       const r = await fetch(`${GRAPH}/${pid}?fields=connected_instagram_account{id,username,followers_count,media_count},instagram_business_account{id,username,followers_count,media_count}&access_token=${encodeURIComponent(pt)}`);
@@ -93,19 +95,25 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       // 전체 게시물의 댓글·좋아요 합계(페이지네이션). "최근 50개"로 하면 새 글이 올라올 때
       //  옛 인기글이 창 밖으로 밀려 합계가 급락하는 착시(-값)가 생김 → 전량 합산으로 단조증가(정확한 증감).
       //  (comments_count / like_count 는 instagram_basic 로 조회 가능 — 스토리와 달리 추가 권한 불필요)
+      //  첫 페이지(최신순) 30개는 게시물 정보도 같이 받아 ig_media(광고리포트 105 — 카드 썸네일·마지막 업로드)에 쓴다. 같은 호출에 필드만 더함.
       let comments = 0, likes = 0;
+      // deno-lint-ignore no-explicit-any
+      const recent: any[] = [];
       try {
-        let murl: string | null = `${GRAPH}/${ig.id}/media?fields=comments_count,like_count&limit=100&access_token=${encodeURIComponent(pt)}`;
+        let murl: string | null = `${GRAPH}/${ig.id}/media?fields=id,timestamp,media_type,permalink,thumbnail_url,media_url,comments_count,like_count&limit=100&access_token=${encodeURIComponent(pt)}`;
         let pages = 0;
         while (murl && pages < 30) { // 안전상 최대 3000 게시물
           const mj = await (await fetch(murl)).json();
           if (mj.error) { await log("warn", { page: pid, step: "media", error: mj.error.message }); break; }
-          (mj.data || []).forEach((m: { comments_count?: number; like_count?: number }) => { comments += Number(m.comments_count || 0); likes += Number(m.like_count || 0); });
+          (mj.data || []).forEach((m: { id?: string; timestamp?: string; comments_count?: number; like_count?: number }) => {
+            comments += Number(m.comments_count || 0); likes += Number(m.like_count || 0);
+            if (pages === 0 && recent.length < 30 && m.id && m.timestamp) recent.push(m);
+          });
           murl = mj.paging?.next || null;
           pages++;
         }
       } catch (e) { await log("warn", { page: pid, step: "media", error: String(e) }); }
-      igList.push({ username: ig.username, followers: Number(ig.followers_count || 0), media: Number(ig.media_count || 0), ig_id: ig.id, comments, likes });
+      igList.push({ username: ig.username, followers: Number(ig.followers_count || 0), media: Number(ig.media_count || 0), ig_id: ig.id, comments, likes, recent });
     }
 
     // 3) 매칭되는 계정만 스냅샷 upsert
@@ -126,6 +134,18 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (error) throw error;
       // ig_business_id 기록(비어있으면)
       await db.from("ig_accounts").update({ ig_business_id: ig.ig_id }).eq("id", accId).is("ig_business_id", null);
+      // 게시물(광고리포트) — 실패해도 스냅샷은 그대로, 경고만
+      if (ig.recent.length) {
+        try {
+          const rows = ig.recent.map((m) => {
+            const at = new Date(String(m.timestamp).replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+            return { media_id: String(m.id), account_id: accId, brand_id: brandOf.get(accId) ?? null, posted_at: at.toISOString(), posted_day: kstDate(at),
+              media_type: m.media_type ?? null, permalink: m.permalink ?? null, thumb_url: m.thumbnail_url ?? m.media_url ?? null, media_url: m.media_url ?? null, fetched_at: new Date().toISOString() };
+          });
+          const { error: me } = await db.from("ig_media").upsert(rows, { onConflict: "media_id" });
+          if (me) await log("warn", { step: "ig_media", username: ig.username, error: String(me.message).slice(0, 200) });
+        } catch (e) { await log("warn", { step: "ig_media", username: ig.username, error: String(e).slice(0, 200) }); }
+      }
       results.push({ username: ig.username, followers: ig.followers, media: ig.media, posts_delta: postsDelta, comments: ig.comments, likes: ig.likes });
     }
 

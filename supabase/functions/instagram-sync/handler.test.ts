@@ -55,6 +55,38 @@ Deno.test("회귀: 우리 계정 ig_snapshots·ig:sync 는 그대로 + 이어서
   assertEquals(db.t("news_items").length, 1);
 });
 
+// 광고리포트(105): 같은 /media 호출에 필드만 더해 ig_media 를 채운다. 게시일은 KST(기획 §7 테스트 6).
+const withMedia = (url: string) => url.includes("/IG1/media?")
+  ? { body: { data: [
+    { id: "M2", timestamp: "2026-11-07T16:30:00+0000", media_type: "VIDEO", permalink: "https://www.instagram.com/reel/r2/", thumbnail_url: "https://th/2", media_url: "https://v/2", comments_count: 2, like_count: 5 },
+    { id: "M1", timestamp: "2026-11-07T14:59:00+0000", media_type: "IMAGE", permalink: "https://www.instagram.com/p/p1/", media_url: "https://img/1", comments_count: 1, like_count: 3 }] } }
+  : graph(url);
+
+Deno.test("ig_media: 최근 게시물 저장 · 게시일 KST(16:30Z → 다음날) · 스냅샷 합계 그대로", async () => {
+  const db = seed();
+  const { fetch, calls } = fakeFetch(withMedia);
+  await handle(req(), { db, fetch, env: env(), sleep: noSleep });
+  const mediaCall = calls.find((u) => u.includes("/IG1/media?"))!;
+  assert(mediaCall.includes("fields=id,timestamp,media_type,permalink,thumbnail_url,media_url,comments_count,like_count"));
+  const rows = db.t("ig_media").sort((a, b) => a.media_id < b.media_id ? -1 : 1);
+  assertEquals(rows.map((r) => [r.media_id, r.posted_day, r.account_id, r.brand_id, r.thumb_url]),
+    [["M1", "2026-11-07", "a1", "b1", "https://img/1"], ["M2", "2026-11-08", "a1", "b1", "https://th/2"]]);
+  assertEquals(rows[1].posted_at, "2026-11-07T16:30:00.000Z");
+  const snap = db.t("ig_snapshots").find((s) => s.id !== "old")!;
+  assertEquals([snap.comments_total, snap.likes_total], [3, 8]);
+});
+
+Deno.test("ig_media 저장 실패 → 경고만, 스냅샷·ig:sync ok 그대로", async () => {
+  const db = seed();
+  db.failUpsert["ig_media"] = "relation ig_media does not exist";
+  const { fetch } = fakeFetch(withMedia);
+  const j = await (await handle(req(), { db, fetch, env: env(), sleep: noSleep })).json();
+  assertEquals([j.ok, j.collected], [true, 1]);
+  const logs = db.t("sync_log").map((l) => `${l.type}:${l.result}`);
+  assert(logs.includes("ig:sync:warn") && logs.includes("ig:sync:ok"), logs.join(","));
+  assertEquals(db.t("ig_snapshots").length, 2);
+});
+
 Deno.test("경쟁사 단계가 터져도 우리 계정 결과는 ok 로 남는다", async () => {
   const db = seed();
   const orig = db.from.bind(db);

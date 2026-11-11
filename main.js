@@ -28,6 +28,7 @@ import {
 } from './meetingNote.js';
 import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
+import { uploadAlerts, uploadChipsHtml, buildCards, reportHtml, detailHtml, kstDay, addDays as arAddDays } from './adReport.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
@@ -426,6 +427,17 @@ class BhasApp {
             this.currentUser = { id: 'preview', name: '화면 검수', role: fx.role || 'MASTER', company_id: 'preview', brand_access: fx.brand_access };
             this.currentView = 'sales'; this.salesViewBrand = fx.brand || 'ALL';
             this.wins = [{ id: 'preview-sales', view: 'sales', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); this.ensureViewData(); return;
+        }
+        //  광고리포트 검수 — Playwright 가 넣어 준 가짜 DB(window.__SNS_PREVIEW)로만 그린다. 밖으로 아무것도 안 나간다.
+        if (devPreview === 'sns' && window.__SNS_PREVIEW) {
+            const fx = window.__SNS_PREVIEW;
+            mockData.brands = fx.brands;
+            this.supabase = fx.supabase;
+            this._prefetched = true; this._isInitialLoading = false;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            this.currentView = 'sns';
+            this.wins = [{ id: 'preview-sns', view: 'sns', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); this.ensureViewData(); return;
         }
         if (devPreview === 'coupon') {
@@ -6403,17 +6415,38 @@ class BhasApp {
     async loadIG() {
         this._igLoading = true;
         try {
-            const [accRes, snapRes, adRes] = await Promise.all([
+            const [accRes, snapRes] = await Promise.all([
                 this.supabase.from('ig_accounts').select('*'),
                 this.supabase.from('ig_snapshots').select('*').order('snap_date', { ascending: true }),
-                this.supabase.from('ad_status').select('*'),
             ]);
             this.igAccounts = accRes.data || [];
             this.igSnapshots = snapRes.data || [];
-            this.adStatus = adRes.data || [];
             this._igLoaded = true;
-        } catch (e) { this.igAccounts = []; this.igSnapshots = []; this.adStatus = []; this._igLoaded = true; }
+        } catch (e) { this.igAccounts = []; this.igSnapshots = []; this._igLoaded = true; }
         this._igLoading = false;
+        this.requestRender();
+        if (!this._arLoaded && !this._arLoading) this.loadAdReport();
+    }
+
+    //  게시물별 광고리포트(105) — IG 와 따로 불러 광고 쪽이 실패해도 SNS 화면은 산다. 판정은 adReport.js.
+    async loadAdReport() {
+        this._arLoading = true;
+        try {
+            const since = arAddDays(kstDay(Date.now()), -60);
+            const [cards, rules, state, media, links] = await Promise.all([
+                this.supabase.from('ad_post_cards').select('*'),
+                this.supabase.from('ad_report_rules').select('*'),
+                this.supabase.from('ad_report_state').select('*').limit(1),
+                this.supabase.from('ig_media').select('media_id,account_id,brand_id,posted_day,posted_at').gte('posted_day', since),
+                this.supabase.from('ad_links').select('ad_id,ad_name,effective_status,media_id'),
+            ]);
+            const err = [cards, rules, state].find(r => r.error);
+            this.adReport = err ? { error: true } : {
+                cards: cards.data || [], rules: rules.data || [], state: (state.data || [])[0] || null,
+                media: media.data || [], links: links.data || [],
+            };
+        } catch (e) { this.adReport = { error: true }; }
+        this._arLoaded = true; this._arLoading = false;
         this.requestRender();
     }
 
@@ -6507,35 +6540,43 @@ class BhasApp {
             </div>`).join('')}</div>`;
     }
 
-    // 메타 광고 운영현황 — 채널(브랜드)별 현재 돌아가는 광고 수. ad_status 테이블 기반(수동 갱신 시드).
+    //  SNS 탭 맨 위 — 브랜드별 업로드 경보 + 게시물별 광고리포트 (옛 ad_status 수동 타일 대체)
+    _arBrandName(id) { const b = (mockData.brands || []).find(b => b.id === id); return b ? b.name : '브랜드 미지정'; }
+    _arList() {
+        const r = this.adReport || {};
+        const rulesBy = Object.fromEntries((r.rules || []).map(x => [x.brand_id, x]));
+        return buildCards(r.cards || [], rulesBy, { state: r.state, now: Date.now() });
+    }
     _adsBlock() {
-        const rows = (this.adStatus || []).slice().sort((a, b) => (b.active_ads || 0) - (a.active_ads || 0));
-        const esc = s => this._vesc ? this._vesc(s) : String(s ?? '');
-        const totalActive = rows.reduce((s, r) => s + (r.active_ads || 0), 0);
-        const updated = rows.length ? rows.map(r => r.updated_at).sort().slice(-1)[0] : null;
-        const upTxt = updated ? new Date(updated).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-        this._adPops = this._adPops || {};
-        const tiles = rows.map((r, i) => {
-            const on = (r.active_ads || 0) > 0;
-            const key = 'ad' + i;
-            const names = Array.isArray(r.detail) ? r.detail : [];
-            this._adPops[key] = { title: esc(r.brand) + ' 광고', rows: on
-                ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">계정 ${esc(r.ad_account || '—')}</div>` + names.map(n => `<div style="padding:4px 0;border-top:1px solid var(--card-border);font-size:0.82rem"><span style="color:#dc2626">●</span> ${esc(n)}</div>`).join('')
-                : `<div style="font-size:0.82rem;color:var(--text-muted)">현재 활성 광고 없음 (전부 일시중지 또는 미집행)</div>` };
-            return `<div onclick="app._pop(event,'${key}',app._adPops)" style="flex:1;min-width:130px;cursor:pointer;text-align:center;padding:13px 8px;background:${on ? 'rgba(220,38,38,0.07)' : 'rgba(148,163,184,0.07)'};border:1px solid ${on ? 'rgba(220,38,38,0.25)' : 'var(--card-border)'};border-radius:12px">
-                <div style="font-size:1.7rem;font-weight:900;line-height:1;color:${on ? '#dc2626' : 'var(--text-muted)'}">${r.active_ads || 0}</div>
-                <div style="font-size:0.8rem;font-weight:700;margin-top:5px">${esc(r.brand)}</div>
-                <div style="font-size:0.66rem;color:var(--text-muted);margin-top:2px">${on ? '광고 집행중' : '중지'}</div>
-            </div>`;
-        }).join('');
-        return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px;margin-bottom:1.3rem">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:0.9rem">
-                <div style="font-size:1.02rem;font-weight:800"><i class="ph ph-megaphone-simple"></i> 메타 광고 운영현황 <span style="font-size:0.82rem;color:var(--text-muted);font-weight:600">· 총 ${totalActive}개 집행중</span></div>
-                <div style="font-size:0.7rem;color:var(--text-muted)">기준 ${upTxt}</div>
-            </div>
-            ${rows.length ? `<div style="display:flex;gap:10px;flex-wrap:wrap">${tiles}</div>` : `<div style="color:var(--text-muted);font-size:0.82rem">광고 데이터 없음</div>`}
-            <p style="margin:0.85rem 2px 0;font-size:0.68rem;color:var(--text-muted)">* 채널(브랜드)별 현재 활성 광고 수. 카드를 누르면 광고 목록이 보여요. 수치는 요청 시 갱신됩니다.</p>
-        </div>`;
+        const brandName = id => this._arBrandName(id);
+        const alerts = uploadAlerts({ accounts: (this.igAccounts || []).filter(a => a.brand_id), media: (this.adReport || {}).media || [],
+            snapshots: this.igSnapshots || [], brandName, now: Date.now() });
+        if (!this._arLoaded) return reportHtml({ loading: true });
+        const r = this.adReport || {};
+        if (r.error) return reportHtml({ error: true, alerts, brandName });
+        this._arCache = this._arList();
+        const ids = [...new Set([...(this.igAccounts || []).map(a => a.brand_id), ...(r.cards || []).map(c => c.brand_id)].filter(Boolean))];
+        const brands = ids.map(id => ({ id, name: brandName(id) }));
+        const links = r.links || [];
+        return reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
+            activeAds: links.filter(l => l.effective_status === 'ACTIVE').length, unlinked: links.filter(l => !l.media_id),
+            brandName, now: Date.now() });
+    }
+    adFilter(k, v) { if (k === 'brand') this.arBrand = v; else this.arPeriod = v; this.requestRender(); }
+    adDetailClose() { const el = document.getElementById('ar-sheet'); if (el) el.remove(); }
+    async adDetail(i) {
+        const x = (this._arCache || [])[i]; if (!x) return;
+        this.adDetailClose();
+        const host = document.createElement('div');
+        host.id = 'ar-sheet'; host.className = 'ar-sheet-bg';
+        host.onclick = () => this.adDetailClose();
+        const draw = daily => { host.innerHTML = detailHtml(x, daily, { brandName: id => this._arBrandName(id), now: Date.now() }); };
+        draw(null); document.body.appendChild(host);
+        try {
+            const { data } = await this.supabase.from('ad_daily').select('day,spend,follows,profile_visits,impressions')
+                .eq('media_id', x.card.media_id).in('ad_id', x.card.ad_ids || []).order('day', { ascending: false });
+            if (document.body.contains(host)) draw(data || []);
+        } catch (e) { /* 표 없이 둔다 */ }
     }
 
     renderSNS() {
