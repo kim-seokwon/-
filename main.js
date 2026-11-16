@@ -269,6 +269,34 @@ class BhasApp {
             });
             this.requestRender(); return;
         }
+        if (devPreview === 'reminders') {
+            const day = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+            this._devPreviewReminders = true; this._prefetched = true; this._isInitialLoading = false;
+            this._remLoaded = true; this._noteLoaded = true; this._vendorsLoaded = true;
+            this.currentUser = { id: 'preview-user', name: '김석원', role: 'MASTER', company_id: 'person-master' };
+            mockData.companies = [
+                { id: 'person-master', name: '김석원', role: 'MASTER' },
+                { id: 'person-staff', name: '김보경', role: 'STAFF' },
+            ];
+            mockData.products = [
+                { id: 'season-hhh', name: '26SS 하이헤이호', brand_id: 'brand-hhh', todos: [
+                    { id: 'todo-fit', text: '메인 샘플 핏 확인', due_date: day(0), completed: false, assignee: 'person-master', created_by: 'person-staff' },
+                    { id: 'todo-label', text: '케어라벨 문구 확정', due_date: day(2), completed: false, assignee: 'person-staff', created_by: 'person-master' },
+                ]},
+                { id: 'season-lohi', name: '26SS 로하이스튜디오', brand_id: 'brand-lohi', todos: [
+                    { id: 'todo-photo', text: '룩북 촬영본 셀렉', due_date: day(-1), completed: false, assignee: 'person-master', created_by: 'person-master' },
+                    { id: 'todo-done', text: '원단 발주 완료', due_date: day(-3), completed: true, assignee: 'person-staff', created_by: 'person-master' },
+                ]},
+            ];
+            this.remList = [
+                { id: 'rem-tax', title: '세무사 정산자료 전달', due_date: day(0), done: false, list_name: '기본', assignee: '김석원', created_by: '김석원', memo: '10월 매출·광고비 자료 포함' },
+                { id: 'rem-pack', title: '팝업 포장재 수량 확인', due_date: day(4), done: false, list_name: '팝업', assignee: '김보경', created_by: '김석원' },
+            ];
+            this.noteList = [];
+            this.currentView = 'reminders'; this.remList2 = 'all';
+            this.wins = [{ id: 'preview-reminders', view: 'reminders', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
         //  CS 원송장 화면 검수 — Playwright 가 넣어 준 읽기 전용 데이터(window.__CS_PREVIEW: cs_tickets · shipments)로만 그린다. DB 에 쓰지 않는다.
         if (devPreview === 'cs') {
             const fx = window.__CS_PREVIEW || {};
@@ -8063,7 +8091,7 @@ class BhasApp {
         this.currentView = prevView;
         // 바탕화면 = 홈 대시보드. 여기 블록을 누르면 switchView 를 타고 창이 열린다.
         let deskboard = '';
-        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM) ? '' : (this.renderHome(products) || ''); }
+        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders) ? '' : (this.renderHome(products) || ''); }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
         const dock = this.MAC_DOCK.filter(d => !d.tool && (d.launcher || this._viewAllowed(d.id))).map(d => {
             const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this._winOf(d.id));
@@ -8135,7 +8163,7 @@ class BhasApp {
     }
     _macEnsureData() {
         const prev = this.currentView;
-        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
+        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
         views.forEach(v => { this.currentView = v; try { this.ensureViewData(); } catch (_e) {} });
         this.currentView = prev;
     }
@@ -10684,8 +10712,16 @@ class BhasApp {
             this.track?.('reminders', done ? 'todo_done' : 'todo_undo');
         } catch (e) { r.done = !done; this.showToast('변경 실패: ' + (e.message || e)); this.requestRender(); }
     }
-    setRemList(l) { this.remList2 = l; this.requestRender(); }
-    setRemGroup(g) { this.remGroup = g; this.remList2 = 'all'; this.requestRender(); }
+    setRemList(l) { this.remList2 = l; this.remPick = null; this.remMobileDetail = false; this.requestRender(); }
+    setRemGroup(g) { this.remGroup = g; this.remList2 = 'all'; this.remPick = null; this.remMobileDetail = false; this.requestRender(); }
+    selectRemItem(src, id) { this.remPick = `${src}:${id}`; this.remMobileDetail = true; this.requestRender(); }
+    closeRemDetail() { this.remMobileDetail = false; this.requestRender(); }
+    saveRemDetailTitle(el, src, id) {
+        const title = (el?.value || '').trim(), old = el?.dataset.original || '';
+        if (!title) { if (el) el.value = old; return; }
+        if (title !== old) this.setRemTitle(src, id, title);
+        if (el) el.dataset.original = title;
+    }
     // ── 할 일 (맥 '미리알림' 앱 그대로) ────────────────────────
     //  왼쪽에 색 타일 6개 + 나의 목록, 오른쪽에 목록별 색 제목 + 동그란 체크.
     //  우리 '할일(todos)'도 한 목록으로 같이 얹어서 담당자까지 보이게 했다.
@@ -10763,15 +10799,17 @@ class BhasApp {
         // 목록별로 묶어 색 제목을 얹는다
         const groups = {};
         shown.forEach(x => { (groups[x.list] = groups[x.list] || []).push(x); });
+        const pick = all.find(x => `${x.src}:${x.id}` === this.remPick) || null;
         const sections = Object.keys(groups).map((l, i) => {
             const col = colorOf(l, listNames.indexOf(l));
             return `<div class="rm-sec" style="color:${col}">${esc(l)}</div>
             ${groups[l].map(x => `
-                <div class="rm-item${x.done ? ' done' : ''}" data-src="${x.src}" data-id="${esc(String(x.id))}">
+                <div class="rm-item${x.done ? ' done' : ''}${pick && pick.src === x.src && String(pick.id) === String(x.id) ? ' on' : ''}" data-src="${x.src}" data-id="${esc(String(x.id))}"
+                    onclick="app.selectRemItem('${x.src}','${esc(String(x.id))}')">
                     <button class="rm-ck${x.done ? ' on' : ''}" style="--c:${col}"
-                        onclick="app.toggleRemItem('${x.src}','${x.id}')" aria-label="완료"></button>
+                        onclick="event.stopPropagation();app.toggleRemItem('${x.src}','${x.id}')" aria-label="완료"></button>
                     <div class="rm-tx">
-                        <div class="rm-tt" onclick="app.editRemTitle(event,'${x.src}','${x.id}')" title="눌러서 고치기">${esc(x.title)}</div>
+                        <div class="rm-tt">${esc(x.title)}</div>
                         ${(x.memo || x.project || x.assignee || x.from || x.atName || (x.tags || []).length) ? `<div class="rm-meta">
                             ${x.project ? `<span class="rm-tag"><i class="ph ph-folder"></i>${esc(x.project)}</span>` : ''}
                             ${x.from ? `<span class="rm-tag rm-go" title="원본 열기" onclick="event.stopPropagation();app.openTodoSource('${esc(String(x.id))}')"><i class="ph ${x.sourceIcon || 'ph-note'}"></i>${esc(x.from)}</span>` : ''}
@@ -10781,13 +10819,33 @@ class BhasApp {
                         </div>` : ''}
                     </div>
                     <input type="date" class="rm-date${x.due ? '' : ' empty'}${x.due && x.due < today ? ' over' : (x.due === today ? ' now' : '')}"
-                        value="${esc(x.due || '')}" onchange="app.setRemDue('${x.src}','${x.id}',this.value)" title="기한">
-                    <button class="rm-x" title="지우기" onclick="app.delRemItem('${x.src}','${x.id}')">✕</button>
+                        value="${esc(x.due || '')}" onclick="event.stopPropagation()" onchange="app.setRemDue('${x.src}','${x.id}',this.value)" title="기한">
+                    <button class="rm-x" title="지우기" onclick="event.stopPropagation();app.delRemItem('${x.src}','${x.id}')">✕</button>
                 </div>`).join('')}`;
         }).join('') || `<div class="rm-none">항목 없음</div>`;
 
+        const detail = pick ? `<div class="rm-detail">
+                <div class="rm-detail-type"><i class="ph ph-check-circle"></i>${esc(pick.list || '할 일')}</div>
+                <textarea class="rm-detail-title" rows="2" aria-label="할 일 제목" data-original="${esc(pick.title)}"
+                    onchange="app.saveRemDetailTitle(this,'${pick.src}','${esc(String(pick.id))}')"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur()}">${esc(pick.title)}</textarea>
+                <div class="rm-detail-fields">
+                    <label><i class="ph ph-calendar-blank"></i><span>기한</span><input type="date" value="${esc(pick.due || '')}"
+                        onchange="app.setRemDue('${pick.src}','${esc(String(pick.id))}',this.value)"></label>
+                    <div><i class="ph ph-folder"></i><span>목록</span><b>${esc(pick.list || '기본')}</b></div>
+                    ${pick.project ? `<div><i class="ph ph-cube"></i><span>시즌</span><b>${esc(pick.project)}</b></div>` : ''}
+                    ${(pick.assignee || pick.atName) ? `<div><i class="ph ph-user"></i><span>담당</span><b>${esc(nameOf(pick.assignee) || pick.atName || '담당')}</b></div>` : ''}
+                    ${pick.from ? `<div><i class="ph ${pick.sourceIcon || 'ph-note'}"></i><span>원본</span><button onclick="app.openTodoSource('${esc(String(pick.id))}')">${esc(pick.from)}</button></div>` : ''}
+                </div>
+                ${pick.memo ? `<div class="rm-detail-memo"><b>메모</b><p>${esc(pick.memo)}</p></div>` : ''}
+                <div class="rm-detail-actions">
+                    <button class="rm-done" onclick="app.toggleRemItem('${pick.src}','${esc(String(pick.id))}')"><i class="ph ${pick.done ? 'ph-arrow-counter-clockwise' : 'ph-check'}"></i>${pick.done ? '완료 취소' : '완료'}</button>
+                    <button class="rm-delete" onclick="app.delRemItem('${pick.src}','${esc(String(pick.id))}')"><i class="ph ph-trash"></i>지우기</button>
+                </div>
+            </div>` : `<div class="m3-none mid">할 일을 선택하세요</div>`;
+
         return `
-        <div class="rm">
+        <div class="rm${this.remMobileDetail ? ' detail' : ''}">
             <aside class="rm-side">
                 <div class="rm-tiles">
                     ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
@@ -10822,6 +10880,10 @@ class BhasApp {
                     <input id="rem-due" type="date">
                 </div>
                 <div class="rm-body">${sections}</div>
+            </section>
+            <section class="rm-doc">
+                <div class="m3-tools rm-tools"><button class="rm-back" onclick="app.closeRemDetail()"><i class="ph ph-caret-left"></i> 목록</button><span class="sp"></span></div>
+                ${detail}
             </section>
         </div>`;
     }
@@ -10903,6 +10965,7 @@ class BhasApp {
                 if (!await this.showConfirm('원본에서 이 줄을 지울까요?', '삭제')) return;
                 await this._replaceTodoLine(id, null);
             }
+            this.remPick = null; this.remMobileDetail = false;
             this.requestRender();
         } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
     }
