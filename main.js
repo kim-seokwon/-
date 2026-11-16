@@ -334,6 +334,42 @@ class BhasApp {
             this.wins = [{ id: 'preview-sales3', view: 'orders', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
         }
+        //  생산 3단 화면 검수 — 제품·생산처·공정 가짜 데이터만 쓴다(DB 읽기·쓰기 없음).
+        if (devPreview === 'production3') {
+            this._devPreviewProduction3 = true; this._prefetched = true; this._isInitialLoading = false;
+            this._itemsLoaded = this._vendorsLoaded = this._techPacksLoaded = this._quotesLoaded = true;
+            this._ordersLoaded = this._mallsLoaded = this._invLoaded = true;
+            this._productionPreviewWrites = [];
+            this.supabase = { from: table => ({ update: patch => ({ eq: async (key, value) => {
+                this._productionPreviewWrites.push({ table, patch, key, value }); return { error: null };
+            } }) }) };
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            mockData.brands = [
+                { id: 'preview-hhh', name: '하이헤이호', brand_color: '#0a84ff' },
+                { id: 'preview-lohi', name: '로하이스튜디오', brand_color: '#ff9f0a' },
+            ];
+            mockData.products = [
+                { id: 'preview-season-1', name: '26FW 하이헤이호', brand_id: 'preview-hhh', access: 'all' },
+                { id: 'preview-season-2', name: '26FW 로하이스튜디오', brand_id: 'preview-lohi', access: 'all' },
+            ];
+            this.vendors = [
+                { id: 'preview-vendor-1', name: '성수봉제', category: '봉제', address: '서울 성동구', phone: '02-111-2222', jobs: [
+                    { id: 'preview-job-1', item_id: 'preview-item-1', title: '오버핏 기모 맨투맨', stage: '메인 봉제', status: 'active', qty: 120, due_date: '2026-11-24' },
+                ] },
+                { id: 'preview-vendor-2', name: '동대문 워싱', category: '후가공', address: '서울 중구', phone: '02-333-4444', jobs: [
+                    { id: 'preview-job-2', item_id: 'preview-item-2', title: '와이드 데님 팬츠', stage: '워싱', status: 'active', qty: 80, due_date: '2026-11-27' },
+                ] },
+            ];
+            this.pItems = [
+                { id: 'preview-item-1', name: '오버핏 기모 맨투맨', category: '상의', pattern_no: 'HH-SW-2601', brand_id: 'preview-hhh', product_id: 'preview-season-1', vendor_id: 'preview-vendor-1', status: '메인투입', ship_date: '2026-11-24', open_date: '2026-12-02', trims: true, checked: false, sale_names: ['오버핏 기모 맨투맨'] },
+                { id: 'preview-item-2', name: '와이드 데님 팬츠', category: '하의', pattern_no: 'LH-DN-2602', brand_id: 'preview-lohi', product_id: 'preview-season-2', vendor_id: 'preview-vendor-2', status: '샘플 중', ship_date: '2026-11-27', open_date: '2026-12-05', trims: false, checked: false, sale_names: ['와이드 데님 팬츠'] },
+                { id: 'preview-item-3', name: '로고 볼캡', category: '잡화', pattern_no: 'HH-CP-2603', brand_id: 'preview-hhh', product_id: 'preview-season-1', vendor_id: null, status: '시작전', ship_date: '', open_date: '2026-12-10', trims: false, checked: false, sale_names: [] },
+            ];
+            this._techPacks = []; this.quotes = []; this.itemStatus = 'ACTIVE';
+            this.currentView = 'items';
+            this.wins = [{ id: 'preview-production3', view: 'items', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
         //  CS 원송장 화면 검수 — Playwright 가 넣어 준 읽기 전용 데이터(window.__CS_PREVIEW: cs_tickets · shipments)로만 그린다. DB 에 쓰지 않는다.
         if (devPreview === 'cs') {
             const fx = window.__CS_PREVIEW || {};
@@ -3483,7 +3519,9 @@ class BhasApp {
         const items = this.pItems || [];
         const sea = this._seasons();
         const brands = (mockData.brands || []);
+        const vendors = (this.vendors || []).filter(v => v && v.id && String(v.name || '').trim());
         const curS = this.itemSeason || 'ALL', curB = this.itemBrand || 'ALL';
+        const curV = this.itemVendor || 'ALL', curSt = this.itemStatus || 'ACTIVE';
         const n = (f) => items.filter(f).length;
         const row = (on, label, count, click, depth, color) =>
             `<div class="m3-s nav${on ? ' on' : ''}${depth ? ' d1' : ''}" onclick="${click}">
@@ -3497,8 +3535,16 @@ class BhasApp {
                 ${add ? `<button class="nav-add" title="${esc(add.t)}" onclick="event.stopPropagation();${add.run}">＋</button>` : ''}
             </div>${open ? inner : ''}`;
         };
-        return `<div class="m3-h">보기</div>
-            ${row(curS === 'ALL' && curB === 'ALL', '전체', items.length, "app.itemNavPick('all')")}
+        const active = n(i => (i.status || '') !== '출고완료');
+        return `<div class="m3-h">생산 분류</div>
+            ${row(curS === 'ALL' && curB === 'ALL' && curV === 'ALL' && curSt === 'ACTIVE', '진행 전체', active, "app.itemNavPick('all')")}
+            ${sec('생산처', 'ven', vendors.map(v => row(String(curV) === String(v.id), v.name,
+                n(i => String(i.vendor_id) === String(v.id)), `app.itemNavPick('ven','${v.id}')`, 1)).join('')
+                + (n(i => !i.vendor_id) ? row(curV === 'NONE', '생산처 미정', n(i => !i.vendor_id), "app.itemNavPick('ven','NONE')", 1) : ''))}
+            ${sec('상태', 'st', [
+                ['ACTIVE', '진행 중', active], ['ALL', '전체 상태', items.length],
+                ...this.ITEM_STATUSES.map(st => [st, st, n(i => (i.status || '') === st)])
+            ].map(([k, t, cnt]) => row(curSt === k, t, cnt, `app.itemNavPick('st','${encodeURIComponent(k)}')`, 1, this.ITEM_SC[k])).join(''))}
             ${sec('시즌별', 'sea', sea.map(p => row(String(curS) === String(p.id), p.name,
                 n(i => String(i.product_id) === String(p.id)), `app.itemNavPick('sea','${p.id}')`, 1,
                 (brands.find(b => b.id === p.brand_id) || {}).brand_color)).join('')
@@ -3514,7 +3560,10 @@ class BhasApp {
         this.requestRender();
     }
     itemNavPick(kind, id) {
-        if (kind === 'all') { this.itemSeason = 'ALL'; this.itemBrand = 'ALL'; }
+        if (kind === 'all') {
+            this.itemSeason = this.itemBrand = this.itemVendor = 'ALL'; this.itemStatus = 'ACTIVE';
+        } else if (kind === 'ven') this.itemVendor = id;
+        else if (kind === 'st') this.itemStatus = decodeURIComponent(id);
         else if (kind === 'sea') { this.itemSeason = id; this.itemBrand = 'ALL'; }
         else { this.itemBrand = id; this.itemSeason = 'ALL'; }
         //  보는 범위가 바뀌면 골라 둔 것을 푼다 — 화면에서 사라진 줄이 일괄변경에 끌려가면 안 된다
@@ -3526,7 +3575,7 @@ class BhasApp {
         const esc = s => this._vesc(s);
         const win = this._renderingWin || '';
         return `<aside class="appside">
-            <div class="m3-h">${esc(g.label)}</div>
+            <div class="m3-h">${g.head === 'items' ? '카테고리' : esc(g.label)}</div>
             ${g.tabs.filter(t => !t.hidden).map(t => {
                 const on = t.k === view || (t.k === 'sales' && view === 'expenses');
                 return `<div class="m3-s${on ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
@@ -4260,8 +4309,9 @@ class BhasApp {
         const side = this._appTabBar(view);
         if (!side) return inner;
         const sales3 = this._groupOf(view)?.head === 'orders';
+        const production3 = this._groupOf(view)?.head === 'items';
         const detail = this._detailPane(view);
-        return `<div class="appwrap${detail ? ' three' : ''}${sales3 ? ' sales3' : ''}${sales3 && this.salesMobileDetail ? ' detail' : ''}">${side}<div class="appmain">${this._syncWarnBar()}${inner}</div>${detail || ''}</div>`;
+        return `<div class="appwrap${detail ? ' three' : ''}${sales3 ? ' sales3' : ''}${production3 ? ' production3' : ''}${sales3 && this.salesMobileDetail || production3 && this.productionMobileDetail ? ' detail' : ''}">${side}<div class="appmain">${this._syncWarnBar()}${inner}</div>${detail || ''}</div>`;
     }
     //  C4. 수집이 끊겨도 아무도 모르던 걸 맨 위에 띄운다.
     //  키디키디는 2026-03-10 이후 주문이 안 들어오는데 화면 어디에도 표시가 없었다.
@@ -4306,15 +4356,17 @@ class BhasApp {
     _detailPane(view) {
         const esc = s => this._vesc(s);
         const sales3 = this._groupOf(view)?.head === 'orders';
+        const production3 = this._groupOf(view)?.head === 'items';
+        const mobile3 = sales3 || production3;
         const f = (k, v) => v || v === 0 ? `<div class="dt-f"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>` : '';
         const wrap = (title, sub, body, acts) => `<aside class="appdet">
             <div class="dt-h"><div class="dt-ht"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>
-                <button class="dt-close${sales3 ? ' sales3-back' : ''}" title="${sales3 ? '목록' : '접기'}" onclick="app.closeDetail('${view}')"><i class="ph ${sales3 ? 'ph-arrow-left' : 'ph-sidebar-simple'}"></i>${sales3 ? '<span>목록</span>' : ''}</button></div>
+                <button class="dt-close${sales3 ? ' sales3-back' : ''}${production3 ? ' production3-back' : ''}" title="${mobile3 ? '목록' : '접기'}" onclick="app.closeDetail('${view}')"><i class="ph ${mobile3 ? 'ph-arrow-left' : 'ph-sidebar-simple'}"></i>${mobile3 ? '<span>목록</span>' : ''}</button></div>
             <div class="dt-b">${body}</div>${acts ? `<div class="dt-a">${acts}</div>` : ''}</aside>`;
         //  판매는 목록과 상세의 위치가 선택 전후로 흔들리지 않게 세 번째 칸을 유지한다.
         const empty = () => {
-            if (!sales3) return '';
-            const name = ({ orders: '주문', cs: 'CS 건', inventory: '재고 품목' })[view] || '항목';
+            if (!sales3 && !production3) return '';
+            const name = ({ orders: '주문', cs: 'CS 건', inventory: '재고 품목', items: '생산 물품', vendors: '생산처', tech_packs: '작업지시서', sample_maker: '샘플', quotes: '견적' })[view] || '항목';
             return wrap('상세', '', `<div class="dt-none">${name}을 선택하세요</div>`, '');
         };
 
@@ -4402,14 +4454,24 @@ class BhasApp {
                 <span>${esc(label)}</span>
                 ${has ? `<b class="pa-ok" style="cursor:pointer" onclick="${onHas}">${esc(text)}</b>`
                       : `<b style="cursor:pointer;color:#0a84ff" onclick="${onNone}">만들기</b>`}</div>`;
+            const shownDate = value => value ? this.formatDateToUI(String(value).slice(0, 10)) : '일정 미정';
             return wrap(it.name || '이름 없는 제품',
                 [((mockData.brands || []).find(b2 => b2.id === it.brand_id) || {}).name, it.pattern_no].filter(Boolean).join(' · '), `
-                ${f('제작현황', it.status)}
+                <div class="dt-f prod-edit"><span>제작현황</span><select class="prod-detail-status" aria-label="제작현황"
+                    onchange="app.setItem('${it.id}','status',this.value,1)">
+                    ${this.ITEM_STATUSES.map(s => `<option value="${esc(s)}"${s === it.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
                 ${f('시즌', season ? season.name : '')}
                 ${f('공장', vendor ? vendor.name : '')}
-                ${f(this.ITEM_DATE_LABEL.ship_date, it.ship_date)}
-                ${f(this.ITEM_DATE_LABEL.open_date, it.open_date)}
-                ${f('부자재', it.trims ? '준비됨' : '아직')}
+                <div class="dt-f prod-edit"><span>${esc(this.ITEM_DATE_LABEL.ship_date)}</span>
+                    <label class="prod-date-edit" title="${esc(this.ITEM_DATE_LABEL.ship_date)} 바꾸기"><b>${esc(shownDate(it.ship_date))}</b>
+                        <i class="ph ph-calendar-blank" aria-hidden="true"></i>
+                        <input class="prod-detail-ship" type="date" value="${esc(it.ship_date ? String(it.ship_date).slice(0, 10) : '')}"
+                            aria-label="${esc(this.ITEM_DATE_LABEL.ship_date)}" onchange="app.setItem('${it.id}','ship_date',this.value,1)"></label></div>
+                ${f(this.ITEM_DATE_LABEL.open_date, shownDate(it.open_date))}
+                <div class="dt-f prod-edit"><span>부자재</span><label class="prod-check"><input type="checkbox"${it.trims ? ' checked' : ''}
+                    onchange="app.setItem('${it.id}','trims',this.checked,1)"> 준비됨</label></div>
+                <div class="dt-f prod-edit"><span>확인</span><label class="prod-check"><input type="checkbox"${it.checked ? ' checked' : ''}
+                    onchange="app.setItem('${it.id}','checked',this.checked,1)"> 확인함</label></div>
                 <div class="dt-sec">판매명 <em style="font-style:normal;font-weight:600;opacity:.6">카페24 최종 상품명</em></div>
                 ${(it.sale_names || []).length
                     ? (it.sale_names || []).map(n2 => `<div class="dt-li sale">
@@ -4424,7 +4486,7 @@ class BhasApp {
                 ${link('작업지시서·샘플', !!tp, tp ? (tp.style_name || '열기') : '', `app.openTechPack('${tp ? tp.id : ''}')`, `app.itemNewTechPack('${it.id}')`)}
                 ${link('견적', !!qt, qt ? (qt.quote_no || qt.client_name || '열기') : '', `app.itemOpenQuote('${it.id}')`, `app.itemNewQuote('${it.id}')`)}
                 <div class="dt-li"><span>생산 투입</span><b>${jobs.length ? jobs.length + '건' : '없음'}</b></div>
-                ${jobs.map(j => `<div class="dt-li"><span>${esc(j.vname || '')} · ${esc(j.stage || '')}</span><b>${esc(j.due_date || '')}</b></div>`).join('')}
+                ${jobs.map(j => `<div class="dt-li"><span>${esc(j.vname || '')} · ${esc(j.stage || '')}</span><b>${esc(j.due_date ? shownDate(j.due_date) : '')}</b></div>`).join('')}
                 <div class="dt-sec">메모
                     <span class="dt-tools">
                         <button onclick="app.itemNoteInsert('todo')" title="할 일 [ ]"><i class="ph ph-check-square"></i></button>
@@ -4515,6 +4577,7 @@ class BhasApp {
             `, `<button class="mbtn pri inv-adjust" data-id="${it.id}">조정</button>
                 <button class="mbtn inv-map" data-id="${it.id}">매핑</button>`);
         }
+        if (production3) return empty();
         return sales3 ? empty() : '';
     }
     selectOrder(id) { this.orderSel = id; this.salesMobileDetail = true; this.requestRender(); }
@@ -4541,6 +4604,7 @@ class BhasApp {
     // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
     switchAppTab(winId, view) {
         this.salesMobileDetail = false;
+        this.productionMobileDetail = false;
         const w = (this.wins || []).find(x => x.id === winId);
         if (w) { this._winView(w, view); this.requestRender(); return; }
         this.switchView(view);
@@ -8145,7 +8209,7 @@ class BhasApp {
         this.currentView = prevView;
         // 바탕화면 = 홈 대시보드. 여기 블록을 누르면 switchView 를 타고 창이 열린다.
         let deskboard = '';
-        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3) ? '' : (this.renderHome(products) || ''); }
+        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3 || this._devPreviewProduction3) ? '' : (this.renderHome(products) || ''); }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
         const dock = this.MAC_DOCK.filter(d => !d.tool && (d.launcher || this._viewAllowed(d.id))).map(d => {
             const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this._winOf(d.id));
@@ -8217,7 +8281,7 @@ class BhasApp {
     }
     _macEnsureData() {
         const prev = this.currentView;
-        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
+        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3 || this._devPreviewProduction3) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
         views.forEach(v => { this.currentView = v; try { this.ensureViewData(); } catch (_e) {} });
         this.currentView = prev;
     }
@@ -14721,6 +14785,7 @@ class BhasApp {
     selectVendor(id, isNew) {
         this.venSel = isNew ? '__new' : id;
         this.venEdit = !!isNew;
+        this.productionMobileDetail = true;
         this._vendorPick = null;
         if (id) { const v = (this.vendors || []).find(x => String(x.id) === String(id));
             if (v && v.lat && v.lng) this._vendorPick = { lat: v.lat, lng: v.lng }; }
@@ -16266,7 +16331,9 @@ class BhasApp {
     }
 
     selItem(id) {
-        if (this._itemPick(id)) this.requestRender();
+        const changed = this._itemPick(id), closed = !this.productionMobileDetail;
+        if (closed) this.productionMobileDetail = true;
+        if (changed || closed) this.requestRender();
     }
     //  제품 줄 고르기 → 옆 상세 칸. 같은 줄 다시 누름은 안 셈. 기록 저장 표시(item_note)는 상세를 새로 볼 때마다 한 번.
     _itemPick(id) {
@@ -16279,8 +16346,9 @@ class BhasApp {
     closeDetail(view) {
         ({ items: () => this.itemSel = null, cs: () => this.csSel = null,
            inventory: () => this.invSel = null, tech_packs: () => this.tpSel = null,
-           orders: () => this.orderSel = null })[view]?.();
+           orders: () => this.orderSel = null, vendors: () => this.venSel = null })[view]?.();
         if (this._groupOf(view)?.head === 'orders') this.salesMobileDetail = false;
+        if (this._groupOf(view)?.head === 'items') this.productionMobileDetail = false;
         this.requestRender();
     }
     //  칸 안의 입력칸·선택칸을 누른 것은 '줄 고르기' 가 아니다.
@@ -16741,6 +16809,29 @@ class BhasApp {
             : [...new Set((this.pItems || []).map(i => i.season_name || ''))].sort((a, b) => a.localeCompare(b, 'ko'))[v];
         this.requestRender();
     }
+    // 생산 3단 가운데 칸 — 넓은 공용표 대신 메모처럼 두 줄만 보여 준다.
+    // 고치는 칸은 오른쪽 상세에 두고, 줄 선택·일괄 선택·두 번 눌러 제품 페이지 열기는 그대로 유지한다.
+    _productionItemList(rows, more, empty) {
+        const esc = s => this._vesc(s);
+        const date = v => v ? this.formatDateToUI(String(v).slice(0, 10)) : '미정';
+        const row = it => {
+            const brand = this._brandNameById(it.brand_id);
+            const meta = [brand === '-' ? '브랜드 없음' : brand, it.status || '상태 없음', `출고 ${date(it.ship_date)}`];
+            return `<div class="prod-row it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}"
+                role="button" tabindex="0" onclick="app.rowPick(event,'${it.id}')"
+                onkeydown="if(event.key==='Enter')app.selItem('${it.id}')" ondblclick="app.openItemPage('${it.id}',1)">
+                <label class="prod-pick" title="골라서 한꺼번에 바꾸기" onclick="event.stopPropagation()"><input class="it-ck" type="checkbox"
+                    ${this._itemPicked?.has(it.id) ? 'checked' : ''} onchange="app.pickRow('${it.id}',this.checked)"></label>
+                <span class="prod-copy"><b class="prod-name" title="${esc(it.name || '이름 없는 제품')}">${esc(it.name || '이름 없는 제품')}</b>
+                    <span class="prod-meta">${meta.map(x => `<em>${esc(x)}</em>`).join('<i>·</i>')}</span></span>
+                ${it.trims ? '' : '<span class="prod-warn" title="부자재 미준비" aria-label="부자재 미준비"></span>'}
+                <i class="ph ph-caret-right prod-go"></i>
+            </div>`;
+        };
+        return `<div class="prod-list">${rows.length ? rows.map(row).join('')
+            : `<div class="it-none">${esc(empty || '제품이 없습니다')}</div>`}
+            ${more > 0 ? `<div class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></div>` : ''}</div>`;
+    }
     renderItems() {
         if (!this._itemsLoaded) return this._loadingSkeleton('제품리스트');
         if (this.itemPage) return this._itemPageHTML(this.itemPage);
@@ -16753,11 +16844,13 @@ class BhasApp {
         //  A5. 103건을 통째로 그리면 들어가는 것도 찾는 것도 느리다.
         //   기본은 '진행 중'(출고완료 뺀 것)만 보여주고, 완료품은 거르개로 꺼낸다.
         const sKey = this.itemSeason || 'ALL', stKey = this.itemStatus || 'ACTIVE';
+        const vKey = this.itemVendor || 'ALL';
         const q = (this.itemQ || '').trim().toLowerCase();
         let rows = all;
         if (sKey !== 'ALL') rows = rows.filter(i => sKey === 'NONE' ? !i.product_id : String(i.product_id) === String(sKey));
         const bKey = this.itemBrand || 'ALL';
         if (bKey !== 'ALL') rows = rows.filter(i => bKey === 'NONE' ? !i.brand_id : String(i.brand_id) === String(bKey));
+        if (vKey !== 'ALL') rows = rows.filter(i => vKey === 'NONE' ? !i.vendor_id : String(i.vendor_id) === String(vKey));
         if (stKey === 'ACTIVE') rows = rows.filter(i => (i.status || '') !== '출고완료');
         else if (stKey === 'CHECK') rows = rows.filter(i => this._itemIssues(i).length);
         else if (stKey !== 'ALL') rows = rows.filter(i => (i.status || '') === stKey);
@@ -16782,12 +16875,14 @@ class BhasApp {
         const checkCnt = all.filter(i => this._itemIssues(i).length).length;
         const sp = (k, label, n, color) => `<button class="it-pill${stKey === k ? ' on' : ''}"
             ${color ? `style="--pc:${color}"` : ''} onclick="app.setItemStatus('${k}')">${esc(label)}<em>${n}</em></button>`;
+        const listTitle = vKey !== 'ALL' ? (vKey === 'NONE' ? '생산처 미정' : ((vendors.find(v => String(v.id) === String(vKey)) || {}).name || '생산처'))
+            : sKey !== 'ALL' ? ((seasons.find(p => String(p.id) === String(sKey)) || {}).name || '시즌 없음')
+            : bKey !== 'ALL' ? (this._brandNameById(bKey) !== '-' ? this._brandNameById(bKey) : '브랜드 없음')
+            : '진행 물품';
 
         return `<div class="mp it-wrap">
             <div class="mp-top">
-                <div class="mp-tl"><b>${esc(sKey !== 'ALL'
-                    ? ((seasons.find(p => String(p.id) === String(sKey)) || {}).name || '시즌 없음')
-                    : (bKey !== 'ALL' ? (this._brandNameById(bKey) !== '-' ? this._brandNameById(bKey) : '브랜드 없음') : '제품리스트'))}</b><span>${shown.length < rows.length ? `${shown.length}/${rows.length} (전체 ${all.length})` : `${rows.length}/${all.length}`}</span>
+                <div class="mp-tl"><b>${esc(listTitle)}</b><span>${shown.length < rows.length ? `${shown.length}/${rows.length} (전체 ${all.length})` : `${rows.length}/${all.length}`}</span>
                     ${Object.keys(this.itemColF || {}).length ? `<button class="flt-off" onclick="app.clearAllColFilters()"
                         title="거르기 모두 풀기"><i class="ph ph-funnel-fill"></i> ${Object.keys(this.itemColF).length}칸 거르는 중 ✕</button>` : ''}</div>
 
@@ -16814,8 +16909,8 @@ class BhasApp {
             <div class="it-pills">
                 ${sp('ACTIVE', '진행 중', activeCnt)}${sp('ALL', '전체', all.length)}${sp('출고완료', '출고완료', all.filter(i => i.status === '출고완료').length)}${checkCnt ? sp('CHECK', '확인 필요', checkCnt, '#f59e0b') : ''}
             </div>
-            ${this.renderItemTable(null, { filter: { rows: shown, more,
-                empty: all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 제품 추가로 한 줄 만드세요' } })}
+            ${this._productionItemList(shown, more,
+                all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 제품 추가로 한 줄 만드세요')}
         </div>`;
     }
 

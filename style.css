@@ -3628,6 +3628,31 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 /* 세 번째 칸 — 고른 줄의 상세 */
 .appwrap.three{grid-template-columns:var(--c1,172px) 1fr var(--c3,268px)}
 .appwrap.sales3{--c3:300px}
+.appwrap.production3{--c1:190px;--c3:320px}
+.production3 .appmain .it-wrap{display:flex;flex-direction:column;overflow:hidden}
+.prod-list{flex:1;min-height:0;overflow:auto}
+.prod-row{display:grid;grid-template-columns:28px minmax(0,1fr) 10px 14px;align-items:center;gap:9px;
+  min-height:58px;padding:8px 12px;border-bottom:.5px solid var(--card-border);cursor:pointer;outline:0}
+.prod-row:hover{background:rgba(127,127,127,.07)}
+.prod-row.on{background:rgba(10,132,255,.14)}
+.prod-pick{display:grid;place-items:center;height:100%;cursor:pointer}
+.prod-copy{display:flex;min-width:0;flex-direction:column;gap:4px}
+.prod-name{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;line-height:1.25}
+.prod-meta{display:flex;align-items:center;gap:6px;min-width:0;color:var(--text-muted);font-size:11.5px;white-space:nowrap;overflow:hidden}
+.prod-meta em{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prod-meta i{font-style:normal;opacity:.45;flex:0 0 auto}
+.prod-warn{width:7px;height:7px;border-radius:50%;background:#ff9f0a;box-shadow:0 0 0 3px rgba(255,159,10,.13)}
+.prod-go{font-size:12px;color:var(--text-muted);opacity:.55}
+.dt-f.prod-edit{align-items:center}
+.prod-detail-status{max-width:155px;border:1px solid var(--card-border);border-radius:7px;padding:5px 7px;
+  background:rgba(127,127,127,.08);color:var(--text-main);font-family:inherit;font-size:12px;font-weight:600}
+.prod-date-edit{display:flex;align-items:center;gap:5px;position:relative;cursor:pointer}
+.prod-date-edit b{font-weight:600}
+.prod-date-edit>i{display:grid;place-items:center;width:27px;height:27px;border:1px solid var(--card-border);border-radius:6px;
+  background:rgba(127,127,127,.08);color:var(--text-muted);font-size:13px}
+.prod-date-edit input{position:absolute;right:0;width:27px;height:27px;opacity:0;cursor:pointer}
+.prod-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer}
+.prod-check input{width:15px;height:15px;accent-color:#0a84ff}
 .macwin #oms-q{padding-left:34px !important}
 .appdet{border-left:.5px solid var(--card-border);display:flex;flex-direction:column;min-width:0;
   font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Pretendard',sans-serif}
@@ -3679,6 +3704,7 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 @media (max-width:760px){ .appwrap.three{grid-template-columns:1fr} }
 /* 판매 3단 — 메모처럼 모바일은 목록→상세로 바뀐다. */
 .sales3-back span{display:none}
+.production3-back span{display:none}
 @media (max-width:900px){
   .appwrap.sales3.three{grid-template-columns:1fr;min-height:0}
   .appwrap.sales3 .appside{display:none}
@@ -3688,6 +3714,14 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
   .appwrap.sales3.detail .appdet{display:flex}
   .appwrap.sales3 .sales3-back{display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer}
   .appwrap.sales3 .sales3-back span{display:inline;margin:0;color:inherit;font:inherit}
+  .appwrap.production3.three{grid-template-columns:1fr;min-height:0}
+  .appwrap.production3 .appside{display:none}
+  .appwrap.production3 .appmain{display:block}
+  .appwrap.production3 .appdet{display:none;border-left:0!important}
+  .appwrap.production3.detail .appmain{display:none}
+  .appwrap.production3.detail .appdet{display:flex}
+  .appwrap.production3 .production3-back{display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer}
+  .appwrap.production3 .production3-back span{display:inline;margin:0;color:inherit;font:inherit}
 }
 /* 미리알림 — 묶는 기준 전환 */
 .rm-seg{display:flex;gap:2px;background:rgba(127,127,127,.16);border-radius:8px;padding:2px;margin:16px 0 2px}
