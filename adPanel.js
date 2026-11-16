@@ -33,12 +33,15 @@ export function brandOfLink(l, brands = []) {
 }
 
 //  period: 'yesterday' = 어제(KST) 하루 · 'cum' = 세트 시작일(KST) ~ 어제
+//  제외(108 ad_links.excluded — 목표 잘못 설정한 세트)는 판정·합계에서 빼고 반환 배열의 .excluded 로 따로 준다(숨긴 사실을 화면에 보이게).
 //  반환: [{ brand_id, name, rules, spend, follows, cpf, kind, sets: [{ adset_id, name, status, budget, end, spend, follows, cpf, kind }] }]
 export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], period = 'yesterday', now = Date.now() } = {}) {
     const yday = addDays(kstDay(now), -1);
     const sets = new Map(), adSet = new Map();
+    const ex = { sets: new Set(), spend: 0, follows: 0, reason: null }, exAd = new Map();
     for (const l of links) {
         const id = l.adset_id || 'ad:' + l.ad_id;
+        if (l.excluded) { ex.sets.add(id); ex.reason ??= l.excluded_reason || null; exAd.set(String(l.ad_id), id); continue; }
         adSet.set(String(l.ad_id), id);
         const s = sets.get(id) || { adset_id: id, name: l.adset_name || l.ad_name || l.ad_id, status: null, budget: null, start: null, end: null, brand_id: null, spend: 0, follows: 0, ads: 0 };
         s.ads++;
@@ -51,7 +54,13 @@ export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], 
         s.brand_id ??= brandOfLink(l, brands);
         sets.set(id, s);
     }
+    //  같은 세트에 제외 안 된 광고가 섞여 있어도 세트째 뺀다(제외는 세트 단위)
+    for (const id of ex.sets) sets.delete(id);
     for (const d of daily) {
+        if (exAd.has(String(d.ad_id))) {
+            if (d.day && d.day <= yday && (period === 'yesterday' ? d.day === yday : true)) { ex.spend += num(d.spend); ex.follows += num(d.follows); }
+            continue;
+        }
         const s = sets.get(adSet.get(String(d.ad_id)));
         if (!s || !d.day || d.day > yday) continue;                       // 오늘(진행 중)은 판정에 넣지 않는다
         if (d.day > addDays(yday, -7) && num(d.spend) > 0) s.recent = true;   // 최근 7일(어제까지) 지출 있음
@@ -72,11 +81,18 @@ export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], 
     const key = s => s.spend <= 0 ? [2, 0] : s.cpf == null ? [1, -s.spend] : [0, s.cpf];
     //  브랜드 순서 하이헤이호 → 로하이(스튜디오) → 토비 → 그 밖
     const rank = n => { const i = ['하이헤이호', '로하이', '토비'].findIndex(k => String(n || '').replace(/\s/g, '').includes(k)); return i < 0 ? 99 : i; };
-    return [...groups.values()].map(g => {
+    const out = [...groups.values()].map(g => {
         g.sets.sort((a, b) => { const x = key(a), y = key(b); return x[0] - y[0] || x[1] - y[1] || String(a.name).localeCompare(String(b.name)); });
         g.cpf = cpfOf(g.spend, g.follows); g.kind = panelVerdict(g.spend, g.follows, g.rules);
         return g;
     }).sort((a, b) => rank(a.name) - rank(b.name) || String(a.name).localeCompare(String(b.name)));
+    out.excluded = { sets: ex.sets.size, spend: ex.spend, follows: ex.follows, reason: ex.reason };
+    return out;
+}
+//  '제외 N세트(목표 오류)' 한 줄 — 제외가 없으면 빈 문자열
+export function excludedNote(ex) {
+    if (!ex || !ex.sets) return '';
+    return `<span class="ap-ex" title="${esc(ex.reason || '')}">제외 ${ex.sets}세트(목표 오류) · 지출 ${won(ex.spend)}원 · 팔로우 ${won(ex.follows)}명은 판정·합계에서 뺌</span>`;
 }
 
 const STATUS = { ACTIVE: ['진행', '#059669'], PAUSED: ['꺼짐', '#64748b'], ADSET_PAUSED: ['꺼짐', '#64748b'], CAMPAIGN_PAUSED: ['캠페인 꺼짐', '#64748b'],
@@ -125,6 +141,7 @@ export const AP_CSS = `<style>
 .ap-sum .ap-sv{font-size:1.15rem;font-weight:800;font-variant-numeric:tabular-nums;margin-top:3px}
 .ap-sum .ap-sc{font-size:.68rem;color:var(--text-muted);font-variant-numeric:tabular-nums}
 @media (max-width:640px){.ap-sum{grid-template-columns:1fr}.ap-sum a{display:grid;grid-template-columns:1fr auto;align-items:center}.ap-sum .ap-sv{margin:0;grid-row:1/span 2;grid-column:2}}
+.ap-ex{display:inline-block;color:#b45309;font-weight:700}
 .ap-empty{padding:14px;color:var(--text-muted);font-size:.82rem;text-align:center}
 </style>`;
 
@@ -132,7 +149,7 @@ export function panelHtml({ groups = [], period = 'yesterday', now = Date.now(),
     const yday = addDays(kstDay(now), -1);
     const tog = `<div class="ap-tog">${[['yesterday', '어제'], ['cum', '누적']].map(([k, l]) => `<button class="${period === k ? 'on' : ''}" onclick="app.adPanelPeriod('${k}')">${l}</button>`).join('')}</div>`;
     const head = `<div class="ap-head"><div class="ap-title"><i class="ph ph-user-plus"></i> 광고 판정판 · 팔로우당 비용</div>${loading || error ? '' : tog}</div>
-        <div class="ap-sub">${period === 'yesterday' ? `어제(${md(yday)}) 하루` : `세트 시작일 ~ 어제(${md(yday)})`} · 1명당 = 지출 ÷ 광고로 생긴 인스타 팔로우 · 오늘 수치는 빼고 판정</div>`;
+        <div class="ap-sub">${period === 'yesterday' ? `어제(${md(yday)}) 하루` : `세트 시작일 ~ 어제(${md(yday)})`} · 1명당 = 지출 ÷ 광고로 생긴 인스타 팔로우 · 오늘 수치는 빼고 판정</div>${loading || error || !excludedNote(groups.excluded) ? '' : `<div class="ap-sub">${excludedNote(groups.excluded)}</div>`}`;
     if (loading) return `${AP_CSS}<div class="glass ap-wrap">${head}<div class="ap-empty">불러오는 중...</div></div>`;
     if (error || !groups.length) return `${AP_CSS}<div class="glass ap-wrap">${head}<div class="ap-empty">${error ? '광고 수치를 불러올 수 없어요.' : '이 기간에 집행된 광고 세트가 없어요.'}</div></div>`;
     const brandHtml = g => {

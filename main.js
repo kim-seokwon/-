@@ -29,7 +29,7 @@ import {
 import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
 import { uploadAlerts, uploadChipsHtml, buildCards, filterCards, cardHtml, reportHtml, detailHtml, kstDay, addDays as arAddDays } from './adReport.js';
-import { buildPanel, sns3Rows, snsSetDetailHtml } from './adPanel.js';
+import { buildPanel, sns3Rows, snsSetDetailHtml, excludedNote } from './adPanel.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
@@ -6787,6 +6787,7 @@ class BhasApp {
         return `<section class="m3-list">
             <div class="m3-lbar"><div><b>SNS 운영현황</b><span>${rows.setRows.length}개 세트 · ${rows.postRows.length}개 게시물</span></div>
                 <div class="ap-tog">${[['yesterday', '어제'], ['cum', '누적']].map(([k, l]) => `<button class="${period === k ? 'on' : ''}" onclick="app.adPanelPeriod('${k}')">${l}</button>`).join('')}</div></div>
+            ${excludedNote(ads.groups.excluded) ? `<div class="sns3-ex" style="padding:0 13px 8px;font-size:11px;line-height:1.4;color:#b45309;font-weight:700">${excludedNote(ads.groups.excluded)}</div>` : ''}
             ${accountOptions}<div class="m3-rows"><div class="m3-r sns3-summary" onclick="app.selectSnsItem('summary')"><b><i class="ph ph-chart-line-up"></i>광고 리포트 요약</b><div class="sub"><span>수집 상태·필터·미연결 광고</span></div></div>
             ${group('광고 세트', rows.setRows)}${group('광고 게시물', rows.postRows)}${group('인스타 계정', rows.accountRows)}
             ${rows.setRows.length || rows.postRows.length || rows.accountRows.length ? '' : '<div class="m3-none">표시할 SNS 항목이 없습니다.</div>'}</div></section>
