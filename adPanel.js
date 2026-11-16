@@ -54,12 +54,14 @@ export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], 
     for (const d of daily) {
         const s = sets.get(adSet.get(String(d.ad_id)));
         if (!s || !d.day || d.day > yday) continue;                       // 오늘(진행 중)은 판정에 넣지 않는다
+        if (d.day > addDays(yday, -7) && num(d.spend) > 0) s.recent = true;   // 최근 7일(어제까지) 지출 있음
         if (period === 'yesterday' ? d.day !== yday : (s.start && d.day < s.start)) continue;
         s.spend += num(d.spend); s.follows += num(d.follows);
     }
     const nameOf = id => (brands.find(b => b.id === id) || {}).name || '브랜드 미지정';
     const groups = new Map();
     for (const s of sets.values()) {
+        if (s.status !== 'ACTIVE' && !s.recent) continue;                 // 꺼진 옛 세트 숨김: 진행 중이거나 최근 7일 지출이 있는 세트만(팀장 결정 11-16)
         if (s.spend <= 0 && s.status !== 'ACTIVE') continue;              // 그 기간 집행도 없고 꺼진 세트는 뺀다
         const g = groups.get(s.brand_id) || { brand_id: s.brand_id, name: nameOf(s.brand_id), rules: rulesBy[s.brand_id] || null, spend: 0, follows: 0, sets: [] };
         s.cpf = cpfOf(s.spend, s.follows); s.kind = panelVerdict(s.spend, s.follows, g.rules);

@@ -183,7 +183,7 @@ Deno.test("isAuthError 분기", () => {
   assert(!isAuthError({ code: 1 })); assert(!isAuthError({ code: 17 })); assert(!isAuthError({ code: 100 })); assert(!isAuthError(null));
 });
 
-Deno.test("106 판정판: 세트명·세트상태·세트시작일을 ad_links 에 저장(광고명과 다를 수 있음)", async () => {
+Deno.test("107 판정판: 세트명·세트상태·세트시작일을 ad_links 에 저장(광고명과 다를 수 있음)", async () => {
   const db = seed();
   const { body } = await run(db, meta());
   assert(body.ok, JSON.stringify(body));

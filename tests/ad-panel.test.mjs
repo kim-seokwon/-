@@ -68,3 +68,16 @@ test('브랜드 — brand_id 우선, 없으면 세트명 접두사 · 이스케�
     assert.ok(!h.includes('<img src=x')); assert.match(h, /집행 없음/);
     assert.doesNotMatch(h, /방문|도달/);
 });
+
+test('꺼진 옛 세트 숨김 — 진행 중이거나 최근 7일(11-09~11-15) 지출 있는 세트만(팀장 결정)', () => {
+    const L = (id, st) => ({ ad_id: 'a' + id, adset_id: 's' + id, adset_name: 'hhh_' + id, adset_status: st, brand_id: 'b-hhh' });
+    const links = [L(1, 'ACTIVE'), L(2, 'PAUSED'), L(3, 'CAMPAIGN_PAUSED'), L(4, 'PAUSED')];
+    const daily = [{ ad_id: 'a2', day: '2026-11-09', spend: 5000, follows: 5 },      // 7일 안 → 보임
+        { ad_id: 'a3', day: '2026-11-08', spend: 9000, follows: 9 },                  // 8일 전 → 숨김
+        { ad_id: 'a4', day: '2026-11-16', spend: 3000, follows: 1 }];                 // 오늘만 → 숨김
+    const names = buildPanel({ links, daily, rulesBy: RULES, brands: BRANDS, period: 'cum', now: NOW }).flatMap(g => g.sets.map(s => s.name));
+    assert.deepEqual(names.sort(), ['hhh_1', 'hhh_2']);
+    //  실데이터: 하헤호가디건·하헤호AI(캠페인 꺼짐, 7일 지출 없음)는 안 나온다
+    const all = buildPanel({ ...FX, rulesBy: RULES, brands: BRANDS, period: 'cum', now: NOW }).flatMap(g => g.sets);
+    assert.ok(all.every(s => s.status === 'ACTIVE' || s.recent), '숨김 규칙 위반 세트 있음');
+});

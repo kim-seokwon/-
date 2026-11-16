@@ -6439,7 +6439,7 @@ class BhasApp {
                 this.supabase.from('ad_report_rules').select('*'),
                 this.supabase.from('ad_report_state').select('*').limit(1),
                 this.supabase.from('ig_media').select('media_id,account_id,brand_id,posted_day,posted_at').gte('posted_day', since),
-                //  * — 106(세트명·세트상태·세트시작일) 적용 전에도 깨지지 않게 열 이름을 고정하지 않는다
+                //  * — 107(세트명·세트상태·세트시작일) 적용 전에도 깨지지 않게 열 이름을 고정하지 않는다
                 this.supabase.from('ad_links').select('*'),
                 //  판정판(세트별 팔로우당 비용) — 누적은 세트 시작일부터라 넉넉히 120일
                 this.supabase.from('ad_daily').select('ad_id,day,spend,follows').gte('day', arAddDays(kstDay(Date.now()), -120)),
