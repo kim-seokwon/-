@@ -297,6 +297,43 @@ class BhasApp {
             this.wins = [{ id: 'preview-reminders', view: 'reminders', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
         }
+        //  판매 3단 화면 검수 — 주문·CS·재고 가짜 데이터만 쓴다(DB 읽기·쓰기 없음).
+        if (devPreview === 'sales3') {
+            this._devPreviewSales3 = true; this._prefetched = true; this._isInitialLoading = false;
+            this._ordersLoaded = this._mallsLoaded = this._csLoaded = this._invLoaded = true;
+            this._expLoaded = this._quotesLoaded = true;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            mockData.brands = [
+                { id: 'preview-hhh', name: '하이헤이호', brand_color: '#0a84ff' },
+                { id: 'preview-lohi', name: '로하이스튜디오', brand_color: '#ff9f0a' },
+            ];
+            this.malls = [
+                { mall_key: 'hiheiho', label: '하이헤이호', channel: 'cafe24', brand_id: 'preview-hhh' },
+                { mall_key: 'lohi', label: '로하이스튜디오', channel: 'cafe24', brand_id: 'preview-lohi' },
+            ];
+            const orders = [
+                { id: 'preview-order-1', order_id: '20261116-0001', mall_key: 'hiheiho', channel: 'cafe24', op_status: 'pre', status: 'new', order_date: '2026-11-16T09:30:00+09:00', receiver_name: '김하늘', receiver_phone: '010-1234-5678', receiver_zipcode: '04782', receiver_address: '서울 성동구 성수이로 21', pay_amount: 69000, items: [{ product_name: '오버핏 기모 맨투맨', option_name: '아이보리 / L', quantity: 1 }] },
+                { id: 'preview-order-2', order_id: '20261116-0002', mall_key: 'lohi', channel: 'cafe24', op_status: 'shipping', status: 'shipping', order_date: '2026-11-16T10:05:00+09:00', receiver_name: '이도윤', receiver_phone: '010-2345-6789', receiver_address: '서울 마포구 월드컵북로 12', invoice_no: '6891234567890', courier: '우체국', pay_amount: 119000, items: [{ product_name: '와이드 데님 팬츠', option_name: '인디고 / M', quantity: 1 }] },
+            ];
+            this.orders = orders;
+            this.opage = { rows: orders, counts: { target: 1, shipping: 1, done: 0, claim: 0, all: 2 }, total: 2, page: 0, size: 50, loaded: true, loading: false, key: 'target|ALL||0', malls: [{ mall_key: 'hiheiho', cnt: 1 }, { mall_key: 'lohi', cnt: 1 }] };
+            this.csList = [
+                { id: 'preview-cs-1', occurred_on: '2026-11-16', kind: '교환', customer_name: '박서연', purchase_from: '하이헤이호', order_no: '20261115-0042', product_name: '오버핏 기모 맨투맨', status: '접수', memo: '아이보리 L→XL 사이즈 교환', created_by: '김보경' },
+                { id: 'preview-cs-2', occurred_on: '2026-11-15', kind: '반품', customer_name: '최민준', purchase_from: '로하이스튜디오', order_no: '20261114-0011', product_name: '와이드 데님 팬츠', status: '수거접수', memo: '상품 태그 보존 확인', created_by: '김석원' },
+            ];
+            this.inventory = {
+                items: [
+                    { id: 'preview-inv-1', sku: 'HH-SW-2601-IV-L', name: '오버핏 기모 맨투맨', option_name: '아이보리 / L', brand_id: 'preview-hhh', on_hand: 18, safety_stock: 8 },
+                    { id: 'preview-inv-2', sku: 'LH-DN-2602-IN-M', name: '와이드 데님 팬츠', option_name: '인디고 / M', brand_id: 'preview-lohi', on_hand: 5, safety_stock: 7 },
+                ],
+                listings: [{ inventory_item_id: 'preview-inv-1', channel: 'cafe24', channel_product_no: '12661', channel_variant_code: 'P0000ABC', allocated: 0 }],
+                ledger: [{ inventory_item_id: 'preview-inv-1', created_at: '2026-11-16T08:00:00+09:00', reason: 'restock', delta: 20 }, { inventory_item_id: 'preview-inv-1', created_at: '2026-11-16T10:00:00+09:00', reason: 'cafe24_order', delta: -2 }],
+                lastSync: { result: 'ok', run_at: '2026-11-16T10:10:00+09:00' },
+            };
+            this.currentView = 'orders';
+            this.wins = [{ id: 'preview-sales3', view: 'orders', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
         //  CS 원송장 화면 검수 — Playwright 가 넣어 준 읽기 전용 데이터(window.__CS_PREVIEW: cs_tickets · shipments)로만 그린다. DB 에 쓰지 않는다.
         if (devPreview === 'cs') {
             const fx = window.__CS_PREVIEW || {};
@@ -3366,15 +3403,23 @@ class BhasApp {
                                           : all.filter(o => o.mall_key === k).length;
             // 몰별 목록은 브랜드명이 아니라 실제 몰 label을 쓴다.
             // kidikidi도 하이헤이호 브랜드라 브랜드명을 우선하면 12,661/737 두 줄이 모두 '하이헤이호'로 보인다.
-            const mallName = k => this._mallLabel(k) || ((this._mallBrand(k) || {}).name) || k;
+            const mallName = k => {
+                const mall = (this.malls || []).find(x => String(x.mall_key) === String(k));
+                const label = String(mall?.label || '').trim();
+                if (label && label !== '-') return label;
+                const brand = String((this._mallBrand(k) || {}).name || '').trim();
+                return brand && brand !== '-' ? brand : '';
+            };
+            const namedMalls = malls.map(k => ({ k, name: mallName(k), cnt: mallCnt(k) }))
+                .filter(x => x.k && x.name);
             return `<div class="m3-h">보기</div>
                 ${R(m === 'ALL' && f === 'target', '배송대상', sc ? sc.target : n(o => this._orderState(o) === 'pre'), `app.navPick('orders','st','target')`, 0, 'ph-package')}
                 ${R(m === 'ALL' && f === 'shipping', '배송중', sc ? sc.shipping : n(o => this._orderState(o) === 'shipping'), `app.navPick('orders','st','shipping')`, 0, 'ph-truck')}
                 ${R(m === 'ALL' && f === 'done', '완료', sc ? sc.done : n(o => this._orderState(o) === 'done'), `app.navPick('orders','st','done')`, 0, 'ph-check-circle')}
                 ${R(m === 'ALL' && f === 'claim', '취소·반품·교환', sc ? sc.claim : n(o => ['cancel', 'return', 'exchange'].includes(this._orderState(o)) && !this._isUnpaidCancel(o)), `app.navPick('orders','st','claim')`, 0, 'ph-arrow-u-up-left')}
                 ${R(m === 'ALL' && f === 'all', '전체', sc ? sc.all : all.length, `app.navPick('orders','st','all')`, 0, 'ph-tray')}
-                ${S('몰별', 'omall', malls.map(k => R(String(m) === String(k), mallName(k),
-                    mallCnt(k), `app.navPick('orders','mall','${esc(k)}')`, 1)).join(''))}`;
+                ${S('몰별', 'omall', namedMalls.map(x => R(String(m) === String(x.k), x.name,
+                    x.cnt, `app.navPick('orders','mall','${esc(x.k)}')`, 1)).join(''))}`;
         }
 
         if (view === 'cs') {
@@ -4214,8 +4259,9 @@ class BhasApp {
     _appShell(view, inner) {
         const side = this._appTabBar(view);
         if (!side) return inner;
+        const sales3 = this._groupOf(view)?.head === 'orders';
         const detail = this._detailPane(view);
-        return `<div class="appwrap${detail ? ' three' : ''}">${side}<div class="appmain">${this._syncWarnBar()}${inner}</div>${detail || ''}</div>`;
+        return `<div class="appwrap${detail ? ' three' : ''}${sales3 ? ' sales3' : ''}${sales3 && this.salesMobileDetail ? ' detail' : ''}">${side}<div class="appmain">${this._syncWarnBar()}${inner}</div>${detail || ''}</div>`;
     }
     //  C4. 수집이 끊겨도 아무도 모르던 걸 맨 위에 띄운다.
     //  키디키디는 2026-03-10 이후 주문이 안 들어오는데 화면 어디에도 표시가 없었다.
@@ -4259,13 +4305,18 @@ class BhasApp {
     // 세 번째 칸 — 고른 줄의 상세. 주문·CS·재고에 붙는다.
     _detailPane(view) {
         const esc = s => this._vesc(s);
+        const sales3 = this._groupOf(view)?.head === 'orders';
         const f = (k, v) => v || v === 0 ? `<div class="dt-f"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>` : '';
         const wrap = (title, sub, body, acts) => `<aside class="appdet">
             <div class="dt-h"><div class="dt-ht"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>
-                <button class="dt-close" title="접기" onclick="app.closeDetail('${view}')"><i class="ph ph-sidebar-simple"></i></button></div>
+                <button class="dt-close${sales3 ? ' sales3-back' : ''}" title="${sales3 ? '목록' : '접기'}" onclick="app.closeDetail('${view}')"><i class="ph ${sales3 ? 'ph-arrow-left' : 'ph-sidebar-simple'}"></i>${sales3 ? '<span>목록</span>' : ''}</button></div>
             <div class="dt-b">${body}</div>${acts ? `<div class="dt-a">${acts}</div>` : ''}</aside>`;
-        //  고른 게 없으면 칸을 비워 두지 않고 아예 접는다 — 자리만 먹는다
-        const empty = () => '';
+        //  판매는 목록과 상세의 위치가 선택 전후로 흔들리지 않게 세 번째 칸을 유지한다.
+        const empty = () => {
+            if (!sales3) return '';
+            const name = ({ orders: '주문', cs: 'CS 건', inventory: '재고 품목' })[view] || '항목';
+            return wrap('상세', '', `<div class="dt-none">${name}을 선택하세요</div>`, '');
+        };
 
         if (view === 'vendors') {
             const isNew = this.venSel === '__new';
@@ -4401,8 +4452,8 @@ class BhasApp {
             const items = o.items || [];
             const cs = (this.csList || []).filter(t => t.channel_order_id ? String(t.channel_order_id) === String(o.id) : String(t.order_no) === String(o.order_id));
             return wrap(o.receiver_name || o.buyer_name || '주문', o.order_id, `
-                ${f('주문일', o.order_date)}
-                ${f('채널', o.mall_key || o.channel)}
+                ${f('주문일', this._orderDateText(o.order_date))}
+                ${f('채널', this._mallLabel(o.mall_key || o.channel))}
                 ${f('상태', this._orderLabel(o) + (this._orderState(o) === 'pre' && o.status === 'ready' ? (this._isCafe24Order(o) ? ' (카페24 배송대기)' : ' (송장 등록대기)') : ''))}
                 ${f('받는분', o.receiver_name)}
                 ${f('연락처', o.receiver_phone)}
@@ -4464,9 +4515,9 @@ class BhasApp {
             `, `<button class="mbtn pri inv-adjust" data-id="${it.id}">조정</button>
                 <button class="mbtn inv-map" data-id="${it.id}">매핑</button>`);
         }
-        return '';
+        return sales3 ? empty() : '';
     }
-    selectOrder(id) { this.orderSel = id; this.requestRender(); }
+    selectOrder(id) { this.orderSel = id; this.salesMobileDetail = true; this.requestRender(); }
     // 주문 선택 키 = 몰|주문번호. 몰끼리 주문번호가 겹친다(운영 49건) — 주문번호만으로 찾으면 다른 몰 주문이 열린다.
     _ordKey(o) { return `${o?.mall_key || ''}|${o?.order_id}`; }
     _findOrderBySel(sel) {
@@ -4476,7 +4527,8 @@ class BhasApp {
         return ((this.opage && this.opage.rows) || []).find(hit) || (this.orders || []).find(hit) || null;
     }
     selectCS(id) {
-        if (this._csPick(id)) this.requestRender();
+        const changed = this._csPick(id);
+        if (changed || !this.salesMobileDetail) { this.salesMobileDetail = true; this.requestRender(); }
     }
     //  CS 줄 고르기 — 목록 줄을 누르든 상세 단추로 오든 여기 한 곳에서 cs_select 를 남긴다(같은 줄 다시 누름은 안 셈)
     _csPick(id) {
@@ -4485,9 +4537,10 @@ class BhasApp {
         this.csSel = id;
         return true;
     }
-    selectInv(id) { if (String(this.invSel) === String(id)) return; this.invSel = id; this.requestRender(); }
+    selectInv(id) { const changed = String(this.invSel) !== String(id), closed = !this.salesMobileDetail; if (changed) this.invSel = id; if (closed) this.salesMobileDetail = true; if (changed || closed) this.requestRender(); }
     // 탭을 누르면 그 창의 화면만 바뀐다(새 창을 열지 않는다)
     switchAppTab(winId, view) {
+        this.salesMobileDetail = false;
         const w = (this.wins || []).find(x => x.id === winId);
         if (w) { this._winView(w, view); this.requestRender(); return; }
         this.switchView(view);
@@ -8091,7 +8144,7 @@ class BhasApp {
         this.currentView = prevView;
         // 바탕화면 = 홈 대시보드. 여기 블록을 누르면 switchView 를 타고 창이 열린다.
         let deskboard = '';
-        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders) ? '' : (this.renderHome(products) || ''); }
+        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3) ? '' : (this.renderHome(products) || ''); }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
         const dock = this.MAC_DOCK.filter(d => !d.tool && (d.launcher || this._viewAllowed(d.id))).map(d => {
             const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this._winOf(d.id));
@@ -8163,7 +8216,7 @@ class BhasApp {
     }
     _macEnsureData() {
         const prev = this.currentView;
-        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
+        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
         views.forEach(v => { this.currentView = v; try { this.ensureViewData(); } catch (_e) {} });
         this.currentView = prev;
     }
@@ -12099,6 +12152,11 @@ class BhasApp {
     }
 
     _orderStatusLabel(s) { return ({ new: '신규', ready: '채널등록대기', shipping: '배송중', done: '완료', hold: '보류' })[s] || s; }
+    _orderDateText(value) {
+        if (!value) return '';
+        const d = new Date(value); if (Number.isNaN(d.getTime())) return '';
+        return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+    }
     _orderItemsSummary(o) {
         const its = o.items || [];
         if (!its.length) return '-';
@@ -12131,7 +12189,7 @@ class BhasApp {
                 <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}
                     <button class="ord-cs" title="이 주문으로 CS 접수" onclick="event.stopPropagation();app.csFromOrder('${this._vesc(String(o.order_id))}','${this._vesc(String(o.mall_key || ''))}')">CS</button></td>
                 <td style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1'; return `<span style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._mallLabel(o.mall_key)}</span>`; })()}</td>
-                <td style="padding:10px;color:var(--text-muted);font-size:0.82rem">${o.order_date ? new Date(o.order_date).toLocaleDateString('ko-KR') : '-'}</td>
+                <td style="padding:10px;color:var(--text-muted);font-size:0.82rem">${this._orderDateText(o.order_date) || '-'}</td>
                 <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
                 <td style="padding:10px;font-size:0.88rem">${prodCell}</td>
                 <td style="padding:10px;text-align:center">${this._orderQtySum(o)}</td>
@@ -16221,6 +16279,7 @@ class BhasApp {
         ({ items: () => this.itemSel = null, cs: () => this.csSel = null,
            inventory: () => this.invSel = null, tech_packs: () => this.tpSel = null,
            orders: () => this.orderSel = null })[view]?.();
+        if (this._groupOf(view)?.head === 'orders') this.salesMobileDetail = false;
         this.requestRender();
     }
     //  칸 안의 입력칸·선택칸을 누른 것은 '줄 고르기' 가 아니다.
@@ -16238,7 +16297,7 @@ class BhasApp {
             if (ctl.type === 'checkbox' || ctl.type === 'radio') return;
             this._cellBack = { row: id, f: ctl.dataset.f || '', at: ctl.selectionStart };
         } else if (ctl) return;   // 단추는 제 할 일만
-        if (what === 'cs') { if (this._csPick(id)) this.requestRender(); return; }
+        if (what === 'cs') { this.selectCS(id); return; }
         if (what === 'inv') { this.selectInv(id); return; }
         this.selItem(id);
     }
