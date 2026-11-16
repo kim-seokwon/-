@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildPanel, sns3Html, panelHtml, excludedNote } from '../adPanel.js';
+import { buildPanel, sns3Rows, panelHtml, excludedNote } from '../adPanel.js';
 
 const FX = JSON.parse(readFileSync(new URL('./fixtures/ad-panel-1116.json', import.meta.url)));
 const EX = new Set(['120255644017600038', '120255644017680038', '120255644017700038', '120255666999860038']);
@@ -37,11 +37,14 @@ test('세트에 제외 광고가 하나라도 있으면 세트째 뺀다(제외�
 });
 test('화면: "제외 4세트(목표 오류)" 한 줄 · 제외 없으면 안 보임 · 사유는 이스케이프', () => {
     const g = run(true);
-    const h = sns3Html({ groups: g, brands: BRANDS, igCards: [], period: 'cum', now: NOW });
-    assert.match(h, /제외 4세트\(목표 오류\) · 지출 86,553원 · 팔로우 18명은 판정·합계에서 뺌/);
+    //  SNS 3단 목록 머리줄은 main.js 가 excludedNote(groups.excluded)를 그대로 끼운다
+    assert.match(excludedNote(g.excluded), /제외 4세트\(목표 오류\) · 지출 86,553원 · 팔로우 18명은 판정·합계에서 뺌/);
     assert.match(panelHtml({ groups: g, period: 'cum', now: NOW }), /제외 4세트\(목표 오류\)/);
-    assert.doesNotMatch(sns3Html({ groups: run(false), brands: BRANDS, igCards: [], now: NOW }), /제외 \d+세트/);
-    assert.doesNotMatch(sns3Html({ groups: g, brands: BRANDS, igCards: [], now: NOW, loading: true }), /제외 \d+세트/);
+    assert.equal(excludedNote(run(false).excluded), '');
+    assert.doesNotMatch(panelHtml({ groups: g, period: 'cum', now: NOW, loading: true }), /제외 \d+세트/);
+    //  3단 목록에도 제외 세트가 안 들어간다
+    const ids = sns3Rows({ groups: g }).setRows.map(r => r.id);
+    assert.ok(ids.length > 0); assert.ok(!ids.some(id => ['120255644017600038', '120255644017680038', '120255644017700038', '120255666999860038'].includes(id)));
     assert.equal(excludedNote(null), '');
     assert.match(excludedNote({ sets: 1, spend: 1, follows: 0, reason: '<b>"x' }), /title="&lt;b&gt;&quot;x"/);
 });

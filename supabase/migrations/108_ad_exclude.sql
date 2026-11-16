@@ -105,4 +105,3 @@ select lk.media_id, coalesce(lk.brand_id, im.brand_id) brand_id,
   left join public.ig_media im on im.media_id = lk.media_id
   left join lateral (select pr.reach, pr.since, pr.until from public.ad_post_reach pr
                       where pr.media_id = lk.media_id order by pr.fetched_at desc, pr.until desc limit 1) r on true;
-
