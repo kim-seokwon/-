@@ -3346,6 +3346,43 @@ body:not(.light) .mac-deskboard .glass{
 .m3-none.mid{margin:auto}
 @media (max-width:900px){ .m3,.m3.wide{grid-template-columns:1fr} .m3-side,.m3-list{display:none} }
 
+/* SNS — 메모와 같은 분류 | 목록 | 상세 3단 */
+.sns3-layout{--c1:196px;--c2:340px}
+.sns3-layout .m3-side{background:transparent}
+.sns3-group{display:flex;align-items:center;gap:6px;padding:13px 10px 5px;font-size:11px;font-weight:800;color:var(--text-muted)}
+.sns3-group em{font-style:normal;font-weight:600;margin-left:auto}
+.sns3-row b{min-width:0}
+.sns3-row b>i{color:#c13584;flex:0 0 auto}
+.sns3-pill{margin-left:auto;font-style:normal;font-size:10px;font-weight:800;border-radius:99px;padding:1px 6px;color:#64748b;background:rgba(100,116,139,.12)}
+.sns3-pill.up{color:#059669;background:rgba(5,150,105,.12)}
+.sns3-pill.keep{color:#2563eb;background:rgba(37,99,235,.12)}
+.sns3-pill.stop{color:#dc2626;background:rgba(220,38,38,.12)}
+.sns3-layout .ap-tog{display:inline-flex;border:.5px solid var(--card-border);border-radius:999px;padding:2px;flex:0 0 auto}
+.sns3-layout .ap-tog button{border:0;background:transparent;color:var(--text-muted);font:inherit;font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;cursor:pointer}
+.sns3-layout .ap-tog button.on{background:var(--text-main);color:var(--bg-card,#fff)}
+.sns3-layout .ap-badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap}
+.sns3-hero{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;margin:16px 0 4px;border-radius:10px;background:rgba(127,127,127,.08)}
+.sns3-hero>div{display:flex;flex-direction:column;gap:2px}.sns3-hero span{font-size:11px;color:var(--text-muted)}
+.sns3-hero strong{font-size:25px;font-variant-numeric:tabular-nums;line-height:1.1}
+.sns3-reason{margin-top:18px;padding:14px;border-radius:10px;background:rgba(127,127,127,.08);font-size:12.5px;line-height:1.55}
+.sns3-reason b{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px}.sns3-reason p{margin:0 0 5px;font-weight:700}.sns3-reason span{color:var(--text-muted)}
+.sns3-mobile-filter{display:none}.sns3-back{display:none!important}
+.sns3-account,.sns3-post,.sns3-report{max-width:760px}
+.sns3-account>.glass,.sns3-post>.ar-card{border:0!important;background:transparent!important;padding:0!important}
+.sns3-report>.ar-wrap{border:0!important;background:transparent!important;padding:0!important;margin:0!important}
+.sns3-summary{margin-top:2px}
+@media (max-width:900px){
+  .sns3-layout{grid-template-columns:1fr;min-height:0}
+  .sns3-layout .m3-side{display:none}
+  .sns3-layout .m3-list{display:flex;border-right:0}
+  .sns3-layout .m3-doc{display:none}
+  .sns3-layout.detail .m3-list{display:none}
+  .sns3-layout.detail .m3-doc{display:flex}
+  .sns3-mobile-filter{display:block;margin:0 10px 8px;padding:7px 9px;border:.5px solid var(--card-border);border-radius:7px;background:rgba(127,127,127,.1);color:inherit;font:inherit;font-size:12.5px}
+  .sns3-back{display:inline-flex!important;align-items:center;gap:4px;font-size:12px!important;width:auto!important}
+  .sns3-layout .m3-page{padding:14px 16px 80px;max-width:none}
+}
+
 /* 파인더 세 번째 칸 — 미리보기 */
 .fd-prev{border-left:.5px solid var(--card-border);padding:20px 16px;overflow:auto;display:flex;flex-direction:column}
 .fd-pv{height:120px;display:grid;place-items:center;font-size:74px;margin-bottom:14px}

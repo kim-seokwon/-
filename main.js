@@ -28,8 +28,8 @@ import {
 } from './meetingNote.js';
 import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
-import { uploadAlerts, uploadChipsHtml, buildCards, reportHtml, detailHtml, kstDay, addDays as arAddDays } from './adReport.js';
-import { buildPanel, sns3Html } from './adPanel.js';
+import { uploadAlerts, uploadChipsHtml, buildCards, filterCards, cardHtml, reportHtml, detailHtml, kstDay, addDays as arAddDays } from './adReport.js';
+import { buildPanel, sns3Rows, snsSetDetailHtml } from './adPanel.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
@@ -3462,22 +3462,30 @@ class BhasApp {
             ${this._viewNav(view)}
         </aside>`;
     }
-    // 분류 칸 + 본문을 한 틀에 담는다
-    // SNS 첫 칸 — 계정 목록
+    // SNS 3단 — 계정/브랜드 분류 | 광고 세트·게시물 목록 | 선택 상세
     _snsShell(inner) {
         const esc = s => this._vesc(s);
         const accs = this.igAccounts || [];
         const cur = this.snsAcc || '전체';
         const row = (k, label, icon) => `<div class="m3-s${String(cur) === String(k) ? ' on' : ''}"
             onclick="app.setSnsAcc('${k}')"><i class="ph ${icon}" style="color:#c13584"></i><span>${esc(label)}</span></div>`;
-        return `<div class="appwrap"><aside class="appside">
+        return `<div class="m3 sns3-layout${this.snsMobileDetail ? ' detail' : ''}"><aside class="m3-side">
             <div class="m3-h">SNS</div>
             ${row('전체', '모든 계정', 'ph-instagram-logo')}
             ${accs.map(a => row(a.id, a.username || a.name || '계정', 'ph-user-circle')).join('')
               || '<div style="padding:8px 10px;font-size:12px;color:var(--text-muted)">연결된 계정 없음</div>'}
-        </aside><div class="appmain">${inner}</div></div>`;
+        </aside>${inner}</div>`;
     }
-    setSnsAcc(k) { this.snsAcc = k; this.requestRender(); }
+    setSnsAcc(k) {
+        this.snsAcc = k;
+        const account = (this.igAccounts || []).find(a => String(a.id) === String(k));
+        this.arBrand = account?.brand_id || 'all';
+        this.snsPick = null;
+        this.snsMobileDetail = false;
+        this.requestRender();
+    }
+    selectSnsItem(k) { this.snsPick = k; this.snsMobileDetail = true; this.requestRender(); }
+    closeSnsDetail() { this.snsMobileDetail = false; this.requestRender(); }
     // 생산현황 지도 아래에 붙는 타임라인 — 공정이 어디까지 갔는지 한눈에
     _vendorTimeline(products) {
         const esc = s => this._vesc(s);
@@ -6555,11 +6563,11 @@ class BhasApp {
         const brandName = id => this._arBrandName(id);
         const alerts = uploadAlerts({ accounts: (this.igAccounts || []).filter(a => a.brand_id), media: (this.adReport || {}).media || [],
             snapshots: this.igSnapshots || [], brandName, now: Date.now() });
-        //  SNS 3단: 판정 groups 는 브랜드 열로, 게시물별 리포트는 3열 아래로 — 여기선 재료만 돌려준다
+        //  SNS 3단 재료 — 계산은 기존 buildPanel/buildCards 그대로, 화면에서만 분류·목록·상세로 나눈다
         const allBrands = (mockData.brands || []).map(b => ({ id: b.id, name: b.name }));
-        if (!this._arLoaded) return { loading: true, groups: [], allBrands, report: reportHtml({ loading: true }) };
+        if (!this._arLoaded) return { loading: true, groups: [], posts: [], allBrands, report: reportHtml({ loading: true }) };
         const r = this.adReport || {};
-        if (r.error) return { error: true, groups: [], allBrands, report: reportHtml({ error: true, alerts, brandName }) };
+        if (r.error) return { error: true, groups: [], posts: [], allBrands, report: reportHtml({ error: true, alerts, brandName }) };
         this._arCache = this._arList();
         const ids = [...new Set([...(this.igAccounts || []).map(a => a.brand_id), ...(r.cards || []).map(c => c.brand_id)].filter(Boolean))];
         const brands = ids.map(id => ({ id, name: brandName(id) }));
@@ -6567,7 +6575,8 @@ class BhasApp {
         //  판정판 — 판정선은 ad_report_rules 행 그대로(브랜드 id 기준)
         const rulesBy = Object.fromEntries((r.rules || []).map(x => [x.brand_id, x]));
         const groups = r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: allBrands, period: this.apPeriod || 'yesterday', now: Date.now() }) : [];
-        return { groups, error: !r.daily, allBrands, report: reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
+        const posts = filterCards(this._arCache, { brand: this.arBrand || 'all', period: this.arPeriod || 'active', now: Date.now() });
+        return { groups, posts, error: !r.daily, allBrands, report: reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
             activeAds: links.filter(l => l.effective_status === 'ACTIVE').length, unlinked: links.filter(l => !l.media_id),
             brandName, now: Date.now() }) };
     }
@@ -6590,7 +6599,7 @@ class BhasApp {
     }
 
     renderSNS() {
-        if (!this._igLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">SNS 데이터를 불러오는 중...</div>`;
+        if (!this._igLoaded) return `<section class="m3-list"><div class="m3-lbar"><div><b>SNS 운영현황</b><span>데이터를 불러오는 중...</span></div></div></section><section class="m3-doc"><div class="m3-none mid">SNS 데이터를 불러오는 중...</div></section>`;
         const allAccounts = this.igAccounts || [];
         const accSel = this.snsAcc || '전체';
         const accounts = accSel === '전체' ? allAccounts : allAccounts.filter(a => String(a.id) === String(accSel));
@@ -6632,7 +6641,7 @@ class BhasApp {
             }
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
             const wkTile = (label, v, signed) => { const inner = (v == null) ? '<span style="color:var(--text-muted)">—</span>' : signed ? this._igDelta(v) : `<span style="color:var(--text-main)">${v.toLocaleString()}</span>`; return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;line-height:1.05">${inner}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
-            return { brand_id: a.brand_id, html: `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
+            return { id: String(a.id), brand_id: a.brand_id, title: a.username ? '@' + String(a.username).replace(/^@/, '') : this._brandNameById(a.brand_id), html: `<div class="glass sns3-ig" style="padding:1.3rem 1.4rem;border-radius:18px">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:0.9rem">
                     <div style="min-width:0;flex:1">
                         <div style="font-size:1.05rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(this._brandNameById(a.brand_id))}</div>
@@ -6679,14 +6688,29 @@ class BhasApp {
         });
         const ads = this._adsBlock();
         const period = this.apPeriod || 'yesterday';
-        return `<div class="mp">
-            ${this._mpTop('SNS 운영현황', '브랜드별 팔로워 추이 · 주간 게시물 · 댓글/좋아요')}
-            <div class="mp-body">
-            ${sns3Html({ groups: ads.groups, brands: ads.allBrands, igCards: cards, period, now: Date.now(), loading: ads.loading, error: ads.error })}
-            ${accounts.length ? '' : `<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);margin-top:14px">등록된 인스타 계정이 없습니다.</div>`}
-            <div style="margin-top:1.3rem">${ads.report}</div>
-            <p style="margin:1.1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 팔로워·게시물·댓글·좋아요는 메타 API로 매일 자동수집됩니다. 주간 증감은 2주치가 쌓이면 표시돼요. (스토리는 API로 소급 불가라 보류)</p>
-        </div></div>`;
+        const rows = sns3Rows({ groups: ads.groups, posts: ads.posts, accounts, account: accSel });
+        const pick = [...rows.setRows, ...rows.postRows, ...rows.accountRows].find(x => x.key === this.snsPick) || null;
+        const verdict = k => ({ up: '증액', keep: '유지', stop: '중단', idle: '집행 없음', none: '판정선 없음', wait: '대기', hold: '보류', final: '최종' }[k] || k || '—');
+        const rowHtml = r => `<div class="m3-r sns3-row${pick && pick.key === r.key ? ' on' : ''}" data-sns-key="${esc(r.key)}" onclick="app.selectSnsItem('${esc(r.key)}')">
+            <b><i class="ph ${r.type === 'set' ? 'ph-megaphone-simple' : r.type === 'post' ? 'ph-image-square' : 'ph-instagram-logo'}"></i>${esc(r.title)}${r.kind ? `<em class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</em>` : ''}</b>
+            <div class="sub"><span>${r.type === 'set' ? `${r.cpf == null ? (r.spend > 0 ? '∞' : '—') : Number(r.cpf).toLocaleString()}원/명 · 지출 ${Number(r.spend || 0).toLocaleString()}원` : r.type === 'post' ? `${r.cpf == null ? '1명당 —' : Number(r.cpf).toLocaleString() + '원/명'} · ${esc(this._arBrandName(r.brand_id))}` : `${esc(this._arBrandName(r.brand_id))} · 인스타 현황`}</span></div></div>`;
+        const group = (label, list) => list.length ? `<div class="sns3-group">${label}<em>${list.length}</em></div>${list.map(rowHtml).join('')}` : '';
+        const accountOptions = `<select class="sns3-mobile-filter" onchange="app.setSnsAcc(this.value)"><option value="전체"${accSel === '전체' ? ' selected' : ''}>모든 계정</option>${allAccounts.map(a => `<option value="${esc(a.id)}"${String(accSel) === String(a.id) ? ' selected' : ''}>${esc(a.username || a.name || '계정')}</option>`).join('')}</select>`;
+        let detail = `<div class="m3-none mid">광고 세트나 게시물을 선택하세요</div>`;
+        if (pick?.type === 'set') detail = `<div class="m3-page">${snsSetDetailHtml(pick)}</div>`;
+        if (pick?.type === 'account') detail = `<div class="m3-page sns3-account">${(cards.find(c => c.id === pick.id) || {}).html || '<div class="m3-none">계정 정보가 없습니다.</div>'}</div>`;
+        if (pick?.type === 'post') {
+            const idx = (this._arCache || []).indexOf(pick.post);
+            detail = `<div class="m3-page sns3-post">${cardHtml(pick.post, { brandName: id => this._arBrandName(id), i: idx })}</div>`;
+        }
+        return `<section class="m3-list">
+            <div class="m3-lbar"><div><b>SNS 운영현황</b><span>${rows.setRows.length}개 세트 · ${rows.postRows.length}개 게시물</span></div>
+                <div class="ap-tog">${[['yesterday', '어제'], ['cum', '누적']].map(([k, l]) => `<button class="${period === k ? 'on' : ''}" onclick="app.adPanelPeriod('${k}')">${l}</button>`).join('')}</div></div>
+            ${accountOptions}<div class="m3-rows"><div class="m3-r sns3-summary" onclick="app.selectSnsItem('summary')"><b><i class="ph ph-chart-line-up"></i>광고 리포트 요약</b><div class="sub"><span>수집 상태·필터·미연결 광고</span></div></div>
+            ${group('광고 세트', rows.setRows)}${group('광고 게시물', rows.postRows)}${group('인스타 계정', rows.accountRows)}
+            ${rows.setRows.length || rows.postRows.length || rows.accountRows.length ? '' : '<div class="m3-none">표시할 SNS 항목이 없습니다.</div>'}</div></section>
+            <section class="m3-doc"><div class="m3-tools sns3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 목록</button><span class="sp"></span></div>
+                ${this.snsPick === 'summary' ? `<div class="m3-page sns3-report">${ads.report}</div>` : detail}</section>`;
     }
 
     // 인스타 피드 톤앤매너 미리보기 — 실제 인스타 프로필 화면 그대로.
