@@ -16,7 +16,7 @@ import { kstDate, scrub } from "../instagram-sync/competitors.ts";
 export type Deps = { db: any; fetch: (url: string, init?: RequestInit) => Promise<Response>; env: (k: string) => string | undefined; now?: () => Date };
 
 export const GRAPH = "https://graph.facebook.com/v23.0";
-const AD_FIELDS = "id,name,effective_status,created_time,updated_time,campaign_id,adset{id,daily_budget,end_time},creative{source_instagram_media_id,effective_instagram_media_id,instagram_user_id,instagram_permalink_url,thumbnail_url}";
+const AD_FIELDS = "id,name,effective_status,created_time,updated_time,campaign_id,adset{id,name,effective_status,daily_budget,start_time,end_time},creative{source_instagram_media_id,effective_instagram_media_id,instagram_user_id,instagram_permalink_url,thumbnail_url}";
 const INS_FIELDS = "spend,impressions,reach,instagram_profile_visits,instagram_profile_follow,account_currency";
 
 type GErr = { message?: string; code?: number; error_subcode?: number };
@@ -34,7 +34,7 @@ const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { sta
 
 type Ad = {
   id: string; name?: string; effective_status?: string; created_time?: string; updated_time?: string; campaign_id?: string;
-  adset?: { id?: string; daily_budget?: string; end_time?: string };
+  adset?: { id?: string; name?: string; effective_status?: string; daily_budget?: string; start_time?: string; end_time?: string };
   creative?: { source_instagram_media_id?: string; effective_instagram_media_id?: string; instagram_user_id?: string; instagram_permalink_url?: string; thumbnail_url?: string };
 };
 
@@ -136,6 +136,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           ad_id: ad.id, ad_account_id: acct.id, currency: acct.currency, campaign_id: ad.campaign_id ?? null, adset_id: ad.adset?.id ?? null,
           ad_name: ad.name ?? null, effective_status: ad.effective_status ?? null,
           daily_budget: ad.adset?.daily_budget ? int(ad.adset.daily_budget) : null, adset_end: ad.adset?.end_time ?? null,
+          adset_name: ad.adset?.name ?? null, adset_status: ad.adset?.effective_status ?? null, adset_start: ad.adset?.start_time ?? null,
           ig_user_id: ig, media_id: media, media_src: c.source_instagram_media_id ? "source" : media ? "effective" : null,
           brand_id: igBrand.get(ig) ?? null, permalink: c.instagram_permalink_url ?? null, thumb_url: c.thumbnail_url ?? null,
           created_time: ad.created_time ?? null, updated_time: ad.updated_time ?? null, updated_at: nowIso,

@@ -1,0 +1,872 @@
+{
+ "links": [
+  {
+   "ad_id": "120255740606880038",
+   "ad_name": "hhh_1107잔여수량_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740606940038",
+   "adset_name": "hhh_1107잔여수량_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:57+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740607030038",
+   "ad_name": "hhh_1107메리노베스트_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740606950038",
+   "adset_name": "hhh_1107메리노베스트_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:41+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740606900038",
+   "ad_name": "hhh_1030별바지소재_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740606970038",
+   "adset_name": "hhh_1030별바지소재_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:37+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740606920038",
+   "ad_name": "hhh_1030데일리이너_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740606870038",
+   "adset_name": "hhh_1030데일리이너_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:35+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740607090038",
+   "ad_name": "hhh_1102별바지마감_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740606860038",
+   "adset_name": "hhh_1102별바지마감_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:49+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740606890038",
+   "ad_name": "hhh_1029별팬츠컬러_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740607110038",
+   "adset_name": "hhh_1029별팬츠컬러_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:31+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740607040038",
+   "ad_name": "hhh_1105LASTDAY_PV",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255740606960038",
+   "adset_name": "hhh_1105LASTDAY_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:54+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740607070038",
+   "ad_name": "hhh_1029핑크코어_PV",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255740607000038",
+   "adset_name": "hhh_1029핑크코어_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 26000,
+   "adset_start": "2026-11-14T23:17:30+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740606910038",
+   "ad_name": "hhh_1030쿠폰_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740606980038",
+   "adset_name": "hhh_1030쿠폰_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:15+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740607050038",
+   "ad_name": "hhh_1029컬러투표_PV",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255740606990038",
+   "adset_name": "hhh_1029컬러투표_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:22+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740607100038",
+   "ad_name": "hhh_1028프리오더_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740607020038",
+   "adset_name": "hhh_1028프리오더_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:16+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740606930038",
+   "ad_name": "hhh_1029_29CM_PV",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255740607010038",
+   "adset_name": "hhh_1029_29CM_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:17:24+0900",
+   "adset_end": "2026-11-16T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740607060038",
+   "ad_name": "hhh_1026제작_PV",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255740607080038",
+   "adset_name": "hhh_1026제작_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 26000,
+   "adset_start": "2026-11-14T23:15:57+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255740571100038",
+   "ad_name": "hhh_1114재입고_PV",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255740571110038",
+   "adset_name": "hhh_1114재입고_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-14T23:03:49+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714625980038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255714625990038",
+   "adset_name": "lohi_1112피그먼트_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714617010038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255714617020038",
+   "adset_name": "lohi_1112FWBOX29_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714606890038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255714606880038",
+   "adset_name": "lohi_1112EVENT_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 10000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-15T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714598550038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255714598540038",
+   "adset_name": "lohi_1111LIKEFATHER_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714592350038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255714592340038",
+   "adset_name": "lohi_1111플리스_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714584390038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ADSET_PAUSED",
+   "adset_id": "120255714584380038",
+   "adset_name": "lohi_1110FWBOX금요일_PV",
+   "adset_status": "PAUSED",
+   "daily_budget": 10000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-15T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714556960038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255714556970038",
+   "adset_name": "lohi_1101FWBOX_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714540460038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255714540450038",
+   "adset_name": "lohi_1026LIKEFATHER_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714528520038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255714528530038",
+   "adset_name": "lohi_1025FWBOX_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255714520350038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255714520340038",
+   "adset_name": "lohi_1020RESTOCK_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 10000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255711531300038",
+   "ad_name": "hhh_멜로우오버롤_PV",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255711531290038",
+   "adset_name": "hhh_멜로우오버롤_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 26000,
+   "adset_start": "2026-11-14T00:05:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255711607140038",
+   "ad_name": "tovee_0901가을_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255711607130038",
+   "adset_name": "tovee_0901가을_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255711568900038",
+   "ad_name": "lohi_FW피그먼트_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255711568920038",
+   "adset_name": "lohi_FW피그먼트_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 13000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255711584510038",
+   "ad_name": "lohi_플리스재킷_PV_광고",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255711584500038",
+   "adset_name": "lohi_플리스재킷_PV",
+   "adset_status": "ACTIVE",
+   "daily_budget": 10000,
+   "adset_start": "2026-11-14T00:00:00+0900",
+   "adset_end": "2026-11-19T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255644019000038",
+   "ad_name": "hhh_멜로우오버롤",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255644017600038",
+   "adset_name": "hhh_멜로우오버롤",
+   "adset_status": "ACTIVE",
+   "daily_budget": 20000,
+   "adset_start": "2026-11-11T10:37:52+0900",
+   "adset_end": "2026-11-12T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255644019220038",
+   "ad_name": "lohi_플리스재킷",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255644017700038",
+   "adset_name": "lohi_플리스재킷",
+   "adset_status": "ACTIVE",
+   "daily_budget": 10000,
+   "adset_start": "2026-11-11T10:37:22+0900",
+   "adset_end": "2026-11-12T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255644019140038",
+   "ad_name": "lohi_FW피그먼트",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255644017680038",
+   "adset_name": "lohi_FW피그먼트",
+   "adset_status": "ACTIVE",
+   "daily_budget": 10000,
+   "adset_start": "2026-11-11T10:35:53+0900",
+   "adset_end": "2026-11-12T23:59:00+0900"
+  },
+  {
+   "ad_id": "120255667005050038",
+   "ad_name": "tovee_0901가을_boost",
+   "effective_status": "ACTIVE",
+   "adset_id": "120255666999860038",
+   "adset_name": "tovee_0901가을_boost",
+   "adset_status": "ACTIVE",
+   "daily_budget": 10000,
+   "adset_start": "2026-11-11T10:34:40+0900",
+   "adset_end": "2026-11-13T23:59:00+0900"
+  },
+  {
+   "ad_id": "120240498565560038",
+   "ad_name": "하헤호가디건",
+   "effective_status": "PAUSED",
+   "adset_id": "120240498565550038",
+   "adset_name": "하헤호가디건",
+   "adset_status": "CAMPAIGN_PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2025-11-26T13:07:47+0900",
+   "adset_end": null
+  },
+  {
+   "ad_id": "120245008101280038",
+   "ad_name": "하헤호AI 광고",
+   "effective_status": "CAMPAIGN_PAUSED",
+   "adset_id": "120245008101260038",
+   "adset_name": "하헤호AI 광고 세트",
+   "adset_status": "CAMPAIGN_PAUSED",
+   "daily_budget": 20000,
+   "adset_start": "2026-03-05T12:04:00+0900",
+   "adset_end": null
+  }
+ ],
+ "daily": [
+  {
+   "ad_id": "120240498565560038",
+   "day": "2026-11-08",
+   "spend": 9004,
+   "follows": 15
+  },
+  {
+   "ad_id": "120245008101280038",
+   "day": "2026-11-08",
+   "spend": 21600,
+   "follows": 26
+  },
+  {
+   "ad_id": "120245008101280038",
+   "day": "2026-11-09",
+   "spend": 10926,
+   "follows": 15
+  },
+  {
+   "ad_id": "120255644019000038",
+   "day": "2026-11-11",
+   "spend": 17071,
+   "follows": 3
+  },
+  {
+   "ad_id": "120255644019140038",
+   "day": "2026-11-11",
+   "spend": 7210,
+   "follows": 2
+  },
+  {
+   "ad_id": "120255644019220038",
+   "day": "2026-11-11",
+   "spend": 7313,
+   "follows": 1
+  },
+  {
+   "ad_id": "120255667005050038",
+   "day": "2026-11-11",
+   "spend": 7562,
+   "follows": 1
+  },
+  {
+   "ad_id": "120255644019000038",
+   "day": "2026-11-12",
+   "spend": 13469,
+   "follows": 2
+  },
+  {
+   "ad_id": "120255644019140038",
+   "day": "2026-11-12",
+   "spend": 8038,
+   "follows": 2
+  },
+  {
+   "ad_id": "120255644019220038",
+   "day": "2026-11-12",
+   "spend": 8072,
+   "follows": 4
+  },
+  {
+   "ad_id": "120255667005050038",
+   "day": "2026-11-12",
+   "spend": 7408,
+   "follows": 1
+  },
+  {
+   "ad_id": "120255667005050038",
+   "day": "2026-11-13",
+   "spend": 10410,
+   "follows": 2
+  },
+  {
+   "ad_id": "120255711531300038",
+   "day": "2026-11-14",
+   "spend": 19216,
+   "follows": 27
+  },
+  {
+   "ad_id": "120255711568900038",
+   "day": "2026-11-14",
+   "spend": 9900,
+   "follows": 14
+  },
+  {
+   "ad_id": "120255711584510038",
+   "day": "2026-11-14",
+   "spend": 9805,
+   "follows": 7
+  },
+  {
+   "ad_id": "120255711607140038",
+   "day": "2026-11-14",
+   "spend": 9854,
+   "follows": 12
+  },
+  {
+   "ad_id": "120255714520350038",
+   "day": "2026-11-14",
+   "spend": 9750,
+   "follows": 5
+  },
+  {
+   "ad_id": "120255714528520038",
+   "day": "2026-11-14",
+   "spend": 9831,
+   "follows": 11
+  },
+  {
+   "ad_id": "120255714540460038",
+   "day": "2026-11-14",
+   "spend": 9867,
+   "follows": 11
+  },
+  {
+   "ad_id": "120255714556960038",
+   "day": "2026-11-14",
+   "spend": 9878,
+   "follows": 16
+  },
+  {
+   "ad_id": "120255714584390038",
+   "day": "2026-11-14",
+   "spend": 9882,
+   "follows": 4
+  },
+  {
+   "ad_id": "120255714592350038",
+   "day": "2026-11-14",
+   "spend": 9903,
+   "follows": 15
+  },
+  {
+   "ad_id": "120255714598550038",
+   "day": "2026-11-14",
+   "spend": 9824,
+   "follows": 15
+  },
+  {
+   "ad_id": "120255714606890038",
+   "day": "2026-11-14",
+   "spend": 9907,
+   "follows": 6
+  },
+  {
+   "ad_id": "120255714617010038",
+   "day": "2026-11-14",
+   "spend": 9796,
+   "follows": 11
+  },
+  {
+   "ad_id": "120255714625980038",
+   "day": "2026-11-14",
+   "spend": 9891,
+   "follows": 17
+  },
+  {
+   "ad_id": "120255740571100038",
+   "day": "2026-11-14",
+   "spend": 608,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740606880038",
+   "day": "2026-11-14",
+   "spend": 281,
+   "follows": 1
+  },
+  {
+   "ad_id": "120255740606890038",
+   "day": "2026-11-14",
+   "spend": 434,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740606900038",
+   "day": "2026-11-14",
+   "spend": 317,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740606910038",
+   "day": "2026-11-14",
+   "spend": 143,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740606920038",
+   "day": "2026-11-14",
+   "spend": 68,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740606930038",
+   "day": "2026-11-14",
+   "spend": 280,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740607030038",
+   "day": "2026-11-14",
+   "spend": 182,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740607040038",
+   "day": "2026-11-14",
+   "spend": 103,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740607050038",
+   "day": "2026-11-14",
+   "spend": 98,
+   "follows": 1
+  },
+  {
+   "ad_id": "120255740607060038",
+   "day": "2026-11-14",
+   "spend": 481,
+   "follows": 2
+  },
+  {
+   "ad_id": "120255740607070038",
+   "day": "2026-11-14",
+   "spend": 392,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740607090038",
+   "day": "2026-11-14",
+   "spend": 181,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255740607100038",
+   "day": "2026-11-14",
+   "spend": 173,
+   "follows": 0
+  },
+  {
+   "ad_id": "120255711531300038",
+   "day": "2026-11-15",
+   "spend": 15487,
+   "follows": 26
+  },
+  {
+   "ad_id": "120255711568900038",
+   "day": "2026-11-15",
+   "spend": 9822,
+   "follows": 9
+  },
+  {
+   "ad_id": "120255711584510038",
+   "day": "2026-11-15",
+   "spend": 9858,
+   "follows": 6
+  },
+  {
+   "ad_id": "120255711607140038",
+   "day": "2026-11-15",
+   "spend": 9885,
+   "follows": 15
+  },
+  {
+   "ad_id": "120255714520350038",
+   "day": "2026-11-15",
+   "spend": 9842,
+   "follows": 8
+  },
+  {
+   "ad_id": "120255714528520038",
+   "day": "2026-11-15",
+   "spend": 9819,
+   "follows": 10
+  },
+  {
+   "ad_id": "120255714540460038",
+   "day": "2026-11-15",
+   "spend": 9807,
+   "follows": 15
+  },
+  {
+   "ad_id": "120255714556960038",
+   "day": "2026-11-15",
+   "spend": 9806,
+   "follows": 14
+  },
+  {
+   "ad_id": "120255714584390038",
+   "day": "2026-11-15",
+   "spend": 9801,
+   "follows": 6
+  },
+  {
+   "ad_id": "120255714592350038",
+   "day": "2026-11-15",
+   "spend": 9830,
+   "follows": 6
+  },
+  {
+   "ad_id": "120255714598550038",
+   "day": "2026-11-15",
+   "spend": 9808,
+   "follows": 14
+  },
+  {
+   "ad_id": "120255714606890038",
+   "day": "2026-11-15",
+   "spend": 9846,
+   "follows": 4
+  },
+  {
+   "ad_id": "120255714617010038",
+   "day": "2026-11-15",
+   "spend": 9679,
+   "follows": 10
+  },
+  {
+   "ad_id": "120255714625980038",
+   "day": "2026-11-15",
+   "spend": 9823,
+   "follows": 16
+  },
+  {
+   "ad_id": "120255740571100038",
+   "day": "2026-11-15",
+   "spend": 15543,
+   "follows": 16
+  },
+  {
+   "ad_id": "120255740606880038",
+   "day": "2026-11-15",
+   "spend": 14252,
+   "follows": 9
+  },
+  {
+   "ad_id": "120255740606890038",
+   "day": "2026-11-15",
+   "spend": 15432,
+   "follows": 4
+  },
+  {
+   "ad_id": "120255740606900038",
+   "day": "2026-11-15",
+   "spend": 15302,
+   "follows": 11
+  },
+  {
+   "ad_id": "120255740606910038",
+   "day": "2026-11-15",
+   "spend": 12889,
+   "follows": 3
+  },
+  {
+   "ad_id": "120255740606920038",
+   "day": "2026-11-15",
+   "spend": 15090,
+   "follows": 5
+  },
+  {
+   "ad_id": "120255740606930038",
+   "day": "2026-11-15",
+   "spend": 15149,
+   "follows": 4
+  },
+  {
+   "ad_id": "120255740607030038",
+   "day": "2026-11-15",
+   "spend": 9684,
+   "follows": 1
+  },
+  {
+   "ad_id": "120255740607040038",
+   "day": "2026-11-15",
+   "spend": 13308,
+   "follows": 12
+  },
+  {
+   "ad_id": "120255740607050038",
+   "day": "2026-11-15",
+   "spend": 15171,
+   "follows": 11
+  },
+  {
+   "ad_id": "120255740607060038",
+   "day": "2026-11-15",
+   "spend": 15522,
+   "follows": 20
+  },
+  {
+   "ad_id": "120255740607070038",
+   "day": "2026-11-15",
+   "spend": 15359,
+   "follows": 24
+  },
+  {
+   "ad_id": "120255740607090038",
+   "day": "2026-11-15",
+   "spend": 15307,
+   "follows": 11
+  },
+  {
+   "ad_id": "120255740607100038",
+   "day": "2026-11-15",
+   "spend": 15374,
+   "follows": 5
+  },
+  {
+   "ad_id": "120255740571100038",
+   "day": "2026-11-16",
+   "spend": 5597,
+   "follows": 3
+  },
+  {
+   "ad_id": "120255740606880038",
+   "day": "2026-11-16",
+   "spend": 5384,
+   "follows": 3
+  },
+  {
+   "ad_id": "120255740606890038",
+   "day": "2026-11-16",
+   "spend": 5662,
+   "follows": 1
+  },
+  {
+   "ad_id": "120255740606900038",
+   "day": "2026-11-16",
+   "spend": 6059,
+   "follows": 6
+  },
+  {
+   "ad_id": "120255740606910038",
+   "day": "2026-11-16",
+   "spend": 5613,
+   "follows": 5
+  },
+  {
+   "ad_id": "120255740606920038",
+   "day": "2026-11-16",
+   "spend": 5633,
+   "follows": 1
+  },
+  {
+   "ad_id": "120255740606930038",
+   "day": "2026-11-16",
+   "spend": 5991,
+   "follows": 5
+  },
+  {
+   "ad_id": "120255740607030038",
+   "day": "2026-11-16",
+   "spend": 5408,
+   "follows": 3
+  },
+  {
+   "ad_id": "120255740607040038",
+   "day": "2026-11-16",
+   "spend": 6109,
+   "follows": 9
+  },
+  {
+   "ad_id": "120255740607050038",
+   "day": "2026-11-16",
+   "spend": 5930,
+   "follows": 7
+  },
+  {
+   "ad_id": "120255740607060038",
+   "day": "2026-11-16",
+   "spend": 5825,
+   "follows": 7
+  },
+  {
+   "ad_id": "120255740607070038",
+   "day": "2026-11-16",
+   "spend": 5976,
+   "follows": 4
+  },
+  {
+   "ad_id": "120255740607090038",
+   "day": "2026-11-16",
+   "spend": 5858,
+   "follows": 3
+  },
+  {
+   "ad_id": "120255740607100038",
+   "day": "2026-11-16",
+   "spend": 6001,
+   "follows": 5
+  }
+ ]
+}

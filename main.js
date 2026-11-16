@@ -29,6 +29,7 @@ import {
 import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
 import { uploadAlerts, uploadChipsHtml, buildCards, reportHtml, detailHtml, kstDay, addDays as arAddDays } from './adReport.js';
+import { buildPanel, panelHtml } from './adPanel.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
@@ -6433,17 +6434,20 @@ class BhasApp {
         this._arLoading = true;
         try {
             const since = arAddDays(kstDay(Date.now()), -60);
-            const [cards, rules, state, media, links] = await Promise.all([
+            const [cards, rules, state, media, links, daily] = await Promise.all([
                 this.supabase.from('ad_post_cards').select('*'),
                 this.supabase.from('ad_report_rules').select('*'),
                 this.supabase.from('ad_report_state').select('*').limit(1),
                 this.supabase.from('ig_media').select('media_id,account_id,brand_id,posted_day,posted_at').gte('posted_day', since),
-                this.supabase.from('ad_links').select('ad_id,ad_name,effective_status,media_id'),
+                //  * — 106(세트명·세트상태·세트시작일) 적용 전에도 깨지지 않게 열 이름을 고정하지 않는다
+                this.supabase.from('ad_links').select('*'),
+                //  판정판(세트별 팔로우당 비용) — 누적은 세트 시작일부터라 넉넉히 120일
+                this.supabase.from('ad_daily').select('ad_id,day,spend,follows').gte('day', arAddDays(kstDay(Date.now()), -120)),
             ]);
             const err = [cards, rules, state].find(r => r.error);
             this.adReport = err ? { error: true } : {
                 cards: cards.data || [], rules: rules.data || [], state: (state.data || [])[0] || null,
-                media: media.data || [], links: links.data || [],
+                media: media.data || [], links: links.data || [], daily: daily.error ? null : (daily.data || []),
             };
         } catch (e) { this.adReport = { error: true }; }
         this._arLoaded = true; this._arLoading = false;
@@ -6551,17 +6555,23 @@ class BhasApp {
         const brandName = id => this._arBrandName(id);
         const alerts = uploadAlerts({ accounts: (this.igAccounts || []).filter(a => a.brand_id), media: (this.adReport || {}).media || [],
             snapshots: this.igSnapshots || [], brandName, now: Date.now() });
-        if (!this._arLoaded) return reportHtml({ loading: true });
+        if (!this._arLoaded) return panelHtml({ loading: true }) + reportHtml({ loading: true });
         const r = this.adReport || {};
-        if (r.error) return reportHtml({ error: true, alerts, brandName });
+        if (r.error) return panelHtml({ error: true }) + reportHtml({ error: true, alerts, brandName });
         this._arCache = this._arList();
         const ids = [...new Set([...(this.igAccounts || []).map(a => a.brand_id), ...(r.cards || []).map(c => c.brand_id)].filter(Boolean))];
         const brands = ids.map(id => ({ id, name: brandName(id) }));
         const links = r.links || [];
-        return reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
+        //  판정판 — 판정선은 ad_report_rules 행 그대로(브랜드 id 기준)
+        const rulesBy = Object.fromEntries((r.rules || []).map(x => [x.brand_id, x]));
+        const allBrands = (mockData.brands || []).map(b => ({ id: b.id, name: b.name }));
+        const panel = panelHtml({ groups: r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: allBrands, period: this.apPeriod || 'yesterday', now: Date.now() }) : [],
+            error: !r.daily, period: this.apPeriod || 'yesterday', now: Date.now() });
+        return panel + reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
             activeAds: links.filter(l => l.effective_status === 'ACTIVE').length, unlinked: links.filter(l => !l.media_id),
             brandName, now: Date.now() });
     }
+    adPanelPeriod(p) { this.apPeriod = p === 'cum' ? 'cum' : 'yesterday'; this.requestRender(); }
     adFilter(k, v) { if (k === 'brand') this.arBrand = v; else this.arPeriod = v; this.requestRender(); }
     adDetailClose() { const el = document.getElementById('ar-sheet'); if (el) el.remove(); }
     async adDetail(i) {

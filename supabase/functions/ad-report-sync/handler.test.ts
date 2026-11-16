@@ -17,7 +17,7 @@ function seed(extra: Record<string, Record<string, unknown>[]> = {}) {
 }
 const ad = (id: string, ig: string, media: { src?: string; eff?: string }, status = "ACTIVE", budget = "10000") => ({
   id, name: `ad_${id}`, effective_status: status, created_time: "2026-11-08T10:00:00+0900", updated_time: "2026-11-09T10:00:00+0900", campaign_id: "C" + id,
-  adset: { id: "S" + id, daily_budget: budget, end_time: "2026-11-13T23:59:00+0900" },
+  adset: { id: "S" + id, name: `set_${id}`, effective_status: status, daily_budget: budget, start_time: "2026-11-08T00:00:00+0900", end_time: "2026-11-13T23:59:00+0900" },
   creative: { source_instagram_media_id: media.src, effective_instagram_media_id: media.eff, instagram_user_id: ig, instagram_permalink_url: `https://ig/${id}`, thumbnail_url: `https://th/${id}` },
 });
 const day = (d: string, spend: number, follows: number, cur = "KRW") => ({ date_start: d, date_stop: d, spend: String(spend), impressions: "1000", reach: "800", instagram_profile_visits: "30", instagram_profile_follow: String(follows), account_currency: cur });
@@ -181,4 +181,12 @@ Deno.test("토큰 없음 → error 상태, 메타 호출 0", async () => {
 Deno.test("isAuthError 분기", () => {
   assert(isAuthError({ code: 190 })); assert(isAuthError({ code: 200 })); assert(isAuthError({ code: 10 })); assert(isAuthError({ code: 294 }));
   assert(!isAuthError({ code: 1 })); assert(!isAuthError({ code: 17 })); assert(!isAuthError({ code: 100 })); assert(!isAuthError(null));
+});
+
+Deno.test("106 판정판: 세트명·세트상태·세트시작일을 ad_links 에 저장(광고명과 다를 수 있음)", async () => {
+  const db = seed();
+  const { body } = await run(db, meta());
+  assert(body.ok, JSON.stringify(body));
+  const a1 = db.t("ad_links").find((r) => r.ad_id === "A1")!;
+  assertEquals([a1.ad_name, a1.adset_name, a1.adset_status, a1.adset_start], ["ad_A1", "set_A1", "ACTIVE", "2026-11-08T00:00:00+0900"]);
 });
