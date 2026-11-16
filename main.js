@@ -29,7 +29,7 @@ import {
 import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } from './noteTidy.js';
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
 import { uploadAlerts, uploadChipsHtml, buildCards, reportHtml, detailHtml, kstDay, addDays as arAddDays } from './adReport.js';
-import { buildPanel, panelHtml } from './adPanel.js';
+import { buildPanel, sns3Html } from './adPanel.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
@@ -6555,21 +6555,21 @@ class BhasApp {
         const brandName = id => this._arBrandName(id);
         const alerts = uploadAlerts({ accounts: (this.igAccounts || []).filter(a => a.brand_id), media: (this.adReport || {}).media || [],
             snapshots: this.igSnapshots || [], brandName, now: Date.now() });
-        if (!this._arLoaded) return panelHtml({ loading: true }) + reportHtml({ loading: true });
+        //  SNS 3단: 판정 groups 는 브랜드 열로, 게시물별 리포트는 3열 아래로 — 여기선 재료만 돌려준다
+        const allBrands = (mockData.brands || []).map(b => ({ id: b.id, name: b.name }));
+        if (!this._arLoaded) return { loading: true, groups: [], allBrands, report: reportHtml({ loading: true }) };
         const r = this.adReport || {};
-        if (r.error) return panelHtml({ error: true }) + reportHtml({ error: true, alerts, brandName });
+        if (r.error) return { error: true, groups: [], allBrands, report: reportHtml({ error: true, alerts, brandName }) };
         this._arCache = this._arList();
         const ids = [...new Set([...(this.igAccounts || []).map(a => a.brand_id), ...(r.cards || []).map(c => c.brand_id)].filter(Boolean))];
         const brands = ids.map(id => ({ id, name: brandName(id) }));
         const links = r.links || [];
         //  판정판 — 판정선은 ad_report_rules 행 그대로(브랜드 id 기준)
         const rulesBy = Object.fromEntries((r.rules || []).map(x => [x.brand_id, x]));
-        const allBrands = (mockData.brands || []).map(b => ({ id: b.id, name: b.name }));
-        const panel = panelHtml({ groups: r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: allBrands, period: this.apPeriod || 'yesterday', now: Date.now() }) : [],
-            error: !r.daily, period: this.apPeriod || 'yesterday', now: Date.now() });
-        return panel + reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
+        const groups = r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: allBrands, period: this.apPeriod || 'yesterday', now: Date.now() }) : [];
+        return { groups, error: !r.daily, allBrands, report: reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
             activeAds: links.filter(l => l.effective_status === 'ACTIVE').length, unlinked: links.filter(l => !l.media_id),
-            brandName, now: Date.now() });
+            brandName, now: Date.now() }) };
     }
     adPanelPeriod(p) { this.apPeriod = p === 'cum' ? 'cum' : 'yesterday'; this.requestRender(); }
     adFilter(k, v) { if (k === 'brand') this.arBrand = v; else this.arPeriod = v; this.requestRender(); }
@@ -6632,7 +6632,7 @@ class BhasApp {
             }
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
             const wkTile = (label, v, signed) => { const inner = (v == null) ? '<span style="color:var(--text-muted)">—</span>' : signed ? this._igDelta(v) : `<span style="color:var(--text-main)">${v.toLocaleString()}</span>`; return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;line-height:1.05">${inner}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
-            return `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
+            return { brand_id: a.brand_id, html: `<div class="glass" style="padding:1.3rem 1.4rem;border-radius:18px">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:0.9rem">
                     <div style="min-width:0;flex:1">
                         <div style="font-size:1.05rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(this._brandNameById(a.brand_id))}</div>
@@ -6675,13 +6675,16 @@ class BhasApp {
                     </table>
                     </div>
                 </div>
-            </div>`;
-        }).join('');
+            </div>` };
+        });
+        const ads = this._adsBlock();
+        const period = this.apPeriod || 'yesterday';
         return `<div class="mp">
             ${this._mpTop('SNS 운영현황', '브랜드별 팔로워 추이 · 주간 게시물 · 댓글/좋아요')}
             <div class="mp-body">
-            ${this._adsBlock()}
-            ${accounts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.3rem">${cards}</div>` : `<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted)">등록된 인스타 계정이 없습니다.</div>`}
+            ${sns3Html({ groups: ads.groups, brands: ads.allBrands, igCards: cards, period, now: Date.now(), loading: ads.loading, error: ads.error })}
+            ${accounts.length ? '' : `<div class="glass" style="padding:2rem;border-radius:16px;color:var(--text-muted);margin-top:14px">등록된 인스타 계정이 없습니다.</div>`}
+            <div style="margin-top:1.3rem">${ads.report}</div>
             <p style="margin:1.1rem 2px 0;font-size:0.72rem;color:var(--text-muted)">* 팔로워·게시물·댓글·좋아요는 메타 API로 매일 자동수집됩니다. 주간 증감은 2주치가 쌓이면 표시돼요. (스토리는 API로 소급 불가라 보류)</p>
         </div></div>`;
     }

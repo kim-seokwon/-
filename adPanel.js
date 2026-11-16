@@ -166,3 +166,77 @@ export function panelHtml({ groups = [], period = 'yesterday', now = Date.now(),
         <div class="ap-sc">세트 ${g.sets.length}개${count(g) ? ' · ' + count(g) : ''}</div></a>`).join('')}</div>`;
     return `${AP_CSS}<div class="glass ap-wrap">${head}${sum}${groups.map((g, i) => brandHtml(g).replace('<div class="ap-brand"', `<div class="ap-brand" id="ap-b${i}"`)).join('')}</div>`;
 }
+
+//  SNS 운영현황 3단 — 브랜드 3열(하이헤이호 | 로하이스튜디오 | 토비). 한 열 = 브랜드 머리(판정·1명당) → 광고 세트(압축) → 인스타 카드.
+//   수치는 buildPanel 결과 그대로(재계산 없음) — 여기선 배치만 바꾼다. 세트는 '진행' 먼저(그 안 순서는 buildPanel 순서 유지).
+//   igCards: [{ brand_id, html }] (main.js 가 만든 기존 인스타 카드 그대로). 3브랜드 밖(머문 등·브랜드 미지정)은 3열 아래 별도 줄.
+export const MAIN3 = ['하이헤이호', '로하이', '토비'];
+const squash = s => String(s || '').replace(/\s/g, '');
+export function snsColumns({ groups = [], brands = [], igCards = [] } = {}) {
+    const cols = MAIN3.map(k => {
+        const b = brands.find(b => squash(b.name).includes(k));
+        const id = b ? b.id : null;
+        return { key: k, brand_id: id, name: b ? b.name : k, group: id ? groups.find(g => g.brand_id === id) || null : null,
+            ig: id ? igCards.filter(c => c.brand_id === id) : [] };
+    });
+    const ids = new Set(cols.map(c => c.brand_id).filter(Boolean));
+    return { cols, extraGroups: groups.filter(g => !ids.has(g.brand_id)), extraIg: igCards.filter(c => !ids.has(c.brand_id)) };
+}
+
+export const SNS3_CSS = `<style>
+.sns3-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.sns3-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.sns3-extra{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;align-items:start;margin-top:14px}
+.sns3-xt{grid-column:1/-1;font-size:.78rem;font-weight:800;color:var(--text-muted);margin:4px 2px -4px}
+.sns3-bh{padding:12px 14px;border-radius:18px}
+.sns3-bh .sns3-n{display:flex;align-items:center;gap:8px}
+.sns3-bh .sns3-n b{font-size:1.05rem;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sns3-bh .sns3-v{display:flex;align-items:baseline;gap:8px;margin-top:6px;font-variant-numeric:tabular-nums}
+.sns3-bh .sns3-v strong{font-size:1.45rem;font-weight:900;line-height:1}
+.sns3-bh .sns3-v span{font-size:.72rem;color:var(--text-muted)}
+.sns3-sets{padding:4px 0;border-radius:18px;overflow:hidden}
+.sns3-set{padding:8px 14px;border-top:1px solid var(--card-border)}
+.sns3-set:first-child{border-top:0}
+.sns3-r1{display:flex;align-items:center;gap:8px;min-width:0}
+.sns3-r1 .sns3-sn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:.82rem}
+.sns3-r1 .sns3-c{font-weight:800;font-size:.86rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sns3-r2{font-size:.68rem;color:var(--text-muted);margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sns3-off summary{cursor:pointer;padding:8px 14px;border-top:1px solid var(--card-border);font-size:.74rem;font-weight:700;color:var(--text-muted)}
+.sns3-off[open] summary{border-bottom:0}
+.sns3-none{padding:12px 14px;font-size:.78rem;color:var(--text-muted)}
+@media (max-width:900px){.sns3-cols{grid-template-columns:1fr}.sns3-extra{grid-template-columns:1fr}}
+</style>`;
+
+//  맨 위 공통 머리(제목 + 어제/누적 토글 하나)
+export function snsHeadHtml({ period = 'yesterday', now = Date.now(), loading = false, error = false } = {}) {
+    const yday = addDays(kstDay(now), -1);
+    const tog = `<div class="ap-tog">${[['yesterday', '어제'], ['cum', '누적']].map(([k, l]) => `<button class="${period === k ? 'on' : ''}" onclick="app.adPanelPeriod('${k}')">${l}</button>`).join('')}</div>`;
+    return `${AP_CSS}${SNS3_CSS}<div class="glass ap-wrap" style="margin-bottom:14px"><div class="ap-head"><div class="ap-title"><i class="ph ph-user-plus"></i> 광고 판정 · 팔로우당 비용</div>${loading || error ? '' : tog}</div>
+        <div class="ap-sub">${period === 'yesterday' ? `어제(${md(yday)}) 하루` : `세트 시작일 ~ 어제(${md(yday)})`} · 1명당 = 지출 ÷ 광고로 생긴 인스타 팔로우 · 오늘 수치는 빼고 판정${loading ? ' · 불러오는 중...' : error ? ' · 광고 수치를 불러올 수 없어요.' : ''}</div></div>`;
+}
+
+//  한 브랜드 열의 광고 부분(머리 + 세트 목록). group 이 없으면 '집행 세트 없음'.
+export function snsBrandAdsHtml(name, g, { loading = false, error = false } = {}) {
+    const head = `<div class="glass sns3-bh"><div class="sns3-n"><b>${esc(name)}</b>${g ? badge(g.kind) : ''}</div>
+        ${g ? `<div class="sns3-v"><strong>${cpfTxt(g.cpf, g.spend)}</strong><span>1명당 · ${won(g.spend)}원 ÷ ${won(g.follows)}명</span></div>
+        <div class="ap-rule" style="margin-top:4px">${esc(g.rules ? `${won(g.rules.up_max)}원 이하 증액 · ${won(g.rules.stop_over)}원까지 유지 · 넘으면 중단` : '판정선 없음')}</div>` : ''}</div>`;
+    if (!g) return `${head}<div class="glass sns3-sets"><div class="sns3-none">${loading ? '불러오는 중...' : error ? '광고 수치를 불러올 수 없어요.' : '이 기간에 집행된 광고 세트가 없어요.'}</div></div>`;
+    const row = s => {
+        const [stt, stc] = STATUS[s.status] || [s.status || '—', '#64748b'];
+        return `<div class="sns3-set" data-set="${esc(s.adset_id)}">
+            <div class="sns3-r1"><span class="sns3-sn" title="${esc(s.name)}">${esc(s.name)}</span><span class="sns3-c">${cpfTxt(s.cpf, s.spend)}</span>${badge(s.kind)}</div>
+            <div class="sns3-r2"><span style="color:${stc};font-weight:700">${esc(stt)}</span> · 지출 ${won(s.spend)}원 · 팔로우 ${won(s.follows)}명 · 예산 ${s.budget != null ? won(s.budget) : '—'} · ~${md(s.end)}</div></div>`;
+    };
+    //  진행 세트는 펼쳐 두고, 꺼진·종료 세트는 접어 둔다(수치는 그대로, 눌러서 펼침) — 인스타 카드가 너무 밀려나지 않게
+    const on = g.sets.filter(s => s.status === 'ACTIVE'), off = g.sets.filter(s => s.status !== 'ACTIVE');
+    const offHtml = off.length ? `<details class="sns3-off"${on.length ? '' : ' open'}><summary>꺼진·종료 세트 ${off.length}개</summary>${off.map(row).join('')}</details>` : '';
+    return `${head}<div class="glass sns3-sets">${on.map(row).join('')}${offHtml}</div>`;
+}
+
+export function sns3Html({ groups = [], brands = [], igCards = [], period = 'yesterday', now = Date.now(), loading = false, error = false } = {}) {
+    const { cols, extraGroups, extraIg } = snsColumns({ groups, brands, igCards });
+    const colHtml = c => `<section class="sns3-col" data-brand="${esc(c.name)}">${snsBrandAdsHtml(c.name, c.group, { loading, error })}${c.ig.map(x => x.html).join('')}</section>`;
+    const extra = extraGroups.length || extraIg.length
+        ? `<div class="sns3-extra"><div class="sns3-xt">그 밖의 계정</div>${extraGroups.map(g => `<section class="sns3-col" data-brand="${esc(g.name)}">${snsBrandAdsHtml(g.name, g)}</section>`).join('')}${extraIg.map(x => x.html).join('')}</div>` : '';
+    return `${snsHeadHtml({ period, now, loading, error })}<div class="sns3-cols">${cols.map(colHtml).join('')}</div>${extra}`;
+}
