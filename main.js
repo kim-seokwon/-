@@ -3549,7 +3549,7 @@ class BhasApp {
         cols.forEach(([k, label]) => { this._tblLabels[view][k] = label; });
         return cols.map(([k, label, cls, filterable = true]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${flt[k] ? ' flt' : ''}"
             onclick="app.sortTbl('${view}','${k}')" title="눌러서 줄 세우기${filterable ? ' · 깔때기로 거르기' : ''}">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}${filterable ? `<button class="th-f"
-            onclick="app.openTblFilter(event,'${view}','${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${flt[k] ? '-fill' : ''}"></i></button>` : ''}</th>`).join('');
+            onclick="app.openTblFilter(event,'${view}','${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph${flt[k] ? '-fill' : ''} ph-funnel"></i></button>` : ''}</th>`).join('');
     }
     //  거르고 줄 세운 결과 — val(row, key) 가 그 칸의 값을 돌려준다
     _applyTbl(view, rows, val, base) {
@@ -3614,7 +3614,7 @@ class BhasApp {
     //  거르는 중 표시 — 머리막대에 붙인다
     _fltBadge(view) {
         const flt = (this.tblFilt || {})[view] || {}, esc = s => this._vesc(s), labels = (this._tblLabels || {})[view] || {};
-        return Object.entries(flt).map(([k, vals]) => `<button class="flt-off" onclick="app.clearTblFilter('${view}','${k}')" title="${esc(labels[k] || k)} 필터 풀기"><i class="ph ph-funnel-fill"></i> ${esc(labels[k] || k)}: ${esc((vals || []).join(' · '))} <b>×</b></button>`).join('');
+        return Object.entries(flt).map(([k, vals]) => `<button class="flt-off" onclick="app.clearTblFilter('${view}','${k}')" title="${esc(labels[k] || k)} 필터 풀기"><i class="ph-fill ph-funnel"></i> ${esc(labels[k] || k)}: ${esc((vals || []).join(' · '))} <b>×</b></button>`).join('');
     }
     _syncTblFilters(view) {
         if (view !== 'sns_ads') return;
@@ -5492,7 +5492,7 @@ class BhasApp {
                             ? (view === 'grid' ? `<div class="fd-grid">${grid}</div>`
                                : `<div class="fd-list"><div class="fd3-head">${[['name', '자료'], ['brand', '브랜드'], ['kind', '종류'], ['date', '날짜']]
                                     .map(([k2, t]) => { const { srt, flt } = this._tblState('documents');
-                                        return `<span class="fh${srt.k === k2 ? ' srt' : ''}${flt[k2] ? ' flt' : ''}" onclick="app.sortTbl('documents','${k2}')">${esc(t)}${srt.k === k2 ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f" onclick="app.openTblFilter(event,'documents','${k2}','${esc(t)}')"><i class="ph ph-funnel${flt[k2] ? '-fill' : ''}"></i></button></span>`; }).join('')}</div>${rows}</div>`)
+                                        return `<span class="fh${srt.k === k2 ? ' srt' : ''}${flt[k2] ? ' flt' : ''}" onclick="app.sortTbl('documents','${k2}')">${esc(t)}${srt.k === k2 ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f" onclick="app.openTblFilter(event,'documents','${k2}','${esc(t)}')"><i class="ph${flt[k2] ? '-fill' : ''} ph-funnel"></i></button></span>`; }).join('')}</div>${rows}</div>`)
                             : `<div class="fd-none">${q ? '찾는 자료가 없습니다' : '이 위치에 자료가 없습니다'}</div>`}
                     </div>
                     <div class="fd-path">
@@ -11653,7 +11653,7 @@ class BhasApp {
                 ${rows.length && rows.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''} onchange="app.pickItemTableRows(this,this.checked)"></th>
                 ${cols.map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${(this.itemColF || {})[k] ? ' flt' : ''}"
                     onclick="app.sortItems('${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
-                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${(this.itemColF || {})[k] ? '-fill' : ''}"></i></button></th>`).join('')}<th>연동</th>
+                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph${(this.itemColF || {})[k] ? '-fill' : ''} ph-funnel"></i></button></th>`).join('')}<th>연동</th>
             </tr></thead><tbody>${rows.length ? rows.map(row).join('')
                 : `<tr><td colspan="12" class="it-none">${filter.empty || '제품이 없습니다'}</td></tr>`}
                 ${more > 0 ? `<tr><td colspan="12" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}
@@ -16488,7 +16488,7 @@ class BhasApp {
             };
             return `<tr class="it-row${sel && String(v.id) === String(sel.id) ? ' on' : ''}" data-id="${esc(v.id)}"
                 onclick="app.selectContact('${esc(v.id)}')" oncontextmenu="app.contactMenu(event,'${esc(v.id)}')">
-                ${cols.map(c => td[c.k]).join('')}</tr>`;
+                ${cols.map(c => td[c.k].replace(/^<td( class=")?/, m => m.length > 3 ? `<td class="ck-${c.k} ` : `<td class="ck-${c.k}"`)).join('')}</tr>`;
         }).join('') + (stopped.length ? `<tr class="prod-fold"><td colspan="${ncol}">${this._c3Fold('app.toggleContactDone()', this.contactShowDone, `종료(거래중단) ${stopped.length}곳`)}</td></tr>` : '');
         //  구분 거르기는 가운데 탭 — 우클릭으로 이름·순서·삭제, ＋로 새 구분(전에는 왼쪽 목록)
         const tab = (key, label, n, editable) => `<button class="it-pill${cur === key ? ' on' : ''}" onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(key)}'))"
@@ -16507,7 +16507,7 @@ class BhasApp {
                 ${tabs}
                 ${stChip || fb ? `<div class="ct3-flt">${stChip}${fb}</div>` : ''}
                 <div class="ct3-tbl"><table class="it-tbl"><thead><tr>
-                    ${this._thead('contacts', cols.map(c => [c.k, c.label]))}
+                    ${this._thead('contacts', cols.map(c => [c.k, c.label, 'ck-' + c.k]))}
                 </tr></thead><tbody>${rows || `<tr><td colspan="${ncol}" class="it-none">${filtered ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다 — 위 ＋'}</td></tr>`}</tbody></table></div>
             </section>`;
         const docOpen = !!(sel || this.contactNew);
@@ -18203,7 +18203,7 @@ class BhasApp {
                     ${rows.length && rows.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''} onchange="app.pickItemTableRows(this,this.checked)"></th>
                 ${cols.map(([k, label]) => `<th class="${srt.k === k ? 'srt' : ''}${cf[k] ? ' flt' : ''}" onclick="app.sortItems('${k}')"
                     title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
-                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${cf[k] ? '-fill' : ''}"></i></button></th>`).join('')}
+                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph${cf[k] ? '-fill' : ''} ph-funnel"></i></button></th>`).join('')}
             </tr></thead><tbody>${rows.length ? rows.map(it => row(it)).join('')
                 : `<tr><td colspan="${n}" class="it-none">${esc(empty || '제품이 없습니다')}</td></tr>`}
                 ${more > 0 ? `<tr><td colspan="${n}" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}
@@ -18341,7 +18341,7 @@ class BhasApp {
             ${color ? `style="--pc:${color}"` : ''} onclick="app.setItemStatus('${k}')">${esc(label)}<em>${n}</em></button>`;
         //  걸린 거르기 = 칩. X 로 하나씩 푼다.
         const COLN = { name: '상품', brand_id: '브랜드', status: '단계', vendor_id: '생산처', ship_date: this.ITEM_DATE_LABEL.ship_date, trims: '부자재', product_id: '시즌', checked: '확인', pattern_no: '패턴', memo: '메모', sale: '판매명', open_date: this.ITEM_DATE_LABEL.open_date };
-        const chip = (label, vals, click) => `<button class="flt-off" onclick="${click}" title="${esc(label)} 거르기 풀기"><i class="ph ph-funnel-fill"></i> ${esc(label)}: ${esc(vals)} <b>×</b></button>`;
+        const chip = (label, vals, click) => `<button class="flt-off" onclick="${click}" title="${esc(label)} 거르기 풀기"><i class="ph-fill ph-funnel"></i> ${esc(label)}: ${esc(vals)} <b>×</b></button>`;
         const chips = [
             sKey !== 'ALL' ? chip('시즌', sKey === 'NONE' ? '없음' : ((seasons.find(p => String(p.id) === String(sKey)) || {}).name || '?'), "app.clearItemScope('sea')") : '',
             bKey !== 'ALL' ? chip('브랜드', bKey === 'NONE' ? '없음' : this._brandNameById(bKey), "app.clearItemScope('brand')") : '',
@@ -18751,7 +18751,7 @@ class BhasApp {
         const st = this.quoteStatus || 'ALL';
         const tab = (id, label) => `<button class="it-pill${st === id ? ' on' : ''}" onclick="app.navPick('quotes','st','${id}')">${esc(label)}<em>${id === 'ALL' ? qAll.length : qAll.filter(q => (q.status || 'draft') === id).length}</em></button>`;
         const qc = this.quoteClient || 'ALL';
-        const chips = (qc !== 'ALL' ? `<button class="flt-off" onclick="app.navPick('quotes','st','ALL')" title="고객사 거르기 풀기"><i class="ph ph-funnel-fill"></i> 고객사: ${esc(qc)} <b>×</b></button>` : '') + this._fltBadge('quotes');
+        const chips = (qc !== 'ALL' ? `<button class="flt-off" onclick="app.navPick('quotes','st','ALL')" title="고객사 거르기 풀기"><i class="ph-fill ph-funnel"></i> 고객사: ${esc(qc)} <b>×</b></button>` : '') + this._fltBadge('quotes');
         return `
         <div class="mp">
             ${this._mpTop('견적서', `${qs.length + doneQs.length}건 · 엑셀 대체`,

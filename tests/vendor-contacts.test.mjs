@@ -99,14 +99,16 @@ test('가운데 표 — 업체명·구분·상태·담당자·휴대폰·전화�
     const t = ctx(); const html = render(t);
     assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address']);   // ⑤ 기본 8열(주소 추가), 팩스·등록증·메모는 열 표시로
     assert.doesNotMatch(html, /ct3-name"[^>]*>[^<]*<em>/, '구분을 업체명 옆 작은 글씨로 붙이지 않는다');
-    assert.match(html, /<td class="ct3-cat">[^<]+<\/td>/, '구분 열');
-    assert.match(html, /<td class="ct3-st"><span class="ct3-badge"[^>]*>거래중<\/span><\/td>/, '상태 열 — 거래중도 보인다');
-    assert.match(html, /colspan="7"|<td class="nw ct3-tel">/, '전화 열');
+    assert.match(html, /<td class="ck-cat ct3-cat">[^<]+<\/td>/, '구분 열');
+    // 390 핵심 3열 CSS 가 열 이름으로 고른다 — 모든 칸에 ck-<열> 이 붙어야 한다(열 끄기로 순서가 바뀌어도 맞게)
+    for (const k of ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address']) assert.match(html, new RegExp(`<td class="ck-${k}[ "]`), k + ' 칸 열 이름');
+    assert.match(html, /<td class="ck-status ct3-st"><span class="ct3-badge"[^>]*>거래중<\/span><\/td>/, '상태 열 — 거래중도 보인다');
+    assert.match(html, /colspan="7"|<td class="ck-phone nw ct3-tel">/, '전화 열');
     assert.match(html, /class="m3 ct3"/, '고른 게 없으면 detail 아님');
     assert.match(html, /모든 연락처 2곳/, '요약');
     assert.match(html, /휴대폰 없음<\/span><span class="v">1곳/, '빈 칸 수 (109 뒤 mobile null)');
     assert.match(html, /성수봉제 &lt;본점&gt;/); assert.doesNotMatch(html, /<본점>/);
-    assert.match(html, /<td class="nw">010-1234-5678<\/td>/);
+    assert.match(html, /<td class="ck-mobile nw">010-1234-5678<\/td>/);
     assert.match(html, /app\.selectContact\('/);
     assert.doesNotMatch(html, /사업자등록증/, '안 고르면 상세 없음');
 });
@@ -284,7 +286,7 @@ test('⑤ 열 표시 — 팩스·등록증·메모를 켜면 11열, 업체명은
     const t = ctx({ contactColOn: { fax: true, cert: true, memo: true, name: false } }); const html = render(t);
     assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]),
         ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address', 'fax', 'cert', 'memo']);
-    assert.match(html, /<td class="ct3-cert">/);
+    assert.match(html, /<td class="ck-cert ct3-cert">/);
     const off = render(ctx({ contactColOn: { email: false, address: false } }));
     assert.deepEqual([...off.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone']);
 });
