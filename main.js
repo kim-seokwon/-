@@ -3335,15 +3335,22 @@ class BhasApp {
     clearTblFilters(view) {
         this.tblFilt = this.tblFilt || {}; this.tblFilt[view] = {};
         document.getElementById('colf')?.remove();
+        this._syncTblFilters(view);
         this.requestRender();
     }
-    //  머리글 한 줄 — cols: [[키, 이름, 칸모양]]
+    clearTblFilter(view, k) {
+        this.tblFilt = this.tblFilt || {}; this.tblFilt[view] = this.tblFilt[view] || {};
+        delete this.tblFilt[view][k]; this._syncTblFilters(view); this.requestRender();
+    }
+    //  머리글 한 줄 — cols: [[키, 이름, 칸모양, 값필터 여부]]. 판매 주문표도 같은 부품을 쓴다.
     _thead(view, cols) {
         const esc = s => this._vesc(s);
         const { srt, flt } = this._tblState(view);
-        return cols.map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${flt[k] ? ' flt' : ''}"
-            onclick="app.sortTbl('${view}','${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
-            onclick="app.openTblFilter(event,'${view}','${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${flt[k] ? '-fill' : ''}"></i></button></th>`).join('');
+        this._tblLabels = this._tblLabels || {}; this._tblLabels[view] = this._tblLabels[view] || {};
+        cols.forEach(([k, label]) => { this._tblLabels[view][k] = label; });
+        return cols.map(([k, label, cls, filterable = true]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${flt[k] ? ' flt' : ''}"
+            onclick="app.sortTbl('${view}','${k}')" title="눌러서 줄 세우기${filterable ? ' · 깔때기로 거르기' : ''}">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}${filterable ? `<button class="th-f"
+            onclick="app.openTblFilter(event,'${view}','${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${flt[k] ? '-fill' : ''}"></i></button>` : ''}</th>`).join('');
     }
     //  거르고 줄 세운 결과 — val(row, key) 가 그 칸의 값을 돌려준다
     _applyTbl(view, rows, val, base) {
@@ -3397,15 +3404,25 @@ class BhasApp {
             const picked = [...el.querySelectorAll('input:checked')].map(i => i.value);
             this.tblFilt = this.tblFilt || {}; this.tblFilt[view] = this.tblFilt[view] || {};
             if (picked.length === vals.length) delete this.tblFilt[view][k]; else this.tblFilt[view][k] = picked;
-            el.remove(); this.requestRender();
+            el.remove(); this._syncTblFilters(view); this.requestRender();
         };
         this._colfOff = (e) => { if (!el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', this._colfOff); } };
         setTimeout(() => document.addEventListener('mousedown', this._colfOff), 0);
     }
     //  거르는 중 표시 — 머리막대에 붙인다
     _fltBadge(view) {
-        const n = Object.keys((this.tblFilt || {})[view] || {}).length;
-        return n ? `<button class="flt-off" onclick="app.clearTblFilters('${view}')" title="거르기 모두 풀기"><i class="ph ph-funnel-fill"></i> ${n}칸 거르는 중 ✕</button>` : '';
+        const flt = (this.tblFilt || {})[view] || {}, esc = s => this._vesc(s), labels = (this._tblLabels || {})[view] || {};
+        return Object.entries(flt).map(([k, vals]) => `<button class="flt-off" onclick="app.clearTblFilter('${view}','${k}')" title="${esc(labels[k] || k)} 필터 풀기"><i class="ph ph-funnel-fill"></i> ${esc(labels[k] || k)}: ${esc((vals || []).join(' · '))} <b>×</b></button>`).join('');
+    }
+    _syncTblFilters(view) {
+        if (view !== 'sns_ads') return;
+        const flt = (this.tblFilt || {})[view] || {};
+        const brand = (flt.brand || []).length === 1 ? flt.brand[0] : null;
+        const b = brand && (mockData.brands || []).find(x => this._snsBrandLabel(x.id) === brand);
+        this.snsAcc = b ? b.id : '전체';
+        const verdict = { 중단: 'stop', 증액: 'up', 유지: 'keep', 보류: 'none' }[(flt.verdict || [])[0]];
+        this.snsVerdict = (flt.verdict || []).length === 1 && verdict ? verdict : 'all';
+        this.snsActiveOnly = (flt.state || []).length === 1 && flt.state[0] === '가동';
     }
 
     // ── 1단 '보기' 트리 — 화면마다 묶어 보는 방식 ──────────────
@@ -3629,40 +3646,54 @@ class BhasApp {
             ${this._viewNav(view)}
         </aside>`;
     }
-    // SNS 3단 — 사장님이 내리는 결정(판정·가동·게시물) | 해당 목록/표 | 선택 상세
+    // SNS 3단 — 대분류(광고·게시물·뉴스) | 중분류 목록 | 선택 상세
     _snsShell(inner) {
         const esc = s => this._vesc(s);
-        const cur = this.snsMode || 'decision';
+        const cur = ['decision', 'active'].includes(this.snsMode) ? 'ads' : (this.snsMode || 'ads');
         const count = this._snsSideCounts || {};
         const row = (k, label, icon, sub) => `<div class="m3-s${cur === k ? ' on' : ''} sns3-nav"
             onclick="app.setSnsMode('${k}')"><i class="ph ${icon}" style="color:#c13584"></i><span>${esc(label)}${sub ? `<em>${esc(sub)}</em>` : ''}</span></div>`;
         return `<div class="m3 sns3-layout${this.snsMobileDetail ? ' detail' : ''}"><aside class="m3-side">
             <div class="m3-h">SNS</div>
-            ${row('decision', '오늘 판정', 'ph-gavel', `중단 ${count.stop || 0} · 증액 ${count.up || 0}`)}
-            ${row('active', '가동 현황', 'ph-toggle-right', `가동 ${count.active || 0} · 부족 ${count.need || 0}`)}
+            ${row('ads', '광고', 'ph-megaphone', `켜짐 ${count.active || 0} · 할 일 ${(count.stop || 0) + (count.up || 0)}`)}
             ${row('posts', '게시물', 'ph-images-square', `최근 ${count.posts || 0}`)}
             ${row('news', '뉴스', 'ph-newspaper', `오늘 ${count.news || 0}`)}
         </aside>${inner}</div>`;
     }
     setSnsMode(k) {
-        this.snsMode = ['decision', 'active', 'posts', 'news'].includes(k) ? k : 'decision';
-        this.snsPick = null; this.snsNewsPick = null; this.snsMobileDetail = false;
+        if (k === 'decision' || k === 'active') k = 'ads';
+        this.snsMode = ['ads', 'posts', 'news'].includes(k) ? k : 'ads';
+        this.snsPick = null; this.snsNewsPick = null; this.snsNewsAccount = null; this.snsMobileDetail = false;
         if (this.snsMode === 'news' && !this._newsLoaded && !this._newsLoading) this.loadNews();
         this.requestRender();
     }
     setSnsAcc(k) {
         this.snsAcc = k;
         this.arBrand = k === '전체' ? 'all' : k;
+        this.tblFilt = this.tblFilt || {}; this.tblFilt.sns_ads = this.tblFilt.sns_ads || {};
+        if (k === '전체') delete this.tblFilt.sns_ads.brand;
+        else this.tblFilt.sns_ads.brand = [this._snsBrandLabel(k)];
         this.snsPick = null;
         this.snsMobileDetail = false;
         this.requestRender();
     }
     selectSnsItem(k) { this.snsPick = k; this.snsMobileDetail = true; this.requestRender(); }
-    selectSnsNews(i) { this.snsNewsPick = Number(i); this.snsMobileDetail = true; this.requestRender(); }
+    selectSnsNews(i) { this.snsNewsPick = Number(i); this.snsNewsAccount = null; this.snsMobileDetail = true; this.requestRender(); }
+    selectSnsNewsAccount(id) { this.snsNewsAccount = id; this.snsNewsPick = null; this.snsMobileDetail = true; this.requestRender(); }
     setSnsNewsKind(k) { this.snsNewsKind = k || 'all'; this.snsNewsPick = null; this.snsMobileDetail = false; this.requestRender(); }
-    closeSnsDetail() { this.snsMobileDetail = false; this.snsPick = null; this.snsNewsPick = null; this.requestRender(); }
-    setSnsVerdict(k) { this.snsVerdict = k || 'all'; this.snsPick = null; this.requestRender(); }
-    toggleSnsActive() { this.snsActiveOnly = !this.snsActiveOnly; this.snsPick = null; this.requestRender(); }
+    closeSnsDetail() { this.snsMobileDetail = false; this.snsPick = null; this.snsNewsPick = null; this.snsNewsAccount = null; this.requestRender(); }
+    setSnsVerdict(k) {
+        this.snsVerdict = k || 'all'; this.tblFilt = this.tblFilt || {}; this.tblFilt.sns_ads = this.tblFilt.sns_ads || {};
+        const label = { stop: '중단', up: '증액', keep: '유지', none: '보류' }[this.snsVerdict];
+        if (label) this.tblFilt.sns_ads.verdict = [label]; else delete this.tblFilt.sns_ads.verdict;
+        this.snsPick = null; this.requestRender();
+    }
+    toggleSnsActive() {
+        this.snsActiveOnly = !this.snsActiveOnly; this.tblFilt = this.tblFilt || {}; this.tblFilt.sns_ads = this.tblFilt.sns_ads || {};
+        if (this.snsActiveOnly) this.tblFilt.sns_ads.state = ['가동']; else delete this.tblFilt.sns_ads.state;
+        this.snsPick = null; this.requestRender();
+    }
+    toggleSnsArchive() { this.snsArchiveOpen = !this.snsArchiveOpen; this.snsPick = null; this.requestRender(); }
     requestAdAction({ set_id, action, before, after, daily_delta = null, payload = {} }) {
         const request = { id: `preview-${Date.now()}`, set_id, action, before, after, daily_delta, payload, status: 'requested', requested_at: new Date().toISOString() };
         this._snsActionQueue = [...(this._snsActionQueue || []), request];
@@ -4128,7 +4159,7 @@ class BhasApp {
         { g: '생산', items: [['items', '제품리스트', 'ph-t-shirt'], ['dashboard', '시즌', 'ph-calendar-blank'], ['vendors', '생산현황', 'ph-factory'],
             ['tech_packs', '작업지시서', 'ph-clipboard-text'], ['sample_maker', '샘플·디자인', 'ph-scissors'],
             ['quotes', '견적', 'ph-receipt']] },
-        { g: '업무', items: [['news', '뉴스', 'ph-newspaper'], ['notes', '메모', 'ph-note'], ['reminders', '할 일', 'ph-list-checks'],
+        { g: '업무', items: [['notes', '메모', 'ph-note'], ['reminders', '할 일', 'ph-list-checks'],
             ['calendar', '캘린더', 'ph-calendar-dots'], ['table', '표', 'ph-table'],
             ['contacts', '연락처', 'ph-address-book'], ['sns', 'SNS', 'ph-instagram-logo'],
             ['documents', '자료실', 'ph-folder-open']] },
@@ -6836,58 +6867,83 @@ class BhasApp {
         } catch (e) { /* 표 없이 둔다 */ }
     }
 
+    _snsBrandLabel(id) {
+        const raw = String(this._arBrandName(id) || '').replace(/\s/g, '').toLowerCase();
+        if (raw.includes('하이헤이호') || raw.includes('hiheiho')) return '하이헤이호';
+        if (raw.includes('로하이') || raw.includes('lohi')) return '로하이';
+        if (raw.includes('토비') || raw.includes('tovee')) return '토비';
+        return this._arBrandName(id) || '기타';
+    }
+
     _snsCounts(ads, rows) {
         const setRows = rows.setRows || [], canon = s => String(s || '').replace(/\s/g, '').toLowerCase();
         const hit = [n => n.includes('하이헤이호') || n.includes('hiheiho'), n => n.includes('로하이') || n.includes('lohi'), n => n.includes('토비') || n.includes('tovee')];
         const core = hit.map(fn => (ads.allBrands || []).find(b => fn(canon(b.name))) || null);
-        const activeFor = b => b ? setRows.filter(r => String(r.brand_id) === String(b.id) && r.set.status === 'ACTIVE').length : 0;
+        const current = r => r.set.status === 'ACTIVE' && (!r.set.end || new Date(r.set.end + 'T23:59:59+09:00').getTime() >= Date.now());
+        const activeFor = b => b ? setRows.filter(r => String(r.brand_id) === String(b.id) && current(r)).length : 0;
         const out = {
-            active: setRows.filter(r => r.set.status === 'ACTIVE').length,
+            active: setRows.filter(current).length,
             need: core.reduce((sum, b) => sum + Math.max(0, 5 - activeFor(b)), 0),
             posts: (rows.postRows || []).length,
             news: (this._snsSideCounts || {}).news || 0,
         };
-        setRows.forEach(r => { out[r.kind] = (out[r.kind] || 0) + 1; });
+        setRows.filter(current).forEach(r => { out[r.kind] = (out[r.kind] || 0) + 1; });
         return out;
     }
 
-    // SNS>뉴스 3단 — 기존 news-sync 결과를 그대로 분류 | 기사 목록 | 요약·상세로만 재배치한다.
+    // SNS>뉴스 3단 — 경쟁사 글은 계정 | 중복 없는 게시물 격자로 정리하고, 기사는 기존 상세를 유지한다.
     renderSnsNews() {
-        const mobileNav = `<div class="sns3-mobile-nav">${[['decision', '오늘 판정'], ['active', '가동'], ['posts', '게시물'], ['news', '뉴스']].map(([k, l]) => `<button class="${k === 'news' ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
+        const mobileNav = `<div class="sns3-mobile-nav">${[['ads', '광고'], ['posts', '게시물'], ['news', '뉴스']].map(([k, l]) => `<button class="${k === 'news' ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
         if (!this._newsLoaded) return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>뉴스</b><span>불러오는 중</span></div></div></section><section class="m3-doc"><div class="m3-none mid">뉴스를 불러오는 중...</div></section>`;
         const esc = s => this._vesc(s);
         const kindOf = x => x.kind === 'competitor_post' ? 'brands' : x.kind === 'review' ? 'customer' : x.kind === 'resale' ? 'resale' : 'trend';
-        const kinds = [['all', '전체'], ['brands', '경쟁사'], ['customer', '고객 반응'], ['trend', '기사'], ['resale', '중고']];
+        const kinds = [['brands', '경쟁사'], ['customer', '고객 반응'], ['trend', '기사'], ['resale', '중고']];
         const merged = [...(this.newsItems || []), ...((this.newsCols || {}).review || []), ...((this.newsCols || {}).trend || [])];
-        const raw = merged.filter((x, i) => x && (x.title || x.snippet) && merged.findIndex(y => String(y.id || y.url) === String(x.id || x.url)) === i);
-        const kind = this.snsNewsKind || 'all';
-        const rows = raw.filter(x => kind === 'all' || kindOf(x) === kind).sort((a, b) => String(b.published_at || b.created_at || '').localeCompare(String(a.published_at || a.created_at || '')));
+        const dedupKey = x => String(x.url || x.id || `${x.competitor_id || ''}:${x.title || x.snippet || ''}`);
+        const seen = new Set();
+        const raw = merged.filter(x => { const k = x && dedupKey(x); if (!x || !(x.title || x.snippet) || seen.has(k)) return false; seen.add(k); return true; });
+        const kind = 'brands';
+        const rows = raw.filter(x => kindOf(x) === kind).sort((a, b) => String(b.published_at || b.created_at || '').localeCompare(String(a.published_at || a.created_at || '')));
         // 옛 뉴스 메뉴로 바로 들어와도 광고 데이터가 도착하는 즉시 왼쪽 숫자를 복원한다.
         if (this._igLoaded && this._arLoaded) {
             const ads = this._adsBlock();
             this._snsSideCounts = this._snsCounts(ads, sns3Rows({ groups: ads.groups, posts: ads.posts, accounts: this.igAccounts || [], account: '전체' }));
         }
-        this._snsSideCounts = { ...(this._snsSideCounts || {}), news: raw.filter(x => whenWord(x.published_at || x.created_at) === '오늘').length };
+        const dayKey = x => { try { return kstYMD(x.published_at || x.created_at); } catch (_e) { return ''; } };
+        const todayKey = kstYMD();
+        const isToday = x => dayKey(x) === todayKey;
+        const band = x => {
+            const key = dayKey(x); if (!key) return '이번 주';
+            const days = Math.round((Date.parse(`${todayKey}T00:00:00+09:00`) - Date.parse(`${key}T00:00:00+09:00`)) / 86400000);
+            return days <= 0 ? '오늘' : days === 1 ? '어제' : '이번 주';
+        };
+        this._snsSideCounts = { ...(this._snsSideCounts || {}), news: raw.filter(x => kindOf(x) === 'brands' && isToday(x)).length };
         const selected = Number.isInteger(this.snsNewsPick) ? rows[this.snsNewsPick] : null;
-        const chips = `<div class="sns3-chips sns-news-chips">${kinds.map(([k, label]) => `<button class="${kind === k ? 'on' : ''}" onclick="app.setSnsNewsKind('${k}')">${label} ${k === 'all' ? raw.length : raw.filter(x => kindOf(x) === k).length}</button>`).join('')}</div>`;
         const source = x => sourceKo(x.source || '') || (kindOf(x) === 'brands' ? '인스타그램' : '기타');
         const stamp = x => whenWord(x.published_at || x.created_at) || '';
-        const list = rows.map((x, i) => `<button class="m3-r sns-news-row${selected === x ? ' on' : ''}" onclick="app.selectSnsNews(${i})">
-            <b>${esc(x.title || String(x.snippet || '').slice(0, 70))}</b><div class="sub"><span>${esc(source(x))}${stamp(x) ? ` · ${esc(stamp(x))}` : ''}</span></div></button>`).join('');
-        const C = this.newsCols || { review: [], trend: [], resale: [], competitor: [] };
-        const M = magazine(C, this.competitors || [], this.compSnaps || [], { q: '' });
-        const summary = `<div class="sns-news-summary"><div class="sns-news-summary-head"><div><b>오늘 요약</b><span>${new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' })}</span></div><button onclick="app.openPaper()"><i class="ph ph-newspaper"></i> 조간 카드뉴스</button></div><div class="sns-news-tiles">${M.summary.map(s => `<div><span>${esc(s.label)}</span><b>${Number(s.value || 0).toLocaleString('ko-KR')}</b><em>${esc(s.note || '')}</em></div>`).join('')}</div></div>`;
+        const comps = new Map((this.competitors || []).map(c => [String(c.id), c]));
+        const compPosts = raw.filter(x => kindOf(x) === 'brands');
+        const accounts = [...new Set(compPosts.map(x => String(x.competitor_id || 'unknown')))].map(id => {
+            const posts = compPosts.filter(x => String(x.competitor_id || 'unknown') === id);
+            const c = comps.get(id) || {}; return { id, name: c.name || (posts[0]?.meta || {}).name || c.handle || '계정 미확인', handle: c.handle || '', posts };
+        }).sort((a, b) => String(b.posts[0]?.published_at || '').localeCompare(String(a.posts[0]?.published_at || '')));
+        const account = accounts.find(a => a.id === String(this.snsNewsAccount)) || null;
+        const accountList = accounts.map(a => `<button class="m3-r sns-news-row sns-news-account${account === a ? ' on' : ''}" onclick="app.selectSnsNewsAccount('${esc(a.id)}')"><b>${esc(a.name)}</b><div class="sub"><span>${a.handle ? '@' + esc(a.handle) + ' · ' : ''}오늘 ${a.posts.filter(isToday).length}건 · 최근 ${esc(stamp(a.posts[0]))}</span></div></button>`).join('');
+        const list = kind === 'brands' ? accountList : rows.map((x, i) => `<button class="m3-r sns-news-row${selected === x ? ' on' : ''}" onclick="app.selectSnsNews(${i})"><b>${esc(x.title || String(x.snippet || '').slice(0, 70))}</b><div class="sub"><span>${esc(source(x))}${stamp(x) ? ` · ${esc(stamp(x))}` : ''}</span></div></button>`).join('');
+        const todayTop = accounts.map(a => ({ ...a, today: a.posts.filter(isToday).length })).filter(a => a.today).sort((a, b) => b.today - a.today).slice(0, 8);
+        const summary = `<div class="sns-news-summary"><div class="sns-news-summary-head"><div><b>오늘 많이 올린 계정</b><span>${new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' })}</span></div><button onclick="app.openPaper()"><i class="ph ph-newspaper"></i> 조간 카드뉴스</button></div><div class="sns-news-rank">${todayTop.map((a, i) => `<button onclick="app.selectSnsNewsAccount('${esc(a.id)}')"><b>${i + 1}. ${esc(a.name)}</b><span>오늘 ${a.today}건 · 최근 ${esc(stamp(a.posts[0]))}</span></button>`).join('') || '<div class="m3-none">오늘 새 게시물이 없습니다.</div>'}</div></div>`;
         const safeUrl = selected?.url && /^https?:\/\//i.test(selected.url) ? selected.url : '';
-        const detail = selected ? `<article class="m3-page sns-news-detail">
+        const accountDetail = account ? `<div class="m3-page sns-news-account-detail"><div class="sns-news-account-head"><div><h2>${esc(account.name)}</h2><span>${account.handle ? '@' + esc(account.handle) + ' · ' : ''}중복 제외 ${account.posts.length}건</span></div></div>${['오늘','어제','이번 주'].map(label => { const ps = account.posts.filter(x => band(x) === label); return ps.length ? `<section class="sns-news-day"><h3>${label}<span>${ps.length}건</span></h3><div class="sns-news-grid">${ps.map(x => `<a href="${esc(/^https?:/i.test(x.url || '') ? x.url : '#')}" target="_blank" rel="noopener" class="sns-news-post">${this._photo(x.thumb, 'sns-news-thumb')}<div><b>${esc(x.title || String(x.snippet || '').slice(0, 55) || '게시물')}</b><span>${esc(source(x))} · ${esc(stamp(x))}</span></div></a>`).join('')}</div></section>` : ''; }).join('')}</div>` : '';
+        const detail = accountDetail || (selected ? `<article class="m3-page sns-news-detail">
             <div class="sns-news-meta"><span>${esc(source(selected))}</span>${stamp(selected) ? `<span>${esc(stamp(selected))}</span>` : ''}</div>
             <h2>${esc(selected.title || '제목 없음')}</h2>${this._photo(selected.thumb, 'sns-news-photo')}
             ${selected.snippet ? `<p>${esc(selected.snippet)}</p>` : '<p class="m3-none">본문 요약이 없습니다.</p>'}
-            ${safeUrl ? `<a class="mbtn pri" href="${esc(safeUrl)}" target="_blank" rel="noopener">원문 안전하게 열기 <i class="ph ph-arrow-square-out"></i></a>` : ''}</article>` : `<div class="m3-page">${summary}<div class="sns3-queue-note">가운데 기사를 선택하면 출처·요약·원문 링크를 확인할 수 있습니다.</div></div>`;
-        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>뉴스</b><span>${rows.length}건</span></div></div>${chips}<div class="m3-rows">${list || '<div class="m3-none">표시할 기사가 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 뉴스 목록</button>${selected ? '<b>기사 상세</b>' : '<b>오늘 요약</b>'}</div>${detail}</section>`;
+            ${safeUrl ? `<a class="mbtn pri" href="${esc(safeUrl)}" target="_blank" rel="noopener">원문 안전하게 열기 <i class="ph ph-arrow-square-out"></i></a>` : ''}</article>` : `<div class="m3-page">${summary}<div class="sns3-queue-note">${kind === 'brands' ? '가운데 계정을 선택하면 중복 없는 게시물을 날짜별로 봅니다.' : '가운데 기사를 선택하면 출처·요약·원문 링크를 확인할 수 있습니다.'}</div></div>`);
+        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>경쟁사 계정</b><span>${accounts.length}계정</span></div></div><div class="m3-rows">${list || '<div class="m3-none">표시할 계정이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 계정 목록</button>${account ? '<b>계정 게시물</b>' : '<b>뉴스 요약</b>'}</div>${detail}</section>`;
     }
 
     renderSNS() {
-        if ((this.snsMode || 'decision') === 'news') return this.renderSnsNews();
+        if ((this.snsMode || 'ads') === 'news') return this.renderSnsNews();
         if (!this._igLoaded) return `<section class="m3-list"><div class="m3-lbar"><div><b>SNS 운영현황</b><span>데이터를 불러오는 중...</span></div></div></section><section class="m3-doc"><div class="m3-none mid">SNS 데이터를 불러오는 중...</div></section>`;
         const allAccounts = this.igAccounts || [];
         const accSel = this.snsAcc || '전체';
@@ -6979,9 +7035,10 @@ class BhasApp {
         const rows = sns3Rows({ groups: ads.groups, posts: ads.posts, accounts: allAccounts, account: '전체' });
         const verdict = k => ({ up: '증액', keep: '유지', stop: '중단', idle: '집행 없음', none: '보류', wait: '보류', hold: '보류', final: '최종' }[k] || k || '—');
         const rank = { stop: 0, up: 1, keep: 2, none: 3, idle: 3, wait: 3, hold: 3 };
-        const allSetRows = rows.setRows.slice().sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9) || (Number(b.cpf) || Infinity) - (Number(a.cpf) || Infinity));
+        const cpfBad = r => r.cpf == null ? (Number(r.spend) > 0 ? Infinity : -1) : Number(r.cpf);
+        const allSetRows = rows.setRows.slice().sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9) || cpfBad(b) - cpfBad(a));
         this._snsSideCounts = this._snsCounts(ads, rows);
-        const mode = this.snsMode || 'decision';
+        const mode = ['decision', 'active'].includes(this.snsMode) ? 'ads' : (this.snsMode || 'ads');
         const canon = s => String(s || '').replace(/\s/g, '').toLowerCase();
         const wanted = [
             { key: 'hhh', name: '하이헤이호', hit: n => n.includes('하이헤이호') || n.includes('hiheiho') },
@@ -6994,34 +7051,50 @@ class BhasApp {
             return found ? { ...found, label: w.name } : { id: `missing:${w.key}`, name: w.name, label: w.name };
         });
         const brands = [...coreBrands, ...pool.filter(b => !wanted.some(w => w.hit(canon(b.name))) && (allSetRows.some(r => String(r.brand_id) === String(b.id)) || rows.postRows.some(r => String(r.brand_id) === String(b.id))))];
-        const brandCount = b => allSetRows.filter(r => String(r.brand_id) === String(b.id)).length;
-        const brandActive = b => allSetRows.filter(r => String(r.brand_id) === String(b.id) && r.set.status === 'ACTIVE').length;
-        const brandChips = `<div class="sns3-chips">${[['전체', '전체', allSetRows.length], ...brands.map(b => [b.id, b.label || b.name, brandCount(b)])].map(([id, name, count]) => `<button class="${String(accSel) === String(id) ? 'on' : ''}" onclick="app.setSnsAcc('${esc(id)}')">${esc(name)} ${count}</button>`).join('')}</div>`;
-        const mobileNav = `<div class="sns3-mobile-nav">${[['decision', '오늘 판정'], ['active', '가동'], ['posts', '게시물'], ['news', '뉴스']].map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
+        const isCurrent = r => r.set.status === 'ACTIVE' && (!r.set.end || new Date(r.set.end + 'T23:59:59+09:00').getTime() >= Date.now());
+        const currentSets = allSetRows.filter(isCurrent), archivedSets = allSetRows.filter(r => !isCurrent(r));
+        const brandCount = b => currentSets.filter(r => String(r.brand_id) === String(b.id)).length;
+        const brandActive = b => brandCount(b);
+        const brandChips = `<div class="sns3-chips">${[['전체', '전체', currentSets.length], ...brands.map(b => [b.id, b.label || b.name, brandCount(b)])].map(([id, name, count]) => `<button class="${String(accSel) === String(id) ? 'on' : ''}" onclick="app.setSnsAcc('${esc(id)}')">${esc(name)} ${count}</button>`).join('')}</div>`;
+        const mobileNav = `<div class="sns3-mobile-nav">${[['ads', '광고'], ['posts', '게시물'], ['news', '뉴스']].map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
         const allowBrand = r => accSel === '전체' || String(r.brand_id) === String(accSel);
-        const filteredSets = allSetRows.filter(allowBrand).filter(r => !this.snsVerdict || this.snsVerdict === 'all' || r.kind === this.snsVerdict).filter(r => !this.snsActiveOnly || r.set.status === 'ACTIVE');
         this._snsRows = [...allSetRows, ...rows.postRows, ...rows.accountRows];
         const pick = this._snsRows.find(x => x.key === this.snsPick) || null;
         const wonTxt = n => Number(n || 0).toLocaleString() + '원';
         const cpfTxt = r => r.cpf == null ? (r.spend > 0 ? '∞' : '—') : Number(r.cpf).toLocaleString() + '원';
         const left = d => { if (!d) return '—'; const n = Math.ceil((new Date(d + 'T23:59:59+09:00') - Date.now()) / 86400000); return n < 0 ? `${Math.abs(n)}일 지남` : `D-${n}`; };
         const md = d => { const p = String(d || '').slice(0, 10).split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}` : '—'; };
+        const periodState = r => r.set.end && new Date(r.set.end + 'T23:59:59+09:00').getTime() < Date.now() ? '종료' : '진행중';
+        const tableVal = (r, k) => ({ state: isCurrent(r) ? '가동' : '꺼짐', brand: this._snsBrandLabel(r.brand_id), name: r.title || '', media: r.set.media_src ? '이미지' : '없음', target: r.set.target || '—', period: periodState(r), budget: Number(r.set.budget || 0), spend: Number(r.set.spend3 || 0), result: Number(r.set.follows3 || 0), cpf: cpfBad(r), verdict: isCurrent(r) ? verdict(r.kind) : '—' }[k]);
+        const tableFiltered = this._applyTbl('sns_ads', allSetRows, tableVal, allSetRows);
+        const filteredSets = tableFiltered.filter(isCurrent), filteredArchive = tableFiltered.filter(r => !isCurrent(r));
         const safeThumb = r => this._safeFileUrl(r.set.media_src || '');
         const actionButtons = r => `<div class="sns3-actions"><button onclick="event.stopPropagation();app.snsQueueAction('${esc(r.key)}','extend')">연장</button><button onclick="event.stopPropagation();app.snsQueueAction('${esc(r.key)}','raise')">증액</button><button onclick="event.stopPropagation();app.snsQueueAction('${esc(r.key)}','budget')">예산</button><button onclick="event.stopPropagation();app.snsQueueAction('${esc(r.key)}','toggle')">${r.set.status === 'ACTIVE' ? '끄기' : '켜기'}</button></div>`;
-        const tableRows = filteredSets.map(r => {
+        const oneRow = r => {
             const s = r.set, thumb = safeThumb(r), on = s.status === 'ACTIVE';
+            const brandLabel = this._snsBrandLabel(r.brand_id);
+            const brandShort = brandLabel === '하이헤이호' ? '하이' : brandLabel;
+            const brandClass = brandLabel === '하이헤이호' ? 'hhh' : brandLabel === '로하이' ? 'lohi' : brandLabel === '토비' ? 'tovee' : 'etc';
             return `<tr class="sns-ad-row${pick?.key === r.key ? ' on' : ''}" data-sns-key="${esc(r.key)}" onclick="app.selectSnsItem('${esc(r.key)}')">
                 <td class="sns-td-state"><span class="sns-live ${on ? 'on' : ''}">${on ? '가동' : '꺼짐'}</span></td>
-                <td class="sns-td-name"><b>${esc(r.title)}</b><small>${esc(this._arBrandName(r.brand_id))}</small></td>
+                <td class="sns-td-brand"><span class="sns-brand-chip ${brandClass}" title="${esc(brandLabel)}"><i></i>${esc(brandShort)}</span></td>
+                <td class="sns-td-name"><b>${esc(r.title)}</b></td>
                 <td class="sns-td-media">${thumb ? `<img src="${esc(thumb)}" alt="">` : '<i class="ph ph-image-square"></i>'}</td>
                 <td class="sns-td-target">${esc(s.target || '—')}</td>
                 <td class="sns-td-period">${esc(`${md(s.start)}~${md(s.end)} · ${left(s.end)}`)}</td>
                 <td class="sns-td-budget">${s.budget == null ? '—' : wonTxt(s.budget)}</td>
                 <td class="sns-td-spend"><b>${wonTxt(s.spend3)}</b><small>누적 ${wonTxt(s.spendCum)}</small></td>
-                <td class="sns-td-result"><b>${Number(s.follows3 || 0).toLocaleString()}명</b><small>${cpfTxt(r)}/명</small></td>
-                <td class="sns-td-verdict"><span class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</span></td>
+                <td class="sns-td-result"><b>${Number(s.follows3 || 0).toLocaleString()}명</b></td>
+                <td class="sns-td-cpf"><b>${cpfTxt(r)}</b></td>
+                <td class="sns-td-verdict">${isCurrent(r) ? `<span class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</span>` : '<span class="sns3-pill off">—</span>'}</td>
                 <td class="sns-td-actions">${actionButtons(r)}</td></tr>`;
-        }).join('');
+        };
+        const groupBrands = [...brands];
+        const brandSort = this._tblState('sns_ads').srt;
+        if (brandSort.k === 'brand') groupBrands.sort((a, b) => String(a.label || a.name).localeCompare(String(b.label || b.name), 'ko') * brandSort.dir);
+        const groupedRows = (list, archived = false) => groupBrands.map(b => { const xs = list.filter(r => String(r.brand_id) === String(b.id)); return xs.length ? `<tr class="sns-brand-group"><td colspan="12"><b>${esc(b.label || b.name)}</b><span>${archived ? `${xs.length}개 종료` : `${brandActive(b)}/5 가동`}</span></td></tr>${xs.map(oneRow).join('')}` : ''; }).join('');
+        const tableRows = groupedRows(filteredSets);
+        const archiveRows = this.snsArchiveOpen ? groupedRows(filteredArchive, true) : '';
         const sum3 = filteredSets.reduce((a, r) => a + Number(r.set.spend3 || 0), 0);
         const sumY = filteredSets.reduce((a, r) => a + Number(r.set.spendYesterday || 0), 0);
         const activeCards = coreBrands.map(b => `<div class="sns3-brand-kpi"><span>${esc(b.label || b.name)}</span><b>${brandActive(b)}/5</b></div>`).join('');
@@ -7029,16 +7102,18 @@ class BhasApp {
         const filters = `${brandChips}<div class="sns3-filters"><select onchange="app.setSnsVerdict(this.value)"><option value="all">모든 판정</option>${[['stop','중단'],['up','증액'],['keep','유지'],['none','보류']].map(([k,l]) => `<option value="${k}"${this.snsVerdict === k ? ' selected' : ''}>${l}</option>`).join('')}</select><label><input type="checkbox" ${this.snsActiveOnly ? 'checked' : ''} onchange="app.toggleSnsActive()"> 가동만</label></div>`;
         const trend = pick?.type === 'set' ? `<div class="sns3-trend"><b>최근 3일 추이</b>${pick.set.daily.slice(-3).map(d => `<div><span>${esc(d.day.slice(5).replace('-', '.'))}</span><span>${wonTxt(d.spend)}</span><span>${Number(d.follows).toLocaleString()}명</span><strong>${d.follows ? Math.round(d.spend / d.follows).toLocaleString() + '원/명' : d.spend ? '∞' : '—'}</strong></div>`).join('') || '<p>일별 수집 대기</p>'}</div>` : '';
         const setDetail = pick?.type === 'set' ? `<div class="m3-page">${snsSetDetailHtml(pick)}${trend}${actionButtons(pick)}<div class="sns3-queue-note">지금은 Meta에 바로 반영하지 않고 실행 요청 큐에 쌓입니다.</div></div>` : '';
-        const drawer = pick?.type === 'set' ? `<aside class="sns3-drawer"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 광고 표</button><button class="sns3-x" onclick="app.closeSnsDetail()" aria-label="닫기"><i class="ph ph-x"></i></button></div>${setDetail}</aside>` : '';
+        const tableHead = this._thead('sns_ads', [['state','상태'],['brand','브랜드'],['name','세트명'],['media','소재'],['target','타겟'],['period','기간'],['budget','일예산'],['spend','지출 3일/누적','',false],['result','결과','',false],['cpf','1명당','',false],['verdict','판정']]);
+        const activeFilters = this._fltBadge('sns_ads');
+        const adOverview = `<div class="m3-page sns3-ad-overview"><h2>광고 요약</h2>${summary}<div class="sns3-queue-note">할 일 ${(filteredSets.filter(r => r.kind === 'stop' || r.kind === 'up')).length}건 · 중단과 증액 판정부터 확인합니다.</div></div>`;
+        if (mode === 'ads') return `<section class="m3-list sns3-tablepane">${mobileNav}<div class="sns3-head"><div><b>지금 켜진 세트</b><span>중단 → 증액 → 유지 → 보류, 같은 판정은 1명당 비용이 나쁜 순</span></div>${filters}</div>${activeFilters ? `<div class="sns3-active-filters">${activeFilters}</div>` : ''}${excludedNote(ads.groups.excluded) ? `<div class="sns3-ex">${excludedNote(ads.groups.excluded)}</div>` : ''}<div class="sns3-tablewrap"><table class="sns3-table"><thead><tr>${tableHead}<th>작업</th></tr></thead><tbody>${tableRows || '<tr><td colspan="12" class="m3-none">조건에 맞는 운영 중 광고가 없습니다.</td></tr>'}<tr class="sns-archive-toggle"><td colspan="12"><button onclick="app.toggleSnsArchive()"><i class="ph ph-caret-${this.snsArchiveOpen ? 'down' : 'right'}"></i> 종료 ${archivedSets.length}개</button></td></tr>${archiveRows}</tbody></table></div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 광고 목록</button><b>${pick?.type === 'set' ? '세트 상세' : '광고 요약'}</b></div>${pick?.type === 'set' ? setDetail : adOverview}</section>`;
 
-        if (mode === 'decision') return `<section class="sns3-tablepane${pick?.type === 'set' ? ' has-detail' : ''}">${mobileNav}<div class="sns3-head"><div><b>오늘 판정</b><span>최근 3일 합산 · 판정과 실제 가동 상태를 함께 봅니다</span></div>${filters}</div>${summary}${excludedNote(ads.groups.excluded) ? `<div class="sns3-ex">${excludedNote(ads.groups.excluded)}</div>` : ''}<div class="sns3-tablewrap"><table class="sns3-table"><thead><tr><th>상태</th><th>세트명</th><th>소재</th><th>타겟</th><th>기간</th><th>일예산</th><th>지출 3일/누적</th><th>결과</th><th>판정</th><th>작업</th></tr></thead><tbody>${tableRows || '<tr><td colspan="10" class="m3-none">조건에 맞는 광고가 없습니다.</td></tr>'}</tbody></table></div>${drawer}</section>`;
-
-        const listRows = mode === 'active' ? rows.accountRows.filter(allowBrand) : rows.postRows.filter(allowBrand);
+        const listRows = rows.postRows.filter(allowBrand);
         const rowHtml = r => `<div class="m3-r sns3-row${pick?.key === r.key ? ' on' : ''}" data-sns-key="${esc(r.key)}" onclick="app.selectSnsItem('${esc(r.key)}')"><b><i class="ph ${r.type === 'post' ? 'ph-image-square' : 'ph-instagram-logo'}"></i>${esc(r.title)}${r.kind ? `<em class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</em>` : ''}</b><div class="sub"><span>${r.type === 'post' ? `${r.cpf == null ? '1명당 —' : Number(r.cpf).toLocaleString() + '원/명'} · ${esc(this._arBrandName(r.brand_id))}` : `${esc(this._arBrandName(r.brand_id))} · 가동 광고 ${allSetRows.filter(s => s.brand_id === r.brand_id && s.set.status === 'ACTIVE').length}/5`}</span></div></div>`;
-        let detail = `<div class="m3-page sns3-overview">${summary}<div class="sns3-queue-note">항목을 선택하면 계정 또는 게시물 상세가 열립니다.</div></div>`;
-        if (pick?.type === 'account') detail = `<div class="m3-page sns3-account">${(cards.find(c => c.id === pick.id) || {}).html || '<div class="m3-none">계정 정보가 없습니다.</div>'}</div>`;
+        const postGroups = brands.map(b => { const xs = listRows.filter(r => String(r.brand_id) === String(b.id)); return xs.length ? `<div class="sns3-group"><b>${esc(b.label || b.name)}</b><em>${xs.length}개</em></div>${xs.map(rowHtml).join('')}` : ''; }).join('');
+        const postSummary = `<div class="m3-page sns3-overview"><h2>게시물 요약</h2><div class="sns3-post-summary">${brands.map(b => `<div><span>${esc(b.label || b.name)}</span><b>${listRows.filter(r => String(r.brand_id) === String(b.id)).length}개</b></div>`).join('')}</div><div class="sns3-queue-note">가운데 게시물을 선택하면 광고 성과와 소재를 확인합니다.</div></div>`;
+        let detail = postSummary;
         if (pick?.type === 'post') { const idx = (this._arCache || []).indexOf(pick.post); detail = `<div class="m3-page sns3-post">${cardHtml(pick.post, { brandName: id => this._arBrandName(id), i: idx })}</div>`; }
-        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>${mode === 'active' ? '가동 현황' : '게시물'}</b><span>${listRows.length}개</span></div></div>${brandChips}<div class="m3-rows">${listRows.map(rowHtml).join('') || '<div class="m3-none">표시할 항목이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 목록</button></div>${detail}</section>`;
+        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>브랜드별 게시물</b><span>${listRows.length}개</span></div></div>${brandChips}<div class="m3-rows">${postGroups || '<div class="m3-none">표시할 게시물이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 게시물 목록</button><b>${pick?.type === 'post' ? '게시물 상세' : '게시물 요약'}</b></div>${detail}</section>`;
     }
 
     // 인스타 피드 톤앤매너 미리보기 — 실제 인스타 프로필 화면 그대로.
@@ -8163,7 +8238,6 @@ class BhasApp {
         { id: 'orders', label: '판매', icon: 'sales' },
         { id: 'items', label: '생산', icon: 'prod' },
         { id: 'sns', label: 'SNS', icon: 'mkt' },
-        { id: 'news', label: '뉴스', icon: 'news' },
         { id: 'documents', label: '자료실', icon: 'finder' },
         { id: 'calendar', label: '캘린더', icon: 'cal' },
         { id: 'reminders', label: '할 일', icon: 'rem' },

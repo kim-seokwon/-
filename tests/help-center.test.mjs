@@ -189,9 +189,11 @@ test('main.js 연결: 지금 화면 → 묶음 머리, 타일 토글, 이 화면
     assert.match(src, /if \(act === 'm-go'\) \{ const v = this\._helpManualTarget\(id\); if \(!v\) return; this\.closeHelp\(\); return this\.switchView\(v\); \}/);
     assert.match(src, /const menuItems = this\._menuItems\(\);/, '사이드 목록과 같은 판정 함수');
     assert.match(src, /manualListHTML\(this\._helpManual\(q\)\)/);
-    //  MANUAL id 는 전부 독 화면 id(이 화면 열기가 갈 곳)
+    // 뉴스는 SNS 안으로 합쳐져 독에서 빠졌고, 나머지 MANUAL id 는 독 화면 id다.
     const dock = [...src.matchAll(/\{ id: '([a-z_]+)', label: '[^']+', icon: '[a-z]+'(?:, desktop: true)? \}/g)].map(x => x[1]);
-    for (const m of MANUAL) assert.ok(dock.includes(m.id), `${m.id} 독에 있음`);
+    for (const m of MANUAL.filter(x => x.id !== 'news')) assert.ok(dock.includes(m.id), `${m.id} 독에 있음`);
+    assert.ok(!dock.includes('news'), '뉴스 독 중복 없음');
+    assert.match(src, /if \(viewId === 'news'\) \{ this\.snsMode = 'news'; viewId = 'sns'; \}/);
 });
 
 //  main.js 의 권한 판정·사용설명서 함수를 그대로 떼어 가짜 앱에 붙여 돌린다(사이드 목록과 같은 함수)

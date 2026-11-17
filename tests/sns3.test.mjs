@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildPanel, sns3Rows, snsSetDetailHtml } from '../adPanel.js';
 const main = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+const style = readFileSync(new URL('../style.css', import.meta.url), 'utf8');
 const BRANDS = [{ id: 'b-hhh', name: '하이헤이호' }, { id: 'b-lohi', name: '로하이스튜디오' }, { id: 'b-tovee', name: '토비' }, { id: 'b-mm', name: '머문' }];
 const NOW = Date.parse('2026-11-16T12:00:00+09:00');
 const links = [['a1', 's1', 'hhh_a', 'ACTIVE', 'b-hhh'], ['a2', 's2', 'hhh_b', 'PAUSED', 'b-hhh'], ['a3', 's3', 'tovee_a', 'ACTIVE', 'b-tovee'], ['a4', 's4', 'mm_a', 'ACTIVE', 'b-mm']]
@@ -47,12 +48,25 @@ test('최근 3일 합산은 어제까지 3일만 쓰고 누적을 함께 보존�
 });
 
 test('SNS 표는 필요한 열·행 작업·새 판정선을 연결하고 실행 요청은 메모리 큐에만 쌓는다', () => {
-    for (const token of ['상태</th><th>세트명</th><th>소재</th><th>타겟</th><th>기간</th><th>일예산</th><th>지출 3일/누적</th><th>결과</th><th>판정</th><th>작업',
+    for (const token of ["['state','상태'],['brand','브랜드'],['name','세트명']", "['result','결과','',false],['cpf','1명당','',false]", "this._thead('sns_ads'", "this._fltBadge('sns_ads')",
         "'extend'", "'raise'", "'budget'", "'toggle'", 'requestAdAction({ set_id, action, before, after, daily_delta = null']) assert.ok(main.includes(token), token);
     assert.match(main, /name\.includes\('하이헤이호'\)[\s\S]*?up_max: 700, stop_over: 900/);
     assert.match(main, /name\.includes\('로하이'\)[\s\S]*?up_max: 800, stop_over: 1000/);
     const fn = main.slice(main.indexOf('requestAdAction({'), main.indexOf('// 생산현황 지도', main.indexOf('requestAdAction({')));
     assert.doesNotMatch(fn, /supabase|\.from\(|functions\.invoke/);
+});
+
+test('광고표 정리: 운영 중만 기본, 종료 접기, 판정은 운영 중만, 브랜드 묶음과 공용 필터', () => {
+    for (const token of ['const currentSets = allSetRows.filter(isCurrent)', 'archivedSets = allSetRows.filter', 'toggleSnsArchive()', '종료 ${archivedSets.length}개',
+        'isCurrent(r) ? verdict(r.kind)', 'sns-brand-group', 'groupedRows(filteredSets)', "_applyTbl('sns_ads'", "this.tblFilt.sns_ads.brand"])
+        assert.ok(main.includes(token), token);
+    assert.match(main, /setRows\.filter\(current\)\.forEach/);
+    assert.match(main, /rank\[a\.kind\][\s\S]*cpfBad\(b\) - cpfBad\(a\)/);
+});
+
+test('뉴스 정리: 경쟁사 계정별 묶음, 중복 제거, 날짜 구분과 게시물 격자', () => {
+    for (const token of ['const dedupKey', 'selectSnsNewsAccount', 'sns-news-account', 'sns-news-grid', "['오늘','어제','이번 주']", '중복 제외'])
+        assert.ok(main.includes(token), token);
 });
 
 test('반려2: 기간 한 줄·핵심 결과열 보존·브랜드별 5개 가동·토비 0칩', () => {
@@ -61,7 +75,8 @@ test('반려2: 기간 한 줄·핵심 결과열 보존·브랜드별 5개 가동
     assert.match(main, /missing:\$\{w\.key\}/, '데이터 0건 브랜드도 합성 칩');
     assert.match(main, /coreBrands\.map\(b => `<div class="sns3-brand-kpi">/);
     assert.match(main, /brandActive\(b\)\}\/5/);
-    assert.match(main, /sns3-tablepane\$\{pick\?\.type === 'set' \? ' has-detail'/);
+    assert.match(main, /m3-list sns3-tablepane/);
+    assert.match(main, /pick\?\.type === 'set' \? setDetail : adOverview/);
 });
 
 test('반려3: 부족은 브랜드별 5개 미달만 합하고 뉴스에서도 기존 숫자를 복원한다', () => {
@@ -79,8 +94,25 @@ test('반려3: 부족은 브랜드별 5개 미달만 합하고 뉴스에서도 �
     assert.match(main, /renderSnsNews\(\)[\s\S]*?_snsCounts\(ads, sns3Rows/);
 });
 
-test('뉴스는 SNS 네 번째 축이고 옛 news 진입도 SNS 창으로 합친다', () => {
-    assert.match(main, /\['decision', 'active', 'posts', 'news'\]/);
+test('뉴스는 SNS 대분류이고 옛 news 진입도 SNS 창으로 합친다', () => {
+    assert.match(main, /\['ads', 'posts', 'news'\]/);
     assert.match(main, /if \(view === 'news'\) \{ this\.snsMode = 'news'; view = 'sns'; \}/);
-    for (const token of ['renderSnsNews()', 'sns-news-chips', '오늘 요약', '기사 상세', '원문 안전하게 열기']) assert.ok(main.includes(token), token);
+    for (const token of ['renderSnsNews()', '경쟁사 계정', '오늘 많이 올린 계정', '계정 게시물']) assert.ok(main.includes(token), token);
+});
+
+test('대분류 > 중분류 > 상세: 광고·게시물·뉴스만 남고 독·전체메뉴 뉴스는 제거', () => {
+    const dock = main.slice(main.indexOf('    MAC_DOCK = ['), main.indexOf('    _dockFace(', main.indexOf('    MAC_DOCK = [')));
+    const launch = main.slice(main.indexOf('    LAUNCH = ['), main.indexOf('    // ============================================================', main.indexOf('    LAUNCH = [')));
+    assert.doesNotMatch(dock, /id: 'news'/); assert.doesNotMatch(launch, /\['news', '뉴스'/);
+    for (const token of ["row('ads', '광고'", "row('posts', '게시물'", "row('news', '뉴스'", '광고 요약', '브랜드별 게시물', '경쟁사 계정']) assert.ok(main.includes(token), token);
+});
+
+test('반려4: 광고표 핵심열은 겹침 없는 너비를 쓰고 뉴스 오늘은 KST 하나로 세다', () => {
+    for (const token of ['const todayKey = kstYMD()', 'const isToday = x => dayKey(x) === todayKey', 'raw.filter(x => kindOf(x) === \'brands\' && isToday(x))', 'a.posts.filter(isToday).length', 'const brandShort'])
+        assert.ok(main.includes(token), token);
+    assert.match(main, /sns-brand-chip/);
+    assert.match(style, /--c2:790px/);
+    assert.match(style, /th:nth-child\(3\)\{width:280px\}/);
+    assert.match(style, /th:nth-child\(6\)\{width:126px\}/);
+    assert.match(style, /\.sns-td-period,.sns-td-spend\{overflow:hidden;white-space:nowrap\}/);
 });
