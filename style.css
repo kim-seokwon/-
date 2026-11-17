@@ -5867,3 +5867,9 @@ b.sp-nm.dup{color:#ff453a}
 .settings3 .sales-section-nav.on,.c3-menu .sales-section-nav.on{font-weight:900;color:var(--primary);background:rgba(10,132,255,.08)}
 .settings3 .sales-section-nav i,.c3-menu .sales-section-nav i{width:18px;flex:0 0 18px;font-size:17px}
 .settings3 .sales-section-nav span,.c3-menu .sales-section-nav span{min-width:0;white-space:normal;line-height:1.25}
+
+/* 11-17 협업 최소 12px(디자이너 반려 ⑤) — 할 일·캘린더·메모 화면 안에서만 올린다 */
+.rm .rm-seg button,.rm .rm-meta,.rm .rm-x,
+.cal .cal-bchip em,.cal .cal-dow span,.cal .cal-d em,.cal .cal-d i,.cal .cal-chip,.cal .cal-more,.cal .dt-h span,.cal .cal-ev span,
+.cal .cal-mdow span,.cal .cal-mgrid i,
+.nt .nt-lbar span,.flt-off{font-size:12px}

@@ -3537,7 +3537,9 @@ class BhasApp {
             const picked = [...el.querySelectorAll('input:checked')].map(i => i.value);
             this.tblFilt = this.tblFilt || {}; this.tblFilt[view] = this.tblFilt[view] || {};
             if (picked.length === vals.length) delete this.tblFilt[view][k]; else this.tblFilt[view][k] = picked;
-            el.remove(); this._syncTblFilters(view); this.requestRender();
+            el.remove(); this._syncTblFilters(view);
+            //  적용 즉시 표를 다시 그린다(30ms 늦은 렌더 사이에 '안 걸렀다'로 보이던 틈 제거 — 11-17 디자이너 반려 ②③)
+            clearTimeout(this._renderTimeout); this.render();
         };
         this._colfOff = (e) => { if (!el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', this._colfOff); } };
         setTimeout(() => document.addEventListener('mousedown', this._colfOff), 0);
