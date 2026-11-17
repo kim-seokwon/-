@@ -169,6 +169,10 @@ export function alertMessage(alerts, today, md = s => s) {
     const icon = { fail: '🔴', stale: '🔴', zero: '🟠', halt: '⏸️' };
     const L = [`🚨 *주문 수집 알림* · ${today}`];
     alerts.forEach(a => L.push(`${icon[a.rule] || '•'} ${md(a.name)} — ${md(a.text)}`));
-    L.push('\n판매 > 주문 왼쪽 몰별 목록의 빨간 점이 끊긴 몰입니다.');
+    //  안내 줄은 규칙별 — fail/stale 은 화면에 빨간 점, zero/halt 는 수집이 정상(초록 점)이라 빨간 점이 없다
+    const down = alerts.some(a => a.rule === 'fail' || a.rule === 'stale'), sales = alerts.some(a => a.rule === 'zero' || a.rule === 'halt');
+    L.push('');
+    if (down) L.push('🔴 수집 끊김: 판매 > 주문 왼쪽 몰별 목록에 빨간 점으로 보입니다.');
+    if (sales) L.push(`${down ? '🟠⏸️' : 'ℹ️'} 주문 0건·판매 멈춤: 수집은 정상(초록 점)입니다. 해당 몰의 판매·진열 상태를 확인해 주세요.`);
     return L.join('\n');
 }

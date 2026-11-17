@@ -201,6 +201,16 @@ test('zero 가 울리는 날은 zero 만(halt 와 겹치지 않음)', () => {
     assert.deepEqual(r.alerts.map(a => a.rule), ['zero']);
 });
 
+//  2차 반려 — 안내 줄이 규칙과 맞아야 한다(zero/halt 는 초록 점)
+test('알림 글 안내 — halt 단독이면 빨간 점 안내 없음, fail+halt 섞이면 두 줄 다', () => {
+    const halt = alertMessage([{ rule: 'halt', name: '29CM 하이헤이호', text: '판매 멈춤' }], TODAY);
+    assert.doesNotMatch(halt, /빨간 점/); assert.match(halt, /수집은 정상\(초록 점\).*해당 몰의 판매·진열 상태를 확인/);
+    const fail = alertMessage([{ rule: 'fail', name: 'A', text: 'x' }], TODAY);
+    assert.match(fail, /빨간 점/); assert.doesNotMatch(fail, /초록 점/);
+    const mix = alertMessage([{ rule: 'fail', name: 'A', text: 'x' }, { rule: 'halt', name: 'B', text: 'y' }], TODAY);
+    assert.match(mix, /수집 끊김: .*빨간 점/); assert.match(mix, /주문 0건·판매 멈춤: 수집은 정상\(초록 점\)/);
+    assert.ok(mix.indexOf('빨간 점') < mix.indexOf('초록 점'));
+});
 test('알림 글 — 없으면 빈 글, 있으면 몰마다 한 줄', () => {
     assert.equal(alertMessage([], TODAY), '');
     const t = alertMessage([{ rule: 'fail', name: 'A', text: 'x' }, { rule: 'zero', name: 'B', text: 'y' }], TODAY);
