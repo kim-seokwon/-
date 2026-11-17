@@ -113,3 +113,58 @@ test('읽는 곳이 원시 URL 대신 _safeFileUrl 을 거친다', () => {
     assert.doesNotMatch(src, /<a href="\$\{doc\.url\}"/);
     assert.match(src, /photos\.map\(u => `<img src="\$\{esc\(this\._safeFileUrl\(u\)\)\}"/);
 });
+
+//  114d d1a 반려 보완 — 서명 경합(지연 Promise 로 재현)
+const deferredSign = () => {
+    const q = [];
+    const sign = (paths) => new Promise(res => q.push({ paths, done: () => res({ data: paths.map(p => ({ path: p, signedUrl: `https://s/${p}?n=${q.length}` })), error: null }) }));
+    return { q, sign };
+};
+const tick = () => new Promise(r => setTimeout(r, 5));
+
+test('서명 진행 중 _fileUrlNow 는 빈 값이 아니라 그 서명을 기다린다(중복 요청 없음)', async () => {
+    const d = deferredSign(); const { t, log } = mk({ sign: d.sign });
+    assert.equal(t._safeFileUrl(REF), ''); await tick();            // 그리기 → 서명 시작(진행 중)
+    assert.equal(log.sign.length, 1);
+    const p = t._fileUrlNow(REF); await tick();
+    assert.equal(log.sign.length, 1, '진행 중이면 다시 서명하지 않는다');
+    d.q[0].done();
+    assert.match(await p, /^https:\/\/s\/org\//);
+});
+
+test('u1 서명 중 u2 로 바뀌면 u2 가 새로 서명받는다 · u1 늦은 결과는 버린다', async () => {
+    const d = deferredSign(); const { t, log } = mk({ sign: d.sign });
+    t.currentUser = { id: 'u1' };
+    t._safeFileUrl(REF); await tick();                               // u1 서명 진행 중
+    t.currentUser = { id: 'u2' };
+    const p = t._fileUrlNow(REF); await tick();
+    assert.equal(log.sign.length, 2, 'u2 세대가 같은 ref 를 새로 서명');
+    d.q[1].done(); const u = await p;
+    assert.match(u, /n=2$/);
+    d.q[0].done(); await tick();                                     // u1 결과가 늦게 와도
+    assert.equal(t._safeFileUrl(REF), u, 'u1 결과가 u2 캐시를 덮지 않는다');
+});
+
+test('_ofsReset 은 진행 중 서명표까지 비운다 — 리셋 뒤 바로 다시 서명 가능', async () => {
+    const d = deferredSign(); const { t, log } = mk({ sign: d.sign });
+    t._safeFileUrl(REF); await tick();
+    assert.equal(t._ofsPend.size, 1);
+    t._ofsReset();
+    assert.equal(t._ofsPend.size, 0);
+    const p = t._fileUrlNow(REF); await tick();
+    assert.equal(log.sign.length, 2);
+    d.q[1].done(); assert.ok(await p);
+    d.q[0].done(); await tick();
+});
+
+test('ofs 허용 문자 — 따옴표·괄호·공백·.. 는 참조가 아니다 · 한글 파일명은 된다', () => {
+    const { t } = mk();
+    for (const bad of [`ofs:org/${ORG}/a'.png`, `ofs:org/${ORG}/a".png`, `ofs:org/${ORG}/a;alert(1)`, `ofs:org/${ORG}/../x.png`, `ofs:org/${ORG}//x.png`, `ofs:org/${ORG}/a<b.png`])
+        assert.equal(t._isOfs(bad), false, bad);
+    assert.equal(t._isOfs(`ofs:org/${ORG}/photos/p1/작업지시서_1.jpg`), true);
+});
+
+test('제작 사진 onclick 은 URL 을 JS 문자열로 escape 해 넣는다', () => {
+    assert.ok(!src.includes(`app.showFileModal('\${photoObj.url}'`), '원문 삽입이 남아 있음');
+    assert.ok(src.includes('app.showFileModal(${this._vesc(JSON.stringify(String(photoObj.url'));
+});

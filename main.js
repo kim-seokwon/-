@@ -889,7 +889,8 @@ class BhasApp {
     }
     //  114d d1 — 비공개 파일 참조. DB 에는 'ofs:org/<org_id>/<경로>'(버킷 org_files)를 두고, 화면이 그릴 때 서명 URL 로 바꾼다.
     //  서명 URL 은 만료되므로 저장하지 않는다. 옛 bhas 공개 URL(http)은 그대로 읽는다.
-    _isOfs(v) { return /^ofs:org\/[0-9a-f-]{36}\/[^\s()]+$/i.test(String(v || '').trim()); }
+    //  허용 문자만(글자·숫자·._-/%) — 따옴표·괄호·공백·'..' 는 참조로 인정하지 않는다(onclick 문자열 깨짐·경로 탈출 방지)
+    _isOfs(v) { const s = String(v || '').trim(); return /^ofs:org\/[0-9a-f-]{36}\/[\p{L}\p{N}._\-\/%]+$/iu.test(s) && !s.includes('..') && !s.includes('//'); }
     //  캐시에 살아 있는 서명 URL 을 돌려준다. 없으면 '' 를 돌려주고 서명을 걸어 둔다 → 서명되면 다시 그린다.
     _ofsUrl(ref) {
         //  계정이 바뀌면 앞 계정이 서명한 URL 을 쓰지 않는다(로그아웃은 _ofsReset)
@@ -901,36 +902,49 @@ class BhasApp {
         clearTimeout(this._ofsT); this._ofsT = setTimeout(() => this._ofsFlush(), 0);
         return '';
     }
-    _ofsReset() { this._ofsCache = new Map(); this._ofsWant?.clear(); this._ofsGen = (this._ofsGen || 0) + 1; clearTimeout(this._ofsT); }
-    async _ofsFlush() {
-        const busy = (this._ofsBusy ||= new Set());
-        const refs = [...(this._ofsWant || [])].filter(r => !busy.has(r)); this._ofsWant?.clear();
-        if (!refs.length || !this.supabase?.storage) return 0;
-        refs.forEach(r => busy.add(r));
-        let ok = 0; const gen = this._ofsGen;
-        try {
-            const { data, error } = await this.supabase.storage.from('org_files').createSignedUrls(refs.map(r => r.slice(4)), 3600);
-            if (gen !== this._ofsGen) return 0;
-            const now = Date.now();
-            refs.forEach((r, i) => {
-                const u = !error && data?.[i]?.signedUrl;
-                //  실패도 1분 기억 — 다시 그릴 때마다 서명 요청이 몰리지 않게
-                this._ofsCache.set(r, u ? { url: u, exp: now + 50 * 60e3 } : { url: '', exp: now + 60e3 });
-                if (u) ok++;
-            });
-        } catch (_e) {
-            if (gen === this._ofsGen) refs.forEach(r => this._ofsCache.set(r, { url: '', exp: Date.now() + 60e3 }));
-        } finally { refs.forEach(r => busy.delete(r)); }
-        if (ok) this.requestRender?.();
-        return ok;
+    //  세대(_ofsGen) 단위로 캐시·진행중 서명(_ofsPend: ref → Promise)을 통째로 갈아 끼운다.
+    //  계정이 바뀌거나 로그아웃하면 앞 세대의 진행중 서명은 결과를 버리고, 새 세대는 같은 ref 를 새로 서명한다.
+    _ofsReset() { this._ofsCache = new Map(); this._ofsPend = new Map(); this._ofsWant?.clear(); this._ofsGen = (this._ofsGen || 0) + 1; clearTimeout(this._ofsT); }
+    _ofsFlush() {
+        const pend = (this._ofsPend ||= new Map()), gen = this._ofsGen;
+        const refs = [...(this._ofsWant || [])].filter(r => !pend.has(r)); this._ofsWant?.clear();
+        if (!refs.length || !this.supabase?.storage) return Promise.resolve(0);
+        const job = (async () => {
+            await null;   // 아래 pend.set 이 먼저 끝나게(동기 예외에도 finally 가 job 을 본다)
+            let ok = 0;
+            try {
+                const { data, error } = await this.supabase.storage.from('org_files').createSignedUrls(refs.map(r => r.slice(4)), 3600);
+                if (gen !== this._ofsGen) return 0;
+                const now = Date.now();
+                refs.forEach((r, i) => {
+                    const u = !error && data?.[i]?.signedUrl;
+                    //  실패도 1분 기억 — 다시 그릴 때마다 서명 요청이 몰리지 않게
+                    this._ofsCache.set(r, u ? { url: u, exp: now + 50 * 60e3 } : { url: '', exp: now + 60e3 });
+                    if (u) ok++;
+                });
+            } catch (_e) {
+                if (gen === this._ofsGen) refs.forEach(r => this._ofsCache.set(r, { url: '', exp: Date.now() + 60e3 }));
+            } finally { refs.forEach(r => { if (pend.get(r) === job) pend.delete(r); }); }
+            if (ok && gen === this._ofsGen) this.requestRender?.();
+            return ok;
+        })();
+        refs.forEach(r => pend.set(r, job));
+        return job;
     }
-    //  지금 당장 열어야 할 때(미리보기·내려받기) — 서명을 기다린다
+    //  지금 당장 열어야 할 때(미리보기·내려받기) — 진행중 서명이 있으면 그걸 기다리고, 없으면 바로 서명한다.
+    //  기다리는 사이 계정이 바뀌면(세대 변경) 새 세대로 다시 서명한다(최대 3번).
     async _fileUrlNow(value) {
         const raw = String(value || '').trim();
         if (!this._isOfs(raw)) return this._safeFileUrl(raw);
-        let u = this._safeFileUrl(raw);
-        if (!u) { clearTimeout(this._ofsT); await this._ofsFlush(); u = this._safeFileUrl(raw); clearTimeout(this._ofsT); }
-        return u;
+        for (let i = 0; i < 3; i++) {
+            const u = this._safeFileUrl(raw);   // 계정 확인·캐시 조회·서명 예약
+            if (u) return u;
+            const c = this._ofsCache?.get(raw);
+            if (c && c.exp > Date.now()) return '';   // 거절을 기억 중
+            const job = this._ofsPend?.get(raw) || (clearTimeout(this._ofsT), this._ofsFlush());
+            await job;
+        }
+        return '';
     }
     showFileModal(url, name = '파일 미리보기') {
         const container = document.getElementById('global-modal-container');
@@ -5683,7 +5697,7 @@ class BhasApp {
                                         ${(product.photos || []).map(photo => {
                                             const photoObj = typeof photo === 'string' ? {url: photo} : photo;
                                             return `
-                                            <div class="photo-item" style="position: relative; cursor: pointer;" onclick="app.showFileModal('${photoObj.url}', '제작 사진')">
+                                            <div class="photo-item" style="position: relative; cursor: pointer;" onclick="app.showFileModal(${this._vesc(JSON.stringify(String(photoObj.url || '')))}, '제작 사진')">
                                                 <img src="${this._vesc(this._safeFileUrl(photoObj.url))}" alt="제작 사진">
                                                 ${this.canDelete(photoObj) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'photo', '${photoObj.id || photoObj.url}', '${product.id}')" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 4px; background: rgba(0,0,0,0.5); border: 1px solid rgba(var(--tint),0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(0,0,0,0.5)'; this.style.borderColor='rgba(var(--tint),0.2)'"><i class="ph ph-x"></i></button>` : ''}
                                             </div>
