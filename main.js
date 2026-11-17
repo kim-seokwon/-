@@ -16,6 +16,7 @@ import { cardDeck } from './paperCards.js';
 import { installColResize } from './colResize.js';
 // 29CM 몰 판별 — 봇(계정별 몰 29cm · 29cm-rohi)과 같은 규칙
 import { is29cmKey, cm29SyncType, cm29SyncState, kstShort } from './channel-bots/29cm/accounts.mjs';
+import { syncHealth as orderSyncHealth } from './orderAlerts.js';
 import { magazine, MAG, reactBits, kNum, sourceKo, whenWord } from './newsMagazine.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
@@ -3443,6 +3444,16 @@ class BhasApp {
                     : `<i class="ph ${color || 'ph-squares-four'}" style="color:#0a84ff"></i>`}
             <span>${esc(label)}</span><em>${count == null ? '' : count}</em></div>`;
     }
+    //  판매>주문 몰별 한 줄 — 점 색 = 수집 상태(빨강 끊김 · 주황 주의 · 초록 정상 · 회색 모름), 이름 아래 마지막 수집 시각
+    _mallNavRow(on, x, click) {
+        const esc = s => this._vesc(s);
+        const h = this._mallPullHealth(x.k);
+        const color = { down: '#ef4444', warn: '#f59e0b', ok: '#22c55e' }[h.state] || '#8e8e93';
+        const sub = h.state === 'down' ? `끊김 · ${h.at ? '마지막 ' + h.at : '성공 기록 없음'}` : h.at ? `수집 ${h.at}` : h.state === 'none' ? '수집 기록 없음' : '';
+        return `<div class="m3-s nav${on ? ' on' : ''} d1" onclick="${click}" title="${esc(h.title)}" data-pull="${h.state}">
+            <i class="ph-fill ph-circle" style="font-size:7px;color:${color}"></i>
+            <span style="display:flex;flex-direction:column;min-width:0;line-height:1.2"><span>${esc(x.name)}</span>${sub ? `<small style="font-size:0.66rem;color:${h.state === 'down' ? '#ef4444' : 'var(--text-muted)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sub)}</small>` : ''}</span><em>${x.cnt == null ? '' : x.cnt}</em></div>`;
+    }
     _navSec(name, key, inner) {
         const open = (this.navOpen || {})[key] !== false;
         return `<div class="m3-h tog${open ? ' on' : ''}" onclick="app.toggleNav('${key}')">
@@ -3525,8 +3536,8 @@ class BhasApp {
                 ${R(m === 'ALL' && f === 'done', '완료', sc ? sc.done : n(o => this._orderState(o) === 'done'), `app.navPick('orders','st','done')`, 0, 'ph-check-circle')}
                 ${R(m === 'ALL' && f === 'claim', '취소·반품·교환', sc ? sc.claim : n(o => ['cancel', 'return', 'exchange'].includes(this._orderState(o)) && !this._isUnpaidCancel(o)), `app.navPick('orders','st','claim')`, 0, 'ph-arrow-u-up-left')}
                 ${R(m === 'ALL' && f === 'all', '전체', sc ? sc.all : all.length, `app.navPick('orders','st','all')`, 0, 'ph-tray')}
-                ${S('몰별', 'omall', namedMalls.map(x => R(String(m) === String(x.k), x.name,
-                    x.cnt, `app.navPick('orders','mall','${esc(x.k)}')`, 1)).join(''))}`;
+                ${S('몰별', 'omall', namedMalls.map(x => this._mallNavRow(String(m) === String(x.k), x,
+                    `app.navPick('orders','mall','${esc(x.k)}')`)).join(''))}`;
         }
 
         if (view === 'cs') {
@@ -12279,6 +12290,36 @@ class BhasApp {
         return out;
     }
 
+    //  판매>주문 몰별 '마지막 수집' — 모든 몰의 sync_log('<mall_key>:pull_orders' + 카페24 실패 '<mall_key>:error') 최근 30건 + 마지막 성공 1건.
+    //  판정은 orderAlerts.js syncHealth(텔레그램 알림과 같은 규칙). 한 몰 조회가 실패해도 그 몰만 { failed }.
+    async _loadPullSync(malls) {
+        const out = {};
+        await Promise.all((malls || []).filter(m => m && m.mall_key && m.active !== false).map(async m => {
+            const pull = `${m.mall_key}:pull_orders`;
+            try {
+                const [logs, ok] = await Promise.all([
+                    this.supabase.from('sync_log').select('run_at,type,result,detail').in('type', [pull, `${m.mall_key}:error`]).order('run_at', { ascending: false }).limit(30),
+                    this.supabase.from('sync_log').select('run_at').eq('type', pull).eq('result', 'ok').order('run_at', { ascending: false }).limit(1),
+                ]);
+                out[m.mall_key] = logs.error || ok.error ? { failed: true } : { logs: logs.data || [], lastOk: (ok.data || [])[0]?.run_at || null };
+            } catch (e) { out[m.mall_key] = { failed: true }; }
+        }));
+        return out;
+    }
+    //  몰 하나의 수집 상태 — { state: ok|warn|down|none|unknown, at, title }. 카페24 heartbeat(last_order_synced_at)도 성공으로 본다
+    _mallPullHealth(k) {
+        const mall = (this.malls || []).find(x => String(x.mall_key) === String(k));
+        const rec = (this.pullSync || {})[k];
+        if (!mall || !rec) return { state: 'unknown', at: null, title: '' };
+        if (rec.failed) return { state: 'unknown', at: null, title: '수집 기록을 못 읽었습니다' };
+        const okAts = [rec.lastOk, mall.last_order_synced_at].filter(Boolean).sort();
+        const h = orderSyncHealth(rec.logs, { channel: mall.channel, lastOkAt: okAts[okAts.length - 1] || null });
+        const at = h.lastOkAt ? kstShort(h.lastOkAt) : null;
+        const why = h.rule === 'fail' ? `수집 ${h.failStreak}회 연속 실패${h.lastError ? ' · ' + h.lastError : ''}`
+                  : h.rule === 'stale' ? '수집 멈춤' : h.failStreak ? '최근 수집 1회 실패' : h.state === 'warn' ? '수집이 평소보다 늦음' : '';
+        return { state: h.state, at, title: [at ? `마지막 수집 성공 ${at}` : '수집 성공 기록 없음', why].filter(Boolean).join(' · ') };
+    }
+
     async loadMalls() {
         this._mallsLoading = true;
         try {
@@ -12295,7 +12336,7 @@ class BhasApp {
             (syncRes.data || []).forEach(s => { syncBy[s.mall_key] = s; });
             this.malls = (mallsRes.data || []).map(m => ({ ...m, ...(syncBy[m.mall_key] || {}) }));
             this.channelConnections = connectionRes.data || [];
-            this.cm29Sync = await this._loadCm29Sync(this.malls);
+            [this.cm29Sync, this.pullSync] = await Promise.all([this._loadCm29Sync(this.malls), this._loadPullSync(this.malls)]);
             this._mallsLoaded = true;
         } catch (e) { this.malls = []; this._mallsLoaded = true; }
         this._mallsLoading = false;

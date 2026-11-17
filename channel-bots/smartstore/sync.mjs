@@ -110,13 +110,22 @@ async function run() {
   const from = new Date(Date.now() - 24 * 3600 * 1000).toISOString();  // 최근 24h 변경분
   const ids = await lastChangedIds(token, from);
   console.log(`[smartstore] 변경 주문 ${ids.length}건`);
-  if (!ids.length) return;
+  if (!ids.length) return 0;
   const details = await queryOrders(token, ids);
   const rows = details.map(mapOrder).filter(r => r.order_id && r.order_id !== 'undefined');
   const { error } = await db.from('channel_orders')
     .upsert(rows, { onConflict: 'mall_key,order_id', ignoreDuplicates: false });
   if (error) throw error;
   console.log(`[smartstore] Supabase 저장 완료 ${rows.length}건`);
+  return rows.length;
 }
 
-run().catch(e => { console.error('[smartstore] 실패:', e); process.exit(1); });
+//  sync_log — 연동관리·주문 수집 알림(orderAlerts.js)이 '<mall_key>:pull_orders' 성공/실패를 본다. 기록 실패는 수집 결과를 바꾸지 않는다.
+async function logSync(result, detail) {
+  const { error } = await db.from('sync_log').insert([{ channel: 'naver', type: `${MALL_KEY}:pull_orders`, result, detail }]);
+  if (error) console.warn('[smartstore] sync_log 기록 실패:', error.message);
+}
+const errDetail = e => ({ error: String(e?.message || e).replace(/[0-9]{4,}/g, '****').slice(0, 300) });
+
+run().then(n => logSync('ok', { stored: n || 0 }))
+  .catch(async e => { console.error('[smartstore] 실패:', e); await logSync('error', errDetail(e)).catch(() => {}); process.exit(1); });

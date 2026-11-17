@@ -1,0 +1,40 @@
+name: 주문 수집 알림
+
+# 주문 수집이 실패·멈춤이거나, 평소 팔리던 몰이 2일 연속 0건이면 텔레그램으로 알린다.
+#  규칙: orderAlerts.js · 스크립트: channel-bots/telegram/order-alert.mjs · 같은 건은 하루 1번(order_alert_log, 111)
+#  수집 워크플로가 끝날 때마다(성공·실패 모두) + 하루 1번(크론이 아예 멈춘 경우를 잡으려고) 돈다.
+#  보내기 스위치는 운영 보고서와 같은 TELEGRAM_READY. 꺼져 있으면 예약 실행은 건너뛴다.
+on:
+  workflow_run:
+    workflows: ["29CM 주문 수집", "스마트스토어 주문 수집", "키디키디 주문 수집", "카페24 주문 수집"]
+    types: [completed]
+  schedule:
+    - cron: '30 3 * * *'   # 12:30 KST — 하루 채널 수집(06:17 예약, 실측 09~12시)이 끝난 뒤
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '보내지 않고 표만 찍기'
+        type: boolean
+        default: true
+
+concurrency:
+  group: order-alert
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    if: ${{ vars.TELEGRAM_READY == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 알림
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node channel-bots/telegram/order-alert.mjs ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}

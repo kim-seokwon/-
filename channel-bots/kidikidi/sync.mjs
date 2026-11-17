@@ -377,9 +377,19 @@ async function run() {
       if (error) throw error;
       console.log(`[kidikidi] Supabase 저장 완료 ${rows.length}건`);
     }
+    return deduped.length;
   } finally {
     await browser.close();
   }
 }
 
-run().catch(e => { console.error('[kidikidi] 실패:', e); process.exit(1); });
+//  sync_log — 연동관리·주문 수집 알림(orderAlerts.js)이 '<mall_key>:pull_orders' 성공/실패를 본다. 진단(DIAG)은 수집이 아니라 안 남긴다.
+async function logSync(result, detail) {
+  if (process.env.DIAG === '1') return;
+  const { error } = await db.from('sync_log').insert([{ channel: 'eland', type: `${MALL_KEY}:pull_orders`, result, detail }]);
+  if (error) console.warn('[kidikidi] sync_log 기록 실패:', error.message);
+}
+const errDetail = e => ({ error: String(e?.message || e).replace(/[0-9]{4,}/g, '****').slice(0, 300) });
+
+run().then(n => logSync('ok', { stored: n || 0 }))
+  .catch(async e => { console.error('[kidikidi] 실패:', e); await logSync('error', errDetail(e)).catch(() => {}); process.exit(1); });

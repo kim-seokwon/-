@@ -70,7 +70,13 @@ test('반려2: 주문 식별값은 자르지 않고 상품만 툴팁 말줄임, 
 test('반려1: 몰별은 실제 이름·건수만 그리고 이름 없는 행은 숨긴다', () => {
     assert.match(main, /malls: \[\{ mall_key: 'hiheiho', cnt: 1 \}, \{ mall_key: 'lohi', cnt: 1 \}\]/);
     assert.match(main, /const namedMalls = malls\.map\(k => \(\{ k, name: mallName\(k\), cnt: mallCnt\(k\) \}\)\)[\s\S]*?\.filter\(x => x\.k && x\.name\)/);
-    assert.match(main, /namedMalls\.map\(x => R\(String\(m\) === String\(x\.k\), x\.name,/);
+    assert.match(main, /namedMalls\.map\(x => this\._mallNavRow\(String\(m\) === String\(x\.k\), x,/);
+});
+
+test('주문 알림: 몰별 줄에 마지막 수집 시각과 끊김 빨간 점(orderAlerts.js syncHealth 와 같은 규칙)', () => {
+    assert.match(main, /import \{ syncHealth as orderSyncHealth \} from '\.\/orderAlerts\.js'/);
+    assert.match(main, /_mallNavRow\(on, x, click\)[\s\S]*?\{ down: '#ef4444', warn: '#f59e0b', ok: '#22c55e' \}/);
+    assert.match(main, /\[this\.cm29Sync, this\.pullSync\] = await Promise\.all/);
 });
 
 test('반려1: 주문 검색 입력은 돋보기 오른쪽에서 시작한다', () => {
