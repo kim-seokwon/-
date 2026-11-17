@@ -94,9 +94,13 @@ const ctx = (over = {}) => {
 };
 const render = t => method('renderContacts').call(t);
 
-test('가운데 표 — 업체명·담당자·휴대폰·이메일, 오른쪽은 안 고르면 요약', () => {
+test('가운데 표 — 업체명·구분·상태·담당자·휴대폰·전화·이메일(구분·상태는 독립 열), 오른쪽은 안 고르면 요약', () => {
     const t = ctx(); const html = render(t);
-    assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'contact', 'mobile', 'email']);
+    assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email']);
+    assert.doesNotMatch(html, /ct3-name"[^>]*>[^<]*<em>/, '구분을 업체명 옆 작은 글씨로 붙이지 않는다');
+    assert.match(html, /<td class="ct3-cat">[^<]+<\/td>/, '구분 열');
+    assert.match(html, /<td class="ct3-st"><span class="ct3-badge"[^>]*>거래중<\/span><\/td>/, '상태 열 — 거래중도 보인다');
+    assert.match(html, /colspan="7"|<td class="nw ct3-tel">/, '전화 열');
     assert.match(html, /class="m3 ct3"/, '고른 게 없으면 detail 아님');
     assert.match(html, /모든 연락처 2곳/, '요약');
     assert.match(html, /휴대폰 없음<\/span><span class="v">1곳/, '빈 칸 수 (109 뒤 mobile null)');
@@ -258,4 +262,10 @@ insert into public.vendors (name, phone) values
     assert.equal((await q(`select 1 from storage.buckets where id = 'vendor_files'`)).length, 1, '파일 있으면 버킷 남김');
     await db.exec(`delete from storage.objects; ` + DOWN);
     assert.equal((await q(`select 1 from storage.buckets where id = 'vendor_files'`)).length, 0);
+});
+
+test('머리글 깔때기는 항상 보이고(연하게), 거르면 파랑', () => {
+    const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+    assert.match(css, /\.ct3-tbl \.it-tbl th \.th-f\{opacity:\.7\}/);
+    assert.match(css, /\.it-tbl th\.flt\{color:#0a84ff/);
 });

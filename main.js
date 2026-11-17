@@ -15722,7 +15722,8 @@ class BhasApp {
         if (q) base = base.filter(v => [v.name, v.contact_name, v.mobile, v.phone, v.fax, v.email, v.address, v.ceo_name, v.biz_no, v.memo]
             .some(x => String(x || '').toLowerCase().includes(q)));
         const list = this._applyTbl('contacts', base, (v, k) => ({
-            name: v.name || '', contact: v.contact_name || '', mobile: phonesOf(v).mobile, email: v.email || '',
+            name: v.name || '', cat: v.category || '기타', status: v.status || '거래중', contact: v.contact_name || '',
+            mobile: phonesOf(v).mobile, phone: phonesOf(v).phone, email: v.email || '',
         })[k] ?? '', base);
         const sel = this.contactNew ? null : (all.find(v => String(v.id) === String(this.contactSel)) || null);
         const cnt = c => all.filter(v => (v.category || '기타') === c).length;
@@ -15738,11 +15739,13 @@ class BhasApp {
             const p = phonesOf(v);
             return `<tr class="it-row${sel && String(v.id) === String(sel.id) ? ' on' : ''}" data-id="${esc(v.id)}"
                 onclick="app.selectContact('${esc(v.id)}')" oncontextmenu="app.contactMenu(event,'${esc(v.id)}')">
-                <td class="bd ct3-name"><span>${esc(v.name || '')}</span>${(v.status || '거래중') !== '거래중' ? badge(v.status) : ''}
-                    ${cur === '전체' ? `<em>${esc(v.category || '기타')}</em>` : ''}</td>
+                <td class="bd ct3-name" title="${esc(v.name || '')}">${esc(v.name || '')}</td>
+                <td class="ct3-cat">${esc(v.category || '기타')}</td>
+                <td class="ct3-st">${badge(v.status || '거래중')}</td>
                 <td>${esc(v.contact_name || '')}</td>
                 <td class="nw">${esc(p.mobile)}</td>
-                <td class="ct3-mail">${esc(v.email || '')}</td></tr>`;
+                <td class="nw ct3-tel">${esc(p.phone)}</td>
+                <td class="ct3-mail" title="${esc(v.email || '')}">${esc(v.email || '')}</td></tr>`;
         }).join('');
         const center = `
             <section class="m3-list">
@@ -15756,8 +15759,8 @@ class BhasApp {
                     <input placeholder="업체명·담당자·휴대폰·전화·이메일·주소" value="${esc(this.contactQ || '')}" oninput="app.contactFind(this.value)"></div>
                 ${this._fltBadge('contacts') ? `<div class="ct3-flt">${this._fltBadge('contacts')}</div>` : ''}
                 <div class="ct3-tbl"><table class="it-tbl"><thead><tr>
-                    ${this._thead('contacts', [['name', '업체명'], ['contact', '담당자'], ['mobile', '휴대폰'], ['email', '이메일']])}
-                </tr></thead><tbody>${rows || `<tr><td colspan="4" class="it-none">${filtered ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다 — 위 ＋'}</td></tr>`}</tbody></table></div>
+                    ${this._thead('contacts', [['name', '업체명'], ['cat', '구분'], ['status', '상태'], ['contact', '담당자'], ['mobile', '휴대폰'], ['phone', '전화'], ['email', '이메일']])}
+                </tr></thead><tbody>${rows || `<tr><td colspan="7" class="it-none">${filtered ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다 — 위 ＋'}</td></tr>`}</tbody></table></div>
             </section>`;
         const docOpen = !!(sel || this.contactNew);
         return `
