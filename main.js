@@ -5126,7 +5126,8 @@ class BhasApp {
             })[k2] ?? '';
             docs = this._applyTbl('documents', docs, docVal, aggregatedDocs);
             this._docVisible = docs;
-            const summaryOf = d => d.memo || [((brandOfP(d.productId) || {}).n || ''), nameOfP(d.productId), d.category].filter(Boolean).join(' · ');
+            //  브랜드는 독립 열로 — 요약 줄에서는 빼서 두 번 찍지 않는다(3단 규칙 2·4)
+            const summaryOf = d => d.memo || [nameOfP(d.productId), d.category].filter(Boolean).join(' · ');
             const grid = docs.map((d, idx) => {
                 const k = kindOf(d), safe = this._safeFileUrl(d.url);
                 return `<button class="fd-it${String(this.docSel) === String(d.id) ? ' on' : ''}" data-id="${esc(String(d.id))}"
@@ -5144,6 +5145,7 @@ class BhasApp {
                         oncontextmenu="app.docMenuAt(event,${idx})">
                     <i class="ph ${k.i} fd3-ic" style="color:${k.c}"></i>
                     <span class="fd3-copy"><b>${esc(d.name || '이름 없는 자료')}</b><em>${esc(summaryOf(d) || '설명 없음')}</em></span>
+                    <span class="fd3-brand">${esc((brandOfP(d.productId) || {}).n || '공통')}</span>
                     <span class="fd3-kind">${esc(k.t)}</span>
                     <time>${esc(d.date ? this.formatDateToUI(String(d.date).slice(0, 10)) : '-')}</time>
                     <i class="ph ph-caret-right fd3-go"></i>
@@ -5193,7 +5195,7 @@ class BhasApp {
                     <div class="fd-body">
                         ${docs.length
                             ? (view === 'grid' ? `<div class="fd-grid">${grid}</div>`
-                               : `<div class="fd-list"><div class="fd3-head">${[['name', '자료'], ['kind', '종류'], ['date', '날짜']]
+                               : `<div class="fd-list"><div class="fd3-head">${[['name', '자료'], ['brand', '브랜드'], ['kind', '종류'], ['date', '날짜']]
                                     .map(([k2, t]) => { const { srt, flt } = this._tblState('documents');
                                         return `<span class="fh${srt.k === k2 ? ' srt' : ''}${flt[k2] ? ' flt' : ''}" onclick="app.sortTbl('documents','${k2}')">${esc(t)}${srt.k === k2 ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f" onclick="app.openTblFilter(event,'documents','${k2}','${esc(t)}')"><i class="ph ph-funnel${flt[k2] ? '-fill' : ''}"></i></button></span>`; }).join('')}</div>${rows}</div>`)
                             : `<div class="fd-none">${q ? '찾는 자료가 없습니다' : '이 위치에 자료가 없습니다'}</div>`}
@@ -11357,6 +11359,9 @@ class BhasApp {
         if (title !== old) this.setRemTitle(src, id, title);
         if (el) el.dataset.original = title;
     }
+    //  끝난/꺼진 항목 접기 버튼 — 3단 규칙 2 '종료 N개'
+    _c3Fold(click, open, label) { return `<button class="c3-fold" onclick="${click}"><i class="ph ph-caret-${open ? 'down' : 'right'}"></i>${this._vesc(label)}</button>`; }
+    toggleContactDone() { this.contactShowDone = !this.contactShowDone; this.requestRender(); }
     // ── 할 일 (맥 '미리알림' 앱 그대로) ────────────────────────
     //  왼쪽에 색 타일 6개 + 나의 목록, 오른쪽에 목록별 색 제목 + 동그란 체크.
     //  우리 '할일(todos)'도 한 목록으로 같이 얹어서 담당자까지 보이게 했다.
@@ -15933,7 +15938,11 @@ class BhasApp {
             ${editable ? `oncontextmenu="app.vendorCategoryMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))" title="우클릭: 이름·순서·삭제"` : ''}>
             <i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
         const filtered = q || cur !== '전체' || status !== '전체' || Object.keys((this.tblFilt || {}).contacts || {}).length;
-        const rows = list.map(v => {
+        //  거래중단은 아래 '종료 N곳'으로 접는다 — 상태를 직접 골랐거나 상태 열 필터를 걸면 그대로 보인다(3단 규칙 2)
+        const stPicked = status !== '전체' || !!((this.tblFilt || {}).contacts || {}).status;
+        const stopped = stPicked ? [] : list.filter(v => (v.status || '거래중') === '거래중단');
+        const shownList = stPicked || this.contactShowDone ? list : list.filter(v => (v.status || '거래중') !== '거래중단');
+        const rows = shownList.map(v => {
             const p = phonesOf(v);
             return `<tr class="it-row${sel && String(v.id) === String(sel.id) ? ' on' : ''}" data-id="${esc(v.id)}"
                 onclick="app.selectContact('${esc(v.id)}')" oncontextmenu="app.contactMenu(event,'${esc(v.id)}')">
@@ -15944,7 +15953,7 @@ class BhasApp {
                 <td class="nw">${esc(p.mobile)}</td>
                 <td class="nw ct3-tel">${esc(p.phone)}</td>
                 <td class="ct3-mail" title="${esc(v.email || '')}">${esc(v.email || '')}</td></tr>`;
-        }).join('');
+        }).join('') + (stopped.length ? `<tr class="prod-fold"><td colspan="7">${this._c3Fold('app.toggleContactDone()', this.contactShowDone, `종료(거래중단) ${stopped.length}곳`)}</td></tr>` : '');
         const center = `
             <section class="m3-list">
                 <div class="m3-lbar"><div><b>${esc(cur === '전체' ? '모든 연락처' : cur)}</b><span>${list.length}곳${list.length !== all.length ? ` / 전체 ${all.length}` : ''}</span></div>
@@ -15968,7 +15977,7 @@ class BhasApp {
                     <button onclick="app.addVendorCategory()" title="새 구분" style="border:0;background:none;color:var(--primary);cursor:pointer"><i class="ph ph-plus"></i></button></div>
                 ${side('전체', '모든 연락처', 'ph-address-book', all.length)}
                 ${cats.map(c => side(c.name, c.name, 'ph-folder-simple', cnt(c.name), c.color, true)).join('')}
-                <div style="padding:8px 12px;font-size:10px;color:var(--text-muted)">구분을 우클릭해 관리</div>
+                <div style="padding:8px 12px;font-size:12px;color:var(--text-muted)">구분을 우클릭해 관리</div>
             </aside>
             ${center}
             <section class="m3-doc">

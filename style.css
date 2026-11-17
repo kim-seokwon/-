@@ -5759,3 +5759,18 @@ b.sp-nm.dup{color:#ff453a}
 .production3 .sm-pl-add,.production3 .sm-pl-empty,.production3 .sm-pl-upload,.production3 .sm-tp-sub,.production3 .sm-tp-note,
 .production3 .sm-chip,.production3 .sm-tp-block th{font-size:12px!important}
 .production3 .sm-tp-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+
+/* 3단 규칙 — 협업 창 가운데 표·글씨(왼쪽 메뉴 구조는 새 메뉴안 확정 뒤) */
+.c3-fold{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:var(--text-muted);font:inherit;font-size:13px;padding:8px 6px;cursor:pointer}
+.ct3 .m3-h,.ct3 .m3-s em,.ct3 .m3-lbar span,.ct3 .ct3-name em,.ct3 .it-tbl th,.ct3 .dt-sec{font-size:12px!important}
+.ct3 .ct3-badge{font-size:12px;font-weight:700}
+.fd .fd-sh,.fd .fd-s em,.fd .fd3-head{font-size:12px}
+.fd3-head{grid-template-columns:minmax(0,1fr) 96px 90px 86px}
+.fd3-r{grid-template-columns:28px minmax(0,1fr) 96px 90px 86px 12px}
+.fd3-brand{font-size:13px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:900px){
+  .fd3-r{grid-template-columns:24px minmax(0,1fr) 62px 56px 66px 10px}
+  .fd3-head{grid-template-columns:minmax(0,1fr) 62px 56px 66px}
+  .fd3-brand,.fd3-kind,.fd3-r time{font-size:12px}
+  .fd-bar{flex-wrap:wrap}.fd-bar>b{flex:0 0 auto;white-space:nowrap}
+}
