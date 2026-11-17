@@ -2682,7 +2682,7 @@ body:not(.light) .global-side{color:#f2f3f5;background:rgba(25,25,30,.88);border
  .mac-menubar{gap:7px;padding:0 8px}.mac-menubar>b,.mac-menubar>span{white-space:nowrap}.mac-menubar>span:not(.mac-mb-right){min-width:0;overflow:hidden;text-overflow:ellipsis;max-width:92px}
 }
 /* 바탕화면 = 홈 대시보드. 창 아래에 깔리고, 블록을 누르면 그 화면이 창으로 열린다. */
-.mac-deskboard{position:absolute;left:0;right:0;top:28px;bottom:0;z-index:1;overflow:auto;
+.mac-deskboard{position:absolute;left:var(--mac-side-w);right:0;top:28px;bottom:0;z-index:1;overflow:auto;
   padding:18px 20px 110px;-webkit-overflow-scrolling:touch}
 .mac-deskboard::-webkit-scrollbar{width:9px}
 .mac-deskboard::-webkit-scrollbar-thumb{background:rgba(128,128,128,.35);border-radius:9px}
@@ -2693,6 +2693,19 @@ body:not(.light) .global-side{color:#f2f3f5;background:rgba(25,25,30,.88);border
 body.light .mac-deskboard .glass{background:rgba(255,255,255,.62);border-color:rgba(0,0,0,.09);
   box-shadow:0 10px 28px rgba(0,0,0,.10)}
 .mac-deskboard .dashboard-header,.mac-deskboard .mobile-top-bar,.mac-deskboard .sidebar{display:none}
+.home-view [style*="font-size:0.58rem"],.home-view [style*="font-size:0.6rem"],
+.home-view [style*="font-size:0.64rem"],.home-view [style*="font-size:0.66rem"],
+.home-view [style*="font-size:0.68rem"],.home-view [style*="font-size:0.7rem"],
+.home-view [style*="font-size:0.72rem"],.home-view [style*="font-size:0.73rem"],
+.home-view [style*="font-size:0.74rem"],.home-view [style*="font-size:.6rem"],
+.home-view [style*="font-size:.64rem"],.home-view [style*="font-size:.66rem"],
+.home-view [style*="font-size:.68rem"],.home-view [style*="font-size:.7rem"],
+.home-view [style*="font-size:.72rem"],.home-view [style*="font-size:.73rem"],
+.home-view [style*="font-size:.74rem"],.home-view .due-tag,.home-view .tip-q{font-size:12px!important}
+.home-empty{padding:28px 12px;text-align:center;color:var(--text-muted);font-size:14px}
+.home-paper{display:flex;align-items:center;gap:14px;min-height:94px}.home-paper>i{font-size:34px;color:var(--primary)}
+.home-paper>div{min-width:0;flex:1}.home-paper b,.home-paper span{display:block}.home-paper b{font-size:16px}.home-paper span{margin-top:5px;color:var(--text-muted);font-size:13px}
+.home-paper button{border:0;border-radius:9px;padding:8px 13px;background:var(--primary);color:#fff;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
 @media (max-width:640px){ .mac-deskboard{padding:12px 12px 120px} }
 /* 창 */
 .macwin{position:absolute;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;
@@ -4399,7 +4412,7 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .desk-find>i{font-size:15px;color:#8a8f98}
 .desk-find>span{flex:1;min-width:0;font-size:13px;color:#8a8f98;letter-spacing:-.01em;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.desk-find kbd{font-family:inherit;font-size:10px;font-weight:700;color:#9aa0a8;
+.desk-find kbd{font-family:inherit;font-size:12px;font-weight:700;color:#9aa0a8;
   background:rgba(0,0,0,.05);border-radius:5px;padding:2px 6px;letter-spacing:.02em}
 /* 이 앱은 body.light 로 밝은 테마를 쓴다 — 어두운 테마일 때만 어둡게 */
 body:not(.light) .desk-find{background:rgba(44,44,48,.55);border-color:rgba(255,255,255,.1)}

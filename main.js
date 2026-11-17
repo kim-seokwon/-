@@ -2706,6 +2706,7 @@ class BhasApp {
         //  홈은 _appShell 을 거치지 않는다 → 수집 끊김 띠를 여기서 따로 넣는다.
         //  (가장 많이 보는 화면에 경고가 없으면 경고를 단 뜻이 없다)
         const _warn = this._syncWarnBar();
+        const homeMode = ['todos', 'sales', 'orders', 'alerts', 'paper'].includes(this.homeMode) ? this.homeMode : 'todos';
         products = products || mockData.products || [];
         this._homePops = {};   // 클릭 팝오버 내용 레지스트리(요소별 KEY→{title,rows,link})
         const name = this.currentUser?.name || '';
@@ -3098,7 +3099,7 @@ class BhasApp {
         this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => Number(o.refund_amount) > 0 && o.raw?.paid !== 'F' && o.fin_unpaid !== true && localYMD(o.refunded_at || o.order_date).startsWith(monthKey), `환불총액 ${won(refundTotal)}원`);
 
         return `
-        <div class="fade-in" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
+        <div class="fade-in home-view" data-home-mode="${homeMode}" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
             ${_warn}
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:0.6rem">
                 <h1 style="margin:0;font-size:1.35rem">👋 ${this._vesc(name)}님</h1>
@@ -3108,6 +3109,7 @@ class BhasApp {
                 </div>
             </div>
 
+            <section class="home-mode-pane" data-pane="sales"${homeMode === 'sales' ? '' : ' hidden'}>
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
             ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
             <div class="hk-grid hk-grid5" style="margin-bottom:0.9rem">
@@ -3136,7 +3138,16 @@ class BhasApp {
                     </div>
                 </div>
             </div>
+            </section>
 
+            <section class="home-mode-pane" data-pane="orders"${homeMode === 'orders' ? '' : ' hidden'}>
+            ${sectionHead('ph-package', '미처리 주문·CS', '배송 전·배송 중·교환·환불과 최근 주문')}
+            <div class="hk-grid hk-grid4" style="margin-bottom:0.9rem">${statBlocks}</div>
+            ${panel('최근 주문', recentGrid,
+                `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">주문 전체 →</span>`)}
+            </section>
+
+            <section class="home-mode-pane" data-pane="todos"${homeMode === 'todos' ? '' : ' hidden'}>
             <!-- ═══ 블록 2: 할 일 · 통합 캘린더 ═══ -->
             ${sectionHead('ph-list-checks', '할 일 · 통합 캘린더', '메모 체크 · 시즌 할 일 · 생산 작업 · 시즌 마감까지 한데')}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;align-items:stretch">
@@ -3145,10 +3156,17 @@ class BhasApp {
                 ${panel(`${mm}월 통합 캘린더`, calendar,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('calendar')">캘린더 →</span>`)}
             </div>
+            </section>
 
-            <!-- ═══ 블록 3: SNS ═══ -->
-            ${sectionHead('ph-instagram-logo', 'SNS 현황', `브랜드별 팔로워·게시물 · <span style="color:var(--primary);cursor:pointer" onclick="app.switchView('sns')">SNS 탭 →</span>`)}
-            ${this._igHomeSummary()}
+            <section class="home-mode-pane" data-pane="alerts"${homeMode === 'alerts' ? '' : ' hidden'}>
+            ${sectionHead('ph-bell-ringing', '이상 알림', '수집 지연과 운영상 확인할 항목')}
+            ${panel('현재 알림', _warn || '<div class="home-empty">지금 확인할 이상 알림이 없습니다.</div>')}
+            </section>
+
+            <section class="home-mode-pane" data-pane="paper"${homeMode === 'paper' ? '' : ' hidden'}>
+            ${sectionHead('ph-newspaper', '오늘 조간', '지난 조간은 SNS · 뉴스에서 다시 볼 수 있습니다')}
+            ${panel('2179 아침 조간', '<div class="home-paper"><i class="ph ph-newspaper-clipping"></i><div><b>오늘의 조간을 펼쳐 확인하세요</b><span>뉴스와 운영 이슈를 카드로 모아 봅니다.</span></div><button onclick="app.openPaper()">조간 펼치기</button></div>')}
+            </section>
         </div>`;
     }
 
@@ -8715,8 +8733,13 @@ class BhasApp {
         const esc = s => this._vesc(s), groups = this.MAC_SIDE_GROUPS || [];
         const front = (this.wins || []).filter(w => !w.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0] || null;
         const activeView = front?.view || '', activeGroup = this._groupOf(activeView)?.head || '';
+        const desktopHome = !front;
         const activeMode = activeView === 'sns' ? ({ ads: 'active_ads', posts: 'followers' }[this.snsMode] || this.snsMode || 'active_ads') : '';
-        const active = (view, mode = '') => view === 'sns' ? activeView === 'sns' && (!mode || activeMode === mode) : activeView === view;
+        const active = (view, mode = '') => {
+            if (view === 'sns') return activeView === 'sns' && (!mode || activeMode === mode);
+            if (view === 'home') return desktopHome && (!mode || (this.homeMode || 'todos') === mode);
+            return activeView === view;
+        };
         const item = ([view, label, icon, mode = '']) => {
             if (!this._viewAllowed(view)) return '';
             if (!this._sideOk(view)) return '';   // 설정 칸의 마스터 전용
@@ -8725,7 +8748,7 @@ class BhasApp {
         };
         const app = a => {
             const children = (a.items || []).filter(x => this._sideOk(x[0])); if (!children.length) return '';
-            const appOn = activeGroup === a.view || activeView === a.view;
+            const appOn = activeGroup === a.view || activeView === a.view || (a.view === 'home' && desktopHome);
             const expanded = this.sideAppOpen == null ? appOn : this.sideAppOpen === a.view;
             return `<div class="mac-side-appwrap${appOn ? ' on' : ''}${expanded ? ' expanded' : ''}"><button class="mac-side-app" onclick="app.toggleMacSideApp('${esc(a.view)}')" title="${esc(a.label)} 펼치기/접기"><i class="ph ${a.icon}"></i><span>${esc(a.label)}</span><i class="ph ph-caret-${expanded ? 'up' : 'down'} mac-side-app-caret"></i></button><div class="mac-side-sub">${children.map(item).join('')}</div></div>`;
         };
