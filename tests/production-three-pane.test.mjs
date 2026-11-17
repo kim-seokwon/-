@@ -10,7 +10,7 @@ test('생산 묶음은 선택 전에도 분류·목록·상세 3단을 유지한
     assert.match(main, /production3 \? ' production3' : ''/);
     assert.match(main, /items: '생산 물품', vendors: '생산처', tech_packs: '작업지시서'/);
     assert.match(main, /if \(production3\) return empty\(\)/);
-    assert.match(css, /\.appwrap\.production3\{--c1:190px;--c3:320px\}/);
+    assert.match(css, /\.appwrap\.production3\{--c1:170px;--c3:290px\}/);
 });
 
 test('왼쪽 분류는 기존 생산 메뉴·생산처·상태 데이터를 그대로 쓴다', () => {

@@ -11,7 +11,8 @@ test('판매 묶음은 선택 전에도 분류·목록·상세 3단을 유지한
     assert.match(main, /orders: '주문', cs: 'CS 건', inventory: '재고 품목'/);
     assert.match(main, /선택하세요<\/div>/);
     assert.match(main, /<button class="mbtn inv-map"[\s\S]*?return sales3 \? empty\(\) : '';/);
-    assert.match(css, /\.appwrap\.sales3\{--c3:300px\}/);
+    assert.match(css, /\.appwrap\.sales3\{--c1:156px;--c3:260px\}/);
+    assert.match(css, /\.sales3 \.table-container\{overflow-x:hidden!important\}/);
 });
 
 test('900px 이하는 목록→상세·목록 돌아가기로 전환한다', () => {
@@ -45,14 +46,25 @@ test('헤드리스 미리보기는 가짜 데이터만 쓰고 DB 로드를 막�
     assert.doesNotMatch(main.slice(start, end), /supabase\.from|supabase\.rpc|\.insert\(|\.update\(|\.delete\(/);
 });
 
-test('반려1: 주문일·채널은 목록과 상세가 같은 표시 도우미를 쓴다', () => {
+test('반려2: 상세 주문일은 전체, 목록은 폭을 아끼는 월-일 시각 표시를 쓴다', () => {
     const m = /_orderDateText\(value\) \{([\s\S]*?)\n    \}/.exec(main);
     assert.ok(m, '주문일 표시 도우미 없음');
     const format = Function('value', m[1]);
     assert.equal(format('2026-11-16T09:30:00+09:00'), '2026. 11. 16. 09:30');
     assert.match(main, /f\('주문일', this\._orderDateText\(o\.order_date\)\)/);
-    assert.match(main, /\$\{this\._orderDateText\(o\.order_date\) \|\| '-'\}<\/td>/);
+    assert.match(main, /_orderListDateText\(value\)/);
+    assert.match(main, /\$\{this\._orderListDateText\(o\.order_date\) \|\| '-'\}<\/td>/);
     assert.match(main, /f\('채널', this\._mallLabel\(o\.mall_key \|\| o\.channel\)\)/);
+});
+
+test('반려2: 주문 식별값은 자르지 않고 상품만 툴팁 말줄임, CS는 8열·2줄 메모다', () => {
+    assert.match(main, /class="ord-no"/); assert.match(main, /class="ord-mall"/); assert.match(main, /class="ord-invoice"/);
+    assert.match(main, /class="ord-product" title=/);
+    assert.match(main, /\['brand', '브랜드·구매처'\][\s\S]*?\['order_no', '주문번호'\]/);
+    assert.doesNotMatch(main, /\['purchase_from', '구매처'\]/);
+    assert.match(main, /<textarea class="it-in cs-memo" rows="2"/);
+    assert.match(css, /\.appwrap\.sales3\.empty-detail\{--c3:132px\}/);
+    assert.match(css, /\.sales3 \.ord-no,\.sales3 \.ord-mall,\.sales3 \.ord-invoice\{overflow:visible!important/);
 });
 
 test('반려1: 몰별은 실제 이름·건수만 그리고 이름 없는 행은 숨긴다', () => {

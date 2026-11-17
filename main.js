@@ -75,6 +75,14 @@ class BhasApp {
         this.macMode = true;   // 화면은 맥 모드 하나로 통일했다(기본 화면 폐지)
         this.wins = [];
         this._macZ = 10;
+        this.sideCollapsed = false;
+        this.sideDrawer = false;
+        this.sideGroups = { work: true, collab: true, other: true };
+        try {
+            this.sideCollapsed = localStorage.getItem('bhas_side_collapsed') === '1';
+            const savedSideGroups = JSON.parse(localStorage.getItem('bhas_side_groups') || '{}');
+            if (savedSideGroups && typeof savedSideGroups === 'object') this.sideGroups = { ...this.sideGroups, ...savedSideGroups };
+        } catch (_e) { /* 저장소가 막혀으면 기본 펼침 */ }
         
         // 렌더링 최적화용 변수
         this._renderTimeout = null;
@@ -3636,6 +3644,12 @@ class BhasApp {
         const g = this._groupOf(view); if (!g) return '';
         const esc = s => this._vesc(s);
         const win = this._renderingWin || '';
+        // 전역 사이드바가 창 이동을 맡는 맥 모드에서는 같은 탭을 창 안에 두 번 만들지 않는다.
+        // 첫 칸은 현재 화면을 좁혀 보는 필터만 남긴다.
+        if (this.macMode) {
+            const nav = this._viewNav(view);
+            return nav ? `<aside class="appside appside-filter">${nav}</aside>` : '';
+        }
         return `<aside class="appside">
             <div class="m3-h">${g.head === 'items' ? '카테고리' : esc(g.label)}</div>
             ${g.tabs.filter(t => !t.hidden).map(t => {
@@ -3653,12 +3667,21 @@ class BhasApp {
         const count = this._snsSideCounts || {};
         const row = (k, label, icon, sub) => `<div class="m3-s${cur === k ? ' on' : ''} sns3-nav"
             onclick="app.setSnsMode('${k}')"><i class="ph ${icon}" style="color:#c13584"></i><span>${esc(label)}${sub ? `<em>${esc(sub)}</em>` : ''}</span></div>`;
-        return `<div class="m3 sns3-layout${this.snsMobileDetail ? ' detail' : ''}"><aside class="m3-side">
+        let side = `<aside class="m3-side">
             <div class="m3-h">SNS</div>
             ${row('ads', '광고', 'ph-megaphone', `켜짐 ${count.active || 0} · 할 일 ${(count.stop || 0) + (count.up || 0)}`)}
             ${row('posts', '게시물', 'ph-images-square', `최근 ${count.posts || 0}`)}
             ${row('news', '뉴스', 'ph-newspaper', `오늘 ${count.news || 0}`)}
-        </aside>${inner}</div>`;
+        </aside>`;
+        if (this.macMode) {
+            const brands = (mockData.brands || []).filter(b => b && b.id && this._viewAllowed('sns'));
+            const picked = this.snsAcc || '전체';
+            const filterRow = (id, label, icon = 'ph-circle') => `<button class="m3-s nav${String(picked) === String(id) ? ' on' : ''}" onclick="app.setSnsAcc('${esc(id)}')"><i class="ph ${icon}"></i><span>${esc(label)}</span></button>`;
+            side = `<aside class="m3-side sns3-filter-side"><div class="m3-h">보기</div>${cur === 'news'
+                ? '<div class="m3-s nav on"><i class="ph ph-users-three"></i><span>경쟁사 계정</span></div>'
+                : filterRow('전체', '전체 브랜드', 'ph-tray') + brands.map(b => filterRow(b.id, b.name || b.label || '브랜드')).join('')}</aside>`;
+        }
+        return `<div class="m3 sns3-layout${this.snsMobileDetail ? ' detail' : ''}">${side}${inner}</div>`;
     }
     setSnsMode(k) {
         if (k === 'decision' || k === 'active') k = 'ads';
@@ -4429,7 +4452,9 @@ class BhasApp {
         const sales3 = this._groupOf(view)?.head === 'orders';
         const production3 = this._groupOf(view)?.head === 'items';
         const detail = this._detailPane(view);
-        return `<div class="appwrap${detail ? ' three' : ''}${sales3 ? ' sales3' : ''}${production3 ? ' production3' : ''}${sales3 && this.salesMobileDetail || production3 && this.productionMobileDetail ? ' detail' : ''}">${side}<div class="appmain">${this._syncWarnBar()}${inner}</div>${detail || ''}</div>`;
+        const picked = ({ orders: this.orderSel, cs: this.csSel, inventory: this.invSel })[view];
+        const emptyDetail = sales3 && !picked;
+        return `<div class="appwrap${side ? '' : ' no-appside'}${detail ? ' three' : ''}${sales3 ? ' sales3' : ''}${production3 ? ' production3' : ''}${emptyDetail ? ' empty-detail' : ''}${sales3 && this.salesMobileDetail || production3 && this.productionMobileDetail ? ' detail' : ''}">${side}<div class="appmain">${this._syncWarnBar()}${inner}</div>${detail || ''}</div>`;
     }
     //  C4. 수집이 끊겨도 아무도 모르던 걸 맨 위에 띄운다.
     //  키디키디는 2026-03-10 이후 주문이 안 들어오는데 화면 어디에도 표시가 없었다.
@@ -8232,6 +8257,71 @@ class BhasApp {
     //  이제 하나씩 제 아이콘을 쓴다(전엔 prod/settle 가 겹쳤다).
     //  아이콘은 전부 맥 순정 그림. 순정에 없는 것은 맥에 있는 다른 앱 아이콘을 쓴다
     //  (전체 메뉴=Apps · 뉴스=News · 스티커=Stickies — 모두 맥 기본 앱이다).
+    MAC_SIDE_GROUPS = [
+        { id: 'work', label: '업무', apps: [
+            { label: '판매', icon: 'ph-shopping-bag-open', view: 'orders', items: [
+                ['orders', '주문', 'ph-receipt'], ['cs', 'CS', 'ph-arrows-counter-clockwise'], ['inventory', '재고', 'ph-package'],
+                ['sales', '정산', 'ph-chart-line-up'], ['analysis', '고객분석', 'ph-chart-donut'], ['crm', 'CRM', 'ph-user-focus'],
+            ] },
+            { label: '생산', icon: 'ph-factory', view: 'items', items: [
+                ['items', '제품리스트', 'ph-t-shirt'], ['vendors', '생산현황', 'ph-factory'], ['tech_packs', '작업지시서', 'ph-clipboard-text'],
+                ['sample_maker', '샘플', 'ph-scissors'], ['quotes', '견적', 'ph-receipt'],
+            ] },
+            { label: 'SNS', icon: 'ph-instagram-logo', view: 'sns', items: [
+                ['sns', '광고', 'ph-megaphone', 'ads'], ['sns', '게시물', 'ph-images-square', 'posts'], ['sns', '뉴스', 'ph-newspaper', 'news'],
+            ] },
+        ] },
+        { id: 'collab', label: '협업', items: [
+            ['reminders', '할 일', 'ph-list-checks'], ['calendar', '캘린더', 'ph-calendar-dots'], ['notes', '메모', 'ph-note'],
+            ['contacts', '연락처', 'ph-address-book'], ['documents', '자료실', 'ph-folder-open'],
+        ] },
+        { id: 'other', label: '기타', items: [['settings', '설정', 'ph-gear']] },
+    ];
+    _macSideWidth() { return window.innerWidth <= 900 ? 0 : (this.sideCollapsed ? 64 : 236); }
+    _sideSave() {
+        try {
+            localStorage.setItem('bhas_side_collapsed', this.sideCollapsed ? '1' : '0');
+            localStorage.setItem('bhas_side_groups', JSON.stringify(this.sideGroups || {}));
+        } catch (_e) { /* 저장소가 막혀도 이번 화면에서는 작동 */ }
+    }
+    toggleMacSide() { this.sideCollapsed = !this.sideCollapsed; this.sideDrawer = false; this._sideSave(); this.requestRender(); }
+    toggleMacSideGroup(id) {
+        this.sideGroups = { ...(this.sideGroups || {}), [id]: !(this.sideGroups || {})[id] };
+        this._sideSave(); this.requestRender();
+    }
+    toggleMacSideDrawer() { this.sideDrawer = !this.sideDrawer; this.requestRender(); }
+    closeMacSideDrawer() { if (this.sideDrawer) { this.sideDrawer = false; this.requestRender(); } }
+    sideOpen(view, mode = '') {
+        this.sideDrawer = false;
+        if (view === 'sns' && mode) this.setSnsMode(mode);
+        this.macOpen(view);
+        this.requestRender();
+    }
+    _renderMacSide() {
+        const esc = s => this._vesc(s), groups = this.MAC_SIDE_GROUPS || [];
+        const front = (this.wins || []).filter(w => !w.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0] || null;
+        const activeView = front?.view || '', activeGroup = this._groupOf(activeView)?.head || '';
+        const activeMode = activeView === 'sns' ? (this.snsMode || 'ads') : '';
+        const active = (view, mode = '') => view === 'sns' ? activeView === 'sns' && (!mode || activeMode === mode) : activeView === view;
+        const item = ([view, label, icon, mode = '']) => {
+            if (!this._viewAllowed(view)) return '';
+            return `<button class="mac-side-item${active(view, mode) ? ' on' : ''}" data-view="${esc(view)}"${mode ? ` data-mode="${esc(mode)}"` : ''}
+                onclick="app.sideOpen('${esc(view)}','${esc(mode)}')" title="${esc(label)}"><i class="ph ${icon}"></i><span>${esc(label)}</span></button>`;
+        };
+        const app = a => {
+            const children = (a.items || []).filter(x => this._viewAllowed(x[0])); if (!children.length) return '';
+            const appOn = activeGroup === a.view || activeView === a.view;
+            const first = children[0];
+            return `<div class="mac-side-appwrap${appOn ? ' on expanded' : ''}"><button class="mac-side-app" onclick="app.sideOpen('${esc(first[0])}','${esc(first[3] || '')}')" title="${esc(a.label)}"><i class="ph ${a.icon}"></i><span>${esc(a.label)}</span><i class="ph ph-caret-${appOn ? 'up' : 'down'} mac-side-app-caret"></i></button><div class="mac-side-sub">${children.map(item).join('')}</div></div>`;
+        };
+        const group = g => {
+            const open = (this.sideGroups || {})[g.id] !== false;
+            const content = g.apps ? g.apps.map(app).join('') : (g.items || []).map(item).join('');
+            if (!content) return '';
+            return `<section class="mac-side-group${open ? '' : ' shut'}" data-group="${esc(g.id)}"><button class="mac-side-group-title" onclick="app.toggleMacSideGroup('${esc(g.id)}')" aria-expanded="${open}"><span>${esc(g.label)}</span><i class="ph ph-caret-${open ? 'up' : 'down'}"></i></button><div class="mac-side-group-body">${content}</div></section>`;
+        };
+        return `<button class="mac-side-backdrop" aria-label="사이드바 닫기" onclick="app.closeMacSideDrawer()"></button><aside class="global-side" aria-label="전체 사이드바"><div class="mac-side-head"><b>2179</b><button class="mac-side-collapse" onclick="app.toggleMacSide()" title="${this.sideCollapsed ? '사이드바 펼치기' : '사이드바 접기'}"><i class="ph ph-caret-${this.sideCollapsed ? 'right' : 'left'}"></i></button><button class="mac-side-mobile-close" onclick="app.closeMacSideDrawer()" title="사이드바 닫기"><i class="ph ph-x"></i></button></div><nav>${groups.map(group).join('')}</nav></aside>`;
+    }
     MAC_DOCK = [
         { id: '__menu', label: '전체 메뉴', launcher: true, icon: 'apps' },
         { id: 'home', label: '바탕화면', icon: 'home', desktop: true },
@@ -8308,15 +8398,17 @@ class BhasApp {
         }
         this.track?.(view, 'open');
         const n = this.wins.length;
-        const vw = window.innerWidth, vh = window.innerHeight;
-        const w = Math.min(1180, Math.round(vw * 0.74)), h = Math.min(760, Math.round(vh * 0.74));
+        const vw = window.innerWidth, vh = window.innerHeight, side = this._macSideWidth?.() || 0, usable = vw - side;
+        // 전역 사이드바를 뺀 작업 영역을 기본 폭으로 쓴다. 좁은 기본 창 때문에 표가 다시
+        // 가로 스크롤로 무너지는 일을 막고, 사이드바 아래로는 들어가지 않는다.
+        const w = Math.max(320, usable - 16), h = Math.min(760, Math.round(vh * 0.74));
         // 맨 앞 창이 '고정'(키우기·반쪽)이면 새 창도 같은 크기로 그 위에 띄운다.
         //  작은 창이 큰 창에 파묻혀 "다른 걸로 넘어간 것처럼" 보이는 걸 막는다. 좁은 화면(폰)도 항상 꽉 채운다.
         const front = this.wins.filter(x => !x.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0];
         const fixed = vw < 900 || !!(front && (front.max || front.snap));
         this.wins.push({
             id: 'w' + Date.now() + n, view,
-            x: Math.round((vw - w) / 2) + (n % 5) * 26, y: Math.round((vh - h) / 2) - 30 + (n % 5) * 22,
+            x: side + 8, y: Math.round((vh - h) / 2) - 30 + (n % 5) * 22,
             w, h, min: false, max: fixed, snap: null, z: ++this._macZ,
         });
         this.requestRender();
@@ -8356,7 +8448,7 @@ class BhasApp {
         ev.preventDefault();
         const k = ev.deltaY > 0 ? 0.94 : 1.06;
         const min = this._macMin();
-        const nw = Math.max(min.w, Math.min(window.innerWidth - 40, Math.round(w.w * k)));
+        const nw = Math.max(min.w, Math.min(window.innerWidth - (this._macSideWidth?.() || 0) - 40, Math.round(w.w * k)));
         const nh = Math.max(min.h, Math.min(window.innerHeight - 120, Math.round(w.h * k)));
         // 왼쪽 위를 고정하고 오른쪽·아래로만 늘고 준다(가운데 기준이면 창이 제자리에서 흔들린다)
         w.w = nw; w.h = nh;
@@ -8376,7 +8468,7 @@ class BhasApp {
         const sx = ev.clientX, sy = ev.clientY, ox = w.x, oy = w.y;
         const hint = document.getElementById('mac-snap-hint');
         const move = (e) => {
-            w.x = Math.max(-60, Math.min(window.innerWidth - 160, ox + e.clientX - sx));
+            w.x = Math.max((this._macSideWidth?.() || 0) + 8, Math.min(window.innerWidth - 160, ox + e.clientX - sx));
             w.y = Math.max(0, Math.min(window.innerHeight - 90, oy + e.clientY - sy));
             el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
             if (hint) {
@@ -8420,7 +8512,7 @@ class BhasApp {
             const dx = e.clientX - sx, dy = e.clientY - sy;
             if (dir.includes('e')) w.w = Math.max(min.w, ow + dx);
             if (dir.includes('s')) w.h = Math.max(min.h, oh + dy);
-            if (dir.includes('w')) { w.x = Math.min(right - min.w, ox + dx); w.w = right - w.x; }
+            if (dir.includes('w')) { w.x = Math.max((this._macSideWidth?.() || 0) + 8, Math.min(right - min.w, ox + dx)); w.w = right - w.x; }
             if (dir.includes('n')) { w.y = Math.max(0, Math.min(bottom - min.h, oy + dy)); w.h = bottom - w.y; }
             el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
             el.style.width = w.w + 'px'; el.style.height = w.h + 'px';
@@ -8429,10 +8521,12 @@ class BhasApp {
         document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
     }
     _macWinStyle(w) {
-        if (w.max) return 'left:8px;top:8px;width:calc(100vw - 16px);height:calc(100vh - 128px)';
-        if (w.snap === 'left') return 'left:8px;top:8px;width:calc(50vw - 12px);height:calc(100vh - 128px)';
-        if (w.snap === 'right') return 'left:calc(50vw + 4px);top:8px;width:calc(50vw - 12px);height:calc(100vh - 128px)';
-        return `left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px`;
+        const side = this._macSideWidth?.() || 0, usable = window.innerWidth - side;
+        if (w.max) return `left:${side + 8}px;top:8px;width:calc(100vw - ${side + 16}px);height:calc(100vh - 128px)`;
+        if (w.snap === 'left') return `left:${side + 8}px;top:8px;width:${Math.max(320, Math.floor(usable / 2) - 12)}px;height:calc(100vh - 128px)`;
+        if (w.snap === 'right') return `left:${side + Math.floor(usable / 2) + 4}px;top:8px;width:${Math.max(320, Math.ceil(usable / 2) - 12)}px;height:calc(100vh - 128px)`;
+        const x = Math.max(side + 8, Number(w.x) || side + 8), width = Math.min(Number(w.w) || 900, usable - 16);
+        return `left:${x}px;top:${w.y}px;width:${width}px;height:${w.h}px`;
     }
     renderMacDesktop(products) {
         const esc = s => this._vesc(s);
@@ -8485,8 +8579,9 @@ class BhasApp {
         const mins = this.wins.filter(w => w.min).map(w =>
             `<button class="mdi min" onclick="app.macOpen('${w.view}')" title="${esc(this._macTitle(w.view))}">
                 ${this._dockFace(this.MAC_DOCK.find(d => d.id === w.view))}<em>${esc(this._macTitle(w.view))}</em></button>`).join('');
-        return `<div class="mac-desktop" data-wall="${esc(this.wallpaper)}">
+        return `<div class="mac-desktop${this.sideCollapsed ? ' side-collapsed' : ''}${this.sideDrawer ? ' side-drawer-open' : ''}" data-wall="${esc(this.wallpaper)}">
             <div class="mac-menubar">
+                <button class="mac-side-mobile-toggle" onclick="app.toggleMacSideDrawer()" title="전체 메뉴" aria-label="전체 메뉴"><i class="ph ph-list"></i></button>
                 <b>2179</b>
                 <span>${esc(this.currentUser?.name || '')}</span>
                 <span class="mac-mb-right">
@@ -8499,6 +8594,7 @@ class BhasApp {
 
                 </span>
             </div>
+            ${this._renderMacSide()}
             <div id="mac-snap-hint" class="mac-snap-hint"></div>
             <div class="mac-deskboard">
                 <div class="desk-find" onclick="app.openFind()">
@@ -11873,21 +11969,22 @@ class BhasApp {
         const stOf = t => this.CS_STATUSES.includes(t.status) ? this.CS_STATUSES : [t.status, ...this.CS_STATUSES];
         const row = t => {
             const sc = stColor(t.status), kc = kindColor(t.kind);
+            const brandName = this._brandNameById(t.brand_id) === '-' ? '' : this._brandNameById(t.brand_id);
+            const brandLabel = brandName || t.purchase_from || '';
             return `<tr class="it-row${String(this.csSel) === String(t.id) ? ' on' : ''}" data-id="${t.id}"
                 onclick="app.rowPick(event,'${t.id}','cs')"${t.status === '완료' ? ' style="opacity:.62"' : ''}>
                 <td class="nw">${esc((t.occurred_on || '').slice(2))}${t.date_suspect
                     ? ` <i class="ph ph-warning-circle" title="접수일이 주문일보다 빠릅니다 — 이관 때 일괄로 들어간 날짜입니다(확인 필요)" style="color:#f59e0b"></i>` : ''}</td>
                 <td><span class="it-tag" style="--c:${kc}">${esc(t.kind)}</span></td>
                 <td class="bd">${esc(t.customer_name || '')}</td>
-                <td>${esc(this._brandNameById(t.brand_id) === '-' ? '' : this._brandNameById(t.brand_id))}</td>
-                <td>${esc(t.purchase_from || '')}</td>
-                <td class="nw">${t.order_no ? `${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨" style="color:#0a84ff"></i>' : ''}${this._csShipLine(t)}` : ''}</td>
+                <td class="cs-brand"><span class="cs-brand-chip" title="${esc([brandName, t.purchase_from].filter(Boolean).join(' · '))}">${esc(brandLabel)}</span></td>
+                <td class="nw cs-order-no">${t.order_no ? `${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨" style="color:#0a84ff"></i>' : ''}${this._csShipLine(t)}` : ''}</td>
                 <td>${esc(t.product_name || '')}${partLabel(t.items, t.items_total) ? ` <span class="cs-part">${esc(partLabel(t.items, t.items_total))}</span>` : ''}${t.exchange_product ? ` <span class="mu">→</span> ${esc(t.exchange_product)}` : ''}</td>
                 <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
                         onclick="event.stopPropagation()" onchange="app.setCSStatus('${t.id}',this.value)">
                     ${stOf(t).map(x => `<option value="${esc(x)}"${t.status === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></td>
-                <td><input class="it-in" value="${esc(t.memo || '')}" placeholder="메모"
-                        onclick="event.stopPropagation()" onchange="app.setCSMemo('${t.id}',this.value)"></td>
+                <td><textarea class="it-in cs-memo" rows="2" placeholder="메모"
+                        onclick="event.stopPropagation()" onchange="app.setCSMemo('${t.id}',this.value)">${esc(t.memo || '')}</textarea></td>
             </tr>`;
         };
         list = this._applyTbl('cs', list, (t, k2) => ({
@@ -11922,12 +12019,12 @@ class BhasApp {
             </div>
             <div class="it-scroll">
                 <table class="it-tbl"><thead><tr>${this._thead('cs', [
-                    ['occurred_on', '접수일'], ['kind', '유형'], ['customer_name', '고객'], ['brand', '브랜드'],
-                    ['purchase_from', '구매처'], ['order_no', '주문번호'], ['product_name', '상품'],
+                    ['occurred_on', '접수일'], ['kind', '유형'], ['customer_name', '고객'], ['brand', '브랜드·구매처'],
+                    ['order_no', '주문번호'], ['product_name', '상품'],
                     ['status', '상태'], ['memo', '메모']])}
                 </tr></thead>
                 <tbody>${list.length ? shown.map(row).join('')
-                    : `<tr><td colspan="9" class="it-none">해당하는 건이 없습니다</td></tr>`}</tbody></table>
+                    : `<tr><td colspan="8" class="it-none">해당하는 건이 없습니다</td></tr>`}</tbody></table>
                 ${list.length > 300 ? `<div class="it-more">최근 300건만 보입니다 · 전체 ${list.length}건</div>` : ''}
             </div>
         </div>`;
@@ -12509,6 +12606,13 @@ class BhasApp {
         const d = new Date(value); if (Number.isNaN(d.getTime())) return '';
         return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
     }
+    _orderListDateText(value) {
+        if (!value) return '';
+        const d = new Date(value); if (Number.isNaN(d.getTime())) return '';
+        const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d);
+        const v = k => (p.find(x => x.type === k) || {}).value || '';
+        return `${v('month')}-${v('day')} ${v('hour')}:${v('minute')}`;
+    }
     _orderItemsSummary(o) {
         const its = o.items || [];
         if (!its.length) return '-';
@@ -12530,18 +12634,19 @@ class BhasApp {
         const body = rows.map(o => {
             const items = o.items || [];
             const multi = items.length > 1;
+            const product = this._orderItemsSummary(o);
             const prodCell = multi
-                ? `<button class="oms-expand" data-id="${this._vesc(this._ordKey(o))}" style="background:none;border:none;color:var(--text-main);cursor:pointer;text-align:left;font-size:0.88rem;display:inline-flex;align-items:center;gap:6px;padding:0"><i class="ph ph-caret-right oms-caret" style="font-size:0.9rem;color:var(--primary);transition:transform .2s"></i>${this._orderItemsSummary(o)}</button>`
-                : this._orderItemsSummary(o);
+                ? `<button class="oms-expand" data-id="${this._vesc(this._ordKey(o))}" title="${this._vesc(product)}" style="background:none;border:none;color:var(--text-main);cursor:pointer;text-align:left;font-size:0.88rem;display:inline-flex;align-items:center;gap:6px;padding:0"><i class="ph ph-caret-right oms-caret" style="font-size:0.9rem;color:var(--primary);transition:transform .2s"></i>${this._vesc(product)}</button>`
+                : `<span class="ord-product" title="${this._vesc(product)}">${this._vesc(product)}</span>`;
             const detail = multi ? `<tr class="oms-detail" data-for="${this._vesc(this._ordKey(o))}" style="display:none"><td colspan="9" style="padding:2px 10px 12px 42px;background:rgba(var(--tint),0.04)"><div style="display:flex;flex-direction:column;gap:5px;padding:6px 0">${items.map(it => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:0.83rem"><span style="color:var(--text-muted)">${this._vesc(it.product_name || it.variant_code || '상품')}${it.option_name ? ` · ${this._vesc(it.option_name)}` : ''}</span><span style="color:var(--text-main);font-weight:600;white-space:nowrap">${it.quantity || 1}개</span></div>`).join('')}</div></td></tr>` : '';
             return `
             <tr class="ordrow${String(this.orderSel) === this._ordKey(o) ? ' on' : ''}"
                 onclick="app.selectOrder('${this._vesc(this._ordKey(o))}')" style="border-bottom:1px solid var(--card-border)">
                 <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" data-mall="${this._vesc(String(o.mall_key || ''))}" style="accent-color:var(--primary)" onclick="event.stopPropagation()"></td>
-                <td style="padding:10px;font-family:monospace;font-size:0.82rem">${o.order_id}
+                <td class="ord-no" style="padding:10px;font-family:monospace;font-size:0.82rem">${this._vesc(o.order_id)}
                     <button class="ord-cs" title="이 주문으로 CS 접수" onclick="event.stopPropagation();app.csFromOrder('${this._vesc(String(o.order_id))}','${this._vesc(String(o.mall_key || ''))}')">CS</button></td>
-                <td style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1'; return `<span style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._mallLabel(o.mall_key)}</span>`; })()}</td>
-                <td style="padding:10px;color:var(--text-muted);font-size:0.82rem">${this._orderDateText(o.order_date) || '-'}</td>
+                <td class="ord-mall" style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1'; return `<span style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._vesc(this._mallLabel(o.mall_key))}</span>`; })()}</td>
+                <td class="ord-date" style="padding:10px;color:var(--text-muted);font-size:0.82rem">${this._orderListDateText(o.order_date) || '-'}</td>
                 <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
                 <td style="padding:10px;font-size:0.88rem">${prodCell}</td>
                 <td style="padding:10px;text-align:center">${this._orderQtySum(o)}</td>
@@ -12555,7 +12660,7 @@ class BhasApp {
                     const U = this._isUnpaidCancel(o) ? ['rgba(148,163,184,0.18)', '#94a3b8'] : C;
                     return `<span style="font-size:0.72rem;padding:2px 10px;border-radius:10px;background:${U[0]};color:${U[1]}">${this._orderLabel(o)}</span>${wait}${this._shipUnknownCell(o)}`;
                 })()}</td>
-                <td style="padding:10px;font-size:0.8rem;color:var(--text-muted)">${o.invoice_no ? `${o.courier || ''} ${o.invoice_no}` : '-'}</td>
+                <td class="ord-invoice" style="padding:10px;font-size:0.8rem;color:var(--text-muted)">${o.invoice_no ? `${this._vesc(o.courier || '')} ${this._vesc(o.invoice_no)}` : '-'}</td>
             </tr>${detail}`;
         }).join('') || `<tr><td colspan="9" style="padding:2rem;text-align:center;color:var(--text-muted)">${
             this.orderQuery
