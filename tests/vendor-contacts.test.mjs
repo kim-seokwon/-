@@ -90,14 +90,14 @@ const ctx = (over = {}) => {
         _loadBizUrl() { this.loaded = true; },
         ...over,
     };
-    for (const n of ['_contactSummaryHTML', '_contactDocHTML', '_bizFileHTML']) t[n] = method(n);
+    for (const n of ['_contactSummaryHTML', '_contactDocHTML', '_bizFileHTML', '_contactCols']) t[n] = method(n);
     return t;
 };
 const render = t => method('renderContacts').call(t);
 
 test('가운데 표 — 업체명·구분·상태·담당자·휴대폰·전화·이메일(구분·상태는 독립 열), 오른쪽은 안 고르면 요약', () => {
     const t = ctx(); const html = render(t);
-    assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email']);
+    assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address']);   // ⑤ 기본 8열(주소 추가), 팩스·등록증·메모는 열 표시로
     assert.doesNotMatch(html, /ct3-name"[^>]*>[^<]*<em>/, '구분을 업체명 옆 작은 글씨로 붙이지 않는다');
     assert.match(html, /<td class="ct3-cat">[^<]+<\/td>/, '구분 열');
     assert.match(html, /<td class="ct3-st"><span class="ct3-badge"[^>]*>거래중<\/span><\/td>/, '상태 열 — 거래중도 보인다');
@@ -278,4 +278,13 @@ test('머리글 깔때기는 항상 보이고(연하게), 거르면 파랑', () 
     const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
     assert.match(css, /\.ct3-tbl \.it-tbl th \.th-f\{opacity:\.7\}/);
     assert.match(css, /\.it-tbl th\.flt\{color:#0a84ff/);
+});
+
+test('⑤ 열 표시 — 팩스·등록증·메모를 켜면 11열, 업체명은 못 끈다', () => {
+    const t = ctx({ contactColOn: { fax: true, cert: true, memo: true, name: false } }); const html = render(t);
+    assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]),
+        ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address', 'fax', 'cert', 'memo']);
+    assert.match(html, /<td class="ct3-cert">/);
+    const off = render(ctx({ contactColOn: { email: false, address: false } }));
+    assert.deepEqual([...off.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone']);
 });

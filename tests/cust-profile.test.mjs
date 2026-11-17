@@ -17,6 +17,7 @@ const M = {
     _retryCustProfile: method('_retryCustProfile(brand) {', '_retryCustProfile'),
     _invalidateCust: method('_invalidateCust() {', '_invalidateCust'),
     _custMembersAgg: method('_custMembersAgg(M) {', '_custMembersAgg'),
+    _tmo: method('_tmo(p, ms = 20000) {', '_tmo'),
     _custMembersHTML: method('_custMembersHTML(m, retry) {', '_custMembersHTML'),
     refreshData: method('async refreshData() {', 'refreshData'),
 };
