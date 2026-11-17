@@ -9,7 +9,7 @@ test('전역 사이드바는 업무·협업·기타와 지정된 창/탭을 그�
     for (const token of ['MAC_SIDE_GROUPS', "id: 'work', label: '업무'", "id: 'collab', label: '협업'", "id: 'other', label: '기타'",
         "['orders', '주문'", "['cs', 'CS'", "['inventory', '재고'", "['sales', '정산'", "['analysis', '고객분석'", "['crm', 'CRM'",
         "['items', '제품리스트'", "['vendors', '생산현황'", "['tech_packs', '작업지시서'", "['sample_maker', '샘플'", "['quotes', '견적'",
-        "['sns', '광고'", "['sns', '게시물'", "['sns', '뉴스'", "['reminders', '할 일'", "['settings', '설정'"])
+        "['sns', '진행 중 광고'", "['sns', '광고 성과'", "['sns', '광고 피로도'", "['sns', '팔로워 현황'", "['sns', '업계 뉴스'", "['reminders', '할 일'", "['settings', '설정'"])
         assert.ok(main.includes(token), token);
 });
 
@@ -48,8 +48,11 @@ test('맥 창 안에는 화면 이동 탭을 되풀이하지 않고 보기 필�
 });
 
 test('중분류는 현재 창만 펼치고 레일에서는 플라이아웃으로 상세에 간다', () => {
-    assert.match(main, /mac-side-appwrap\$\{appOn \? ' on expanded' : ''\}/);
-    assert.match(main, /ph-caret-\$\{appOn \? 'up' : 'down'\}/);
+    assert.match(main, /toggleMacSideApp\(view\)/);
+    assert.match(main, /mac-side-appwrap\$\{appOn \? ' on' : ''\}\$\{expanded \? ' expanded' : ''\}/);
+    assert.match(main, /ph-caret-\$\{expanded \? 'up' : 'down'\}/);
+    const appBlock = main.slice(main.indexOf('        const app = a =>'), main.indexOf('        const group = g =>'));
+    assert.match(appBlock, /toggleMacSideApp/); assert.doesNotMatch(appBlock, /sideOpen/);
     assert.match(style, /mac-side-appwrap:not\(\.expanded\) \.mac-side-sub\{display:none\}/);
     assert.match(style, /side-collapsed \.mac-side-appwrap:hover>\.mac-side-sub/);
 });
@@ -58,4 +61,10 @@ test('모바일 서랍은 독보다 위에 있고 열린 동안 독을 숨긴다
     assert.match(style, /side-drawer-open \.mac-dock\{visibility:hidden\}/);
     assert.match(style, /\.global-side\{z-index:6100\}/);
     assert.match(style, /\.mac-menubar>b,\.mac-menubar>span\{white-space:nowrap\}/);
+});
+
+test('맥 창 제목줄은 메뉴바 아래에 있고 모바일 독은 화면 안에서 스크롤한다', () => {
+    assert.match(main, /if \(w\.max\) return `left:\$\{side \+ 8\}px;top:36px/);
+    assert.match(main, /const y = Math\.max\(36,/);
+    assert.match(style, /\.mac-dock\{left:12px;right:12px;[^}]*overflow-x:auto/);
 });

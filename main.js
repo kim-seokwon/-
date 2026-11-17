@@ -3661,32 +3661,29 @@ class BhasApp {
             ${this._viewNav(view)}
         </aside>`;
     }
-    // SNS 3단 — 대분류(광고·게시물·뉴스) | 중분류 목록 | 선택 상세
+    // SNS 3단 — 사이드바의 업무 목적 | 브랜드 | 목록 | 상세
+    _snsBrandTone(id, label = '') {
+        const key = `${id || ''} ${label || ''}`.replace(/\s/g, '').toLowerCase();
+        if (key.includes('하이헤이호') || key.includes('hiheiho') || key.includes('hhh')) return { color: '#0f766e', cls: 'hhh' };
+        if (key.includes('로하이') || key.includes('lohi')) return { color: '#7c3aed', cls: 'lohi' };
+        if (key.includes('토비') || key.includes('tovee')) return { color: '#db2777', cls: 'tovee' };
+        if (key.includes('머문') || key.includes('mumun')) return { color: '#d97706', cls: 'mumun' };
+        return { color: '#64748b', cls: 'etc' };
+    }
     _snsShell(inner) {
         const esc = s => this._vesc(s);
-        const cur = ['decision', 'active'].includes(this.snsMode) ? 'ads' : (this.snsMode || 'ads');
-        const count = this._snsSideCounts || {};
-        const row = (k, label, icon, sub) => `<div class="m3-s${cur === k ? ' on' : ''} sns3-nav"
-            onclick="app.setSnsMode('${k}')"><i class="ph ${icon}" style="color:#c13584"></i><span>${esc(label)}${sub ? `<em>${esc(sub)}</em>` : ''}</span></div>`;
-        let side = `<aside class="m3-side">
-            <div class="m3-h">SNS</div>
-            ${row('ads', '광고', 'ph-megaphone', `켜짐 ${count.active || 0} · 할 일 ${(count.stop || 0) + (count.up || 0)}`)}
-            ${row('posts', '게시물', 'ph-images-square', `최근 ${count.posts || 0}`)}
-            ${row('news', '뉴스', 'ph-newspaper', `오늘 ${count.news || 0}`)}
-        </aside>`;
-        if (this.macMode) {
-            const brands = (mockData.brands || []).filter(b => b && b.id && this._viewAllowed('sns'));
-            const picked = this.snsAcc || '전체';
-            const filterRow = (id, label, icon = 'ph-circle') => `<button class="m3-s nav${String(picked) === String(id) ? ' on' : ''}" onclick="app.setSnsAcc('${esc(id)}')"><i class="ph ${icon}"></i><span>${esc(label)}</span></button>`;
-            side = `<aside class="m3-side sns3-filter-side"><div class="m3-h">보기</div>${cur === 'news'
-                ? '<div class="m3-s nav on"><i class="ph ph-users-three"></i><span>경쟁사 계정</span></div>'
-                : filterRow('전체', '전체 브랜드', 'ph-tray') + brands.map(b => filterRow(b.id, b.name || b.label || '브랜드')).join('')}</aside>`;
-        }
+        const picked = this.snsAcc || '전체';
+        const fallback = [['missing:hhh','하이헤이호','#0f766e'],['missing:lohi','로하이','#7c3aed'],['missing:tovee','토비','#db2777'],['missing:mumun','머문','#d97706']]
+            .map(([id, label, color]) => ({ id, label, color, count: 0 }));
+        const brands = this._snsBrandNav || fallback;
+        const filterRow = (id, label, color, count) => `<button class="sns-brand-nav${String(picked) === String(id) ? ' on' : ''}" onclick="app.setSnsAcc('${esc(id)}')"><i style="--bc:${esc(color || '#64748b')}"></i><span>${esc(label)}</span><em>${Number(count || 0).toLocaleString()}</em></button>`;
+        const side = `<aside class="m3-side sns3-filter-side"><div class="m3-h">브랜드</div>${filterRow('전체', '전체', '#64748b', brands.reduce((n, b) => n + Number(b.count || 0), 0))}${brands.map(b => filterRow(b.id, b.label, b.color, b.count)).join('')}</aside>`;
         return `<div class="m3 sns3-layout${this.snsMobileDetail ? ' detail' : ''}">${side}${inner}</div>`;
     }
     setSnsMode(k) {
-        if (k === 'decision' || k === 'active') k = 'ads';
-        this.snsMode = ['ads', 'posts', 'news'].includes(k) ? k : 'ads';
+        if (k === 'decision' || k === 'active' || k === 'ads') k = 'active_ads';
+        if (k === 'posts') k = 'followers';
+        this.snsMode = ['active_ads', 'performance', 'fatigue', 'followers', 'news'].includes(k) ? k : 'active_ads';
         this.snsPick = null; this.snsNewsPick = null; this.snsNewsAccount = null; this.snsMobileDetail = false;
         if (this.snsMode === 'news' && !this._newsLoaded && !this._newsLoading) this.loadNews();
         this.requestRender();
@@ -3695,8 +3692,11 @@ class BhasApp {
         this.snsAcc = k;
         this.arBrand = k === '전체' ? 'all' : k;
         this.tblFilt = this.tblFilt || {}; this.tblFilt.sns_ads = this.tblFilt.sns_ads || {};
+        this.tblFilt.sns_followers = this.tblFilt.sns_followers || {};
         if (k === '전체') delete this.tblFilt.sns_ads.brand;
         else this.tblFilt.sns_ads.brand = [this._snsBrandLabel(k)];
+        if (k === '전체') delete this.tblFilt.sns_followers.brand;
+        else this.tblFilt.sns_followers.brand = [this._snsBrandLabel(k)];
         this.snsPick = null;
         this.snsMobileDetail = false;
         this.requestRender();
@@ -6921,7 +6921,7 @@ class BhasApp {
 
     // SNS>뉴스 3단 — 경쟁사 글은 계정 | 중복 없는 게시물 격자로 정리하고, 기사는 기존 상세를 유지한다.
     renderSnsNews() {
-        const mobileNav = `<div class="sns3-mobile-nav">${[['ads', '광고'], ['posts', '게시물'], ['news', '뉴스']].map(([k, l]) => `<button class="${k === 'news' ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
+        const mobileNav = `<div class="sns3-mobile-nav">${[['active_ads','광고'],['performance','성과'],['fatigue','피로도'],['followers','팔로워'],['news','뉴스']].map(([k, l]) => `<button class="${k === 'news' ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
         if (!this._newsLoaded) return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>뉴스</b><span>불러오는 중</span></div></div></section><section class="m3-doc"><div class="m3-none mid">뉴스를 불러오는 중...</div></section>`;
         const esc = s => this._vesc(s);
         const kindOf = x => x.kind === 'competitor_post' ? 'brands' : x.kind === 'review' ? 'customer' : x.kind === 'resale' ? 'resale' : 'trend';
@@ -6971,19 +6971,38 @@ class BhasApp {
     }
 
     renderSNS() {
-        if ((this.snsMode || 'ads') === 'news') return this.renderSnsNews();
+        const currentMode = ({ ads: 'active_ads', posts: 'followers', decision: 'active_ads', active: 'active_ads' }[this.snsMode] || this.snsMode || 'active_ads');
+        if (currentMode === 'news') return this.renderSnsNews();
         if (!this._igLoaded) return `<section class="m3-list"><div class="m3-lbar"><div><b>SNS 운영현황</b><span>데이터를 불러오는 중...</span></div></div></section><section class="m3-doc"><div class="m3-none mid">SNS 데이터를 불러오는 중...</div></section>`;
         const allAccounts = this.igAccounts || [];
         const accSel = this.snsAcc || '전체';
-        const accounts = accSel === '전체' ? allAccounts : allAccounts.filter(a => String(a.brand_id) === String(accSel));
-        const palette = ['#ec4899', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b'];
+        const accounts = allAccounts;
         const esc = s => this._vesc ? this._vesc(s) : String(s ?? '');
-        const cards = accounts.map((a, idx) => {
-            const color = palette[idx % palette.length];
+        const mediaRows = this.adReport?.media || [];
+        const adLinks = this.adReport?.links || [];
+        const today = kstDay(Date.now());
+        const cards = accounts.map(a => {
+            const color = this._snsBrandTone(a.brand_id, this._brandNameById(a.brand_id)).color;
             const snaps = (this.igSnapshots || []).filter(s => s.account_id === a.id).slice().sort((x, y) => (x.snap_date < y.snap_date ? -1 : 1));
             const followerPts = snaps.filter(s => s.followers != null).map(s => ({ t: s.snap_date, v: Number(s.followers) }));
             const cur = followerPts.length ? followerPts[followerPts.length - 1].v : null;
             const first = followerPts.length ? followerPts[0].v : null;
+            const deltaFor = days => {
+                if (!followerPts.length || cur == null) return { n: null, pct: null };
+                const cutoff = arAddDays(today, -days);
+                const base = followerPts.filter(p => p.t <= cutoff).at(-1) || followerPts[0];
+                const n = cur - Number(base.v || 0);
+                return { n, pct: Number(base.v) ? n / Number(base.v) * 100 : null };
+            };
+            const delta7 = deltaFor(7), delta30 = deltaFor(30);
+            const recentMedia = mediaRows.filter(m => String(m.account_id || '') === String(a.id) || String(m.brand_id || '') === String(a.brand_id))
+                .slice().sort((x, y) => String(y.posted_day || y.posted_at || '').localeCompare(String(x.posted_day || x.posted_at || ''))).slice(0, 12)
+                .map(m => { const link = adLinks.find(l => String(l.media_id || '') === String(m.media_id || '')); return { ...m, thumb: link?.thumb_url || link?.media_src || '', hasAd: !!link }; });
+            const latestPost = recentMedia[0]?.posted_day || String(recentMedia[0]?.posted_at || '').slice(0, 10) || '';
+            const posts7Media = recentMedia.filter(m => String(m.posted_day || m.posted_at || '').slice(0, 10) >= arAddDays(today, -6)).length;
+            const posts7Snap = snaps.filter(s => s.snap_date >= arAddDays(today, -6)).reduce((n, s) => n + Number(s.posts_delta || 0), 0);
+            const posts7 = recentMedia.length ? posts7Media : posts7Snap;
+            const staleDays = latestPost ? Math.max(0, Math.floor((Date.parse(`${today}T00:00:00+09:00`) - Date.parse(`${latestPost}T00:00:00+09:00`)) / 86400000)) : Infinity;
             const byWeek = {};
             snaps.forEach(s => { const k = this._igWeekKey(s.snap_date); (byWeek[k] || (byWeek[k] = { posts: 0, stories: 0 })); byWeek[k].posts += Number(s.posts_delta || 0); byWeek[k].stories += Number(s.stories_delta || 0); });
             const wlabel = k => { const [, m, d] = k.split('-'); return `${+m}/${+d}`; };
@@ -7014,7 +7033,7 @@ class BhasApp {
             }
             const handle = a.username ? '@' + esc(String(a.username).replace(/^@/, '')) : '<span style="color:var(--text-muted)">핸들 미설정</span>';
             const wkTile = (label, v, signed) => { const inner = (v == null) ? '<span style="color:var(--text-muted)">—</span>' : signed ? this._igDelta(v) : `<span style="color:var(--text-main)">${v.toLocaleString()}</span>`; return `<div style="flex:1;text-align:center;padding:9px 4px;background:rgba(148,163,184,0.08);border-radius:10px"><div style="font-size:1.4rem;font-weight:900;line-height:1.05">${inner}</div><div style="font-size:0.64rem;color:var(--text-muted);margin-top:3px">${label}</div></div>`; };
-            return { id: String(a.id), brand_id: a.brand_id, title: a.username ? '@' + String(a.username).replace(/^@/, '') : this._brandNameById(a.brand_id), html: `<div class="glass sns3-ig" style="padding:1.3rem 1.4rem;border-radius:18px">
+            return { id: String(a.id), brand_id: a.brand_id, followers: cur, delta7, delta30, latestPost, posts7, staleDays, followerPts, recentMedia, color, title: a.username ? '@' + String(a.username).replace(/^@/, '') : this._brandNameById(a.brand_id), html: `<div class="glass sns3-ig" style="padding:1.3rem 1.4rem;border-radius:18px">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:0.9rem">
                     <div style="min-width:0;flex:1">
                         <div style="font-size:1.05rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(this._brandNameById(a.brand_id))}</div>
@@ -7066,25 +7085,30 @@ class BhasApp {
         const cpfBad = r => r.cpf == null ? (Number(r.spend) > 0 ? Infinity : -1) : Number(r.cpf);
         const allSetRows = rows.setRows.slice().sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9) || cpfBad(b) - cpfBad(a));
         this._snsSideCounts = this._snsCounts(ads, rows);
-        const mode = ['decision', 'active'].includes(this.snsMode) ? 'ads' : (this.snsMode || 'ads');
+        const mode = currentMode;
         const canon = s => String(s || '').replace(/\s/g, '').toLowerCase();
         const wanted = [
-            { key: 'hhh', name: '하이헤이호', hit: n => n.includes('하이헤이호') || n.includes('hiheiho') },
-            { key: 'lohi', name: '로하이', hit: n => n.includes('로하이') || n.includes('lohi') },
-            { key: 'tovee', name: '토비', hit: n => n.includes('토비') || n.includes('tovee') },
+            { key: 'hhh', name: '하이헤이호', color: '#0f766e', hit: n => n.includes('하이헤이호') || n.includes('hiheiho') },
+            { key: 'lohi', name: '로하이', color: '#7c3aed', hit: n => n.includes('로하이') || n.includes('lohi') },
+            { key: 'tovee', name: '토비', color: '#db2777', hit: n => n.includes('토비') || n.includes('tovee') },
+            { key: 'mumun', name: '머문', color: '#d97706', hit: n => n.includes('머문') || n.includes('mumun') },
         ];
         const pool = ads.allBrands || [];
         const coreBrands = wanted.map(w => {
             const found = pool.find(b => w.hit(canon(b.name)));
-            return found ? { ...found, label: w.name } : { id: `missing:${w.key}`, name: w.name, label: w.name };
+            return found ? { ...found, label: w.name, navColor: this._snsBrandTone(found.id, w.name).color } : { id: `missing:${w.key}`, name: w.name, label: w.name, navColor: this._snsBrandTone(`missing:${w.key}`, w.name).color };
         });
         const brands = [...coreBrands, ...pool.filter(b => !wanted.some(w => w.hit(canon(b.name))) && (allSetRows.some(r => String(r.brand_id) === String(b.id)) || rows.postRows.some(r => String(r.brand_id) === String(b.id))))];
         const isCurrent = r => r.set.status === 'ACTIVE' && (!r.set.end || new Date(r.set.end + 'T23:59:59+09:00').getTime() >= Date.now());
         const currentSets = allSetRows.filter(isCurrent), archivedSets = allSetRows.filter(r => !isCurrent(r));
         const brandCount = b => currentSets.filter(r => String(r.brand_id) === String(b.id)).length;
         const brandActive = b => brandCount(b);
+        const followerCount = b => cards.filter(c => String(c.brand_id) === String(b.id)).reduce((n, c) => n + Number(c.followers || 0), 0);
+        this._snsBrandNav = coreBrands.map(b => ({ id: b.id, label: b.label || b.name, color: b.navColor || b.brand_color, count: mode === 'followers' ? followerCount(b) : brandCount(b) }));
         const brandChips = `<div class="sns3-chips">${[['전체', '전체', currentSets.length], ...brands.map(b => [b.id, b.label || b.name, brandCount(b)])].map(([id, name, count]) => `<button class="${String(accSel) === String(id) ? 'on' : ''}" onclick="app.setSnsAcc('${esc(id)}')">${esc(name)} ${count}</button>`).join('')}</div>`;
-        const mobileNav = `<div class="sns3-mobile-nav">${[['ads', '광고'], ['posts', '게시물'], ['news', '뉴스']].map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
+        const mobileNav = `<div class="sns3-mobile-nav">${[['active_ads','광고'],['performance','성과'],['fatigue','피로도'],['followers','팔로워'],['news','뉴스']].map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
+        const mobileBrands = `<div class="sns-mobile-brands">${[['전체','전체'], ...coreBrands.map(b => [b.id, b.label || b.name])].map(([id, label]) => `<button class="${String(accSel) === String(id) ? 'on' : ''}" style="--bc:${esc(id === '전체' ? '#64748b' : this._snsBrandTone(id, label).color)}" onclick="app.setSnsAcc('${esc(id)}')">${esc(label)}</button>`).join('')}</div>`;
+        const mobileHead = mobileNav + mobileBrands;
         const allowBrand = r => accSel === '전체' || String(r.brand_id) === String(accSel);
         this._snsRows = [...allSetRows, ...rows.postRows, ...rows.accountRows];
         const pick = this._snsRows.find(x => x.key === this.snsPick) || null;
@@ -7102,10 +7126,10 @@ class BhasApp {
             const s = r.set, thumb = safeThumb(r), on = s.status === 'ACTIVE';
             const brandLabel = this._snsBrandLabel(r.brand_id);
             const brandShort = brandLabel === '하이헤이호' ? '하이' : brandLabel;
-            const brandClass = brandLabel === '하이헤이호' ? 'hhh' : brandLabel === '로하이' ? 'lohi' : brandLabel === '토비' ? 'tovee' : 'etc';
+            const brandTone = this._snsBrandTone(r.brand_id, brandLabel), brandClass = brandTone.cls;
             return `<tr class="sns-ad-row${pick?.key === r.key ? ' on' : ''}" data-sns-key="${esc(r.key)}" onclick="app.selectSnsItem('${esc(r.key)}')">
                 <td class="sns-td-state"><span class="sns-live ${on ? 'on' : ''}">${on ? '가동' : '꺼짐'}</span></td>
-                <td class="sns-td-brand"><span class="sns-brand-chip ${brandClass}" title="${esc(brandLabel)}"><i></i>${esc(brandShort)}</span></td>
+                <td class="sns-td-brand"><span class="sns-brand-chip ${brandClass}" style="--bc:${esc(brandTone.color)}" title="${esc(brandLabel)}"><i></i>${esc(brandShort)}</span></td>
                 <td class="sns-td-name"><b>${esc(r.title)}</b></td>
                 <td class="sns-td-media">${thumb ? `<img src="${esc(thumb)}" alt="">` : '<i class="ph ph-image-square"></i>'}</td>
                 <td class="sns-td-target">${esc(s.target || '—')}</td>
@@ -7127,13 +7151,21 @@ class BhasApp {
         const sumY = filteredSets.reduce((a, r) => a + Number(r.set.spendYesterday || 0), 0);
         const activeCards = coreBrands.map(b => `<div class="sns3-brand-kpi"><span>${esc(b.label || b.name)}</span><b>${brandActive(b)}/5</b></div>`).join('');
         const summary = `<div class="sns3-kpis"><div><span>중단</span><b class="bad">${filteredSets.filter(r => r.kind === 'stop').length}</b></div><div><span>증액</span><b class="good">${filteredSets.filter(r => r.kind === 'up').length}</b></div><div><span>유지</span><b>${filteredSets.filter(r => r.kind === 'keep').length}</b></div>${activeCards}<div class="sns3-spend-kpi"><span>어제 / 3일 지출</span><b>${wonTxt(sumY)} / ${wonTxt(sum3)}</b></div></div>`;
-        const filters = `${brandChips}<div class="sns3-filters"><select onchange="app.setSnsVerdict(this.value)"><option value="all">모든 판정</option>${[['stop','중단'],['up','증액'],['keep','유지'],['none','보류']].map(([k,l]) => `<option value="${k}"${this.snsVerdict === k ? ' selected' : ''}>${l}</option>`).join('')}</select><label><input type="checkbox" ${this.snsActiveOnly ? 'checked' : ''} onchange="app.toggleSnsActive()"> 가동만</label></div>`;
+        const filters = `<div class="sns3-filters"><select onchange="app.setSnsVerdict(this.value)"><option value="all">모든 판정</option>${[['stop','중단'],['up','증액'],['keep','유지'],['none','보류']].map(([k,l]) => `<option value="${k}"${this.snsVerdict === k ? ' selected' : ''}>${l}</option>`).join('')}</select><label><input type="checkbox" ${this.snsActiveOnly ? 'checked' : ''} onchange="app.toggleSnsActive()"> 가동만</label></div>`;
         const trend = pick?.type === 'set' ? `<div class="sns3-trend"><b>최근 3일 추이</b>${pick.set.daily.slice(-3).map(d => `<div><span>${esc(d.day.slice(5).replace('-', '.'))}</span><span>${wonTxt(d.spend)}</span><span>${Number(d.follows).toLocaleString()}명</span><strong>${d.follows ? Math.round(d.spend / d.follows).toLocaleString() + '원/명' : d.spend ? '∞' : '—'}</strong></div>`).join('') || '<p>일별 수집 대기</p>'}</div>` : '';
         const setDetail = pick?.type === 'set' ? `<div class="m3-page">${snsSetDetailHtml(pick)}${trend}${actionButtons(pick)}<div class="sns3-queue-note">지금은 Meta에 바로 반영하지 않고 실행 요청 큐에 쌓입니다.</div></div>` : '';
         const tableHead = this._thead('sns_ads', [['state','상태'],['brand','브랜드'],['name','세트명'],['media','소재'],['target','타겟'],['period','기간'],['budget','일예산'],['spend','지출 3일/누적','',false],['result','결과','',false],['cpf','1명당','',false],['verdict','판정']]);
         const activeFilters = this._fltBadge('sns_ads');
         const adOverview = `<div class="m3-page sns3-ad-overview"><h2>광고 요약</h2>${summary}<div class="sns3-queue-note">할 일 ${(filteredSets.filter(r => r.kind === 'stop' || r.kind === 'up')).length}건 · 중단과 증액 판정부터 확인합니다.</div></div>`;
-        if (mode === 'ads') return `<section class="m3-list sns3-tablepane">${mobileNav}<div class="sns3-head"><div><b>지금 켜진 세트</b><span>중단 → 증액 → 유지 → 보류, 같은 판정은 1명당 비용이 나쁜 순</span></div>${filters}</div>${activeFilters ? `<div class="sns3-active-filters">${activeFilters}</div>` : ''}${excludedNote(ads.groups.excluded) ? `<div class="sns3-ex">${excludedNote(ads.groups.excluded)}</div>` : ''}<div class="sns3-tablewrap"><table class="sns3-table"><thead><tr>${tableHead}<th>작업</th></tr></thead><tbody>${tableRows || '<tr><td colspan="12" class="m3-none">조건에 맞는 운영 중 광고가 없습니다.</td></tr>'}<tr class="sns-archive-toggle"><td colspan="12"><button onclick="app.toggleSnsArchive()"><i class="ph ph-caret-${this.snsArchiveOpen ? 'down' : 'right'}"></i> 종료 ${archivedSets.length}개</button></td></tr>${archiveRows}</tbody></table></div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 광고 목록</button><b>${pick?.type === 'set' ? '세트 상세' : '광고 요약'}</b></div>${pick?.type === 'set' ? setDetail : adOverview}</section>`;
+        const adCards = filteredSets.map(r => { const thumb = safeThumb(r), brandLabel = this._snsBrandLabel(r.brand_id), tone = this._snsBrandTone(r.brand_id, brandLabel); return `<button class="sns-active-card${pick?.key === r.key ? ' on' : ''}" onclick="app.selectSnsItem('${esc(r.key)}')">${thumb ? `<img src="${esc(thumb)}" alt="">` : '<i class="ph ph-image-square"></i>'}<span><b title="${esc(r.title)}">${esc(r.title)}</b><em class="sns-active-brand" style="--bc:${esc(tone.color)}">${esc(brandLabel)}</em></span><span class="sns-active-spend"><small>3일 ${wonTxt(r.set.spend3)}</small><small>누적 ${wonTxt(r.set.spendCum)}</small></span><strong>${cpfTxt(r)}<em class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</em></strong></button>`; }).join('');
+        if (mode === 'active_ads') return `<section class="m3-list sns-active-list">${mobileHead}<div class="sns3-head"><div><b>진행 중 광고</b><span>${accSel === '전체' ? '전체 브랜드' : esc(this._snsBrandLabel(accSel))} · ${filteredSets.length}개</span></div>${filters}</div>${activeFilters ? `<div class="sns3-active-filters">${activeFilters}</div>` : ''}<div class="sns-active-cards">${adCards || '<div class="m3-none">조건에 맞는 진행 중 광고가 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 광고 목록</button><b>${pick?.type === 'set' ? '광고 상세' : '브랜드 요약'}</b></div>${pick?.type === 'set' ? setDetail : adOverview}</section>`;
+
+        if (mode === 'performance' || mode === 'fatigue') {
+            const title = mode === 'performance' ? '광고 성과' : '광고 피로도';
+            const days = mode === 'performance' ? 7 : 14;
+            const empty = `<div class="sns-empty-state"><i class="ph ${mode === 'performance' ? 'ph-chart-line-up' : 'ph-hourglass'}"></i><b>${title}</b><span>데이터 쌓는 중 — ${days}일 후 판정</span></div>`;
+            return `<section class="m3-list">${mobileHead}<div class="m3-lbar"><div><b>${title}</b><span>${accSel === '전체' ? '전체 브랜드' : esc(this._snsBrandLabel(accSel))}</span></div></div>${empty}</section><section class="m3-doc"><div class="m3-tools"><b>브랜드 요약</b></div><div class="m3-page">${empty}</div></section>`;
+        }
 
         const listRows = rows.postRows.filter(allowBrand);
         const rowHtml = r => `<div class="m3-r sns3-row${pick?.key === r.key ? ' on' : ''}" data-sns-key="${esc(r.key)}" onclick="app.selectSnsItem('${esc(r.key)}')"><b><i class="ph ${r.type === 'post' ? 'ph-image-square' : 'ph-instagram-logo'}"></i>${esc(r.title)}${r.kind ? `<em class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</em>` : ''}</b><div class="sub"><span>${r.type === 'post' ? `${r.cpf == null ? '1명당 —' : Number(r.cpf).toLocaleString() + '원/명'} · ${esc(this._arBrandName(r.brand_id))}` : `${esc(this._arBrandName(r.brand_id))} · 가동 광고 ${allSetRows.filter(s => s.brand_id === r.brand_id && s.set.status === 'ACTIVE').length}/5`}</span></div></div>`;
@@ -7141,7 +7173,29 @@ class BhasApp {
         const postSummary = `<div class="m3-page sns3-overview"><h2>게시물 요약</h2><div class="sns3-post-summary">${brands.map(b => `<div><span>${esc(b.label || b.name)}</span><b>${listRows.filter(r => String(r.brand_id) === String(b.id)).length}개</b></div>`).join('')}</div><div class="sns3-queue-note">가운데 게시물을 선택하면 광고 성과와 소재를 확인합니다.</div></div>`;
         let detail = postSummary;
         if (pick?.type === 'post') { const idx = (this._arCache || []).indexOf(pick.post); detail = `<div class="m3-page sns3-post">${cardHtml(pick.post, { brandName: id => this._arBrandName(id), i: idx })}</div>`; }
-        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>브랜드별 게시물</b><span>${listRows.length}개</span></div></div>${brandChips}<div class="m3-rows">${postGroups || '<div class="m3-none">표시할 게시물이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 게시물 목록</button><b>${pick?.type === 'post' ? '게시물 상세' : '게시물 요약'}</b></div>${detail}</section>`;
+        const baseAccountCards = cards.filter(c => accSel === '전체' || String(c.brand_id) === String(accSel));
+        const followVal = (c, k) => ({
+            brand: this._snsBrandLabel(c.brand_id), followers: Number(c.followers || 0), delta7: Number(c.delta7.n || 0), delta30: Number(c.delta30.n || 0),
+            recent: c.latestPost || '게시 기록 없음', posts7: Number(c.posts7 || 0),
+        }[k]);
+        const accountCards = this._applyTbl('sns_followers', baseAccountCards, followVal, cards);
+        const accountPick = String(this.snsPick || '').startsWith('account:') ? accountCards.find(c => `account:${c.id}` === this.snsPick) : null;
+        const deltaText = d => d?.n == null ? '—' : `${d.n > 0 ? '+' : ''}${Number(d.n).toLocaleString()} (${d.pct == null ? '—' : `${d.pct > 0 ? '+' : ''}${d.pct.toFixed(1)}%`})`;
+        const deltaClass = d => d?.n > 0 ? 'up' : d?.n < 0 ? 'dn' : '';
+        const shortDate = d => d ? String(d).slice(5, 10).replace('-', '.') : '—';
+        const followerHead = this._thead('sns_followers', [['brand','브랜드'],['followers','팔로워'],['delta7','7일 증감'],['delta30','30일 증감'],['recent','최근 게시일'],['posts7','7일 게시물']]);
+        const accountRows = accountCards.map(c => `<tr class="sns-follow-tr${accountPick === c ? ' on' : ''}" onclick="app.selectSnsItem('account:${esc(c.id)}')">
+            <td class="sns-follow-brand"><i style="--bc:${esc(c.color)}"></i><span><b>${esc(this._brandNameById(c.brand_id))}</b><em>${esc(c.title)}</em></span></td>
+            <td class="sns-follow-num"><b>${c.followers == null ? '—' : Number(c.followers).toLocaleString()}</b></td>
+            <td class="sns-follow-delta ${deltaClass(c.delta7)}">${deltaText(c.delta7)}</td><td class="sns-follow-delta ${deltaClass(c.delta30)}">${deltaText(c.delta30)}</td>
+            <td class="sns-follow-date${c.staleDays >= 3 ? ' stale' : ''}">${c.latestPost ? shortDate(c.latestPost) : '기록 없음'}</td><td class="sns-follow-posts">${Number(c.posts7 || 0)}개</td></tr>`).join('');
+        const totalFollowers = accountCards.reduce((n, c) => n + Number(c.followers || 0), 0);
+        const totalDelta7 = accountCards.reduce((n, c) => n + Number(c.delta7.n || 0), 0);
+        const stale = accountCards.filter(c => c.staleDays >= 3);
+        const followerSummary = `<div class="m3-page sns-follow-summary"><h2>전체 팔로워</h2><div class="sns-follow-total"><strong>${totalFollowers.toLocaleString()}명</strong><span class="${totalDelta7 > 0 ? 'up' : totalDelta7 < 0 ? 'dn' : ''}">7일 ${totalDelta7 > 0 ? '+' : ''}${totalDelta7.toLocaleString()}명</span></div><section class="sns-follow-alert"><b>게시 중단 확인</b>${stale.length ? stale.map(c => `<div><i class="ph ph-warning-circle"></i><span>${esc(this._brandNameById(c.brand_id))}</span><em>${Number.isFinite(c.staleDays) ? `${c.staleDays}일째 게시 없음` : '게시 기록 없음'}</em></div>`).join('') : '<p>3일 이상 게시가 끊긴 브랜드가 없습니다.</p>'}</section></div>`;
+        const followerDetail = accountPick ? `<div class="m3-page sns-follow-detail"><div class="sns-follow-detail-head"><div><h2>${esc(this._brandNameById(accountPick.brand_id))}</h2><span>${esc(accountPick.title)}</span></div><strong>${Number(accountPick.followers || 0).toLocaleString()}명</strong></div><section class="sns-follow-chart"><div><b>팔로워 추이</b><span>최근 30일</span></div>${this._igFollowerChart(accountPick.followerPts, accountPick.color, 30)}</section><section class="sns-follow-gallery"><div><b>최근 게시물</b><span>${accountPick.recentMedia.length}개 · 광고 연결 표시</span></div><div>${accountPick.recentMedia.map(m => { const thumb = this._safeFileUrl(m.thumb || ''); return `<article>${thumb ? `<img src="${esc(thumb)}" alt="">` : '<i class="ph ph-image-square"></i>'}${m.hasAd ? '<em><i class="ph ph-megaphone"></i> 광고</em>' : ''}<small>${shortDate(m.posted_day || m.posted_at)}</small></article>`; }).join('') || '<p class="m3-none">최근 게시물 이미지가 없습니다.</p>'}</div></section></div>` : '';
+        const followerFilters = this._fltBadge('sns_followers');
+        return `<section class="m3-list sns-follow-list">${mobileHead}<div class="m3-lbar"><div><b>팔로워 현황</b><span>${accountCards.length}개 브랜드</span></div></div>${followerFilters ? `<div class="sns3-active-filters">${followerFilters}</div>` : ''}<div class="sns-follow-tablewrap"><table class="sns-follow-table"><thead><tr>${followerHead}</tr></thead><tbody>${accountRows || '<tr><td colspan="6"><div class="m3-none">표시할 계정이 없습니다.</div></td></tr>'}</tbody></table></div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 브랜드 목록</button><b>${accountPick ? '브랜드 상세' : '전체 요약'}</b></div>${accountPick ? followerDetail : followerSummary}</section>`;
     }
 
     // 인스타 피드 톤앤매너 미리보기 — 실제 인스타 프로필 화면 그대로.
@@ -8240,7 +8294,7 @@ class BhasApp {
             const sx = ev.clientX, sy = ev.clientY, ox = r.left, oy = r.top;
             const move = (e) => {
                 el.style.left = Math.max(0, Math.min(window.innerWidth - 80, ox + e.clientX - sx)) + 'px';
-                el.style.top = Math.max(0, Math.min(window.innerHeight - 60, oy + e.clientY - sy)) + 'px';
+                el.style.top = Math.max(36, Math.min(window.innerHeight - 60, oy + e.clientY - sy)) + 'px';
             };
             const up = () => { handle.classList.remove('drag'); document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
             document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
@@ -8271,7 +8325,9 @@ class BhasApp {
                 ['sample_maker', '샘플', 'ph-scissors'], ['quotes', '견적', 'ph-receipt'],
             ] },
             { label: 'SNS', icon: 'ph-instagram-logo', view: 'sns', items: [
-                ['sns', '광고', 'ph-megaphone', 'ads'], ['sns', '게시물', 'ph-images-square', 'posts'], ['sns', '뉴스', 'ph-newspaper', 'news'],
+                ['sns', '진행 중 광고', 'ph-megaphone', 'active_ads'], ['sns', '광고 성과', 'ph-chart-line-up', 'performance'],
+                ['sns', '광고 피로도', 'ph-hourglass', 'fatigue'], ['sns', '팔로워 현황', 'ph-users-three', 'followers'],
+                ['sns', '업계 뉴스', 'ph-newspaper', 'news'],
             ] },
         ] },
         { id: 'collab', label: '협업', items: [
@@ -8294,8 +8350,16 @@ class BhasApp {
     }
     toggleMacSideDrawer() { this.sideDrawer = !this.sideDrawer; this.requestRender(); }
     closeMacSideDrawer() { if (this.sideDrawer) { this.sideDrawer = false; this.requestRender(); } }
+    toggleMacSideApp(view) {
+        const front = (this.wins || []).filter(w => !w.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0] || null;
+        const active = this._groupOf(front?.view)?.head === view || front?.view === view;
+        const open = this.sideAppOpen == null ? active : this.sideAppOpen === view;
+        this.sideAppOpen = open ? '__none' : view;
+        this.requestRender();
+    }
     sideOpen(view, mode = '') {
         this.sideDrawer = false;
+        this.sideAppOpen = null;
         if (view === 'sns' && mode) this.setSnsMode(mode);
         this.macOpen(view);
         this.requestRender();
@@ -8304,7 +8368,7 @@ class BhasApp {
         const esc = s => this._vesc(s), groups = this.MAC_SIDE_GROUPS || [];
         const front = (this.wins || []).filter(w => !w.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0] || null;
         const activeView = front?.view || '', activeGroup = this._groupOf(activeView)?.head || '';
-        const activeMode = activeView === 'sns' ? (this.snsMode || 'ads') : '';
+        const activeMode = activeView === 'sns' ? ({ ads: 'active_ads', posts: 'followers' }[this.snsMode] || this.snsMode || 'active_ads') : '';
         const active = (view, mode = '') => view === 'sns' ? activeView === 'sns' && (!mode || activeMode === mode) : activeView === view;
         const item = ([view, label, icon, mode = '']) => {
             if (!this._viewAllowed(view)) return '';
@@ -8314,8 +8378,8 @@ class BhasApp {
         const app = a => {
             const children = (a.items || []).filter(x => this._viewAllowed(x[0])); if (!children.length) return '';
             const appOn = activeGroup === a.view || activeView === a.view;
-            const first = children[0];
-            return `<div class="mac-side-appwrap${appOn ? ' on expanded' : ''}"><button class="mac-side-app" onclick="app.sideOpen('${esc(first[0])}','${esc(first[3] || '')}')" title="${esc(a.label)}"><i class="ph ${a.icon}"></i><span>${esc(a.label)}</span><i class="ph ph-caret-${appOn ? 'up' : 'down'} mac-side-app-caret"></i></button><div class="mac-side-sub">${children.map(item).join('')}</div></div>`;
+            const expanded = this.sideAppOpen == null ? appOn : this.sideAppOpen === a.view;
+            return `<div class="mac-side-appwrap${appOn ? ' on' : ''}${expanded ? ' expanded' : ''}"><button class="mac-side-app" onclick="app.toggleMacSideApp('${esc(a.view)}')" title="${esc(a.label)} 펼치기/접기"><i class="ph ${a.icon}"></i><span>${esc(a.label)}</span><i class="ph ph-caret-${expanded ? 'up' : 'down'} mac-side-app-caret"></i></button><div class="mac-side-sub">${children.map(item).join('')}</div></div>`;
         };
         const group = g => {
             const open = (this.sideGroups || {})[g.id] !== false;
@@ -8516,7 +8580,7 @@ class BhasApp {
             if (dir.includes('e')) w.w = Math.max(min.w, ow + dx);
             if (dir.includes('s')) w.h = Math.max(min.h, oh + dy);
             if (dir.includes('w')) { w.x = Math.max((this._macSideWidth?.() || 0) + 8, Math.min(right - min.w, ox + dx)); w.w = right - w.x; }
-            if (dir.includes('n')) { w.y = Math.max(0, Math.min(bottom - min.h, oy + dy)); w.h = bottom - w.y; }
+            if (dir.includes('n')) { w.y = Math.max(36, Math.min(bottom - min.h, oy + dy)); w.h = bottom - w.y; }
             el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
             el.style.width = w.w + 'px'; el.style.height = w.h + 'px';
         };
@@ -8525,11 +8589,12 @@ class BhasApp {
     }
     _macWinStyle(w) {
         const side = this._macSideWidth?.() || 0, usable = window.innerWidth - side;
-        if (w.max) return `left:${side + 8}px;top:8px;width:calc(100vw - ${side + 16}px);height:calc(100vh - 128px)`;
-        if (w.snap === 'left') return `left:${side + 8}px;top:8px;width:${Math.max(320, Math.floor(usable / 2) - 12)}px;height:calc(100vh - 128px)`;
-        if (w.snap === 'right') return `left:${side + Math.floor(usable / 2) + 4}px;top:8px;width:${Math.max(320, Math.ceil(usable / 2) - 12)}px;height:calc(100vh - 128px)`;
+        if (w.max) return `left:${side + 8}px;top:36px;width:calc(100vw - ${side + 16}px);height:calc(100vh - 156px)`;
+        if (w.snap === 'left') return `left:${side + 8}px;top:36px;width:${Math.max(320, Math.floor(usable / 2) - 12)}px;height:calc(100vh - 156px)`;
+        if (w.snap === 'right') return `left:${side + Math.floor(usable / 2) + 4}px;top:36px;width:${Math.max(320, Math.ceil(usable / 2) - 12)}px;height:calc(100vh - 156px)`;
         const x = Math.max(side + 8, Number(w.x) || side + 8), width = Math.min(Number(w.w) || 900, usable - 16);
-        return `left:${x}px;top:${w.y}px;width:${width}px;height:${w.h}px`;
+        const y = Math.max(36, Number(w.y) || 36), height = Math.min(Number(w.h) || 700, Math.max(220, window.innerHeight - y - 120));
+        return `left:${x}px;top:${y}px;width:${width}px;height:${height}px`;
     }
     renderMacDesktop(products) {
         const esc = s => this._vesc(s);

@@ -56,9 +56,9 @@ test('SNS 표는 필요한 열·행 작업·새 판정선을 연결하고 실행
     assert.doesNotMatch(fn, /supabase|\.from\(|functions\.invoke/);
 });
 
-test('광고표 정리: 운영 중만 기본, 종료 접기, 판정은 운영 중만, 브랜드 묶음과 공용 필터', () => {
-    for (const token of ['const currentSets = allSetRows.filter(isCurrent)', 'archivedSets = allSetRows.filter', 'toggleSnsArchive()', '종료 ${archivedSets.length}개',
-        'isCurrent(r) ? verdict(r.kind)', 'sns-brand-group', 'groupedRows(filteredSets)', "_applyTbl('sns_ads'", "this.tblFilt.sns_ads.brand"])
+test('광고 정리: 운영 중만 기본, 판정 순서와 공용 필터를 유지한다', () => {
+    for (const token of ['const currentSets = allSetRows.filter(isCurrent)', 'archivedSets = allSetRows.filter',
+        'isCurrent(r) ? verdict(r.kind)', 'sns-active-card', "_applyTbl('sns_ads'", "this.tblFilt.sns_ads.brand"])
         assert.ok(main.includes(token), token);
     assert.match(main, /setRows\.filter\(current\)\.forEach/);
     assert.match(main, /rank\[a\.kind\][\s\S]*cpfBad\(b\) - cpfBad\(a\)/);
@@ -69,14 +69,16 @@ test('뉴스 정리: 경쟁사 계정별 묶음, 중복 제거, 날짜 구분과
         assert.ok(main.includes(token), token);
 });
 
-test('반려2: 기간 한 줄·핵심 결과열 보존·브랜드별 5개 가동·토비 0칩', () => {
+test('재구성: 브랜드별 5개 가동·토비/머문 0건도 왼쪽 목록에 둔다', () => {
     assert.match(main, /`\$\{md\(s\.start\)\}~\$\{md\(s\.end\)\} · \$\{left\(s\.end\)\}`/);
     assert.match(main, /\{ key: 'tovee', name: '토비'/);
     assert.match(main, /missing:\$\{w\.key\}/, '데이터 0건 브랜드도 합성 칩');
     assert.match(main, /coreBrands\.map\(b => `<div class="sns3-brand-kpi">/);
     assert.match(main, /brandActive\(b\)\}\/5/);
-    assert.match(main, /m3-list sns3-tablepane/);
+    assert.match(main, /m3-list sns-active-list/);
     assert.match(main, /pick\?\.type === 'set' \? setDetail : adOverview/);
+    assert.match(main, /\{ key: 'mumun', name: '머문'/);
+    assert.match(main, /this\._snsBrandNav = coreBrands\.map/);
 });
 
 test('반려3: 부족은 브랜드별 5개 미달만 합하고 뉴스에서도 기존 숫자를 복원한다', () => {
@@ -95,26 +97,46 @@ test('반려3: 부족은 브랜드별 5개 미달만 합하고 뉴스에서도 �
 });
 
 test('뉴스는 SNS 대분류이고 옛 news 진입도 SNS 창으로 합친다', () => {
-    assert.match(main, /\['ads', 'posts', 'news'\]/);
+    assert.match(main, /\['active_ads', 'performance', 'fatigue', 'followers', 'news'\]/);
     assert.match(main, /if \(view === 'news'\) \{ this\.snsMode = 'news'; view = 'sns'; \}/);
     for (const token of ['renderSnsNews()', '경쟁사 계정', '오늘 많이 올린 계정', '계정 게시물']) assert.ok(main.includes(token), token);
 });
 
-test('대분류 > 중분류 > 상세: 광고·게시물·뉴스만 남고 독·전체메뉴 뉴스는 제거', () => {
+test('대분류 > 브랜드 > 상세: 진행광고·성과·피로도·팔로워·뉴스, 게시물 독립 메뉴 없음', () => {
     const dock = main.slice(main.indexOf('    MAC_DOCK = ['), main.indexOf('    _dockFace(', main.indexOf('    MAC_DOCK = [')));
     const launch = main.slice(main.indexOf('    LAUNCH = ['), main.indexOf('    // ============================================================', main.indexOf('    LAUNCH = [')));
     assert.doesNotMatch(dock, /id: 'news'/); assert.doesNotMatch(launch, /\['news', '뉴스'/);
-    for (const token of ["row('ads', '광고'", "row('posts', '게시물'", "row('news', '뉴스'", '광고 요약', '브랜드별 게시물', '경쟁사 계정']) assert.ok(main.includes(token), token);
+    for (const token of ['진행 중 광고', '광고 성과', '광고 피로도', '팔로워 현황', '업계 뉴스', '데이터 쌓는 중 — ${days}일 후 판정', '경쟁사 계정']) assert.ok(main.includes(token), token);
+    const snsSide = main.slice(main.indexOf("{ label: 'SNS'"), main.indexOf("        ] },", main.indexOf("{ label: 'SNS'")));
+    assert.doesNotMatch(snsSide, /'게시물'/);
 });
 
 test('반려4: 광고표 핵심열은 겹침 없는 너비를 쓰고 뉴스 오늘은 KST 하나로 세다', () => {
     for (const token of ['const todayKey = kstYMD()', 'const isToday = x => dayKey(x) === todayKey', 'raw.filter(x => kindOf(x) === \'brands\' && isToday(x))', 'a.posts.filter(isToday).length', 'const brandShort'])
         assert.ok(main.includes(token), token);
     assert.match(main, /sns-brand-chip/);
-    assert.match(style, /--c2:790px/);
+    assert.match(style, /--c2:660px/);
     assert.match(style, /th:nth-child\(3\)\{width:250px\}/);
     assert.match(style, /th:nth-child\(6\)\{width:126px\}/);
     assert.match(style, /th:nth-child\(8\)\{width:112px\}/);
     assert.match(style, /\.sns3-tablepane \.sns3-table\{width:100%;min-width:0;max-width:100%\}/);
     assert.match(style, /\.sns-td-period,.sns-td-spend\{overflow:hidden;white-space:nowrap\}/);
+});
+
+test('SNS 재구성 반려1: 팔로워 표·요약·상세와 모바일 브랜드 선택을 모두 제공한다', () => {
+    for (const token of ["this._thead('sns_followers'", "['brand','브랜드'],['followers','팔로워'],['delta7','7일 증감'],['delta30','30일 증감'],['recent','최근 게시일'],['posts7','7일 게시물']",
+        "this._applyTbl('sns_followers'", '게시 중단 확인', 'sns-follow-chart', 'sns-follow-gallery', 'sns-mobile-brands', "mode === 'followers' ? followerCount(b) : brandCount(b)"])
+        assert.ok(main.includes(token), token);
+    assert.match(main, /this\.tblFilt\.sns_followers\.brand/);
+    assert.match(style, /\.sns-follow-table\{width:100%/);
+    assert.match(style, /\.sns-mobile-brands\{display:flex/);
+});
+
+test('SNS 재구성 반려2: 브랜드 색 단일화·상시 필터·모바일 한 줄·독 페이드를 고정한다', () => {
+    for (const token of ['_snsBrandTone(id, label', "return { color: '#0f766e', cls: 'hhh' }", "return { color: '#db2777', cls: 'tovee' }", 'sns-active-brand', 'this._snsBrandTone(a.brand_id'])
+        assert.ok(main.includes(token), token);
+    assert.match(style, /\.sns-follow-table th \.th-f\{right:5px;opacity:\.68\}/);
+    assert.match(style, /\.sns-follow-table th\.flt \.th-f\{color:#0a84ff\}/);
+    assert.match(style, /\.sns-follow-table \.sns-follow-brand span\{display:flex;align-items:center;gap:7px\}/);
+    assert.match(style, /mask-image:linear-gradient\(90deg,#000 0,#000 calc\(100% - 34px\),transparent 100%\)/);
 });
