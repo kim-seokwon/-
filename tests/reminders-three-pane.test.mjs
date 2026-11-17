@@ -12,7 +12,7 @@ const oneLineMethod = name => {
 };
 
 test('할 일은 분류·목록·상세 3단이며 선택 상태를 모바일 상세로 넘긴다', () => {
-    for (const token of ['class="rm-side"', 'class="rm-main"', 'class="rm-doc"', 'class="rm-detail"', '할 일을 선택하세요']) {
+    for (const token of ['class="rm-side c3-menu"', 'class="rm-main"', 'class="rm-doc"', 'class="rm-detail"', '할 일을 선택하세요']) {
         assert.ok(main.includes(token), token);
     }
     assert.match(css, /\.rm\{display:grid;grid-template-columns:238px 350px minmax\(0,1fr\)/);

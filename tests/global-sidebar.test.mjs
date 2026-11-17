@@ -7,6 +7,7 @@ const style = readFileSync(new URL('../style.css', import.meta.url), 'utf8');
 
 test('전역 사이드바는 업무·협업·기타와 지정된 창/탭을 그린다', () => {
     for (const token of ['MAC_SIDE_GROUPS', "id: 'work', label: '업무'", "id: 'collab', label: '협업'", "id: 'other', label: '기타'",
+        "label: '홈'", "['home', '오늘 할 일'", "['home', '오늘 매출'", "['home', '오늘 조간'",
         "['orders', '주문'", "['cs', 'CS'", "['inventory', '재고'", "['analysis', '고객'", "['sales', '정산'",
         "['items', '제품리스트'", "['vendors', '생산현황'", "['tech_packs', '작업지시서'", "['sample_maker', '샘플'", "['quotes', '견적'",
         "['sns', '대시보드'", "['sns', '광고현황'", "['sns', '게시물기록'", "['sns', '팔로워'", "['sns', '동종업계'", "['sns', '뉴스'",
