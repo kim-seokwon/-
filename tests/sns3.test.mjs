@@ -106,9 +106,16 @@ test('대분류 > 브랜드 > 상세: 진행광고·성과·피로도·팔로워
     const dock = main.slice(main.indexOf('    MAC_DOCK = ['), main.indexOf('    _dockFace(', main.indexOf('    MAC_DOCK = [')));
     const launch = main.slice(main.indexOf('    LAUNCH = ['), main.indexOf('    // ============================================================', main.indexOf('    LAUNCH = [')));
     assert.doesNotMatch(dock, /id: 'news'/); assert.doesNotMatch(launch, /\['news', '뉴스'/);
-    for (const token of ['진행 중 광고', '광고 성과', '광고 피로도', '팔로워 현황', '업계 뉴스', '데이터 쌓는 중 — ${days}일 후 판정', '경쟁사 계정']) assert.ok(main.includes(token), token);
+    for (const token of ['진행 중 광고', '광고 성과', '광고 피로도', '팔로워 현황', '업계 뉴스', '데이터 준비 중', '경쟁사 계정']) assert.ok(main.includes(token), token);
     const snsSide = main.slice(main.indexOf("{ label: 'SNS'"), main.indexOf("        ] },", main.indexOf("{ label: 'SNS'")));
     assert.doesNotMatch(snsSide, /'게시물'/);
+});
+
+test('110 인사이트: 없는 뷰는 안전하게 비우고 피로도·성과는 공용 판정을 재사용한다', () => {
+    for (const token of ["from('v_ad_fatigue_latest')", "from('v_ad_creative_3d')", "from('v_ad_daily_metrics')", '데이터 준비 중', '단기·측정 제외', 'insightAttrTable(creatives)', 'insightBrandSentences(allAttr', '일별 1명당 추이']) assert.ok(main.includes(token), token);
+    assert.match(main, /r\.is_measurable === true/);
+    assert.match(style, /\.sns-performance-tr\.weak/);
+    assert.match(style, /\.sns-insight-table th \.th-f\{right:5px;opacity:\.68\}/);
 });
 
 test('반려4: 광고표 핵심열은 겹침 없는 너비를 쓰고 뉴스 오늘은 KST 하나로 세다', () => {

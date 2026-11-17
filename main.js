@@ -31,6 +31,7 @@ import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } 
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
 import { uploadAlerts, uploadChipsHtml, buildCards, filterCards, cardHtml, reportHtml, detailHtml, kstDay, addDays as arAddDays } from './adReport.js';
 import { buildPanel, sns3Rows, snsSetDetailHtml, excludedNote } from './adPanel.js';
+import { formatOf as insightFormat, productOf as insightProduct, weekdayOf as insightWeekday, firstLineOf as insightFirstLine, attrTable as insightAttrTable, brandSentences as insightBrandSentences } from './supabase/functions/_shared/ad-insight.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
@@ -3449,7 +3450,7 @@ class BhasApp {
         const esc = s => this._vesc(s);
         const h = this._mallPullHealth(x.k);
         const color = { down: '#ef4444', warn: '#f59e0b', ok: '#22c55e' }[h.state] || '#8e8e93';
-        const sub = h.state === 'down' ? `끊김 · ${h.at ? '마지막 ' + h.at : '성공 기록 없음'}` : h.at ? `수집 ${h.at}` : h.state === 'none' ? '수집 기록 없음' : '';
+        const sub = h.state === 'down' ? `끊김 · ${h.at || '성공 없음'}` : h.at ? `수집 ${h.at}` : h.state === 'none' ? '기록 없음' : '';   // 1440 폭에서 안 잘리게 짧게(시각은 title 에 전부)
         return `<div class="m3-s nav${on ? ' on' : ''} d1" onclick="${click}" title="${esc(h.title)}" data-pull="${h.state}">
             <i class="ph-fill ph-circle" style="font-size:7px;color:${color}"></i>
             <span style="display:flex;flex-direction:column;min-width:0;line-height:1.2"><span>${esc(x.name)}</span>${sub ? `<small style="font-size:0.66rem;color:${h.state === 'down' ? '#ef4444' : 'var(--text-muted)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sub)}</small>` : ''}</span><em>${x.cnt == null ? '' : x.cnt}</em></div>`;
@@ -3697,6 +3698,7 @@ class BhasApp {
         this.snsMode = ['active_ads', 'performance', 'fatigue', 'followers', 'news'].includes(k) ? k : 'active_ads';
         this.snsPick = null; this.snsNewsPick = null; this.snsNewsAccount = null; this.snsMobileDetail = false;
         if (this.snsMode === 'news' && !this._newsLoaded && !this._newsLoading) this.loadNews();
+        if ((this.snsMode === 'performance' || this.snsMode === 'fatigue') && !this._adInsightLoaded && !this._adInsightLoading) this.loadAdInsight();
         this.requestRender();
     }
     setSnsAcc(k) {
@@ -3704,15 +3706,22 @@ class BhasApp {
         this.arBrand = k === '전체' ? 'all' : k;
         this.tblFilt = this.tblFilt || {}; this.tblFilt.sns_ads = this.tblFilt.sns_ads || {};
         this.tblFilt.sns_followers = this.tblFilt.sns_followers || {};
+        this.tblFilt.sns_fatigue = this.tblFilt.sns_fatigue || {};
+        this.tblFilt.sns_performance = this.tblFilt.sns_performance || {};
         if (k === '전체') delete this.tblFilt.sns_ads.brand;
         else this.tblFilt.sns_ads.brand = [this._snsBrandLabel(k)];
         if (k === '전체') delete this.tblFilt.sns_followers.brand;
         else this.tblFilt.sns_followers.brand = [this._snsBrandLabel(k)];
+        for (const view of ['sns_fatigue', 'sns_performance']) {
+            if (k === '전체') delete this.tblFilt[view].brand;
+            else this.tblFilt[view].brand = [this._snsBrandLabel(k)];
+        }
         this.snsPick = null;
         this.snsMobileDetail = false;
         this.requestRender();
     }
     selectSnsItem(k) { this.snsPick = k; this.snsMobileDetail = true; this.requestRender(); }
+    toggleSnsFatigueShort() { this.snsFatigueShortOpen = !this.snsFatigueShortOpen; this.snsPick = null; this.requestRender(); }
     selectSnsNews(i) { this.snsNewsPick = Number(i); this.snsNewsAccount = null; this.snsMobileDetail = true; this.requestRender(); }
     selectSnsNewsAccount(id) { this.snsNewsAccount = id; this.snsNewsPick = null; this.snsMobileDetail = true; this.requestRender(); }
     setSnsNewsKind(k) { this.snsNewsKind = k || 'all'; this.snsNewsPick = null; this.snsMobileDetail = false; this.requestRender(); }
@@ -6765,6 +6774,27 @@ class BhasApp {
         this.requestRender();
     }
 
+    // 110 광고 인사이트 뷰는 운영 적용 전에는 존재하지 않는다. 조회 실패를 SNS 전체 오류로 번지게 하지 않는다.
+    async loadAdInsight() {
+        if (this._adInsightLoading) return;
+        this._adInsightLoading = true;
+        try {
+            const [fatigue, creatives, daily] = await Promise.all([
+                this.supabase.from('v_ad_fatigue_latest').select('*'),
+                this.supabase.from('v_ad_creative_3d').select('*'),
+                this.supabase.from('v_ad_daily_metrics').select('*').order('day', { ascending: true }),
+            ]);
+            const error = [fatigue, creatives, daily].find(r => r?.error)?.error || null;
+            this.adInsight = error ? { ready: false, error: String(error.code || error.message || error) } : {
+                ready: true, fatigue: fatigue.data || [], creatives: creatives.data || [], daily: daily.data || [],
+            };
+        } catch (error) {
+            this.adInsight = { ready: false, error: String(error?.code || error?.message || error || 'unavailable') };
+        }
+        this._adInsightLoaded = true; this._adInsightLoading = false;
+        this.requestRender();
+    }
+
     // 스냅샷 날짜(YYYY-MM-DD)가 속한 주의 월요일 키
     _igWeekKey(dateStr) {
         const d = new Date(dateStr + 'T00:00:00');
@@ -7173,9 +7203,50 @@ class BhasApp {
 
         if (mode === 'performance' || mode === 'fatigue') {
             const title = mode === 'performance' ? '광고 성과' : '광고 피로도';
-            const days = mode === 'performance' ? 7 : 14;
-            const empty = `<div class="sns-empty-state"><i class="ph ${mode === 'performance' ? 'ph-chart-line-up' : 'ph-hourglass'}"></i><b>${title}</b><span>데이터 쌓는 중 — ${days}일 후 판정</span></div>`;
-            return `<section class="m3-list">${mobileHead}<div class="m3-lbar"><div><b>${title}</b><span>${accSel === '전체' ? '전체 브랜드' : esc(this._snsBrandLabel(accSel))}</span></div></div>${empty}</section><section class="m3-doc"><div class="m3-tools"><b>브랜드 요약</b></div><div class="m3-page">${empty}</div></section>`;
+            const insight = this.adInsight;
+            const waiting = !this._adInsightLoaded || this._adInsightLoading;
+            if (!insight?.ready) {
+                const empty = `<div class="sns-empty-state"><i class="ph ${waiting ? 'ph-spinner-gap' : 'ph-database'}"></i><b>${waiting ? '광고 인사이트를 불러오는 중' : '데이터 준비 중'}</b><span>${waiting ? '잠시만 기다려 주세요.' : '110 뷰 적용 후 자동으로 표시됩니다.'}</span></div>`;
+                return `<section class="m3-list sns-insight-list">${mobileHead}<div class="m3-lbar"><div><b>${title}</b><span>${accSel === '전체' ? '전체 브랜드' : esc(this._snsBrandLabel(accSel))}</span></div></div>${empty}</section><section class="m3-doc"><div class="m3-tools"><b>브랜드 요약</b></div><div class="m3-page">${empty}</div></section>`;
+            }
+            const brandName = id => this._snsBrandLabel(id);
+            const brandCell = id => { const name = brandName(id), tone = this._snsBrandTone(id, name); return `<span class="sns-insight-brand" style="--bc:${esc(tone.color)}"><i></i>${esc(name)}</span>`; };
+            const number = v => v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+            const money = v => number(v) == null ? '—' : `${Math.round(Number(v)).toLocaleString()}원`;
+
+            if (mode === 'fatigue') {
+                const stateLabel = { tired: '피로', warn: '주의', fresh: '신선', hold: '보류' };
+                const reasonsOf = r => { if (Array.isArray(r.reasons)) return r.reasons; try { const a = JSON.parse(r.reasons || '[]'); return Array.isArray(a) ? a : []; } catch (_e) { return []; } };
+                const raw = (insight.fatigue || []).map(r => { const missingCurrent = number(r.current_cpf) == null || number(r.current_cpf) <= 0; return { ...r, _key: `fatigue:${r.ad_id}`, _state: stateLabel[r.state] || '보류', _currentMissing: missingCurrent, _reasons: reasonsOf(r).map(x => missingCurrent ? String(x).replace(/→\s*0원/g, '→ 미확인') : x) }; });
+                const measurable = raw.filter(r => r.is_measurable === true), short = raw.filter(r => r.is_measurable !== true);
+                const shown = [...measurable, ...(this.snsFatigueShortOpen ? short : [])];
+                const val = (r, k) => ({ brand: brandName(r.brand_id), state: r._state, name: r.ad_name || r.adset_name || r.ad_id, cpf: number(r.current_cpf), frequency: number(r.freq_to), ctr: number(r.ctr_to) == null || number(r.ctr_from) == null ? null : number(r.ctr_to) - number(r.ctr_from), reason: r._reasons.join(' · ') }[k]);
+                const filtered = this._applyTbl('sns_fatigue', shown, val, raw);
+                const selected = raw.find(r => r._key === this.snsPick) || null;
+                this._snsBrandNav = coreBrands.map(b => ({ id: b.id, label: b.label || b.name, color: b.navColor, count: raw.filter(r => String(r.brand_id) === String(b.id)).length }));
+                const head = this._thead('sns_fatigue', [['brand','브랜드'],['state','상태'],['name','광고'],['cpf','기준 → 현재 1명당'],['frequency','빈도'],['ctr','CTR 변화'],['reason','근거']]);
+                const rowsHtml = filtered.map(r => { const a = number(r.ctr_from), b = number(r.ctr_to), name = r.ad_name || r.adset_name || r.ad_id; return `<tr class="sns-fatigue-tr${r._key === this.snsPick ? ' on' : ''}${r.is_measurable ? '' : ' short'}" onclick="app.selectSnsItem('${esc(r._key)}')"><td>${brandCell(r.brand_id)}</td><td><span class="sns-fatigue-state ${esc(r.state || 'hold')}">${esc(r._state)}</span></td><td class="sns-insight-name"><b title="${esc(name)}">${esc(name)}</b><small>${Number(r.spend_days || 0)}일 집행</small></td><td class="sns-insight-cpf"><span>${money(r.baseline_cpf)}</span><i class="ph ph-arrow-right"></i><b class="${r._currentMissing ? 'unknown' : ''}">${r._currentMissing ? '미확인' : money(r.current_cpf)}</b></td><td>${number(r.freq_to) == null ? '—' : Number(r.freq_to).toFixed(2)}</td><td class="${a != null && b != null && b < a ? 'bad' : ''}">${a == null || b == null ? '—' : `${a.toFixed(2)}% → ${b.toFixed(2)}%`}</td><td class="sns-insight-reason">${esc(r._reasons[0] || '판정 근거 수집 중')}</td></tr>`; }).join('');
+                const badges = this._fltBadge('sns_fatigue');
+                const daily = selected ? (insight.daily || []).filter(d => String(d.ad_id) === String(selected.ad_id) && number(d.cpf) != null).sort((a,b) => String(a.day).localeCompare(String(b.day))) : [];
+                const chart = (() => { if (!daily.length) return '<div class="m3-none">일별 1명당 추이를 쌓는 중입니다.</div>'; const vals = daily.map(d => number(d.cpf)), base = number(selected?.baseline_cpf); if (base != null) vals.push(base); const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1; const x = i => 18 + (daily.length === 1 ? 0 : i * 264 / (daily.length - 1)); const y = v => 126 - (v - lo) / span * 88; return `<div class="sns-fatigue-chart"><svg viewBox="0 0 300 145" role="img" aria-label="일별 1명당 추이와 기준선"><text class="axis" x="8" y="18">${money(hi)}</text><text class="axis" x="8" y="139">${money(lo)}</text>${base == null ? '' : `<line class="base" x1="12" x2="288" y1="${y(base)}" y2="${y(base)}"></line><text class="base-label" text-anchor="end" x="288" y="${Math.max(28,y(base)-7)}">기준 ${money(base)}</text>`}<polyline points="${daily.map((d,i) => `${x(i)},${y(number(d.cpf))}`).join(' ')}"></polyline>${daily.map((d,i) => `<circle cx="${x(i)}" cy="${y(number(d.cpf))}" r="3"><title>${esc(d.day)} ${money(d.cpf)}</title></circle>`).join('')}</svg><div><span>${esc(String(daily[0].day).slice(5))}</span><span>${esc(String(daily.at(-1).day).slice(5))}</span></div></div>`; })();
+                const detail = selected ? `<div class="m3-page sns-fatigue-detail"><h2>${esc(selected.ad_name || selected.adset_name || selected.ad_id)}</h2><div class="sns-insight-detail-kicker">${brandCell(selected.brand_id)}<span class="sns-fatigue-state ${esc(selected.state)}">${esc(selected._state)}</span></div><section><div><b>일별 1명당 추이</b><span>점선은 현재 판정 기준</span></div>${chart}</section><section class="sns-fatigue-reasons"><b>판정 근거</b>${selected._reasons.map(x => `<p>${esc(x)}</p>`).join('') || '<p>근거를 수집하는 중입니다.</p>'}</section></div>` : `<div class="m3-page sns-insight-overview"><h2>장기 판정 ${measurable.length}개</h2><div class="sns-insight-state-grid">${['tired','warn','fresh','hold'].map(s => `<div><span>${stateLabel[s]}</span><b>${measurable.filter(r => r.state === s).length}</b></div>`).join('')}</div><p>광고를 고르면 일별 1명당 추이와 기준선을 보여드립니다.</p></div>`;
+                return `<section class="m3-list sns-insight-list">${mobileHead}<div class="m3-lbar"><div><b>광고 피로도</b><span>장기 판정 ${measurable.length}개</span></div><button class="sns-short-toggle${this.snsFatigueShortOpen ? ' on' : ''}" onclick="app.toggleSnsFatigueShort()">단기·측정 제외 ${short.length}<i class="ph ph-caret-${this.snsFatigueShortOpen ? 'up' : 'down'}"></i></button></div>${badges ? `<div class="sns3-active-filters">${badges}</div>` : ''}<div class="sns-insight-tablewrap"><table class="sns-insight-table sns-fatigue-table"><thead><tr>${head}</tr></thead><tbody>${rowsHtml || '<tr><td colspan="7"><div class="m3-none">조건에 맞는 판정이 없습니다.</div></td></tr>'}</tbody></table></div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 피로도 목록</button><b>${selected ? '광고 피로도 상세' : '피로도 요약'}</b></div>${detail}</section>`;
+            }
+
+            const creatives = (insight.creatives || []).map(r => ({ ...r, format: insightFormat(r), product: insightProduct(r), weekday: insightWeekday(r.posted_day), first_line: insightFirstLine(r.caption), days: Number(r.days || 0), spend3: Number(r.spend3 || 0), follows3: Number(r.follows3 || 0), cpf3: number(r.cpf3) }));
+            const allAttr = insightAttrTable(creatives).filter(r => ['product', 'format', 'weekday'].includes(r.attr)).map((r, i) => ({ ...r, _key: `performance:${i}:${r.brand_id}:${r.attr}:${r.value}` }));
+            const val = (r, k) => ({ brand: brandName(r.brand_id), attr: r.attr_label, value: r.value, median: number(r.median_cpf), n: Number(r.n || 0), follows: Number(r.follows || 0) }[k]);
+            const filtered = this._applyTbl('sns_performance', allAttr, val, allAttr);
+            const selected = allAttr.find(r => r._key === this.snsPick) || null;
+            this._snsBrandNav = coreBrands.map(b => ({ id: b.id, label: b.label || b.name, color: b.navColor, count: creatives.filter(r => String(r.brand_id) === String(b.id)).length }));
+            const summaryBrand = accSel !== '전체' ? accSel : (coreBrands.find(b => allAttr.some(r => String(r.brand_id) === String(b.id)))?.id || allAttr[0]?.brand_id);
+            const sentences = summaryBrand == null ? [] : insightBrandSentences(allAttr, summaryBrand, brandName(summaryBrand));
+            const summaryLines = accSel === '전체' ? coreBrands.filter(b => allAttr.some(r => String(r.brand_id) === String(b.id))).map(b => insightBrandSentences(allAttr, b.id, b.label || b.name)[0]) : sentences;
+            const head = this._thead('sns_performance', [['brand','브랜드'],['attr','속성'],['value','값'],['median','3일 1명당 중앙값'],['n','표본'],['follows','팔로우']]);
+            const rowsHtml = filtered.map(r => `<tr class="sns-performance-tr${r.enough ? '' : ' weak'}${r._key === this.snsPick ? ' on' : ''}" onclick="app.selectSnsItem('${esc(r._key)}')"><td>${brandCell(r.brand_id)}</td><td><span class="sns-attr-pill">${esc(r.attr_label)}</span></td><td class="sns-insight-name"><b>${esc(r.value || '미상')}</b></td><td><b>${money(r.median_cpf)}</b></td><td>${Number(r.n || 0)}개</td><td>${Number(r.follows || 0)}명${r.enough ? '' : '<small class="sns-sample-low">표본 부족</small>'}</td></tr>`).join('');
+            const badges = this._fltBadge('sns_performance');
+            const detail = selected ? `<div class="m3-page sns-performance-detail"><h2>${esc(selected.value)}</h2><div class="sns-insight-detail-kicker">${brandCell(selected.brand_id)}<span class="sns-attr-pill">${esc(selected.attr_label)}</span></div><div class="sns-performance-big"><span>3일 1명당 중앙값</span><strong>${money(selected.median_cpf)}</strong></div><dl><div><dt>게시물 표본</dt><dd>${Number(selected.n || 0)}개</dd></div><div><dt>팔로우 표본</dt><dd>${Number(selected.follows || 0)}명</dd></div></dl><p class="${selected.enough ? 'ok' : 'weak'}">${selected.enough ? '비교 판정에 쓸 수 있는 표본입니다.' : '표본 부족 — 팔로우 30명이 찰 때까지 회색으로 표시합니다.'}</p></div>` : `<div class="m3-page sns-performance-summary"><h2>${accSel === '전체' ? '브랜드별 한 줄 요약' : esc(brandName(summaryBrand))}</h2><div class="sns-performance-sentences">${summaryLines.map((s,i) => `<p><b>${i + 1}</b>${esc(s)}</p>`).join('') || '<p>비교할 정도로 표본이 쌓이면 요약해 알려드립니다.</p>'}</div></div>`;
+            return `<section class="m3-list sns-insight-list">${mobileHead}<div class="m3-lbar"><div><b>광고 성과</b><span>속성별 3일 1명당 중앙값 · ${filtered.length}개</span></div></div>${badges ? `<div class="sns3-active-filters">${badges}</div>` : ''}<div class="sns-insight-tablewrap"><table class="sns-insight-table sns-performance-table"><thead><tr>${head}</tr></thead><tbody>${rowsHtml || '<tr><td colspan="6"><div class="m3-none">표시할 속성 성과가 없습니다.</div></td></tr>'}</tbody></table></div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 성과 목록</button><b>${selected ? '속성 상세' : '브랜드 요약'}</b></div>${detail}</section>`;
         }
 
         const listRows = rows.postRows.filter(allowBrand);
@@ -12317,7 +12388,7 @@ class BhasApp {
         const at = h.lastOkAt ? kstShort(h.lastOkAt) : null;
         const why = h.rule === 'fail' ? `수집 ${h.failStreak}회 연속 실패${h.lastError ? ' · ' + h.lastError : ''}`
                   : h.rule === 'stale' ? '수집 멈춤' : h.failStreak ? '최근 수집 1회 실패' : h.state === 'warn' ? '수집이 평소보다 늦음' : '';
-        return { state: h.state, at, title: [at ? `마지막 수집 성공 ${at}` : '수집 성공 기록 없음', why].filter(Boolean).join(' · ') };
+        return { state: h.state, at, title: [at ? `마지막 수집 성공 ${at}` : '수집 성공 기록 없음', why, mall.alert_enabled === false ? '알림 꺼짐(일부러 끈 몰)' : ''].filter(Boolean).join(' · ') };
     }
 
     async loadMalls() {
