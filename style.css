@@ -3412,7 +3412,7 @@ body:not(.light) .mac-deskboard .glass{
 @media (max-width:900px){ .m3,.m3.wide{grid-template-columns:1fr} .m3-side,.m3-list{display:none} }
 
 /* SNS — 메모와 같은 분류 | 목록 | 상세 3단 */
-.sns3-layout{--c1:164px;--c2:770px}
+.sns3-layout{--c1:164px;grid-template-columns:164px minmax(0,1fr) 380px}
 .sns3-layout .m3-side{background:transparent}
 .sns3-group{display:flex;align-items:center;gap:6px;padding:13px 10px 5px;font-size:11px;font-weight:800;color:var(--text-muted)}
 .sns3-group em{font-style:normal;font-weight:600;margin-left:auto}
@@ -3507,17 +3507,22 @@ body:not(.light) .mac-deskboard .glass{
 .sns3-ad-overview h2,.sns3-overview h2{font-size:24px;margin:0 0 14px}.sns3-ad-overview .sns3-kpis{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.sns3-ad-overview .sns3-kpis>div:last-child{grid-column:1/-1}.sns3-post-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.sns3-post-summary>div{padding:12px;border:.5px solid var(--card-border);border-radius:9px}.sns3-post-summary span{display:block;font-size:12px;color:var(--text-muted)}.sns3-post-summary b{display:block;font-size:24px;margin-top:4px}.sns-news-rank{display:flex;flex-direction:column;gap:7px}.sns-news-rank button{display:flex;justify-content:space-between;gap:10px;text-align:left;border:.5px solid var(--card-border);border-radius:8px;background:rgba(127,127,127,.04);color:inherit;padding:10px 11px}.sns-news-rank button b{font-size:14px}.sns-news-rank button span{font-size:12px;color:var(--text-muted)}
 .sns3-ad-overview .sns3-spend-kpi b{font-size:20px;white-space:normal;overflow-wrap:anywhere}
 .sns-subtabs{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--card-border)}.sns-subtabs button{min-height:32px;padding:0 12px;border:1px solid var(--card-border);border-radius:999px;background:transparent;color:var(--text-muted);font:inherit;font-size:13px;font-weight:700;cursor:pointer}.sns-subtabs button.on{background:var(--text-main);color:var(--card-bg);border-color:var(--text-main)}
-.sns-dashboard-cards{overflow:auto;padding:10px 12px 80px}.sns-dashboard-cards .sns3-kpis{padding:0 0 14px;grid-template-columns:repeat(3,minmax(0,1fr))}.sns-dashboard-cards h3{margin:16px 0 7px;font-size:14px}.sns-dashboard-cards .m3-r b{font-size:14px}.sns-dashboard-cards .m3-r .sub{font-size:12px}
+.sns3-layout{min-height:0;overflow:hidden;background:var(--card-bg)}.sns3-layout>.m3-side,.sns3-layout>.m3-list,.sns3-layout>.m3-doc{min-height:0;background:var(--card-bg)}
+.sns-dashboard-cards{flex:1;min-height:0;overflow:auto;padding:10px 12px 80px}.sns-dashboard-cards .sns3-kpis{padding:0 0 14px;grid-template-columns:repeat(4,minmax(0,1fr))}.sns-dashboard-cards .sns3-spend-kpi b{font-size:18px;white-space:normal}.sns-dashboard-cards h3{margin:16px 0 7px;font-size:14px}.sns-dashboard-cards .m3-r b{font-size:14px}.sns-dashboard-cards .m3-r .sub{font-size:12px}.sns3-brand-kpi small{font-size:12px;color:var(--text-muted);line-height:1.25}
+.sns-dash-tablewrap{min-width:0;overflow-x:hidden;border:.5px solid var(--card-border);border-radius:9px}.sns-dash-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px}.macwin .sns-dash-table th{position:relative;padding:9px 27px 9px 8px!important;font-size:13px!important;text-align:left;white-space:nowrap}.sns-dash-table th:nth-child(1){width:82px}.sns-dash-table th:nth-child(2){width:auto}.sns-dash-table th:nth-child(3){width:112px}.sns-dash-table th:nth-child(4),.sns-dash-table th:nth-child(5){width:104px}.sns-dash-table td{padding:10px 8px;border-top:.5px solid var(--card-border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sns-dash-table td.n{text-align:right;font-variant-numeric:tabular-nums}.sns-dash-task{cursor:pointer}.sns-dash-task:hover,.sns-dash-task.on{background:rgba(10,132,255,.08)}.sns-dash-name{font-weight:700}.sns-dash-table .th-f{right:5px;opacity:.68}.sns-dash-table th:hover .th-f,.sns-dash-table th.flt .th-f{opacity:1}.sns-dash-table th.flt{color:#0a84ff!important;background:rgba(10,132,255,.1)}
+.macwin .sns-dashboard-overview>p{font-size:13px!important;line-height:1.55;color:var(--text-muted);margin:0 0 16px;word-break:keep-all;overflow-wrap:break-word}.sns-dash-reasons{border-top:.5px solid var(--card-border)}.sns-dash-reason{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:58px;border-bottom:.5px solid var(--card-border)}.sns-dash-reason>span{display:grid;grid-template-columns:9px minmax(0,1fr);gap:3px 8px;align-items:center;min-width:0}.sns-dash-reason i{grid-row:1/3;width:8px;height:8px;border-radius:50%;background:var(--bc)}.sns-dash-reason b{font-size:14px}.sns-dash-reason em{font-size:12px;font-style:normal;color:var(--text-muted)}.sns-dash-reason strong{font-size:14px;white-space:nowrap}
+.sns-brand-summary-pane{min-width:0}.sns-brand-summary-wrap{flex:1;min-height:0;overflow:auto;padding:0 12px 80px}.sns-brand-summary-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px;font-variant-numeric:tabular-nums}.macwin .sns-brand-summary-table th{position:sticky;top:0;z-index:2;padding:10px 27px 10px 7px!important;background:var(--card-bg);border-bottom:1px solid var(--card-border);font-size:13px!important;text-align:left;white-space:nowrap}.sns-brand-summary-table th .th-f{right:5px;opacity:.68}.sns-brand-summary-table th:hover .th-f,.sns-brand-summary-table th.flt .th-f{opacity:1}.sns-brand-summary-table th.flt{color:#0a84ff!important;background:rgba(10,132,255,.1)}.sns-brand-summary-table th:nth-child(1){width:98px}.sns-brand-summary-table th:nth-child(2){width:88px}.sns-brand-summary-table th:nth-child(3),.sns-brand-summary-table th:nth-child(4){width:82px}.sns-brand-summary-table th:nth-child(5),.sns-brand-summary-table th:nth-child(6),.sns-brand-summary-table th:nth-child(7){width:60px}.sns-brand-summary-table th:nth-child(8){width:92px}.sns-brand-summary-table td{padding:13px 7px;border-bottom:1px solid var(--card-border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sns-brand-summary-table td.n{text-align:right}.sns-brand-summary-table td.bad{color:#dc2626;font-weight:800}.sns-brand-summary-table td.good{color:#059669;font-weight:800}.sns-brand-summary-row{cursor:pointer}.sns-brand-summary-row:hover{background:rgba(10,132,255,.08)}.sns-brand-entry h2,.sns-brand-overview h2{font-size:24px;margin:4px 0 10px}.macwin .sns-brand-entry p,.macwin .sns-brand-overview p{font-size:14px!important;line-height:1.6;color:var(--text-muted);word-break:keep-all;overflow-wrap:break-word}.sns-brand-entry ul{padding-left:20px;font-size:14px;line-height:1.8;word-break:keep-all}.sns-brand-overview-grid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:18px}.sns-brand-overview-grid>div{padding:12px;border:1px solid var(--card-border);border-radius:9px;min-width:0}.sns-brand-overview-grid span{display:block;font-size:12px;color:var(--text-muted)}.sns-brand-overview-grid b{display:block;margin-top:5px;font-size:18px;white-space:nowrap;font-variant-numeric:tabular-nums;overflow:visible}.sns-brand-back{align-self:flex-start;display:inline-flex;align-items:center;gap:3px;border:0;background:transparent;color:var(--primary);font:inherit;font-size:13px!important;font-weight:700;padding:0;cursor:pointer}
 .sns-news-account-row{display:grid;grid-template-columns:minmax(0,1fr) 34px 34px;align-items:center;border-bottom:1px solid var(--card-border)}.sns-news-account-row.on{background:rgba(10,132,255,.08)}.sns-news-account-row>.sns-news-row{border-bottom:0}.sns-news-account-row>button:not(.sns-news-row){width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:var(--text-muted);font-size:15px;cursor:pointer}.sns-news-account-row>button:hover{background:rgba(127,127,127,.1);color:var(--text-main)}
 .sns-morning h2,.sns-post-detail h2{font-size:24px;margin:4px 0 10px}.sns-morning p,.sns-post-detail p{font-size:14px;line-height:1.6;color:var(--text-muted);margin:0 0 18px}.sns-morning .mbtn{font-size:13px}
 @media(min-width:901px){
  .sns3-tablepane .sns3-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px}
  .sns3-tablepane .sns3-head>div:first-child{grid-column:1/-1}.sns3-tablepane .sns3-chips{overflow:visible;flex-wrap:wrap;padding:0}.sns3-tablepane .sns3-filters{justify-self:end}
- .sns3-tablepane .sns3-table{width:100%;min-width:0;max-width:100%}.sns3-tablepane .sns3-table th:nth-child(5),.sns3-tablepane .sns-td-target,.sns3-tablepane .sns3-table th:nth-child(7),.sns3-tablepane .sns-td-budget,.sns3-tablepane .sns3-table th:nth-child(12),.sns3-tablepane .sns-td-actions{display:none!important}
+ .sns3-tablepane .sns3-table{width:100%;min-width:0;max-width:100%;table-layout:auto}.sns3-tablepane .sns-th-target,.sns3-tablepane .sns-td-target,.sns3-tablepane .sns-th-budget,.sns3-tablepane .sns-td-budget,.sns3-tablepane .sns-td-actions,.sns3-tablepane .sns3-table th:last-child{display:none!important}
  .sns3-tablepane .sns3-table th,.sns3-tablepane .sns3-table td{padding-left:5px!important;padding-right:5px!important}
- .sns3-tablepane .sns3-table th:nth-child(1){width:42px}.sns3-tablepane .sns3-table th:nth-child(2){width:56px}.sns3-tablepane .sns3-table th:nth-child(3){width:100px}.sns3-tablepane .sns3-table th:nth-child(4){width:171px}.sns3-tablepane .sns3-table th:nth-child(6){width:128px}.sns3-tablepane .sns3-table th:nth-child(8){width:90px}.sns3-tablepane .sns3-table th:nth-child(9){width:52px}.sns3-tablepane .sns3-table th:nth-child(10){width:66px}.sns3-tablepane .sns3-table th:nth-child(11){width:64px}
- .sns3-tablepane .sns-td-state,.sns3-tablepane .sns-live,.sns3-tablepane .sns-td-brand,.sns3-tablepane .sns-brand-chip,.sns3-tablepane .sns-td-period,.sns3-tablepane .sns-td-spend,.sns3-tablepane .sns-td-spend b,.sns3-tablepane .sns-td-spend small,.sns3-tablepane .sns-td-result,.sns3-tablepane .sns-td-cpf,.sns3-tablepane .sns-td-verdict{white-space:nowrap;overflow:visible;text-overflow:clip}
- .sns3-tablepane .sns-td-name b{overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+ .sns3-tablepane .sns-th-media{width:50px}.sns3-tablepane .sns-th-state{width:60px}.sns3-tablepane .sns-th-name{width:auto}.sns3-tablepane .sns-th-period{width:94px}.sns3-tablepane .sns-th-spend{width:88px}.sns3-tablepane .sns-th-result{width:54px}.sns3-tablepane .sns-th-cpf{width:66px}.sns3-tablepane .sns-th-verdict{width:64px}
+ .sns3-tablepane .sns3-table th:first-child,.sns3-tablepane .sns3-table td:first-child{padding-left:14px!important}.sns3-tablepane .sns3-table th{position:relative;padding-right:25px!important;cursor:pointer}.sns3-tablepane .sns3-table th .th-f{right:5px;opacity:.68}.sns3-tablepane .sns3-table th:first-child .th-f{right:3px}.sns3-tablepane .sns3-table th:hover .th-f,.sns3-tablepane .sns3-table th.flt .th-f{opacity:1}.sns3-tablepane .sns3-table th.flt{color:#0a84ff!important;background:rgba(10,132,255,.1)}
+ .sns3-tablepane .sns-td-state,.sns3-tablepane .sns-live,.sns3-tablepane .sns-td-period,.sns3-tablepane .sns-td-spend,.sns3-tablepane .sns-td-spend b,.sns3-tablepane .sns-td-spend small,.sns3-tablepane .sns-td-result,.sns3-tablepane .sns-td-cpf,.sns3-tablepane .sns-td-verdict{white-space:nowrap;overflow:visible;text-overflow:clip}.macwin .sns3-layout .sns3-tablepane td.sns-td-period{font-size:13px!important}
+ .sns3-tablepane .sns-td-name b{overflow:visible;text-overflow:clip;white-space:normal;word-break:keep-all;overflow-wrap:normal;line-height:1.35}.sns3-tablepane .sns-td-period span{display:block;white-space:nowrap}.sns3-tablepane .sns-td-period small{display:block;white-space:nowrap;overflow:visible;text-overflow:clip}
 }
 @media(max-width:900px){
  .sns3-layout .sns3-mobile-nav{overflow-x:auto;justify-content:flex-start;flex:0 0 auto}.sns3-layout .sns3-mobile-nav button{font-size:13px!important;padding:8px 10px;flex:0 0 auto}.sns3-layout .sns3-kpis{grid-template-columns:repeat(2,1fr)}.sns3-layout .sns3-kpis b{font-size:24px}.sns-active-card{grid-template-columns:52px minmax(0,1fr) auto;padding:10px 0}.sns-active-card>img,.sns-active-card>i{width:52px;height:58px}.sns-active-spend{grid-column:2}.sns-active-card>strong{grid-column:3;grid-row:1/3}.sns-active-cards{padding:0 10px 80px}
@@ -3526,6 +3531,7 @@ body:not(.light) .mac-deskboard .glass{
  .sns-mobile-brands{display:flex;gap:6px;overflow-x:auto;padding:7px 10px 8px;border-bottom:1px solid var(--card-border);scrollbar-width:none;flex:0 0 auto}.sns-mobile-brands::-webkit-scrollbar{display:none}.sns-mobile-brands button{flex:0 0 auto;border:0;border-radius:999px;padding:6px 10px;background:rgba(127,127,127,.1);color:var(--text-muted);font:inherit;font-size:13px!important;white-space:nowrap}.sns-mobile-brands button::before{content:'';display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%;background:var(--bc)}.sns-mobile-brands button.on{background:color-mix(in srgb,var(--bc) 16%,transparent);color:var(--bc);font-weight:800}
  .sns-follow-list .m3-lbar{flex:0 0 auto}.sns-follow-tablewrap{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 10px 84px}.sns-follow-table,.sns-follow-table tbody{display:block;width:100%}.sns-follow-table thead{display:none}.sns-follow-table tbody{display:flex;flex-direction:column;gap:8px}.sns-follow-table .sns-follow-tr{display:grid;grid-template-columns:1fr 1fr;gap:7px 14px;padding:12px;border:1px solid var(--card-border);border-radius:10px}.macwin .sns-follow-table td{display:flex!important;align-items:center;justify-content:space-between;gap:8px;width:auto!important;padding:0!important;border:0!important;font-size:13px;overflow:visible;white-space:nowrap}.sns-follow-table td::before{font-size:12px;color:var(--text-muted)}.macwin .sns-follow-table .sns-follow-brand{grid-column:1/-1;justify-content:flex-start;padding-bottom:8px!important;border-bottom:1px solid var(--card-border)!important}.sns-follow-table .sns-follow-brand::before{display:none}.sns-follow-table .sns-follow-brand span{display:flex;align-items:center;gap:7px}.sns-follow-table .sns-follow-brand b,.sns-follow-table .sns-follow-brand em{display:inline;margin:0}.sns-follow-num::before{content:'팔로워'}.sns-follow-delta:nth-child(3)::before{content:'7일'}.sns-follow-delta:nth-child(4)::before{content:'30일'}.sns-follow-date::before{content:'최근 게시'}.sns-follow-posts::before{content:'7일 게시물'}.sns-follow-gallery>div:last-child{grid-template-columns:repeat(2,minmax(0,1fr))}
  .mac-dock{left:12px;right:12px;width:auto;max-width:none;transform:none;box-sizing:border-box;justify-content:flex-start;gap:10px;padding-left:16px;padding-right:16px;overflow-x:auto;overflow-y:visible;scrollbar-width:none;scroll-snap-type:x mandatory;-webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 34px),transparent 100%);mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 34px),transparent 100%)}.mac-dock .mdi{scroll-snap-align:start}.mac-dock::-webkit-scrollbar{display:none}
+ .sns-brand-summary-wrap{overflow:visible;padding:0 10px 80px}.sns-brand-summary-table,.sns-brand-summary-table tbody{display:block;width:100%}.sns-brand-summary-table thead{display:none}.sns-brand-summary-table tbody{display:flex;flex-direction:column;gap:8px}.sns-brand-summary-table .sns-brand-summary-row{display:grid;grid-template-columns:1fr 1fr;gap:7px 14px;padding:12px;border:1px solid var(--card-border);border-radius:10px}.macwin .sns-brand-summary-table td{display:flex;align-items:center;justify-content:space-between;width:auto!important;padding:0!important;border:0!important;overflow:visible;font-size:13px;text-align:right}.sns-brand-summary-table td::before{font-size:12px;color:var(--text-muted)}.macwin .sns-brand-summary-table td:first-child{grid-column:1/-1;justify-content:flex-start;padding-bottom:8px!important;border-bottom:1px solid var(--card-border)!important;font-size:14px}.sns-brand-summary-table td:first-child::before{display:none}.sns-brand-summary-table td:nth-child(2)::before{content:'진행 광고'}.sns-brand-summary-table td:nth-child(3)::before{content:'어제 지출'}.sns-brand-summary-table td:nth-child(4)::before{content:'3일 지출'}.sns-brand-summary-table td:nth-child(5)::before{content:'중단'}.sns-brand-summary-table td:nth-child(6)::before{content:'증액'}.sns-brand-summary-table td:nth-child(7)::before{content:'유지'}.sns-brand-summary-table td:nth-child(8)::before{content:'평균 1명당'}
 }
 
 /* 파인더 세 번째 칸 — 미리보기 */
@@ -5768,23 +5774,68 @@ b.sp-nm.dup{color:#ff453a}
 .production3 .sm-pl-add,.production3 .sm-pl-empty,.production3 .sm-pl-upload,.production3 .sm-tp-sub,.production3 .sm-tp-note,
 .production3 .sm-chip,.production3 .sm-tp-block th{font-size:12px!important}
 .production3 .sm-tp-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
-
-/* 3단 규칙 — 협업 창 가운데 표·글씨(왼쪽 메뉴 구조는 새 메뉴안 확정 뒤) */
-.c3-fold{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:var(--text-muted);font:inherit;font-size:13px;padding:8px 6px;cursor:pointer}
-.ct3 .m3-h,.ct3 .m3-s em,.ct3 .m3-lbar span,.ct3 .ct3-name em,.ct3 .it-tbl th,.ct3 .dt-sec{font-size:12px!important}
+/* ═══ 협업 창 3단 — 왼쪽 협업 메뉴 · 가운데 거르기 탭 · 오른쪽 요약 (11-17) ═══ */
+.c3-menu{padding:12px 10px!important}
+.c3-sub{display:flex;align-items:center;gap:8px;min-height:34px;padding:0 9px 0 36px;font-size:13px;color:var(--text-muted);cursor:pointer;border-radius:6px}
+.c3-sub:hover{background:rgba(127,127,127,.07)}.c3-sub.on{color:var(--primary);font-weight:800;background:rgba(10,132,255,.08)}
+.c3-sub em{margin-left:auto;font-style:normal;font-size:12px}
+.c3-sum{padding:18px 16px;font-size:14px}
+.c3-h{display:flex;flex-direction:column;gap:3px;padding-bottom:12px;border-bottom:1px solid var(--pane-line,rgba(127,127,127,.15))}
+.c3-h b{font-size:15px;font-weight:800}.c3-h em{font-style:normal;font-size:12.5px;color:var(--text-muted)}
+.c3-sec{margin:16px 0 4px;font-size:12.5px;font-weight:700;color:var(--text-muted)}
+.c3-li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;font-size:14px}
+.c3-li span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.c3-li b{flex:0 0 auto;font-weight:700}
+.c3-li.click{cursor:pointer;border-radius:6px}.c3-li.click:hover{background:rgba(127,127,127,.07)}
+.c3-li.bad b{color:#dc2626}.c3-li.warn b{color:#d97706}.c3-li.mu span{color:var(--text-muted)}
+.c3-fold{display:flex;align-items:center;gap:6px;width:100%;margin-top:10px;padding:8px 6px;border:0;border-top:1px solid var(--pane-line,rgba(127,127,127,.15));background:transparent;color:var(--text-muted);font:inherit;font-size:13px;font-weight:700;cursor:pointer;text-align:left}
+.rm-pills{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0}
+.rm-lists{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:0 0 8px}
+.rm-lists .rm-seg{margin:0}.rm-lists .rm-lhead{margin:0 0 0 6px;font-size:12.5px}
+.rm-lists .rm-l{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;font-size:13px;background:rgba(127,127,127,.07)}
+.rm-lists .rm-l.on{background:rgba(10,132,255,.14);font-weight:700}.rm-lists .rm-lic{width:16px;height:16px;font-size:10px}
+.rm-lists .rm-l em{font-style:normal;font-size:12px;color:var(--text-muted)}
+.rm-doc .c3-sum{width:100%;max-width:420px}
+@media (min-width:901px){.rm{grid-template-columns:188px minmax(380px,1.3fr) minmax(300px,1fr)}}
+@media (min-width:1101px){.cal{grid-template-columns:188px minmax(0,1fr) 280px}}
+.cal-day{overflow:auto}.cal-day .dt-b{flex:0 0 auto}
+.cal-daysum{padding:4px 6px 16px;border-top:1px solid var(--pane-line,rgba(127,127,127,.15))}
+.cal-layers{display:flex;flex-wrap:wrap;gap:6px;padding:6px 0 4px}
+.cal-layer{display:inline-flex;align-items:center;gap:6px}.cal-layer:not(.on){opacity:.55}
+.cal-layer .cal-ck{width:12px;height:12px;flex:0 0 12px}
+.cal-layer.on{background:rgba(127,127,127,.08);color:inherit;font-weight:600}.cal-layer.on em{color:var(--text-muted)}
+.cal-nav .t{white-space:nowrap}
+/* 연락처 3단 — 구분은 가운데 탭, 글씨 최소 12px */
+.c3-menu .m3-h,.ct3 .m3-h{font-size:12px}
+.ct3 .m3-lbar span,.ct3 .ct3-name em{font-size:12px}
 .ct3 .ct3-badge{font-size:12px;font-weight:700}
-.fd .fd-sh,.fd .fd-s em,.fd .fd3-head{font-size:12px}
+.ct3-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:4px 12px 6px}
+.ct3-tabs .it-pill em{font-style:normal;margin-left:4px;color:var(--text-muted)}
+.ct3 .ct3-flt{display:flex;flex-wrap:wrap;gap:6px}
+.ct3 .it-tbl th,.ct3 .dt-sec,.ct3-tabs .it-pill,.rm-pills .it-pill,.cal-layers .it-pill{font-size:12px!important}
+/* 메모 3단 — 왼쪽 위 협업 메뉴, 그 아래 폴더. 브랜드 태그는 가운데 */
+.nt-side.c3-menu .nt-shead{font-size:12px}
+.nt-btags{display:flex;flex-wrap:wrap;gap:6px;padding:2px 12px 8px}
+.nt-btags .it-pill{display:inline-flex;align-items:center;gap:5px;font-size:12px!important}
+.nt-btags .it-pill em{font-style:normal;color:var(--text-muted)}
+.nt-side.c3-menu .nt-shead{justify-content:flex-start}.nt-side.c3-menu .nt-shead .nt-add{margin-left:auto}
+.nt-sumw{padding:16px 18px;overflow:auto}.nt-sumw .c3-sum{max-width:420px}
+/* 자료실 3단 — 왼쪽 협업 메뉴, 분류·시즌은 가운데 */
+.fd-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px 8px}
+.fd-tabs .it-pill{font-size:12px!important}.fd-tabs .it-pill em{font-style:normal;margin-left:4px;color:var(--text-muted)}
+.fd-psel{font:inherit;font-size:13px;border:.5px solid var(--card-border);border-radius:999px;padding:3px 8px;background:transparent;color:inherit;max-width:180px}
 .fd3-head{grid-template-columns:minmax(0,1fr) 96px 90px 86px}
 .fd3-r{grid-template-columns:28px minmax(0,1fr) 96px 90px 86px 12px}
 .fd3-brand{font-size:13px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fd-sumw{padding:4px 14px 16px;overflow:auto}.fd-sumw .m3-none{padding:14px 0 0;text-align:center}
 @media (max-width:900px){
   .fd3-r{grid-template-columns:24px minmax(0,1fr) 62px 56px 66px 10px}
   .fd3-head{grid-template-columns:minmax(0,1fr) 62px 56px 66px}
-  .fd3-brand,.fd3-kind,.fd3-r time{font-size:12px}
-  .fd-bar{flex-wrap:wrap}.fd-bar>b{flex:0 0 auto;white-space:nowrap}
+  .fd-bar{flex-wrap:wrap}
 }
+@media (max-width:900px){.fd-bar>b{flex:0 0 auto;white-space:nowrap}}
 /* 자료실 3단 — 12px 미만 글씨 없앰(11-17 디자이너 반려) */
 .fd3-copy em,.fd-path,.fd-cnt,.fd-r.head,.fd3-head,.fd3-kind,.fd3-r time,.fd-gh,.fd-sub,.fd-pk,.fd-sh,.fd-s em{font-size:12px!important}
+
 /* 설정 창 — 왼쪽 설정 메뉴 | 가운데 칸 (재설계 §2). 칸 안 표는 넘치면 표만 가로로 민다 */
 .settings-pane.set-in{max-width:860px}
 .set-tbl{width:100%;border-collapse:collapse;font-size:13px}
