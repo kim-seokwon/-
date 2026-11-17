@@ -5774,3 +5774,5 @@ b.sp-nm.dup{color:#ff453a}
   .fd3-brand,.fd3-kind,.fd3-r time{font-size:12px}
   .fd-bar{flex-wrap:wrap}.fd-bar>b{flex:0 0 auto;white-space:nowrap}
 }
+/* 자료실 3단 — 12px 미만 글씨 없앰(11-17 디자이너 반려) */
+.fd3-copy em,.fd-path,.fd-cnt,.fd-r.head,.fd3-head,.fd3-kind,.fd3-r time,.fd-gh,.fd-sub,.fd-pk,.fd-sh,.fd-s em{font-size:12px!important}
