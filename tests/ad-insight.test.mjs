@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
     FATIGUE, MIN_SAMPLE, fatigueOf, budgetChangeDays, formatOf, productOf, weekdayOf, firstLineOf,
-    creativesOf, attrTable, brandSentences, median,
+    creativesOf, attrTable, brandSentences, median, fatigueRow,
 } from '../supabase/functions/_shared/ad-insight.js';
 
 const D = (i) => { const t = new Date(Date.UTC(2026, 10, 1 + i)); return t.toISOString().slice(0, 10); };
@@ -79,13 +79,15 @@ test('피로는 나쁜 구간이 이어지는 동안 유지, 단가가 기준+30
     assert.equal(fatigueOf(back).state, 'fresh');
 });
 
-test('실측 hhh_1010(10-11~11-02): 예산 5만→8만(10-15) 재기준 → 10-21 주의, 10-24 피로', () => {
+test('실측 hhh_1010(10-11~11-02): 예산 5만→8만(10-15) 재기준(+2일부터) → 10-23 주의, 10-24 피로', () => {
     const f = JSON.parse(readFileSync(new URL('./fixtures/ad-hhh_1010.json', import.meta.url)));
     const upto = (d) => fatigueOf(f.rows.filter(r => r.day <= d), { budgets: f.budgets });
-    assert.equal(upto('2026-10-20').state, 'fresh');
-    assert.equal(upto('2026-10-21').state, 'warn');
+    assert.equal(upto('2026-10-22').state, 'fresh');
+    assert.equal(upto('2026-10-23').state, 'warn');
     const t = upto('2026-10-24');
-    assert.equal(t.state, 'tired'); assert.equal(t.baseline.cpf, 483);
+    assert.equal(t.state, 'tired'); assert.equal(t.baseline.cpf, 552);
+    assert.deepEqual([t.baseline.from, t.baseline.to], ['2026-10-17', '2026-10-19'], '변경일(10-15)·다음날(10-16)이 안 든 첫 창부터');
+    assert.equal(t.measurable, true);
     assert.equal(upto('2026-11-02').state, 'tired');
     //  재기준이 없으면 예산 올린 직후(10-17)부터 나빠 보인다
     assert.notEqual(fatigueOf(f.rows.filter(r => r.day <= '2026-10-17')).state, 'fresh');
@@ -157,4 +159,46 @@ test('brandSentences: 표본 충분한 값 2개면 싼 쪽을 말한다', () => 
     assert.equal(f, "토비 형식은 '릴스'가 1명당 500원(게시물 4개·팔로우 120명)으로 '사진' 900원보다 싸다.");
     assert.match(p, /데이터 없음/); assert.match(w, /데이터 없음/);
     assert.match(brandSentences([...rows, { brand_id: 'b', attr: 'weekday', value: '월요일', median_cpf: 1, n: 1, follows: 3, enough: false }], 'b')[2], /표본 부족/);
+});
+
+// ---- 11-17 코덱스 반려 회귀 ----
+test('반려①: 기준·현재 링크 CTR 이 둘 다 0% 면 하락이 아니다 → 피로 아님(주의), 근거에 (하락) 없음', () => {
+    const z = (i, f, freq) => ({ ...day(i, f, freq, 0) });
+    const r = fatigueOf([z(0, 100, 1.2), z(1, 100, 1.22), z(2, 100, 1.24), z(3, 25, 1.3), z(4, 25, 1.35)]);
+    assert.equal(r.ctrDown, null); assert.equal(r.state, 'warn', r.reasons.join('|'));
+    assert.ok(!r.reasons.some(x => x.includes('(하락)')));
+    assert.ok(r.reasons.includes('CTR 미확인'));
+});
+
+test('반려②: 피로 뒤 최근 3일 팔로우 10 미만(단가 미확인)은 회복이 아니다 → 피로 유지 + 근거', () => {
+    const tired = [...base3(), day(3, 25, 1.30, 650), day(4, 25, 1.35, 600)];
+    assert.equal(fatigueOf(tired).state, 'tired');
+    const quiet = [...tired, day(5, 3, 1.4, 500), day(6, 3, 1.42, 500), day(7, 3, 1.44, 500)];
+    const r = fatigueOf(quiet);
+    assert.equal(r.current.cpf, null);
+    assert.equal(r.state, 'tired', r.reasons.join('|')); assert.equal(r.tiredSince, D(4));
+    assert.ok(r.reasons.some(x => x.includes('1명당 비용 미확인')));
+    //  주의 중이던 광고도 미확인 날에 신선으로 풀리지 않는다
+    const warn = [...base3(), day(3, 25, 1.2, 800), day(4, 3, 1.2, 800), day(5, 3, 1.2, 800)];
+    assert.equal(fatigueOf(warn).state, 'warn');
+});
+
+test('반려③: 11/04 예산 변경 → 기준 구간은 11/06 부터(변경일·다음날이 든 창은 기준도 판정도 안 함)', () => {
+    //  11/01~11/12 매일 지출. 11/04~05 가 싸지만(변경 직후 학습) 기준이 되면 안 된다
+    const R = (d, f) => ({ day: `2026-11-${String(d).padStart(2, '0')}`, spend: 30000, follows: f, impressions: 10000, link_clicks: 800, cum_frequency: 1.2 });
+    const rows = [R(1, 100), R(2, 100), R(3, 100), R(4, 300), R(5, 300), R(6, 100), R(7, 100), R(8, 100), R(9, 100), R(10, 100), R(11, 100), R(12, 100)];
+    const r = fatigueOf(rows, { changeDays: ['2026-11-04'] });
+    assert.ok(r.baseline.from >= '2026-11-06', JSON.stringify(r.baseline));
+    for (const s of r.series.filter(x => x.from <= '2026-11-05' && x.to >= '2026-11-04')) assert.equal(s.skip, true, s.day);
+    assert.equal(r.state, 'fresh', r.reasons.join('|'));
+});
+
+test('is_measurable: 지출 6일 이상만 장기 판정 — 2~3일 부스트는 보류 행(단기·측정 제외)', () => {
+    const short = fatigueOf([day(0, 40), day(1, 40), day(2, 40)]);
+    assert.equal(short.measurable, false); assert.equal(short.spendDays, 3);
+    const two = fatigueRow('A', fatigueOf([day(0, 40), day(1, 40)]), 't');
+    assert.deepEqual([two.state, two.day, two.is_measurable, two.spend_days, two.rule_version], ['hold', D(1), false, 2, '110-2']);
+    const long = fatigueRow('B', fatigueOf([...base3(), day(3, 100), day(4, 100), day(5, 100)]), 't');
+    assert.deepEqual([long.state, long.is_measurable, long.spend_days], ['fresh', true, 6]);
+    assert.equal(fatigueRow('C', fatigueOf([]), 't'), null);
 });

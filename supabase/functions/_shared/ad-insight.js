@@ -17,6 +17,8 @@
 
 export const FATIGUE = Object.freeze({ worse: 0.30, run: 2, minFollows3: 10, freqRise: 0.05, ctrDrop: 0.10 });
 export const MIN_SAMPLE = 30;
+export const MEASURABLE_DAYS = 6;
+export const RULE_VERSION = '110-2';   // 110-2: CTR 기준 0 제외 · 단가 미확인은 직전 판정 유지 · 변경일·다음날 든 창 제외 · is_measurable
 export const STATE_LABEL = Object.freeze({ fresh: '신선', warn: '주의', tired: '피로', hold: '보류' });
 
 const num = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
@@ -57,16 +59,20 @@ export function fatigueOf(days = [], opts = {}) {
     const changes = opts.changeDays || budgetChangeDays(opts.budgets || []);
     const lastChange = changes.length ? [...changes].sort().pop() : null;
     const skip = new Set(changes.flatMap(d => [d, addDays(d, 1)]));
-    const hold = (why) => ({ state: 'hold', label: STATE_LABEL.hold, reasons: [why], baseline: null, current: null, run: 0, series: [] });
+    //  장기 판정 가능 = 지출일 6일 이상(기준 3일 + 그 뒤 판정 3일). 2~3일 부스트(_PV)는 화면에서 '단기·측정 제외'로 접는다
+    const spendDays = rows.length, lastDay = rows.length ? rows[rows.length - 1].day : null;
+    const measurable = spendDays >= MEASURABLE_DAYS;
+    const hold = (why) => ({ state: 'hold', label: STATE_LABEL.hold, reasons: [why], baseline: null, current: null, run: 0, series: [], spendDays, lastDay, measurable });
     if (rows.length < 3) return hold('지출 있는 날 3일 미만');
 
     const series = [];
     let base = null;   // { cpf, from, to, ctr, freq }
     for (let i = 2; i < rows.length; i++) {
         const w = window3(rows, i);
-        //  예산이 바뀌면 기준을 다시 잡는다 — 창이 바뀐 날 이후로만 이뤄졌을 때부터
+        //  예산이 바뀌면 기준을 다시 잡는다 — 창이 바뀐 날 이후로만 이뤄졌을 때부터.
+        //  변경일·다음날(학습 재시작)이 창 안에 하나라도 있으면 그 창은 기준도 판정도 안 한다(11-17 코덱스 반려 ③)
         const afterChange = !lastChange || w.from >= lastChange;
-        const inSkip = skip.has(rows[i].day);
+        const inSkip = rows.slice(i - 2, i + 1).some(r => skip.has(r.day));
         if (w.cpf != null && afterChange && !inSkip && (!base || w.cpf < base.cpf)) base = { cpf: w.cpf, from: w.from, to: w.to, ctr: w.ctr, freq: w.freq };
         series.push({ ...w, day: rows[i].day, skip: inSkip, beforeChange: !afterChange });
     }
@@ -81,11 +87,14 @@ export function fatigueOf(days = [], opts = {}) {
         s.bad = eligible && s.worse != null && s.worse >= FATIGUE.worse;
         //  예산 변경 제외일은 연속을 끊지도 잇지도 않는다(그날은 판정 없음)
         if (s.skip && !s.beforeChange) { s.run = run; s.tiredSince = latched; continue; }
+        //  단가 미확인(창 팔로우 10 미만)은 회복 증거도 악화 증거도 아니다 — 연속·피로를 그대로 둔다(반려 ②)
+        if (eligible && s.cpf == null) { s.unknown = true; s.run = run; s.tiredSince = latched; continue; }
         run = s.bad ? run + 1 : 0;
         if (!s.bad) latched = null;
         s.run = run;
         s.freqUp = base.freq != null && s.freq != null ? s.freq - base.freq >= FATIGUE.freqRise - 1e-9 : null;
-        s.ctrDown = base.ctr != null && s.ctr != null ? s.ctr <= base.ctr * (1 - FATIGUE.ctrDrop) : null;
+        //  기준 CTR 이 0 이면 '하락'을 말할 수 없다(0→0 이 하락으로 잡히던 반려 ①)
+        s.ctrDown = base.ctr > 0 && s.ctr != null ? s.ctr <= base.ctr * (1 - FATIGUE.ctrDrop) : null;
         if (!latched && run >= FATIGUE.run && s.freqUp === true && s.ctrDown === true) latched = s.day;
         s.tiredSince = latched;
     }
@@ -96,7 +105,8 @@ export function fatigueOf(days = [], opts = {}) {
     if (cur.worse != null) reasons.push(`1명당 ${base.cpf.toLocaleString()}원 → ${cur.cpf.toLocaleString()}원(${pct(cur.worse)})`);
     reasons.push(freqUp == null ? '누적 빈도 미확인' : `누적 빈도 ${base.freq.toFixed(2)} → ${cur.freq.toFixed(2)}${freqUp ? '(상승)' : '(그대로)'}`);
     reasons.push(ctrDown == null ? 'CTR 미확인' : `링크 CTR ${base.ctr}% → ${cur.ctr}%${ctrDown ? '(하락)' : '(유지)'}`);
-    if (cur.skip) reasons.push('오늘은 예산 변경 직후라 판정 제외');
+    if (cur.skip) reasons.push('최근 3일에 예산 변경일·다음날이 들어 있어 판정 제외(직전 판정 유지)');
+    if (cur.unknown) reasons.push('최근 3일 팔로우 10명 미만이라 1명당 비용 미확인(직전 판정 유지)');
 
     let state = 'fresh';
     if (cur.tiredSince) state = 'tired';
@@ -105,7 +115,7 @@ export function fatigueOf(days = [], opts = {}) {
     return {
         state, label: STATE_LABEL[state], run: cur.run, tiredSince: cur.tiredSince || null, reasons,
         baseline: base, current: { day: cur.day, from: cur.from, to: cur.to, cpf: cur.cpf, ctr: cur.ctr, freq: cur.freq, worse: cur.worse },
-        freqUp, ctrDown, lastChange, series,
+        freqUp, ctrDown, lastChange, series, spendDays, lastDay, measurable,
     };
 }
 
@@ -242,13 +252,14 @@ export function targetingOf(t) {
 
 //  수집기가 ad_fatigue 에 쓰는 행 — fatigueOf 결과 → 110 칸
 export function fatigueRow(adId, r, judgedAt) {
-    const day = r.current?.day || (r.series && r.series.length ? r.series[r.series.length - 1].day : null);
+    const day = r.current?.day || (r.series && r.series.length ? r.series[r.series.length - 1].day : null) || r.lastDay || null;
     if (!day) return null;
     return {
         ad_id: adId, day, state: r.state,
         baseline_cpf: r.baseline?.cpf ?? null, baseline_from: r.baseline?.from ?? null, baseline_to: r.baseline?.to ?? null,
         current_cpf: r.current?.cpf ?? null, worse_pct: r.current?.worse ?? null, run_days: r.run || 0,
         freq_from: r.baseline?.freq ?? null, freq_to: r.current?.freq ?? null, ctr_from: r.baseline?.ctr ?? null, ctr_to: r.current?.ctr ?? null,
-        tired_since: r.tiredSince ?? null, last_change: r.lastChange ?? null, reasons: r.reasons || [], rule_version: '110-1', judged_at: judgedAt,
+        tired_since: r.tiredSince ?? null, last_change: r.lastChange ?? null, reasons: r.reasons || [], rule_version: RULE_VERSION, judged_at: judgedAt,
+        spend_days: r.spendDays ?? 0, is_measurable: !!r.measurable,
     };
 }

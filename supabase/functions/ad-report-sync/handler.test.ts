@@ -246,13 +246,13 @@ Deno.test("110: 누적 스냅샷은 마지막 노출일 행에 · 다음 수집�
   assertEquals(db.t("ad_daily").find((x) => x.ad_id === "B1" && x.day === "2026-11-11")!.cum_frequency, 1.3);
 });
 
-Deno.test("110: 수집 뒤 피로도 판정을 ad_fatigue 에 남긴다(근거 포함) · 지출 3일 미만은 판정 행 없음", async () => {
+Deno.test("110: 수집 뒤 피로도 판정을 ad_fatigue 에 남긴다(근거 포함) · 단기 광고는 보류 + is_measurable=false", async () => {
   const db = seed();
   const { body } = await run(db, meta110());
-  assertEquals(body.judged, 1); assertEquals(body.judge_failed, []);
-  const f = db.t("ad_fatigue");
-  assertEquals(f.length, 1);
-  assertEquals([f[0].ad_id, f[0].day, f[0].state, f[0].baseline_cpf, f[0].rule_version], ["B1", "2026-11-11", "fresh", 300, "110-1"]);
+  assertEquals(body.judged, 2); assertEquals(body.judge_failed, []);
+  const f = db.t("ad_fatigue").sort((a, b) => String(a.ad_id).localeCompare(String(b.ad_id)));
+  assertEquals(f.map((x) => [x.ad_id, x.day, x.state, x.baseline_cpf, x.spend_days, x.is_measurable, x.rule_version]),
+    [["B1", "2026-11-11", "fresh", 300, 3, false, "110-2"], ["B2", "2026-11-10", "hold", null, 1, false, "110-2"]]);
   assert(Array.isArray(f[0].reasons) && (f[0].reasons as string[]).some((s) => s.includes("누적 빈도")));
   assert(!JSON.stringify(db.tables).includes(TOKEN));
 });

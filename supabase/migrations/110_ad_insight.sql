@@ -69,11 +69,17 @@ create table if not exists public.ad_fatigue (
   tired_since   date,                         -- 피로 조건을 다 채운 날(같은 나쁜 구간 안에서 유지)
   last_change   date,                         -- 마지막 예산 변경일(기준을 이 뒤로 다시 잡음)
   reasons       jsonb not null default '[]'::jsonb,  -- 화면에 그대로 보이는 근거 문장
-  rule_version  text not null default '110-1',
+  spend_days    integer not null default 0,   -- 지출 있는 날 수
+  is_measurable boolean not null default false, -- 장기 판정 가능(지출 6일+). 아니면 화면에서 '단기·측정 제외 N'으로 접는다
+  rule_version  text not null default '110-2',
   judged_at     timestamptz not null default now(),
   primary key (ad_id, day)
 );
 create index if not exists idx_ad_fatigue_ad_day on public.ad_fatigue(ad_id, day desc);
+--   판정 대상 구분 칸 — 위 create 가 이미 있던 표(110-1 리허설)에도 붙게
+alter table public.ad_fatigue
+  add column if not exists spend_days    integer not null default 0,
+  add column if not exists is_measurable boolean not null default false;
 
 -- 권한 — 105 와 같은 틀(직원 읽기, 쓰기는 service_role 수집기만)
 do $$
@@ -132,7 +138,7 @@ select f.key, m.brand_id, m.media_id, m.product_tag, m.adset_name, m.ad_name,
   join meta m on m.key = f.key
   left join public.ig_media g on g.media_id = m.media_id;
 
---   6-3 광고별 최신 판정
+--   6-3 광고별 최신 판정 — 화면 기본은 is_measurable 만, 나머지는 '단기·측정 제외 N'으로 접는다(정렬은 화면: is_measurable desc)
 create or replace view public.v_ad_fatigue_latest with (security_invoker = true) as
 select distinct on (f.ad_id)
        f.*, l.brand_id, l.media_id, l.ad_name, l.adset_name, l.effective_status
