@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { syncHealth, zeroDrop, isWeekend, dailyCounts, evaluate, alertMessage, errorText, kstDay, addDays, parseSyncType } from '../orderAlerts.js';
+import { syncHealth, zeroDrop, haltDrop, mallName, isWeekend, dailyCounts, evaluate, alertMessage, errorText, kstDay, addDays, parseSyncType } from '../orderAlerts.js';
 import { run, table } from '../channel-bots/telegram/order-alert.mjs';
 
 const NOW = Date.parse('2026-11-17T03:00:00Z');          // 11-17 12:00 KST
@@ -131,7 +131,7 @@ test('alert_enabled=false 몰은 fail·zero 둘 다 알림에서 빠진다', () 
     const r = evaluate({ malls, brands: BRANDS, logsByMall: { '29cm': failing, smartstore: healthy }, countsByMall: { smartstore: busyThenZero }, now: NOW });
     assert.equal(r.alerts.length, 0);
     assert.deepEqual(r.rows.map(x => [x.mall_key, x.rule, x.off]), [['29cm', 'fail', true], ['smartstore', 'zero', true]]);
-    assert.match(table(r), /fail \(알림 꺼짐\)/);
+    assert.match(table(r), /\| 29CM 하이헤이호 \| 꺼짐 · 🔴끊김 \|.*\| 꺼짐\(fail\) \|/);
 });
 test('중복 억제 — 오늘 같은 (몰, 규칙)을 보냈으면 빼고, 어제 보낸 것·다른 규칙은 다시 보낸다', () => {
     const base = { malls: MALLS, brands: BRANDS, logsByMall: { '29cm': failing, smartstore: healthy }, countsByMall: { smartstore: busyThenZero }, now: NOW };
@@ -143,6 +143,64 @@ test('중복 억제 — 오늘 같은 (몰, 규칙)을 보냈으면 빼고, 어�
     const other = evaluate({ ...base, sent: [{ day: TODAY, mall_key: '29cm', rule: 'stale' }] });
     assert.ok(other.alerts.some(a => a.mall_key === '29cm' && a.rule === 'fail'));
 });
+// ── 2차 보완 ① 몰 이름에 채널 · 꺼진 몰 표시 ──
+test('몰 이름 — label 이 브랜드뿐이면 채널을 앞에 붙여 카페24·스마트스토어를 구분한다', () => {
+    assert.equal(mallName({ label: '하이헤이호', channel: 'cafe24' }, '하이헤이호'), '카페24 하이헤이호');
+    assert.equal(mallName({ label: '하이헤이호', channel: 'naver' }, '하이헤이호'), '스마트스토어 하이헤이호');
+    assert.equal(mallName({ label: '29CM 하이헤이호', channel: '29cm' }, '하이헤이호'), '29CM 하이헤이호');
+    assert.equal(mallName({ label: '29cm 로하이', channel: '29cm' }, '로하이'), '29cm 로하이');
+    assert.equal(mallName({ label: '키디키디(하이헤이호)', channel: 'eland' }, '하이헤이호'), '키디키디(하이헤이호)');
+    assert.equal(mallName({ label: '-', channel: 'naver' }, '하이헤이호'), '스마트스토어 (하이헤이호)');
+    assert.equal(mallName({ label: '토비', channel: 'cafe24' }, '하이헤이호'), '카페24 토비 (하이헤이호)');
+});
+test('드라이런 표 — 꺼진 몰은 상태·알림 칸에 꺼짐, 같은 label 두 몰이 이름으로 갈린다', () => {
+    const malls = [{ mall_key: 'hh', label: '하이헤이호', channel: 'cafe24', brand_id: 1 }, { mall_key: 'smartstore', label: '하이헤이호', channel: 'naver', brand_id: 1, alert_enabled: false }];
+    const t = table(evaluate({ malls, brands: BRANDS, logsByMall: { hh: [L('hh', 0.1, 'ok')] }, now: NOW }));
+    assert.match(t, /\| 카페24 하이헤이호 \| 정상 \|.*\| - \|/);
+    assert.match(t, /\| 스마트스토어 하이헤이호 \| 꺼짐 · 기록없음 \|.*\| 꺼짐 \|/);
+});
+
+// ── 2차 보완 ② 판매 멈춤(halt) — 길게 멈춘 채널 ──
+//  29CM 하이헤이호 실측 모양: 11-04 까지 하루 52건, 11-05 부터 0건
+const stopped = (() => { const c = {}; for (let d = '2026-09-20'; d <= TODAY; d = addDays(d, 1)) c[d] = d < '2026-11-05' ? 52 : 0; return c; })();
+test('halt — 29CM 하이헤이호(11-05~ 0건): zero 는 기준 평균이 0이라 못 잡지만 halt 가 잡는다', () => {
+    assert.equal(zeroDrop(stopped, TODAY).hit, false);
+    const h = haltDrop(stopped, TODAY);
+    assert.equal(h.hit, true); assert.equal(h.lastOrderDay, '2026-11-04'); assert.equal(h.from, '2026-11-10'); assert.equal(h.to, '2026-11-16');
+    const r = evaluate({ malls: [MALLS[0]], brands: BRANDS, logsByMall: { '29cm': [L('29cm', 2, 'ok')] }, countsByMall: { '29cm': stopped }, now: NOW });
+    assert.deepEqual(r.alerts.map(a => a.rule), ['halt']);
+    assert.match(r.alerts[0].text, /판매 멈춤 · 11-10~11-16 7일 연속 주문 0건 · 그 앞 30일 \d+건\(마지막 주문 11-04\) · 주 1회/);
+    assert.match(alertMessage(r.alerts, TODAY), /⏸️ 29CM 하이헤이호/);
+});
+test('halt 경계 — 0건 6일이면 아님 · 그 앞 30일 첫날(오늘-37) 주문 1건이면 울림 · 오늘-38 이면(30일 밖) 안 울림', () => {
+    const one = d => ({ [d]: 1 });
+    assert.equal(haltDrop(one(addDays(TODAY, -7)), TODAY).hit, false);        // 어제부터 6일만 0건
+    assert.equal(haltDrop(one(addDays(TODAY, -8)), TODAY).hit, true);         // 그 앞 30일의 마지막 날
+    assert.equal(haltDrop(one(addDays(TODAY, -37)), TODAY).hit, true);        // 그 앞 30일의 첫날
+    assert.equal(haltDrop(one(addDays(TODAY, -38)), TODAY).hit, false);       // 30일 밖 — 원래 안 팔리던 채널
+    assert.equal(haltDrop({}, TODAY).hit, false);
+});
+test('halt 는 수집 정상일 때만 · 끊김이면 fail 만 · 꺼진 몰은 안 보냄', () => {
+    const base = { malls: [MALLS[0]], brands: BRANDS, countsByMall: { '29cm': stopped }, now: NOW };
+    assert.deepEqual(evaluate({ ...base, logsByMall: { '29cm': failing } }).alerts.map(a => a.rule), ['fail']);
+    assert.equal(evaluate({ ...base, logsByMall: { '29cm': [L('29cm', 1, 'error'), L('29cm', 3, 'ok')] } }).alerts.length, 0);   // 주의
+    const off = evaluate({ ...base, malls: [{ ...MALLS[0], alert_enabled: false }], logsByMall: { '29cm': [L('29cm', 2, 'ok')] } });
+    assert.equal(off.alerts.length, 0); assert.equal(off.rows[0].rule, 'halt');
+});
+test('halt 주 1회 — 6일 전에 보냈으면 안 보내고, 7일 전이면 다시 보낸다', () => {
+    const base = { malls: [MALLS[0]], brands: BRANDS, logsByMall: { '29cm': [L('29cm', 2, 'ok')] }, countsByMall: { '29cm': stopped }, now: NOW };
+    const six = evaluate({ ...base, sent: [{ day: addDays(TODAY, -6), mall_key: '29cm', rule: 'halt' }] });
+    assert.equal(six.alerts.length, 0); assert.equal(six.rows[0].dup, true);
+    assert.match(table(six), /halt \(이번 주 보냄\)/);
+    assert.equal(evaluate({ ...base, sent: [{ day: addDays(TODAY, -7), mall_key: '29cm', rule: 'halt' }] }).alerts.length, 1);
+    assert.equal(evaluate({ ...base, sent: [{ day: addDays(TODAY, -1), mall_key: '29cm', rule: 'zero' }] }).alerts.length, 1);   // 다른 규칙은 상관없음
+});
+test('zero 가 울리는 날은 zero 만(halt 와 겹치지 않음)', () => {
+    const c = { ...stopped }; for (let i = 3; i <= 9; i++) c[addDays(TODAY, -i)] = 5;   // 그제·어제만 0
+    const r = evaluate({ malls: [MALLS[0]], brands: BRANDS, logsByMall: { '29cm': [L('29cm', 2, 'ok')] }, countsByMall: { '29cm': c }, now: NOW });
+    assert.deepEqual(r.alerts.map(a => a.rule), ['zero']);
+});
+
 test('알림 글 — 없으면 빈 글, 있으면 몰마다 한 줄', () => {
     assert.equal(alertMessage([], TODAY), '');
     const t = alertMessage([{ rule: 'fail', name: 'A', text: 'x' }, { rule: 'zero', name: 'B', text: 'y' }], TODAY);
@@ -198,7 +256,7 @@ test('드라이런 — 표만 찍고 텔레그램·기록 둘 다 안 한다', a
     assert.equal(r.alerts.length, 2); assert.equal(r.sentNow, 0);
     assert.equal(calls.filter(c => c.method === 'POST').length, 0);
     assert.match(out.join('\n'), /\| 29CM 하이헤이호 \| 🔴끊김 \| 2 \|/);
-    assert.match(table(r), /\| 스마트스토어 \(하이헤이호\) \| 정상 \| 0 \|.*\| 3\.0 \| 0·0 \| zero \|/);
+    assert.match(table(r), /\| 스마트스토어 \(하이헤이호\) \| 정상 \| 0 \|.*\| 3\.0 \| 0·0 \| \d+·\d+ \| zero \|/);
 });
 //  반려1 ③ 기본은 드라이런
 test('dryRun 을 안 주면 드라이런 — 텔레그램 토큰이 있어도 안 보낸다', async () => {
@@ -255,17 +313,18 @@ test('텔레그램 실패 + 풀기도 실패 → 실패로 끝내고 그날은 �
     await assert.rejects(run({ url: 'https://x.supabase.co', key: 'k', botToken: 'T', chatId: 'C', dryRun: false, fetch: s.f, now: NOW, log: quiet }), /풀기도 실패/);
     assert.equal(s.store.length, 1);
 });
-test('조회 범위 — 주문은 직전 9일(11-08 00:00 KST ~ 11-17 00:00 KST), sync_log 는 몰마다 pull_orders·error 두 type', async () => {
+test('조회 범위 — 주문은 직전 37일(판매 멈춤 7+30, 10-11 00:00 KST ~ 11-17 00:00 KST), 보낸 기록은 최근 7일, sync_log 는 몰마다 두 type', async () => {
     const { f, calls } = fakeServer({ logs: { '29cm': failing, smartstore: healthy } });
     await run({ url: 'https://x.supabase.co', key: 'k', dryRun: true, fetch: f, now: NOW, log: quiet });
     const oc = calls.find(c => c.path.endsWith('channel_orders'));
-    assert.match(oc.search, /order_date=gte\.2026-11-08T00:00:00\+09:00&order_date=lt\.2026-11-17T00:00:00\+09:00/);
+    assert.match(oc.search, /order_date=gte\.2026-10-11T00:00:00\+09:00&order_date=lt\.2026-11-17T00:00:00\+09:00/);
+    assert.match(calls.find(c => c.path.endsWith('order_alert_log')).search, /day=gte\.2026-11-11$/);
     assert.ok(calls.some(c => c.search.includes('type=in.("29cm:pull_orders","29cm:error")')));
     assert.ok(!calls.some(c => c.search.includes('old:')), '닫은 몰은 조회도 안 한다');
 });
 
 //  111 마이그레이션 — PGlite 에 깔아 본다(PGLITE_PATH 없으면 건너뜀)
-test('111 DB: 알림 기록 PK 로 하루 1번 · alert_enabled 기본 true, 스마트스토어·키디키디만 false · 재실행·되돌리기', { skip: !process.env.PGLITE_PATH && 'PGLITE_PATH 없음' }, async () => {
+test('111·112 DB: 알림 기록 PK 로 하루 1번 · alert_enabled 기본 true, 스마트스토어·키디키디만 false · 재실행·되돌리기', { skip: !process.env.PGLITE_PATH && 'PGLITE_PATH 없음' }, async () => {
     const { PGlite } = await import(pathToFileURL(process.env.PGLITE_PATH).href);
     const db = new PGlite(); const q = async (x, p = []) => (await db.query(x, p)).rows;
     const rd = n => readFileSync(new URL('../supabase/' + n, import.meta.url), 'utf8');
@@ -279,6 +338,13 @@ test('111 DB: 알림 기록 PK 로 하루 1번 · alert_enabled 기본 true, 스
     const ins = `insert into order_alert_log (day, mall_key, rule) values ('2026-11-17','29cm','fail') on conflict do nothing returning mall_key`;
     assert.equal((await q(ins)).length, 1); assert.equal((await q(ins)).length, 0);
     await assert.rejects(q(`insert into order_alert_log (day, mall_key, rule) values ('2026-11-17','29cm','oops')`));
+    //  112 — halt 허용(2번 적용), 되돌리면 halt 기록 지우고 다시 막음
+    await db.exec(rd('migrations/112_order_alert_halt.sql')); await db.exec(rd('migrations/112_order_alert_halt.sql'));
+    await q(`insert into order_alert_log (day, mall_key, rule) values ('2026-11-17','29cm','halt')`);
+    await assert.rejects(q(`insert into order_alert_log (day, mall_key, rule) values ('2026-11-17','29cm','oops2')`));
+    await db.exec(rd('rollbacks/112_order_alert_halt.down.sql'));
+    assert.equal((await q(`select count(*)::int as n from order_alert_log where rule = 'halt'`))[0].n, 0);
+    await assert.rejects(q(`insert into order_alert_log (day, mall_key, rule) values ('2026-11-17','29cm','halt')`));
     await db.exec(rd('rollbacks/111_order_alert_log.down.sql'));
     assert.equal((await q(`select to_regclass('public.order_alert_log') as t`))[0].t, null);
     assert.equal((await q(`select count(*)::int as n from information_schema.columns where table_name='malls' and column_name='alert_enabled'`))[0].n, 0);

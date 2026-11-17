@@ -1,11 +1,11 @@
 // 주문 수집 끊김·0건 알림 — 규칙은 저장소 뿌리 orderAlerts.js(화면과 같이 씀).
 //  GitHub Actions(order-alert.yml)가 주문 수집 워크플로가 끝날 때마다 + 하루 1번 돌린다.
-//  하루 1번: 보내기 '전에' order_alert_log(111)에 (날짜, 몰, 규칙)을 먼저 잡고(claim), 잡힌 것만 보낸다.
+//  하루 1번(halt 판매 멈춤은 주 1번): 보내기 '전에' order_alert_log(111)에 (날짜, 몰, 규칙)을 먼저 잡고(claim), 잡힌 것만 보낸다.
 //   전송이 실패하면 잡은 것을 풀어 다음 실행이 다시 보낸다. 풀기도 실패하면 그날은 안 간다(중복보다 누락을 택함, 실패로 끝나 눈에 띔).
 //  기본은 드라이런 — 몰별 판정 표와 보낼 글만 찍는다(안 보냄·안 씀·TELEGRAM 값 불필요). --send 를 줘야 실제로 보낸다.
 //  load()/run() 은 fetch 를 받아서 쓴다 — 테스트(tests/order-alert.test.mjs)가 네트워크 없이 돌린다.
 import { pathToFileURL } from 'node:url';
-import { evaluate, alertMessage, dailyCounts, kstDay, addDays, kstShortAt, BASE_DAYS, ZERO_DAYS } from '../../orderAlerts.js';
+import { evaluate, alertMessage, dailyCounts, kstDay, addDays, kstShortAt, COUNT_DAYS, HALT_EVERY } from '../../orderAlerts.js';
 import { md } from './report.mjs';
 
 const LOG_ROWS = 30;   // 몰마다 최근 기록 수 — 연속 실패를 세기에 충분(카페24 10분 × 30 = 5시간)
@@ -35,8 +35,8 @@ export async function load({ url, key, fetch: f = globalThis.fetch, now = Date.n
         logsByMall[m.mall_key] = logs;
         lastOkByMall[m.mall_key] = ok[0]?.run_at || null;
     }));
-    //  주문 — 0건 판정에 필요한 기간(직전 7일 + 0건 2일)만. 1000건씩 끊어 받는다.
-    const from = encodeURIComponent(`${addDays(today, -(BASE_DAYS + ZERO_DAYS))}T00:00:00+09:00`);
+    //  주문 — 판정에 필요한 기간만(②는 9일, ③ 판매 멈춤은 37일). 1000건씩 끊어 받는다.
+    const from = encodeURIComponent(`${addDays(today, -COUNT_DAYS)}T00:00:00+09:00`);
     const to = encodeURIComponent(`${today}T00:00:00+09:00`);
     const orders = [];
     for (let i = 0; i < 100; i++) {
@@ -44,16 +44,17 @@ export async function load({ url, key, fetch: f = globalThis.fetch, now = Date.n
         orders.push(...page);
         if (page.length < 1000) break;
     }
-    const sent = await rest(`order_alert_log?select=day,mall_key,rule&day=eq.${today}`);
+    //  보낸 기록 — 오늘(하루 1번) + halt 주 1회를 보려고 최근 7일
+    const sent = await rest(`order_alert_log?select=day,mall_key,rule&day=gte.${addDays(today, -(HALT_EVERY - 1))}`);
     return { malls, brands, logsByMall, lastOkByMall, countsByMall: dailyCounts(orders), sent, now };
 }
 
 //  드라이런 표
 export function table(res) {
     const st = { ok: '정상', warn: '주의', down: '🔴끊김', none: '기록없음' };
-    const mark = r => r.rule ? r.rule + (r.off ? ' (알림 꺼짐)' : r.dup ? ' (오늘 보냄)' : '') : '-';
-    const L = ['| 몰 | 수집 상태 | 연속 실패 | 마지막 성공 | 직전7일 평균 | 그제·어제 | 알림 |', '|---|---|---|---|---|---|---|'];
-    res.rows.forEach(r => L.push(`| ${r.name} | ${st[r.state] || r.state} | ${r.failStreak} | ${kstShortAt(r.lastOkAt)} | ${r.avg7.toFixed(1)} | ${r.last2.join('·')} | ${mark(r)} |`));
+    const mark = r => r.off ? (r.rule ? `꺼짐(${r.rule})` : '꺼짐') : r.rule ? r.rule + (r.dup ? (r.rule === 'halt' ? ' (이번 주 보냄)' : ' (오늘 보냄)') : '') : '-';
+    const L = ['| 몰 | 수집 상태 | 연속 실패 | 마지막 성공 | 직전7일 평균 | 그제·어제 | 최근7일·그앞30일 | 알림 |', '|---|---|---|---|---|---|---|---|'];
+    res.rows.forEach(r => L.push(`| ${r.name} | ${r.off ? '꺼짐 · ' : ''}${st[r.state] || r.state} | ${r.failStreak} | ${kstShortAt(r.lastOkAt)} | ${r.avg7.toFixed(1)} | ${r.last2.join('·')} | ${r.recent7}·${r.before30} | ${mark(r)} |`));
     return L.join('\n');
 }
 

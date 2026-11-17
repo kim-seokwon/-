@@ -8,14 +8,22 @@
 //   ② 평소 하루 1건 이상인데 어제·그제 2일 연속 0건 → 'zero'
 //      '평소'는 직전 7일을 평일·주말로 나눈 평균 — 0건인 날이 평일이면 평일 평균, 주말이면 주말 평균이 1 이상이어야 한다.
 //      수집 상태가 정상(ok)일 때만 본다 — 끊김·주의·기록 없음(워크플로를 끈 몰)은 0건이 당연하거나 믿을 수 없다.
+//   ③ 길게 멈춤 — 직전 30일(멈춘 7일 앞)에 주문이 있었는데 어제까지 7일 연속 0건 → 'halt'(판매 멈춤). 주 1회.
+//      ②는 '평소'가 직전 7일이라 멈춘 지 9일쯤 지나면 기준이 0이 돼 영영 안 울린다(29CM 하이헤이호 11-05~). 그 구멍을 막는다.
+//      ②와 같이 수집 정상(ok)일 때만, ②가 울리는 날은 ②만 낸다.
 //   malls.alert_enabled = false 인 몰(일부러 수집을 끈 몰)은 알림을 안 낸다(화면 점은 그대로).
-//   같은 (날짜, 몰, 규칙)은 하루 1번만 — order_alert_log 에 남긴 것은 다시 안 보낸다.
+//   같은 (날짜, 몰, 규칙)은 하루 1번만 — order_alert_log 에 남긴 것은 다시 안 보낸다. halt 는 7일 안에 보냈으면 안 보낸다(주 1회).
 
 export const PULL = 'pull_orders';
 export const FAIL_STREAK = 2;
 export const ZERO_DAYS = 2;
 export const BASE_DAYS = 7;
 export const MIN_DAILY = 1;
+export const HALT_DAYS = 7;       // 연속 0건 일수
+export const HALT_LOOKBACK = 30;  // 그 앞 이 기간에 주문이 있었어야 '멈춤'
+export const HALT_EVERY = 7;      // 주 1회
+//  주문을 읽어야 하는 기간(오늘 제외 며칠 전까지) — ②는 9일, ③은 37일
+export const COUNT_DAYS = Math.max(BASE_DAYS + ZERO_DAYS, HALT_DAYS + HALT_LOOKBACK);
 
 const H = 3600e3, D = 24 * H;
 //  수집 주기 — 카페24 는 10분 크론(엣지함수), 나머지(29CM·스마트스토어·키디키디)는 하루 1번 GitHub Actions.
@@ -85,6 +93,16 @@ export function zeroDrop(counts, today) {
              zeroDays: zeroDays.slice().reverse(), baseFrom: baseDays[baseDays.length - 1], baseTo: baseDays[0], last: zeroDays.map(c).reverse() };
 }
 
+//  ③ 판매 멈춤 — 어제부터 HALT_DAYS 일 연속 0건 + 그 앞 HALT_LOOKBACK 일에 주문 있음
+export function haltDrop(counts, today) {
+    const c = d => Number((counts || {})[d]) || 0;
+    const zeroDays = Array.from({ length: HALT_DAYS }, (_, i) => addDays(today, -(i + 1)));
+    const lookDays = Array.from({ length: HALT_LOOKBACK }, (_, i) => addDays(today, -(HALT_DAYS + 1 + i)));
+    const before = lookDays.reduce((s, d) => s + c(d), 0);
+    return { hit: zeroDays.every(d => c(d) === 0) && before > 0, before, lastOrderDay: lookDays.find(d => c(d) > 0) || null,
+             from: zeroDays[zeroDays.length - 1], to: zeroDays[0], recent: zeroDays.reduce((s, d) => s + c(d), 0) };
+}
+
 //  주문 행 → 몰별 KST 일자 건수 { mall_key: { day: n } }
 export function dailyCounts(orders) {
     const out = {};
@@ -99,11 +117,13 @@ export function dailyCounts(orders) {
 }
 
 const CH_NAME = { cafe24: '카페24', '29cm': '29CM', naver: '스마트스토어', eland: '키디키디' };
-//  몰 이름 — 'label (브랜드)' 꼴. label 에 브랜드가 이미 있으면 그대로
+//  몰 이름 — '채널 label (브랜드)' 꼴. label 에 채널·브랜드가 이미 있으면 겹쳐 붙이지 않는다.
+//   운영 label 이 브랜드 이름만인 몰이 있어(카페24·스마트스토어 둘 다 '하이헤이호') 채널을 앞에 붙여 구분한다.
 export function mallName(mall, brandName) {
     const label = String(mall?.label || '').trim();
     const ch = CH_NAME[mall?.channel] || mall?.channel || '';
-    const base = label && label !== '-' ? label : ch || String(mall?.mall_key || '');
+    const raw = label && label !== '-' ? label : '';
+    const base = !raw ? ch || String(mall?.mall_key || '') : ch && !raw.toLowerCase().includes(ch.toLowerCase()) ? `${ch} ${raw}` : raw;
     return brandName && !base.includes(brandName) ? `${base} (${brandName})` : base;
 }
 
@@ -123,18 +143,21 @@ export function evaluate({ malls, brands = [], logsByMall = {}, lastOkByMall = {
     const today = kstDay(now);
     const bname = id => (brands.find(b => String(b.id) === String(id)) || {}).name || '';
     const sentKey = new Set((sent || []).filter(s => s.day === today).map(s => `${s.mall_key}|${s.rule}`));
+    const weekFrom = addDays(today, -(HALT_EVERY - 1));   // halt 는 이 날 이후에 보냈으면 중복
+    const haltSent = new Set((sent || []).filter(s => s.rule === 'halt' && s.day >= weekFrom && s.day <= today).map(s => s.mall_key));
     const rows = [], alerts = [];
     (malls || []).filter(m => m && m.mall_key && m.active !== false).forEach(m => {
         const name = mallName(m, bname(m.brand_id));
         const h = syncHealth(logsByMall[m.mall_key], { channel: m.channel, now, lastOkAt: lastOkByMall[m.mall_key] || null });
-        const z = zeroDrop(countsByMall[m.mall_key], today);
+        const z = zeroDrop(countsByMall[m.mall_key], today), hd = haltDrop(countsByMall[m.mall_key], today);
         let rule = h.rule, text = '';
         if (rule === 'fail') text = `수집 ${h.failStreak}회 연속 실패 · 마지막 성공 ${kstShortAt(h.lastOkAt)}${h.lastError ? ` · ${h.lastError}` : ''}`;
         else if (rule === 'stale') text = `수집 멈춤 · 마지막 성공 ${kstShortAt(h.lastOkAt)} (실패 기록도 없음)`;
         else if (h.state === 'ok' && z.hit) { rule = 'zero'; text = `${z.zeroDays.map(d => d.slice(5)).join('·')} 2일 연속 주문 0건 · 평소 하루 ${z.expected.map(n => n.toFixed(1)).join('·')}건 (수집은 정상)`; }
+        else if (h.state === 'ok' && hd.hit) { rule = 'halt'; text = `판매 멈춤 · ${hd.from.slice(5)}~${hd.to.slice(5)} ${HALT_DAYS}일 연속 주문 0건 · 그 앞 ${HALT_LOOKBACK}일 ${hd.before}건(마지막 주문 ${hd.lastOrderDay.slice(5)}) · 주 1회 알림`; }
         const off = m.alert_enabled === false;
-        const dup = rule ? sentKey.has(`${m.mall_key}|${rule}`) : false;
-        rows.push({ mall_key: m.mall_key, name, channel: m.channel, state: h.state, failStreak: h.failStreak, lastOkAt: h.lastOkAt, avg7: z.avg, last2: z.last, rule, dup, off });
+        const dup = rule === 'halt' ? haltSent.has(m.mall_key) : rule ? sentKey.has(`${m.mall_key}|${rule}`) : false;
+        rows.push({ mall_key: m.mall_key, name, channel: m.channel, state: h.state, failStreak: h.failStreak, lastOkAt: h.lastOkAt, avg7: z.avg, last2: z.last, recent7: hd.recent, before30: hd.before, rule, dup, off });
         if (rule && !dup && !off) alerts.push({ day: today, mall_key: m.mall_key, rule, name, text });
     });
     return { today, rows, alerts };
@@ -143,7 +166,7 @@ export function evaluate({ malls, brands = [], logsByMall = {}, lastOkByMall = {
 //  텔레그램 글 — md: parse_mode Markdown 이스케이프 함수(보고서와 같은 것)
 export function alertMessage(alerts, today, md = s => s) {
     if (!alerts.length) return '';
-    const icon = { fail: '🔴', stale: '🔴', zero: '🟠' };
+    const icon = { fail: '🔴', stale: '🔴', zero: '🟠', halt: '⏸️' };
     const L = [`🚨 *주문 수집 알림* · ${today}`];
     alerts.forEach(a => L.push(`${icon[a.rule] || '•'} ${md(a.name)} — ${md(a.text)}`));
     L.push('\n판매 > 주문 왼쪽 몰별 목록의 빨간 점이 끊긴 몰입니다.');
