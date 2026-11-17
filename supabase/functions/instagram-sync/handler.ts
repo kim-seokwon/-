@@ -100,7 +100,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       // deno-lint-ignore no-explicit-any
       const recent: any[] = [];
       try {
-        let murl: string | null = `${GRAPH}/${ig.id}/media?fields=id,timestamp,media_type,permalink,thumbnail_url,media_url,comments_count,like_count&limit=100&access_token=${encodeURIComponent(pt)}`;
+        let murl: string | null = `${GRAPH}/${ig.id}/media?fields=id,timestamp,media_type,media_product_type,caption,permalink,thumbnail_url,media_url,comments_count,like_count&limit=100&access_token=${encodeURIComponent(pt)}`;
         let pages = 0;
         while (murl && pages < 30) { // 안전상 최대 3000 게시물
           const mj = await (await fetch(murl)).json();
@@ -140,7 +140,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           const rows = ig.recent.map((m) => {
             const at = new Date(String(m.timestamp).replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
             return { media_id: String(m.id), account_id: accId, brand_id: brandOf.get(accId) ?? null, posted_at: at.toISOString(), posted_day: kstDate(at),
-              media_type: m.media_type ?? null, permalink: m.permalink ?? null, thumb_url: m.thumbnail_url ?? m.media_url ?? null, media_url: m.media_url ?? null, fetched_at: new Date().toISOString() };
+              media_type: m.media_type ?? null, media_product_type: m.media_product_type ?? null, caption: m.caption != null ? String(m.caption).slice(0, 2200) : null, permalink: m.permalink ?? null, thumb_url: m.thumbnail_url ?? m.media_url ?? null, media_url: m.media_url ?? null, fetched_at: new Date().toISOString() };
           });
           const { error: me } = await db.from("ig_media").upsert(rows, { onConflict: "media_id" });
           if (me) await log("warn", { step: "ig_media", username: ig.username, error: String(me.message).slice(0, 200) });

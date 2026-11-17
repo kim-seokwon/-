@@ -9,15 +9,20 @@
 //  · 게시물 도달 = 계정 insights(ad.id IN …) 1회 — 광고별 도달을 더하지 않는다.
 //  · 모으기 → 쓰기 두 단계. 권한오류(190·200번대·10)가 나면 아무것도 덮어쓰지 않고 sync_log error + account_check 만 남긴다.
 //  · 광고 일부 실패 → 나머지는 저장, 실패 광고는 ad_links.last_fail_at(화면 '보류 · 갱신 실패'), sync_log 'partial'.
+//  · 110: 클릭·링크클릭·CTR·빈도 + 누적 스냅샷(광고 시작~지금 도달·노출·빈도, 계정 insights level=ad 1회) + 예산 스냅샷
+//    + 세트 타기팅 요약 → 쓰기 뒤 _shared/ad-insight.js 로 피로도 판정해 ad_fatigue 에 남긴다. 누적·판정 실패는 수집을 막지 않는다.
 //  호출: pg_cron(x-cron-secret) 09·12·15·18·21시 KST. 크론 SQL 은 105 마이그레이션 주석.
 import { kstDate, scrub } from "../instagram-sync/competitors.ts";
+import { fatigueOf, fatigueRow, targetingOf } from "../_shared/ad-insight.js";
 
 // deno-lint-ignore no-explicit-any
 export type Deps = { db: any; fetch: (url: string, init?: RequestInit) => Promise<Response>; env: (k: string) => string | undefined; now?: () => Date };
 
 export const GRAPH = "https://graph.facebook.com/v23.0";
-const AD_FIELDS = "id,name,effective_status,created_time,updated_time,campaign_id,adset{id,name,effective_status,daily_budget,start_time,end_time},creative{source_instagram_media_id,effective_instagram_media_id,instagram_user_id,instagram_permalink_url,thumbnail_url}";
-const INS_FIELDS = "spend,impressions,reach,instagram_profile_visits,instagram_profile_follow,account_currency";
+const AD_FIELDS = "id,name,effective_status,created_time,updated_time,campaign_id,campaign{id,daily_budget},adset{id,name,effective_status,daily_budget,start_time,end_time,targeting},creative{source_instagram_media_id,effective_instagram_media_id,instagram_user_id,instagram_permalink_url,thumbnail_url}";
+const INS_FIELDS = "spend,impressions,reach,instagram_profile_visits,instagram_profile_follow,account_currency,clicks,inline_link_clicks,ctr,frequency";
+const CUM_FIELDS = "ad_id,reach,impressions,frequency";
+const FATIGUE_DAYS = 60;   // 판정에 쓰는 과거 일수(기준 3일을 찾을 범위)
 
 type GErr = { message?: string; code?: number; error_subcode?: number };
 // 토큰 만료·폐기(190), 권한 없음(10, 200번대) → 권한오류. 나머지(호출 한도·일시 오류 등)는 그 광고만 실패.
@@ -34,7 +39,8 @@ const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { sta
 
 type Ad = {
   id: string; name?: string; effective_status?: string; created_time?: string; updated_time?: string; campaign_id?: string;
-  adset?: { id?: string; name?: string; effective_status?: string; daily_budget?: string; start_time?: string; end_time?: string };
+  campaign?: { id?: string; daily_budget?: string };
+  adset?: { id?: string; name?: string; effective_status?: string; daily_budget?: string; start_time?: string; end_time?: string; targeting?: Record<string, unknown> };
   creative?: { source_instagram_media_id?: string; effective_instagram_media_id?: string; instagram_user_id?: string; instagram_permalink_url?: string; thumbnail_url?: string };
 };
 
@@ -119,6 +125,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     // 2) 광고 목록(우리 IG 만)
     const links: Record<string, unknown>[] = [];
+    const budgets: Record<string, unknown>[] = [];
     const accountErrors: { account: string; message: string }[] = [];
     for (const acct of accounts) {
       const r = await getAll(`act_${acct.id}/ads?fields=${encodeURIComponent(AD_FIELDS)}&limit=100`);
@@ -140,7 +147,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           ig_user_id: ig, media_id: media, media_src: c.source_instagram_media_id ? "source" : media ? "effective" : null,
           brand_id: igBrand.get(ig) ?? null, permalink: c.instagram_permalink_url ?? null, thumb_url: c.thumbnail_url ?? null,
           created_time: ad.created_time ?? null, updated_time: ad.updated_time ?? null, updated_at: nowIso,
+          ...targetingOf(ad.adset?.targeting),
         });
+        // 예산 스냅샷 — 세트 예산, 없으면(캠페인 예산 CBO) 캠페인 예산. 하루 1행(그날 마지막 수집 값)
+        const sb = ad.adset?.daily_budget ? int(ad.adset.daily_budget) : null, cb = ad.campaign?.daily_budget ? int(ad.campaign.daily_budget) : null;
+        if (sb || cb) budgets.push({ ad_id: ad.id, day: today, daily_budget: sb || cb, budget_level: sb ? "adset" : "campaign", seen_at: nowIso });
       }
     }
     if (!accounts.length || accountErrors.length === accounts.length) return await hardFail("ads", { message: accountErrors.map((e) => `${e.account}: ${e.message}`).join(" / ") || "광고계정 없음" });
@@ -165,11 +176,31 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           ad_id: l.ad_id, day: row.date_start, media_id: l.media_id, spend: int(row.spend), impressions: int(row.impressions),
           reach: row.reach != null ? int(row.reach) : null, profile_visits: int(row.instagram_profile_visits),
           follows: int(row.instagram_profile_follow ?? row.instagram_profile_follow_v2), currency: row.account_currency || l.currency, fetched_at: nowIso,
+          clicks: row.clicks != null ? int(row.clicks) : null, link_clicks: row.inline_link_clicks != null ? int(row.inline_link_clicks) : null,
+          ctr: row.ctr != null ? Number(row.ctr) : null, frequency: row.frequency != null ? Number(row.frequency) : null,
         });
       }
     }
     // 광고는 보이는데 수치가 전부 권한오류 → 토큰 권한 문제. 덮어쓰지 않는다.
     if (authErr && okAds.length === 0) return await authFail("insights", authErr);
+
+    // 3-1) 누적 스냅샷(광고 시작~지금) — 계정마다 level=ad 1회. 일별 빈도는 안 움직여서 누적으로 본다.
+    //      그 광고의 이번 창 마지막 날 행에 붙인다(지금 값 = 마지막 노출일 값). 실패해도 수집은 계속(판정은 '누적 빈도 미확인').
+    const cum = new Map<string, { cum_reach: number; cum_impressions: number; cum_frequency: number }>();
+    const cumFailed: string[] = [];
+    for (const acct of accounts) {
+      const ids = okAds.filter((id) => links.find((l) => l.ad_id === id)?.ad_account_id === acct.id);
+      if (!ids.length) continue;
+      const filt = encodeURIComponent(JSON.stringify([{ field: "ad.id", operator: "IN", value: ids }]));
+      const r = await getAll(`act_${acct.id}/insights?level=ad&date_preset=maximum&fields=${CUM_FIELDS}&filtering=${filt}&limit=500`, 5);
+      if (r.error) { cumFailed.push(acct.id); continue; }
+      for (const row of r.rows) if (row.ad_id) cum.set(String(row.ad_id), { cum_reach: int(row.reach), cum_impressions: int(row.impressions), cum_frequency: Number(row.frequency) || 0 });
+    }
+    const cumRows: { ad_id: string; day: string; v: Record<string, number> }[] = [];
+    for (const [adId, v] of cum) {
+      const last = daily.filter((d) => d.ad_id === adId && Number(d.impressions) > 0).map((d) => String(d.day)).sort().pop();
+      if (last) cumRows.push({ ad_id: adId, day: last, v });
+    }
 
     // 4) 게시물 도달(기간 전체, 계정 단위 1회) — 이번에 수치가 들어온 게시물만
     const { data: prevLinks } = await db.from("ad_links").select("ad_id, media_id").in("ad_id", links.map((l) => l.ad_id));
@@ -205,6 +236,34 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (reachRows.length) await w(db.from("ad_post_reach").upsert(reachRows, { onConflict: "media_id,since,until" }), "ad_post_reach");
     if (okAds.length) await w(db.from("ad_links").update({ last_ok_at: nowIso }).in("ad_id", okAds), "ad_links ok");
     for (const f of failed) await w(db.from("ad_links").update({ last_fail_at: nowIso, last_error: f.message }).eq("ad_id", f.ad_id), "ad_links fail");
+    // 누적값은 따로 update — 일별 upsert 에 null 로 섞으면 과거 날의 스냅샷을 지운다(과거 누적은 다시 못 받는다)
+    for (const c of cumRows) await w(db.from("ad_daily").update(c.v).eq("ad_id", c.ad_id).eq("day", c.day), "ad_daily cum");
+    if (budgets.length) await w(db.from("ad_budget_log").upsert(budgets, { onConflict: "ad_id,day" }), "ad_budget_log");
+
+    // 6) 피로도 판정 — 수치가 들어온 광고만. 규칙은 _shared/ad-insight.js 한 곳. 실패해도 수집 결과는 그대로.
+    let judged = 0; const judgeFailed: string[] = [];
+    if (okAds.length) {
+      try {
+        const from = addDays(today, -FATIGUE_DAYS);
+        // 서버 한 번 응답 상한(1000행) 안에 들도록 광고 15개씩(15 × 60일 = 900행)
+        const hist: { ad_id: string }[] = [], bl: { ad_id: string }[] = [];
+        for (let i = 0; i < okAds.length; i += 15) {
+          const ids = okAds.slice(i, i + 15);
+          const h = await db.from("ad_daily").select("ad_id, day, spend, follows, impressions, link_clicks, cum_frequency").in("ad_id", ids).gte("day", from).order("day", { ascending: true }).limit(1000);
+          const b = await db.from("ad_budget_log").select("ad_id, day, daily_budget").in("ad_id", ids).gte("day", from).order("day", { ascending: true }).limit(1000);
+          if (h.error || b.error) throw new Error((h.error || b.error).message);
+          hist.push(...(h.data || [])); bl.push(...(b.data || []));
+        }
+        const rows: Record<string, unknown>[] = [];
+        for (const id of okAds) {
+          const r = fatigueOf(hist.filter((h) => h.ad_id === id), { budgets: bl.filter((b) => b.ad_id === id) });
+          const row = fatigueRow(id, r, nowIso);
+          if (row) rows.push(row);
+        }
+        if (rows.length) await w(db.from("ad_fatigue").upsert(rows, { onConflict: "ad_id,day" }), "ad_fatigue");
+        judged = rows.length;
+      } catch (e) { judgeFailed.push(S((e as Error).message).slice(0, 160)); }
+    }
 
     const mediaChanged = links.filter((l) => prevMedia.has(String(l.ad_id)) && prevMedia.get(String(l.ad_id)) !== l.media_id)
       .map((l) => ({ ad_id: l.ad_id, from: prevMedia.get(String(l.ad_id)), to: l.media_id }));
@@ -213,6 +272,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       since, until: today, full, accounts: accounts.map((a) => a.id), ads: links.length, targets: targets.length,
       ok_ads: okAds.length, rows: daily.length, posts: touched.size, failed, account_errors: accountErrors,
       reach_failed: reachFailed, media_changed: mediaChanged,
+      cum_ads: cumRows.length, cum_failed: cumFailed, budgets: budgets.length, judged, judge_failed: judgeFailed,
     };
     await log(result, detail);
     const msg = failed.length ? `광고 ${failed.length}개 수치 못 받음` : accountErrors.length ? `광고계정 ${accountErrors.length}개 못 읽음` : null;

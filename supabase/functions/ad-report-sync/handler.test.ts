@@ -190,3 +190,80 @@ Deno.test("107 판정판: 세트명·세트상태·세트시작일을 ad_links �
   const a1 = db.t("ad_links").find((r) => r.ad_id === "A1")!;
   assertEquals([a1.ad_name, a1.adset_name, a1.adset_status, a1.adset_start], ["ad_A1", "set_A1", "ACTIVE", "2026-11-08T00:00:00+0900"]);
 });
+
+// ---- 110 광고 인사이트 ----
+const ad110 = (id: string, setBudget: string | null, campBudget: string | null, targeting?: Record<string, unknown>) => {
+  const a = ad(id, LOHI, { src: "M" + id }, "ACTIVE", setBudget ?? "") as Record<string, any>; // deno-lint-ignore no-explicit-any
+  if (!setBudget) delete a.adset.daily_budget;
+  a.campaign = { id: "C" + id, daily_budget: campBudget ?? undefined };
+  if (targeting) a.adset.targeting = targeting;
+  return a;
+};
+const day110 = (d: string, spend: number, follows: number, lc: number) => ({ ...day(d, spend, follows), clicks: String(lc + 20), inline_link_clicks: String(lc), ctr: "8.5", frequency: "1.04" });
+function meta110(cumStatus = 200) {
+  return meta({
+    "/act_919/ads": () => ({ body: { data: [
+      ad110("B1", "20000", null, { age_min: 25, age_max: 44, genders: [2], geo_locations: { countries: ["KR"] }, flexible_spec: [{ interests: [{ name: "패션" }, { name: "니트" }, { name: "쇼핑" }] }] }),
+      ad110("B2", null, "80000"),
+    ] } }),
+    "/act_1859/ads": () => ({ body: { data: [] } }),
+    "/B1/insights": () => ({ body: { data: [day110("2026-11-09", 30000, 100, 800), day110("2026-11-10", 30000, 100, 800), day110("2026-11-11", 30000, 100, 800)] } }),
+    "/B2/insights": () => ({ body: { data: [day110("2026-11-10", 5000, 1, 10)] } }),
+    "level=ad&date_preset=maximum": () => cumStatus === 200
+      ? { body: { data: [{ ad_id: "B1", reach: "20000", impressions: "26000", frequency: "1.3" }, { ad_id: "B2", reach: "900", impressions: "1000", frequency: "1.11" }] } }
+      : { status: cumStatus, body: { error: { message: "busy", code: 2 } } },
+  });
+}
+
+Deno.test("110: 클릭·링크클릭·CTR·빈도 저장 · 타기팅 요약 · 예산 스냅샷(세트 없으면 캠페인)", async () => {
+  const db = seed();
+  const { body } = await run(db, meta110());
+  assert(body.ok, JSON.stringify(body));
+  const r = db.t("ad_daily").find((x) => x.ad_id === "B1" && x.day === "2026-11-10")!;
+  assertEquals([r.clicks, r.link_clicks, r.ctr, r.frequency], [820, 800, 8.5, 1.04]);
+  const b1 = db.t("ad_links").find((x) => x.ad_id === "B1")!;
+  assertEquals([b1.target_age, b1.target_gender, b1.target_region], ["25-44", "여성", "대한민국"]);
+  assertEquals(b1.target_summary, "25-44세 · 여성 · 대한민국 · 관심사 패션·니트 외 1");
+  const b2 = db.t("ad_links").find((x) => x.ad_id === "B2")!;
+  assertEquals([b2.target_summary, b2.daily_budget], [null, null], "타기팅 없으면 비움(화면 '—')");
+  const bl = db.t("ad_budget_log").sort((a, b) => String(a.ad_id).localeCompare(String(b.ad_id)));
+  assertEquals(bl.map((x) => [x.ad_id, x.day, x.daily_budget, x.budget_level]), [["B1", "2026-11-11", 20000, "adset"], ["B2", "2026-11-11", 80000, "campaign"]]);
+});
+
+Deno.test("110: 누적 스냅샷은 마지막 노출일 행에 · 다음 수집이 과거 날 누적을 지우지 않는다 · 호출은 계정당 1회 GET", async () => {
+  const db = seed();
+  const { calls } = await run(db, meta110());
+  const cumCalls = calls.filter((c) => c.url.includes("date_preset=maximum"));
+  assertEquals(cumCalls.length, 1); assert(cumCalls.every((c) => c.method === "GET"));
+  const b1 = db.t("ad_daily").filter((x) => x.ad_id === "B1");
+  assertEquals(b1.find((x) => x.day === "2026-11-11")!.cum_frequency, 1.3);
+  assertEquals(b1.find((x) => x.day === "2026-11-10")!.cum_frequency, undefined, "과거 날은 미확인으로 둔다");
+  // 다음날 수집: 같은 창을 다시 받아도 11-11 누적값은 남는다
+  const later = async () => { const f = fake(meta110(500)); return await handle(req(), { db, fetch: f.fetch, env: env(), now: () => new Date("2026-11-12T03:00:00Z") }); };
+  const res = await (await later()).json();
+  assertEquals(res.cum_failed, ["919"], "누적 실패는 기록만, 수집은 ok");
+  assertEquals(res.result, "ok");
+  assertEquals(db.t("ad_daily").find((x) => x.ad_id === "B1" && x.day === "2026-11-11")!.cum_frequency, 1.3);
+});
+
+Deno.test("110: 수집 뒤 피로도 판정을 ad_fatigue 에 남긴다(근거 포함) · 지출 3일 미만은 판정 행 없음", async () => {
+  const db = seed();
+  const { body } = await run(db, meta110());
+  assertEquals(body.judged, 1); assertEquals(body.judge_failed, []);
+  const f = db.t("ad_fatigue");
+  assertEquals(f.length, 1);
+  assertEquals([f[0].ad_id, f[0].day, f[0].state, f[0].baseline_cpf, f[0].rule_version], ["B1", "2026-11-11", "fresh", 300, "110-1"]);
+  assert(Array.isArray(f[0].reasons) && (f[0].reasons as string[]).some((s) => s.includes("누적 빈도")));
+  assert(!JSON.stringify(db.tables).includes(TOKEN));
+});
+
+Deno.test("110: 판정 중 DB 오류가 나도 수집 결과는 ok 로 남는다", async () => {
+  const db = seed();
+  const orig = db.from.bind(db);
+  // deno-lint-ignore no-explicit-any
+  (db as any).from = (name: string) => name === "ad_fatigue" ? { upsert: () => Promise.resolve({ error: { message: "boom" } }) } : orig(name);
+  const { body } = await run(db, meta110());
+  assertEquals(body.result, "ok"); assertEquals(body.judged, 0);
+  assertEquals(body.judge_failed.length, 1);
+  assertEquals(db.t("ad_daily").filter((x) => x.ad_id === "B1").length, 3);
+});

@@ -24,6 +24,7 @@ class Q {
   select(_cols?: string) { return this; }
   eq(c: string, v: any) { this.filters.push((r) => r[c] === v); return this; }
   lt(c: string, v: any) { this.filters.push((r) => r[c] < v); return this; }
+  gte(c: string, v: any) { this.filters.push((r) => r[c] >= v); return this; }
   is(c: string, v: any) { this.filters.push((r) => (r[c] ?? null) === v); return this; }
   not(c: string, op: string, v: any) { if (op === "is") this.filters.push((r) => (r[c] ?? null) !== v); return this; }
   in(c: string, vs: any[]) { this.filters.push((r) => vs.includes(r[c])); return this; }

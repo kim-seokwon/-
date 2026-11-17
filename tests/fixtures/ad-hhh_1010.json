@@ -1,0 +1,224 @@
+{
+"ad_id": "120255130783230038",
+"name": "hhh_1010",
+"note": "실측 11-17 Meta 읽기 전용. 누적빈도는 10-17·10-24·11-02 실측, 사이는 직선 보간(cum_freq_measured=false), 11-02 뒤는 없음(null).",
+"budgets": [
+{
+"day": "2026-10-14",
+"daily_budget": 50000
+},
+{
+"day": "2026-10-15",
+"daily_budget": 80000
+}
+],
+"rows": [
+{
+"day": "2026-10-11",
+"spend": 44742,
+"impressions": 8909,
+"link_clicks": 1141,
+"follows": 229,
+"cum_frequency": null,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-12",
+"spend": 43253,
+"impressions": 8803,
+"link_clicks": 1017,
+"follows": 182,
+"cum_frequency": null,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-13",
+"spend": 39141,
+"impressions": 6310,
+"link_clicks": 694,
+"follows": 99,
+"cum_frequency": null,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-14",
+"spend": 73057,
+"impressions": 11947,
+"link_clicks": 1199,
+"follows": 166,
+"cum_frequency": null,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-15",
+"spend": 77558,
+"impressions": 14321,
+"link_clicks": 1284,
+"follows": 149,
+"cum_frequency": null,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-16",
+"spend": 57931,
+"impressions": 10333,
+"link_clicks": 887,
+"follows": 136,
+"cum_frequency": null,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-17",
+"spend": 83827,
+"impressions": 15370,
+"link_clicks": 1192,
+"follows": 163,
+"cum_frequency": 1.359,
+"cum_freq_measured": true
+},
+{
+"day": "2026-10-18",
+"spend": 85407,
+"impressions": 16634,
+"link_clicks": 1284,
+"follows": 171,
+"cum_frequency": 1.374,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-19",
+"spend": 63524,
+"impressions": 11555,
+"link_clicks": 979,
+"follows": 88,
+"cum_frequency": 1.388,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-20",
+"spend": 88818,
+"impressions": 14968,
+"link_clicks": 1367,
+"follows": 137,
+"cum_frequency": 1.403,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-21",
+"spend": 86085,
+"impressions": 16261,
+"link_clicks": 1221,
+"follows": 139,
+"cum_frequency": 1.418,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-22",
+"spend": 71522,
+"impressions": 14166,
+"link_clicks": 1034,
+"follows": 94,
+"cum_frequency": 1.433,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-23",
+"spend": 79468,
+"impressions": 16492,
+"link_clicks": 1105,
+"follows": 97,
+"cum_frequency": 1.447,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-24",
+"spend": 82163,
+"impressions": 15887,
+"link_clicks": 1153,
+"follows": 103,
+"cum_frequency": 1.462,
+"cum_freq_measured": true
+},
+{
+"day": "2026-10-25",
+"spend": 81148,
+"impressions": 17234,
+"link_clicks": 1192,
+"follows": 83,
+"cum_frequency": 1.484,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-26",
+"spend": 69623,
+"impressions": 13287,
+"link_clicks": 1014,
+"follows": 66,
+"cum_frequency": 1.506,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-27",
+"spend": 76583,
+"impressions": 13767,
+"link_clicks": 1013,
+"follows": 91,
+"cum_frequency": 1.528,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-28",
+"spend": 70557,
+"impressions": 10513,
+"link_clicks": 851,
+"follows": 102,
+"cum_frequency": 1.55,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-29",
+"spend": 57288,
+"impressions": 8784,
+"link_clicks": 626,
+"follows": 75,
+"cum_frequency": 1.573,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-30",
+"spend": 57674,
+"impressions": 7928,
+"link_clicks": 502,
+"follows": 57,
+"cum_frequency": 1.595,
+"cum_freq_measured": false
+},
+{
+"day": "2026-10-31",
+"spend": 53185,
+"impressions": 9009,
+"link_clicks": 572,
+"follows": 50,
+"cum_frequency": 1.617,
+"cum_freq_measured": false
+},
+{
+"day": "2026-11-01",
+"spend": 57081,
+"impressions": 10113,
+"link_clicks": 693,
+"follows": 55,
+"cum_frequency": 1.639,
+"cum_freq_measured": false
+},
+{
+"day": "2026-11-02",
+"spend": 18443,
+"impressions": 3131,
+"link_clicks": 216,
+"follows": 14,
+"cum_frequency": 1.661,
+"cum_freq_measured": true
+}
+]
+}
