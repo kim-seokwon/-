@@ -5638,3 +5638,50 @@ b.sp-nm.dup{color:#ff453a}
 .cb-unr{margin:10px 0;padding:12px;border-radius:12px;background:rgba(245,158,11,.1);font-size:13px;line-height:1.5}
 .cb-unr b{color:#b45309}
 .cb-unr em{display:block;color:var(--text-muted,#888);font-style:normal;font-size:12px;margin:4px 0 8px;word-break:break-all}
+
+/* ═══════════════ 연락처 — 구분 | 표 | 요약·상세 (11-17) ═══════════════ */
+.m3.ct3{grid-template-columns:190px minmax(440px,1.2fr) minmax(340px,1fr)}
+.ct3 .m3-lbar select{max-width:96px;border:0;background:transparent;color:var(--text-muted);font-size:12px}
+.ct3 .ct3-mcat{display:none}
+.ct3-flt{display:flex;flex-wrap:wrap;gap:6px;padding:0 10px 8px}
+.ct3-tbl{flex:1;overflow:auto;min-height:0;padding:0 6px 16px}
+.ct3-tbl .it-tbl{table-layout:fixed}
+.ct3-tbl .it-tbl th:nth-child(1){width:33%}.ct3-tbl .it-tbl th:nth-child(2){width:15%}.ct3-tbl .it-tbl th:nth-child(3){width:128px}
+.ct3-tbl .it-tbl td{padding:7px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ct3-tbl .it-row{cursor:default}
+.ct3-tbl .it-row.on td{background:rgba(10,132,255,.12)}
+.ct3-name span{font-weight:700}
+.ct3-name em{font-style:normal;font-size:11px;color:var(--text-muted);margin-left:6px}
+.ct3-badge{font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;margin-left:6px}
+.ct3-copy{border:0;background:transparent;color:var(--text-muted);cursor:pointer;padding:0 4px;font-size:14px;opacity:.6}
+.ct3-copy:hover{opacity:1;color:var(--primary)}
+.ct3-back{display:none!important}
+.ct3-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px}
+.ct3-stat{border:.5px solid var(--card-border);border-radius:10px;padding:10px 12px}
+.ct3-stat b{display:block;font-size:22px;font-weight:800}
+.ct3-stat span{font-size:12px;color:var(--text-muted)}
+.ct3-pv{margin:8px 0 6px;border:.5px solid var(--card-border);border-radius:10px;overflow:hidden;background:rgba(127,127,127,.06);
+  height:300px;display:flex;align-items:center;justify-content:center}
+.ct3-pv img{max-width:100%;max-height:100%;object-fit:contain}
+.ct3-pv iframe{width:100%;height:100%;border:0;background:#fff}
+.ct3-pv-wait{font-size:12px;color:var(--text-muted);padding:20px;text-align:center}
+.ct3-pv-act{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px}
+.ct3-pv-act .ct3-fname{flex:1;min-width:0}
+.ct3-fname{font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ct3-file{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0}
+.ct3-file input[type=file]{font-size:12px;max-width:100%}
+.ct3-err{color:#ef4444;font-weight:700}
+@media (max-width:1180px){ .m3.ct3{grid-template-columns:170px minmax(380px,1.1fr) minmax(300px,1fr)} }
+@media (max-width:900px){
+  .m3.ct3{grid-template-columns:1fr}
+  .ct3 .m3-list{display:flex}
+  .ct3 .m3-doc{display:none}
+  .ct3.detail .m3-list{display:none}
+  .ct3.detail .m3-doc{display:flex}
+  .ct3 .ct3-mcat{display:block}
+  .ct3-back{display:inline-flex!important}
+  .ct3-tbl .it-tbl th:nth-child(4),.ct3-tbl .it-tbl td:nth-child(4){display:none}
+  .ct3-tbl .it-tbl th:nth-child(1){width:46%}.ct3-tbl .it-tbl th:nth-child(2){width:22%}
+  .ct3 .m3-page{padding:16px 16px 40px}
+  .ct3-pv{height:240px}
+}

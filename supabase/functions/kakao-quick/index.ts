@@ -44,13 +44,13 @@ Deno.serve(async (req) => {
     if (claimErr) return j({ ok: false, error: claimErr.message }, 500);
     if (!claimed) return j({ ok: false, error: "검수 미통과 또는 이미 퀵 요청됨" }, 409);
     const { data: job, error: jobErr } = await db.from("vendor_jobs")
-      .select("id,title,qty,qc_status,vendor_id,vendors(name,address,phone)").eq("id", jobId).single();
+      .select("id,title,qty,qc_status,vendor_id,vendors(*)").eq("id", jobId).single();
     if (jobErr || !job) return j({ ok: false, error: "생산 작업을 찾을 수 없음" }, 404);
     const vendor = Array.isArray(job.vendors) ? job.vendors[0] : job.vendors;
 
     // 카카오모빌리티 퀵/딜리버리 예약 페이로드 (계약 규격에 맞게 매핑)
     const payload = {
-      pickup: { address: vendor?.address || "", contact: vendor?.phone || "", name: vendor?.name || "생산처" },
+      pickup: { address: vendor?.address || "", contact: vendor?.mobile || vendor?.phone || "", name: vendor?.name || "생산처" },
       drop: { address: DROP_ADDR, contact: DROP_CONTACT, name: "(주)이일칠구 영종 사무실" },
       item: { name: job.title || "완성 의류", quantity: job.qty || 1, category: "의류" },
       memo: memo || `작업 #${jobId} 완성 픽업`,

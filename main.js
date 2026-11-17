@@ -34,6 +34,7 @@ import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from 
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
 import { fetchByMonth, fetchItems, itemPool } from './salesFetch.js';
+import { VF_BUCKET, VF_ACCEPT, phonesOf, callNumberOf, telHref, validateBizFile, bizFilePath, bizFileKind, contactSummary } from './vendorContact.js';
 import { TP_BUCKET, TP_ACCEPT, validateTpFile, tpFilePath, tpDefaultName, isUploadPack, hasPackConfig, tpKind, tpKindLabel, tpSizeText } from './techPackFile.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
@@ -228,8 +229,8 @@ class BhasApp {
             this.currentView = 'contacts'; this._isInitialLoading = false; this._vendorsLoaded = true;
             this.vendorCategories = this._defaultVendorCategories().map((c, i) => ({ ...c, id: `preview-cat-${i}` }));
             this.vendors = [
-                { id: 'preview-1', status: '거래중', name: '성수봉제', category: '봉제', contact_name: '김미영', phone: '02-123-4567', fax: '02-123-4568', email: 'sample@bhas.kr', address: '서울 성동구', memo: '월말 정산', ceo_name: '김대표', biz_no: '123-45-67890', jobs: [] },
-                { id: 'preview-2', status: '보류', name: '동대문 원단', category: '원단', contact_name: '박지현', phone: '010-2345-6789', fax: '02-222-3333', email: 'fabric@example.com', address: '서울 중구', memo: '신규 샘플 확인 중', jobs: [] },
+                { id: 'preview-1', status: '거래중', name: '성수봉제', category: '봉제', contact_name: '김미영', mobile: '010-1234-5678', phone: '02-123-4567', biz_no: '123-45-67890', fax: '02-123-4568', email: 'sample@bhas.kr', address: '서울 성동구', memo: '월말 정산', ceo_name: '김대표', biz_no: '123-45-67890', jobs: [] },
+                { id: 'preview-2', status: '보류', name: '동대문 원단', category: '원단', contact_name: '박지현', mobile: '010-2345-6789', phone: '', fax: '02-222-3333', email: 'fabric@example.com', address: '서울 중구', memo: '신규 샘플 확인 중', jobs: [] },
                 { id: 'preview-3', status: '거래중단', name: '올드 부자재', category: '부자재', contact_name: '이수진', phone: '02-987-6543', fax: '', email: 'trim@example.com', address: '서울 종로구', memo: '대체처 확인', jobs: [] },
             ];
             this.wins = [{ id: 'preview-contacts', view: 'contacts', x: 8, y: 8, w: 1200, h: 760, min: false, max: true, snap: null, z: 11 }];
@@ -4297,8 +4298,8 @@ class BhasApp {
                 `app.findGo('quotes','${x.id}')`);
         });
         (this.vendors || []).forEach(v => {
-            if (hit(v.name, v.contact_name, v.address, v.phone, v.fax, v.email)) add('거래처', 'ph-factory', '#a2845e', v.name,
-                [v.category, v.contact_name, v.phone].filter(Boolean).join(' · '), `app.findGo('vendors','${v.id}')`);
+            if (hit(v.name, v.contact_name, v.address, v.mobile, v.phone, v.fax, v.email)) add('거래처', 'ph-factory', '#a2845e', v.name,
+                [v.category, v.contact_name, callNumberOf(v)].filter(Boolean).join(' · '), `app.findGo('vendors','${v.id}')`);
         });
         (this.clients || []).forEach(c => {
             if (hit(c.name, c.contact, c.tel)) add('고객사', 'ph-address-book', '#bf5af2', c.name,
@@ -4526,7 +4527,8 @@ class BhasApp {
                     <div class="fi-r"><span>분류</span><select id="vd-cat" class="nw-f">
                         ${CATS.map(k => `<option value="${esc(k.name)}"${v.category === k.name ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div>
                     <div class="fi-r"><span>주소</span><input id="vd-addr" class="nw-f" value="${esc(v.address || '')}"></div>
-                    <div class="fi-r"><span>전화</span><input id="vd-phone" class="nw-f" value="${esc(v.phone || '')}"></div>
+                    <div class="fi-r"><span>휴대폰</span><input id="vd-mobile" class="nw-f" value="${esc(phonesOf(v).mobile)}"></div>
+                    <div class="fi-r"><span>전화</span><input id="vd-phone" class="nw-f" value="${esc(phonesOf(v).phone)}"></div>
                     <div class="fi-r"><span>사업자</span><input id="vd-biz" class="nw-f" value="${esc(v.biz_no || '')}"></div>
                     <div class="dt-sec">위치 <em style="font-style:normal;font-weight:600;opacity:.6">지도를 눌러 찍으세요</em></div>
                     <div id="vd-pickmap" class="vd-pick"></div>
@@ -4538,7 +4540,8 @@ class BhasApp {
             }
             return wrap(v.name || '생산처', [v.category, act.length ? `진행 ${act.length}` : ''].filter(Boolean).join(' · '), `
                 ${f('주소', v.address)}
-                ${f('전화', v.phone)}
+                ${f('휴대폰', phonesOf(v).mobile)}
+                ${f('전화', phonesOf(v).phone)}
                 ${f('사업자', v.biz_no)}
                 ${v.memo ? `<div class="dt-sec">메모</div><div class="dt-memo">${esc(v.memo)}</div>` : ''}
                 <div class="dt-sec">물품 ${jobs.length ? `${act.length}/${jobs.length}` : ''}
@@ -15123,7 +15126,7 @@ class BhasApp {
         const q = (this.venQ || '').trim().toLowerCase();
         let list = all;
         if (cat !== 'ALL') list = list.filter(v => (v.category || '기타') === cat);
-        if (q) list = list.filter(v => [v.name, v.address, v.phone].some(x => String(x || '').toLowerCase().includes(q)));
+        if (q) list = list.filter(v => [v.name, v.address, v.mobile, v.phone].some(x => String(x || '').toLowerCase().includes(q)));
 
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const dday = d => { if (!d) return null; const t = new Date(d); t.setHours(0, 0, 0, 0); return Math.round((t - today) / 86400000); };
@@ -15131,7 +15134,7 @@ class BhasApp {
         const soonOf = v => actOf(v).map(j => dday(j.due_date)).filter(x => x !== null).sort((a, b) => a - b)[0];
 
         list = this._applyTbl('vendors', list, (v, k2) => ({
-            name: v.name || '', address: v.address || '', phone: v.phone || '',
+            name: v.name || '', address: v.address || '', phone: callNumberOf(v),
             act: actOf(v).length, soon: (soonOf(v) === undefined ? '' : String(soonOf(v))),
         })[k2] ?? '', all);
         const row = v => {
@@ -15141,7 +15144,7 @@ class BhasApp {
                 onclick="app.selectVendor('${v.id}')">
                 <td class="bd">${esc(v.name || '')}</td>
                 <td>${esc(v.address || '')}</td>
-                <td class="nw">${esc(v.phone || '')}</td>
+                <td class="nw">${esc(callNumberOf(v))}</td>
                 <td class="num">${act.length || ''}</td>
                 <td class="nw">${s2 === undefined ? '' : `<span style="color:${late ? '#ff453a' : (s2 <= 3 ? '#ff9f0a' : 'var(--text-muted)')};font-weight:${late ? 800 : 600}">${late ? `지연 ${-s2}일` : (s2 === 0 ? '오늘' : `D-${s2}`)}</span>`}</td>
             </tr>`;
@@ -15702,7 +15705,9 @@ class BhasApp {
             this.requestRender();
         } catch (e) { this.showToast('삭제 실패: ' + (e.message || e)); }
     }
-    // ── 연락처 (분류 / 리스트 / 페이지) ───────────────────────
+    // ── 연락처 (구분 / 표 / 요약·상세) ───────────────────────
+    //  11-17 사장님: 업체명 / 담당자 / 전화번호(폰,전화) / 팩스 / 이메일 / 주소지 / 사업자등록증 / 메모
+    //  가운데는 표(업체명·담당자·휴대폰·이메일 — 머리글 정렬·깔때기 거르기), 오른쪽은 안 고르면 요약, 고르면 전부.
     renderContacts() {
         const esc = s => this._vesc(s);
         if (!this._vendorsLoaded) return this._loadingSkeleton('연락처');
@@ -15711,105 +15716,230 @@ class BhasApp {
         const cur = this.contactCat || '전체';
         const status = this.contactStatus || '전체';
         const all = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
-        let list = all;
-        if (cur !== '전체') list = list.filter(v => (v.category || '기타') === cur);
-        if (status !== '전체') list = list.filter(v => (v.status || '거래중') === status);
-        if (q) list = list.filter(v => [v.name, v.contact_name, v.phone, v.fax, v.email, v.address, v.ceo_name, v.biz_no, v.memo]
+        let base = all;
+        if (cur !== '전체') base = base.filter(v => (v.category || '기타') === cur);
+        if (status !== '전체') base = base.filter(v => (v.status || '거래중') === status);
+        if (q) base = base.filter(v => [v.name, v.contact_name, v.mobile, v.phone, v.fax, v.email, v.address, v.ceo_name, v.biz_no, v.memo]
             .some(x => String(x || '').toLowerCase().includes(q)));
-        const sel = list.find(v => v.id === this.contactSel) || list[0];
+        const list = this._applyTbl('contacts', base, (v, k) => ({
+            name: v.name || '', contact: v.contact_name || '', mobile: phonesOf(v).mobile, email: v.email || '',
+        })[k] ?? '', base);
+        const sel = this.contactNew ? null : (all.find(v => String(v.id) === String(this.contactSel)) || null);
         const cnt = c => all.filter(v => (v.category || '기타') === c).length;
-        const tel = p => String(p || '').replace(/[^0-9+]/g, '');
         const initial = n => (String(n || '?').trim()[0] || '?');
         const statusColor = s => ({ '거래중': '#22c55e', '보류': '#f59e0b', '거래중단': '#94a3b8' })[s] || '#94a3b8';
-        const badge = s => `<span style="font-size:10px;font-weight:800;color:${statusColor(s)};background:${statusColor(s)}18;padding:2px 6px;border-radius:999px">${esc(s || '거래중')}</span>`;
+        const badge = s => `<span class="ct3-badge" style="color:${statusColor(s)};background:${statusColor(s)}18">${esc(s || '거래중')}</span>`;
         const side = (key, label, icon, n, color, editable) => `<div class="m3-s${cur === key ? ' on' : ''}"
             onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(key)}'))"
             ${editable ? `oncontextmenu="app.vendorCategoryMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))" title="우클릭: 이름·순서·삭제"` : ''}>
             <i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
-        const f = (icon, k, v, href) => v ? `<div class="m3-f"><i class="ph ${icon}"></i><span class="k">${esc(k)}</span>
-            <span class="v">${href ? `<a href="${esc(href)}" style="color:var(--primary);text-decoration:none">${esc(v)}</a>` : esc(v)}</span></div>` : '';
-        const doc = this.contactNew ? {} : sel;
-        return `
-        <div class="m3">
-            <aside class="m3-side">
-                <div class="m3-h" style="display:flex;align-items:center;justify-content:space-between">분류
-                    <button onclick="app.addVendorCategory()" title="새 분류" style="border:0;background:none;color:var(--primary);cursor:pointer"><i class="ph ph-plus"></i></button></div>
-                ${side('전체', '모든 연락처', 'ph-address-book', all.length)}
-                ${cats.map(c => side(c.name, c.name, 'ph-folder-simple-fill', cnt(c.name), c.color, true)).join('')}
-                <div style="padding:8px 12px;font-size:10px;color:var(--text-muted)">분류를 우클릭해 관리</div>
-            </aside>
+        const filtered = q || cur !== '전체' || status !== '전체' || Object.keys((this.tblFilt || {}).contacts || {}).length;
+        const rows = list.map(v => {
+            const p = phonesOf(v);
+            return `<tr class="it-row${sel && String(v.id) === String(sel.id) ? ' on' : ''}" data-id="${esc(v.id)}"
+                onclick="app.selectContact('${esc(v.id)}')" oncontextmenu="app.contactMenu(event,'${esc(v.id)}')">
+                <td class="bd ct3-name"><span>${esc(v.name || '')}</span>${(v.status || '거래중') !== '거래중' ? badge(v.status) : ''}
+                    ${cur === '전체' ? `<em>${esc(v.category || '기타')}</em>` : ''}</td>
+                <td>${esc(v.contact_name || '')}</td>
+                <td class="nw">${esc(p.mobile)}</td>
+                <td class="ct3-mail">${esc(v.email || '')}</td></tr>`;
+        }).join('');
+        const center = `
             <section class="m3-list">
-                <div class="m3-lbar"><div><b>${esc(cur === '전체' ? '모든 연락처' : cur)}</b><span>${list.length}곳</span></div>
-                    <select aria-label="거래 상태" onchange="app.contactStatus=this.value;app.contactSel=null;app.requestRender()" style="max-width:92px;border:0;background:transparent;color:var(--text-muted)">
-                        ${['전체','거래중','보류','거래중단'].map(s => `<option value="${s}"${status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>
+                <div class="m3-lbar"><div><b>${esc(cur === '전체' ? '모든 연락처' : cur)}</b><span>${list.length}곳${list.length !== all.length ? ` / 전체 ${all.length}` : ''}</span></div>
+                    <select class="ct3-mcat" aria-label="구분" onchange="app.setContactCat(this.value)">
+                        ${['전체', ...cats.map(c => c.name)].map(c => `<option value="${esc(c)}"${cur === c ? ' selected' : ''}>${esc(c === '전체' ? '모든 구분' : c)}</option>`).join('')}</select>
+                    <select class="ct3-status" aria-label="거래 상태" onchange="app.contactStatus=this.value;app.contactSel=null;app.requestRender()">
+                        ${['전체', '거래중', '보류', '거래중단'].map(s => `<option value="${s}"${status === s ? ' selected' : ''}>${s === '전체' ? '모든 상태' : s}</option>`).join('')}</select>
                     <button class="m3-new" onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
-                    <input placeholder="상호·담당자·전화·팩스·이메일" value="${esc(this.contactQ || '')}" oninput="app.contactQ=this.value;app.requestRender()"></div>
-                <div class="m3-rows">
-                    ${list.map(v => `<div class="m3-r${sel && v.id === sel.id ? ' on' : ''}" onclick="app.selectContact('${v.id}')"
-                            oncontextmenu="app.contactMenu(event,'${v.id}')">
-                        <b><span class="ct-face" style="width:22px;height:22px;font-size:11px">${esc(initial(v.name))}</span>${esc(v.name)} ${badge(v.status)}</b>
-                        <div class="sub">${cur === '전체' ? `<span>${esc(v.category || '기타')}</span>` : ''}<span>${esc(v.contact_name || v.phone || v.address || '')}</span></div>
-                    </div>`).join('') || `<div class="m3-none">${q || cur !== '전체' || status !== '전체' ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다'}</div>`}
-                </div>
-            </section>
+                    <input placeholder="업체명·담당자·휴대폰·전화·이메일·주소" value="${esc(this.contactQ || '')}" oninput="app.contactFind(this.value)"></div>
+                ${this._fltBadge('contacts') ? `<div class="ct3-flt">${this._fltBadge('contacts')}</div>` : ''}
+                <div class="ct3-tbl"><table class="it-tbl"><thead><tr>
+                    ${this._thead('contacts', [['name', '업체명'], ['contact', '담당자'], ['mobile', '휴대폰'], ['email', '이메일']])}
+                </tr></thead><tbody>${rows || `<tr><td colspan="4" class="it-none">${filtered ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다 — 위 ＋'}</td></tr>`}</tbody></table></div>
+            </section>`;
+        const docOpen = !!(sel || this.contactNew);
+        return `
+        <div class="m3 ct3${docOpen ? ' detail' : ''}">
+            <aside class="m3-side">
+                <div class="m3-h" style="display:flex;align-items:center;justify-content:space-between">구분
+                    <button onclick="app.addVendorCategory()" title="새 구분" style="border:0;background:none;color:var(--primary);cursor:pointer"><i class="ph ph-plus"></i></button></div>
+                ${side('전체', '모든 연락처', 'ph-address-book', all.length)}
+                ${cats.map(c => side(c.name, c.name, 'ph-folder-simple', cnt(c.name), c.color, true)).join('')}
+                <div style="padding:8px 12px;font-size:10px;color:var(--text-muted)">구분을 우클릭해 관리</div>
+            </aside>
+            ${center}
             <section class="m3-doc">
-                ${doc || this.contactNew ? `
-                <div class="m3-tools">
-                    ${doc.phone ? `<a class="mbtn" href="tel:${esc(tel(doc.phone))}" style="text-decoration:none"><i class="ph ph-phone"></i> 전화</a>` : ''}
-                    ${doc.email ? `<a class="mbtn" href="mailto:${esc(doc.email)}" style="text-decoration:none"><i class="ph ph-envelope-simple"></i> 메일</a>` : ''}
-                    <span class="sp"></span>
-                    ${this.contactNew ? '' : `<button class="${this.contactEdit ? 'on' : ''}" onclick="app.toggleContactEdit()" title="고치기"><i class="ph ph-pencil-simple"></i></button>`}
-                </div>
-                <div class="m3-page">
-                    ${(this.contactEdit || this.contactNew) ? `
-                    <h2 class="m3-big">${this.contactNew ? '새 연락처' : esc(doc.name)}</h2>
-                    <div class="m3-sub">${this.contactNew ? '빈칸은 비워 둬도 됩니다' : '고치는 중'}</div>
-                    <div class="fi-r"><span>상태</span><select id="vd-status" class="nw-f">${['거래중','보류','거래중단'].map(s => `<option value="${s}"${(doc.status || '거래중') === s ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
-                    <div class="fi-r"><span>상호</span><input id="vd-name" class="nw-f" value="${esc(doc.name || '')}"></div>
-                    <div class="fi-r"><span>분류</span><select id="vd-cat" class="nw-f">
-                        ${cats.map(k => `<option value="${esc(k.name)}"${(doc.category || '기타') === k.name ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div>
-                    <div class="fi-r"><span>담당자</span><input id="vd-contact" class="nw-f" value="${esc(doc.contact_name || '')}"></div>
-                    <div class="fi-r"><span>연락처</span><input id="vd-phone" class="nw-f" value="${esc(doc.phone || '')}"></div>
-                    <div class="fi-r"><span>팩스</span><input id="vd-fax" class="nw-f" value="${esc(doc.fax || '')}"></div>
-                    <div class="fi-r"><span>이메일</span><input id="vd-email" type="email" class="nw-f" value="${esc(doc.email || '')}"></div>
-                    <div class="fi-r"><span>주소</span><input id="vd-addr" class="nw-f" value="${esc(doc.address || '')}"></div>
-                    <div class="m3-f" style="flex-direction:column;align-items:stretch">
-                        <span class="k" style="width:auto;margin-bottom:5px">메모</span>
-                        <textarea id="vd-memo" class="dt-ta">${esc(doc.memo || '')}</textarea></div>
-                    <details style="margin-top:12px"><summary style="cursor:pointer;color:var(--text-muted);font-size:12px">기존 사업자 정보</summary>
-                        <div class="fi-r"><span>대표자</span><input id="vd-ceo" class="nw-f" value="${esc(doc.ceo_name || '')}"></div>
-                        <div class="fi-r"><span>사업자번호</span><input id="vd-biz" class="nw-f" value="${esc(doc.biz_no || '')}"></div></details>
-                    <div class="fi-act">
-                        <button class="mbtn" onclick="app.cancelContactEdit()">취소</button>
-                        <button class="mbtn pri" onclick="app.saveVendor('${this.contactNew ? '' : doc.id}')">저장</button>
-                    </div>` : `
-                    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
-                        <span class="ct-face" style="width:54px;height:54px;font-size:22px">${esc(initial(doc.name))}</span>
-                        <div><h2 class="m3-big">${esc(doc.name)}</h2>
-                            <div class="m3-sub" style="margin:0">${esc(doc.category || '기타')} · ${badge(doc.status)}</div></div>
-                    </div>
-                    ${f('ph-user-circle', '담당자', doc.contact_name)}
-                    ${f('ph-phone', '연락처', doc.phone, doc.phone ? 'tel:' + tel(doc.phone) : null)}
-                    ${f('ph-printer', '팩스', doc.fax)}
-                    ${f('ph-envelope-simple', '이메일', doc.email, doc.email ? 'mailto:' + doc.email : null)}
-                    ${f('ph-map-pin', '주소', doc.address)}
-                    ${f('ph-note', '메모', doc.memo)}
-                    ${(doc.ceo_name || doc.biz_no) ? `<details style="margin-top:14px"><summary style="cursor:pointer;color:var(--text-muted);font-size:12px">기존 사업자 정보</summary>
-                        ${f('ph-user', '대표자', doc.ceo_name)}${f('ph-identification-card', '사업자번호', doc.biz_no)}</details>` : ''}
-                    ${(() => {
-                        const jobs = (doc.jobs || []).filter(j => j.status !== 'done');
-                        return jobs.length ? `<div class="m3-f" style="flex-direction:column;align-items:stretch">
-                            <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:6px">진행 중 ${jobs.length}건</div>
-                            ${jobs.slice(0, 6).map(j => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0">
-                                <span>${esc(j.title)}</span><span style="color:var(--text-muted)">${esc(j.due_date || '')}</span></div>`).join('')}
-                        </div>` : '';
-                    })()}`}
-                    ${this._connectedHTML('vendor', doc.id)}
-                </div>` : `<div class="m3-none mid">왼쪽에서 연락처를 고르세요</div>`}
+                ${docOpen ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : this._contactSummaryHTML(base, cats, cur)}
             </section>
         </div>`;
     }
+    contactFind(v) { this.contactQ = v; clearTimeout(this._ctT); this._ctT = setTimeout(() => this.requestRender(), 150); }
+    //  오른쪽 — 아무것도 안 골랐을 때. 지금 보이는 묶음(구분·상태·검색)의 요약
+    _contactSummaryHTML(rows, cats, cur) {
+        const esc = s => this._vesc(s);
+        const s = contactSummary(rows, cats);
+        const stat = (label, n, color) => `<div class="ct3-stat"><b style="color:${color}">${n}</b><span>${esc(label)}</span></div>`;
+        const miss = (label, n) => n ? `<div class="m3-f"><i class="ph ph-warning-circle" style="color:#f59e0b"></i><span class="k">${esc(label)}</span><span class="v">${n}곳</span></div>` : '';
+        const missHtml = miss('휴대폰 없음', s.missing.mobile) + miss('담당자 없음', s.missing.contact) + miss('이메일 없음', s.missing.email) + miss('등록증 없음', s.missing.bizFile);
+        return `<div class="m3-tools"><span style="font-size:12px;font-weight:700;color:var(--text-muted)">요약</span><span class="sp"></span>
+                <button onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
+            <div class="m3-page ct3-sum">
+                <h2 class="m3-big">${esc(cur === '전체' ? '모든 연락처' : cur)} ${s.total}곳</h2>
+                <div class="m3-sub">표에서 업체를 누르면 여기에 전부 나옵니다</div>
+                <div class="ct3-stats">${stat('거래중', s.status['거래중'] || 0, '#22c55e')}${stat('보류', s.status['보류'] || 0, '#f59e0b')}${stat('거래중단', s.status['거래중단'] || 0, '#94a3b8')}</div>
+                ${cur === '전체' && s.catRows.length ? `<div class="dt-sec">구분별</div>
+                    ${s.catRows.map(([c, n]) => `<div class="m3-f" style="cursor:pointer" onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(c)}'))">
+                        <i class="ph ph-folder-simple" style="color:${esc((cats.find(x => x.name === c) || {}).color || '#64748b')}"></i><span class="k" style="flex:1">${esc(c)}</span><span>${n}곳</span></div>`).join('')}` : ''}
+                ${missHtml ? `<div class="dt-sec">채울 칸</div>${missHtml}` : ''}
+                ${s.recent.length ? `<div class="dt-sec">최근 고친 곳</div>
+                    ${s.recent.map(v => `<div class="m3-f" style="cursor:pointer" onclick="app.selectContact('${esc(v.id)}')"><i class="ph ph-clock-counter-clockwise"></i>
+                        <span class="v">${esc(v.name || '')}</span><span style="color:var(--text-muted)">${esc(String(v.updated_at || v.created_at || '').slice(0, 10))}</span></div>`).join('')}` : ''}
+            </div>`;
+    }
+    //  오른쪽 — 고른 업체 전부(보기) 또는 고치기·새로 만들기
+    _contactDocHTML(doc, { cats, badge, initial }) {
+        const esc = s => this._vesc(s);
+        const p = phonesOf(doc);
+        const editing = this.contactEdit || this.contactNew;
+        const f = (icon, k, v, href, extra = '') => v ? `<div class="m3-f"><i class="ph ${icon}"></i><span class="k">${esc(k)}</span>
+            <span class="v">${href ? `<a href="${esc(href)}" style="color:var(--primary);text-decoration:none">${esc(v)}</a>` : esc(v)}</span>${extra}</div>` : '';
+        const copy = v => `<button class="ct3-copy" title="복사" onclick="event.stopPropagation();app.copyText(decodeURIComponent('${encodeURIComponent(v)}'))"><i class="ph ph-copy"></i></button>`;
+        const tools = `<div class="m3-tools">
+                <button class="ct3-back" onclick="app.closeContact()" title="목록"><i class="ph ph-caret-left"></i></button>
+                ${!editing && p.mobile ? `<a class="mbtn" href="${esc(telHref(p.mobile))}" style="text-decoration:none"><i class="ph ph-device-mobile"></i> 휴대폰</a>` : ''}
+                ${!editing && p.phone ? `<a class="mbtn" href="${esc(telHref(p.phone))}" style="text-decoration:none"><i class="ph ph-phone"></i> 전화</a>` : ''}
+                ${!editing && doc.email ? `<a class="mbtn" href="mailto:${esc(doc.email)}" style="text-decoration:none"><i class="ph ph-envelope-simple"></i> 메일</a>` : ''}
+                <span class="sp"></span>
+                ${this.contactNew ? '' : `<button class="${this.contactEdit ? 'on' : ''}" onclick="app.toggleContactEdit()" title="고치기"><i class="ph ph-pencil-simple"></i></button>
+                    <button onclick="app.closeContact()" title="닫기 — 요약 보기"><i class="ph ph-x"></i></button>`}
+            </div>`;
+        if (editing) {
+            const inp = (id, label, v, type = 'text', ph = '') => `<div class="fi-r"><span>${label}</span><input id="${id}" type="${type}" class="nw-f" value="${esc(v || '')}" placeholder="${esc(ph)}"></div>`;
+            return `${tools}<div class="m3-page">
+                <h2 class="m3-big">${this.contactNew ? '새 연락처' : esc(doc.name)}</h2>
+                <div class="m3-sub">${this.contactNew ? '업체명만 있으면 저장됩니다' : '고치는 중'}</div>
+                <div class="fi-r"><span>구분</span><select id="vd-cat" class="nw-f">
+                    ${cats.map(k => `<option value="${esc(k.name)}"${(doc.category || (this.contactCat && this.contactCat !== '전체' ? this.contactCat : '기타')) === k.name ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div>
+                <div class="fi-r"><span>상태</span><select id="vd-status" class="nw-f">${['거래중', '보류', '거래중단'].map(s => `<option value="${s}"${(doc.status || '거래중') === s ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
+                ${inp('vd-name', '업체명', doc.name, 'text', '예: 성수봉제')}
+                ${inp('vd-contact', '담당자', doc.contact_name)}
+                ${inp('vd-mobile', '휴대폰', p.mobile, 'tel', '010-0000-0000')}
+                ${inp('vd-phone', '전화', p.phone, 'tel', '02-000-0000')}
+                ${inp('vd-fax', '팩스', doc.fax, 'tel')}
+                ${inp('vd-email', '이메일', doc.email, 'email')}
+                ${inp('vd-addr', '주소', doc.address)}
+                <div class="dt-sec">사업자등록증</div>
+                ${inp('vd-biz', '등록번호', doc.biz_no, 'text', '000-00-00000')}
+                ${inp('vd-ceo', '대표자', doc.ceo_name)}
+                <div class="fi-r"><span>파일</span><div class="ct3-file">
+                    ${doc.biz_file_path ? `<span class="ct3-fname"><i class="ph ph-file"></i> ${esc(doc.biz_file_name || '')}</span>
+                        <button class="mbtn" onclick="app.removeBizFile('${esc(doc.id)}')">지우기</button>` : ''}
+                    <input id="vd-bizfile" type="file" accept="${VF_ACCEPT}" onchange="app.checkBizFile(this)">
+                    <small id="vd-bizfile-err" class="ct3-err"></small>
+                    <small style="color:var(--text-muted)">PDF·사진 10MB까지${doc.biz_file_path ? ' — 새 파일을 고르면 바꿉니다' : ''}</small></div></div>
+                <div class="m3-f" style="flex-direction:column;align-items:stretch">
+                    <span class="k" style="width:auto;margin-bottom:5px">메모</span>
+                    <textarea id="vd-memo" class="dt-ta">${esc(doc.memo || '')}</textarea></div>
+                <div class="fi-act">
+                    ${this.contactNew ? '' : `<button class="mbtn danger" style="margin-right:auto" onclick="app.deleteVendor('${esc(doc.id)}')">삭제</button>`}
+                    <button class="mbtn" onclick="app.cancelContactEdit()">취소</button>
+                    <button class="mbtn pri" id="vd-save" onclick="app.saveVendor('${this.contactNew ? '' : esc(doc.id)}')">저장</button>
+                </div></div>`;
+        }
+        const jobs = (doc.jobs || []).filter(j => j.status !== 'done');
+        return `${tools}<div class="m3-page">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+                <span class="ct-face" style="width:54px;height:54px;font-size:22px">${esc(initial(doc.name))}</span>
+                <div><h2 class="m3-big">${esc(doc.name)}</h2>
+                    <div class="m3-sub" style="margin:0">${esc(doc.category || '기타')} · ${badge(doc.status)}</div></div>
+            </div>
+            ${f('ph-user-circle', '담당자', doc.contact_name)}
+            ${f('ph-device-mobile', '휴대폰', p.mobile, p.mobile ? telHref(p.mobile) : null, p.mobile ? copy(p.mobile) : '')}
+            ${f('ph-phone', '전화', p.phone, p.phone ? telHref(p.phone) : null, p.phone ? copy(p.phone) : '')}
+            ${f('ph-printer', '팩스', doc.fax, null, doc.fax ? copy(doc.fax) : '')}
+            ${f('ph-envelope-simple', '이메일', doc.email, doc.email ? 'mailto:' + doc.email : null, doc.email ? copy(doc.email) : '')}
+            ${f('ph-map-pin', '주소', doc.address, null, doc.address ? copy(doc.address) : '')}
+            ${!(doc.contact_name || p.mobile || p.phone || doc.fax || doc.email || doc.address) ? `<div class="m3-f" style="color:var(--text-muted)">연락 정보가 비어 있습니다 — 연필을 눌러 채우세요</div>` : ''}
+            <div class="dt-sec">사업자등록증</div>
+            ${f('ph-identification-card', '등록번호', doc.biz_no, null, doc.biz_no ? copy(doc.biz_no) : '')}
+            ${f('ph-user', '대표자', doc.ceo_name)}
+            ${this._bizFileHTML(doc)}
+            ${doc.memo ? `<div class="dt-sec">메모</div><div class="dt-memo" style="white-space:pre-wrap">${esc(doc.memo)}</div>` : ''}
+            ${jobs.length ? `<div class="dt-sec">진행 중 ${jobs.length}건</div>
+                ${jobs.slice(0, 6).map(j => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px">
+                    <span>${esc(j.title)}</span><span style="color:var(--text-muted)">${esc(j.due_date || '')}</span></div>`).join('')}` : ''}
+            ${this._connectedHTML('vendor', doc.id)}
+        </div>`;
+    }
+    //  사업자등록증 미리보기 — private 버킷이라 10분짜리 서명 주소를 받아 붙인다(8분 지나면 새로 받는다)
+    _bizFileHTML(doc) {
+        const esc = s => this._vesc(s);
+        if (!doc.biz_file_path) return `<div class="m3-f" style="color:var(--text-muted)"><i class="ph ph-file-dashed"></i><span class="v">등록증 파일 없음 — 연필을 눌러 올리세요</span></div>`;
+        const kind = bizFileKind(doc);
+        const c = (this._bizUrl || {})[doc.biz_file_path];
+        if (!c || Date.now() - c.at > 8 * 60e3) this._loadBizUrl(doc);
+        const view = c?.url ? (kind === 'image' ? `<img src="${esc(c.url)}" alt="사업자등록증">`
+            : `<iframe src="${esc(c.url)}" title="사업자등록증"></iframe>`)
+            : `<div class="ct3-pv-wait">${c?.error ? `미리보기를 못 불러왔습니다 — ${esc(c.error)}` : '불러오는 중…'}</div>`;
+        return `<div class="ct3-pv">${view}</div>
+            <div class="ct3-pv-act"><span class="ct3-fname"><i class="ph ph-file"></i> ${esc(doc.biz_file_name || '')}</span>
+                <button class="mbtn" onclick="app.openBizFile('${esc(doc.id)}')"><i class="ph ph-arrow-square-out"></i> 크게 보기</button>
+                <button class="mbtn" onclick="app.openBizFile('${esc(doc.id)}',1)"><i class="ph ph-download-simple"></i> 내려받기</button></div>`;
+    }
+    async _loadBizUrl(doc) {
+        this._bizUrl = this._bizUrl || {}; this._bizUrlBusy = this._bizUrlBusy || {};
+        const path = doc.biz_file_path; if (!path || this._bizUrlBusy[path]) return;
+        this._bizUrlBusy[path] = true;
+        try {
+            const { data, error } = await this.supabase.storage.from(VF_BUCKET).createSignedUrl(path, 600);
+            if (error || !data?.signedUrl) throw error || new Error('주소 없음');
+            this._bizUrl[path] = { url: data.signedUrl, at: Date.now() };
+        } catch (e) { this._bizUrl[path] = { error: e?.message || String(e), at: Date.now() }; }
+        this._bizUrlBusy[path] = false;
+        this.requestRender();
+    }
+    async openBizFile(id, download) {
+        const v = (this.vendors || []).find(x => String(x.id) === String(id));
+        if (!v?.biz_file_path) { this.showToast('등록증 파일이 없습니다'); return; }
+        const w = download ? null : window.open('', '_blank');
+        try {
+            const { data, error } = await this.supabase.storage.from(VF_BUCKET)
+                .createSignedUrl(v.biz_file_path, 600, download ? { download: v.biz_file_name || true } : undefined);
+            if (error || !data?.signedUrl) throw error || new Error('주소 없음');
+            if (!download) { if (w) { w.opener = null; w.location.href = data.signedUrl; } else window.open(data.signedUrl, '_blank', 'noopener'); return; }
+            const a = document.createElement('a');
+            a.href = data.signedUrl; a.rel = 'noopener'; a.download = v.biz_file_name || '';
+            document.body.appendChild(a); a.click(); a.remove();
+        } catch (e) { if (w) w.close(); this.showToast('파일을 열지 못했습니다: ' + (e?.message || e)); }
+    }
+    checkBizFile(input) {
+        const r = validateBizFile(input.files && input.files[0]);
+        const err = document.getElementById('vd-bizfile-err');
+        if (err) err.textContent = input.files && input.files[0] && !r.ok ? r.error : '';
+    }
+    async removeBizFile(id) {
+        const v = (this.vendors || []).find(x => String(x.id) === String(id)); if (!v?.biz_file_path) return;
+        if (!await this.showConfirm(`사업자등록증 파일(${v.biz_file_name || ''})을 지울까요?`, '지우기')) return;
+        const old = v.biz_file_path;
+        const { error } = await this.supabase.from('vendors').update({ biz_file_path: null, biz_file_name: null }).eq('id', id);
+        if (error) { this.showToast('지우기 실패: ' + error.message); return; }
+        await this._vfDropFile(old);
+        await this.loadVendors(); this.showToast('등록증 파일을 지웠습니다');
+    }
+    async _vfDropFile(path) {
+        try {
+            const { error } = await this.supabase.storage.from(VF_BUCKET).remove([path]);
+            if (error) throw error;
+            return true;
+        } catch (e) {
+            console.warn(`[연락처] 파일 정리 실패 — ${VF_BUCKET}/${path}`, e?.message || e);
+            this.showToast(`파일 정리에 실패했습니다 — 관리자에게 알려 주세요 (${VF_BUCKET}/${path})`);
+            return false;
+        }
+    }
+    copyText(t) { navigator.clipboard?.writeText(t); this.showToast('복사했습니다'); }
     // 메모 사이드바의 시즌 ＋ — 기존 시즌 만들기 창을 그대로 띄운다
     newProjectFromNotes() { this.newSeasonDialog(); }
     //  브랜드 줄의 ＋ — 그 브랜드로 시즌을 만든다
@@ -15951,16 +16081,18 @@ class BhasApp {
     toggleContactEdit() { this.contactEdit = !this.contactEdit; this.contactNew = false; this.requestRender(); }
     newContact() { this.contactNew = true; this.contactEdit = false; this._vendorPick = null; this.requestRender(); }
     cancelContactEdit() { this.contactEdit = false; this.contactNew = false; this.requestRender(); }
-    setContactCat(c) { this.contactCat = c; this.contactSel = null; this.requestRender(); }
-    selectContact(id) { this.contactSel = id; this.requestRender(); }
+    setContactCat(c) { this.contactCat = c; this.contactSel = null; this.contactEdit = false; this.contactNew = false; this.requestRender(); }
+    selectContact(id) { this.contactSel = id; this.contactEdit = false; this.contactNew = false; this.requestRender(); }
+    //  오른쪽을 요약으로 되돌린다(휴대폰에서는 표로 돌아간다)
+    closeContact() { this.contactSel = null; this.contactEdit = false; this.contactNew = false; this.requestRender(); }
     contactMenu(ev, id) {
         const v = (this.vendors || []).find(x => x.id === id); if (!v) return;
         this.ctxMenu(ev, [
             { t: '보기', icon: 'ph-arrow-square-out', run: () => this.selectContact(id) },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameVendor(id) },
             { t: '고치기', icon: 'ph-pencil-simple', run: () => { this.selectContact(id); this.contactEdit = true; this.contactNew = false; this.requestRender(); } },
-            ...(v.phone ? [{ t: '전화 걸기', icon: 'ph-phone', run: () => { location.href = 'tel:' + String(v.phone).replace(/[^0-9+]/g, ''); } }] : []),
-            ...(v.phone ? [{ t: '번호 복사', icon: 'ph-copy', run: () => { navigator.clipboard?.writeText(v.phone); this.showToast('번호를 복사했습니다'); } }] : []),
+            ...(callNumberOf(v) ? [{ t: '전화 걸기', icon: 'ph-phone', run: () => { location.href = telHref(callNumberOf(v)); } }] : []),
+            ...(callNumberOf(v) ? [{ t: '번호 복사', icon: 'ph-copy', run: () => { navigator.clipboard?.writeText(callNumberOf(v)); this.showToast('번호를 복사했습니다'); } }] : []),
             { sep: true },
             { t: '삭제', icon: 'ph-trash', danger: true, run: () => this.deleteVendor(id) },
         ]);
@@ -15992,7 +16124,8 @@ class BhasApp {
                 <input id="vd-contact" class="login-input" placeholder="담당자" value="${v?this._vesc(v.contact_name||''):''}">
                 <input id="vd-addr" class="login-input" placeholder="주소" value="${v?this._vesc(v.address||''):''}">
                 <div style="display:flex;gap:8px">
-                    <input id="vd-phone" class="login-input" placeholder="연락처" value="${v?this._vesc(v.phone||''):''}">
+                    <input id="vd-mobile" class="login-input" placeholder="휴대폰" value="${v?this._vesc(phonesOf(v).mobile):''}">
+                    <input id="vd-phone" class="login-input" placeholder="전화" value="${v?this._vesc(phonesOf(v).phone):''}">
                     <input id="vd-fax" class="login-input" placeholder="팩스" value="${v?this._vesc(v.fax||''):''}">
                 </div>
                 <input id="vd-email" type="email" class="login-input" placeholder="이메일" value="${v?this._vesc(v.email||''):''}">
@@ -16039,20 +16172,29 @@ class BhasApp {
 
     async saveVendor(id) {
         const name = (document.getElementById('vd-name') || {}).value?.trim();
-        if (!name) { this.showToast('상호는 필수입니다.'); return; }
+        if (!name) { this.showToast('업체명은 필수입니다.'); return; }
         const current = id ? (this.vendors || []).find(v => String(v.id) === String(id)) : null;
         const val = (key, prop) => {
             const el = document.getElementById(key);
             return el ? (el.value || '').trim() || null : (current?.[prop] ?? null);
         };
+        //  사업자등록증 — 저장 전에 검사부터(잘못된 파일이면 아무것도 안 바꾼다)
+        const fileEl = document.getElementById('vd-bizfile');
+        const file = fileEl && fileEl.files && fileEl.files[0];
+        const fv = file ? validateBizFile(file) : null;
+        if (fv && !fv.ok) { this.showToast(fv.error); const e = document.getElementById('vd-bizfile-err'); if (e) e.textContent = fv.error; return; }
         const hasPickMap = !!document.getElementById('vd-pickmap');
+        const cur = phonesOf(current);
+        const mobileEl = document.getElementById('vd-mobile');
         const row = {
             name,
             status: val('vd-status', 'status') || '거래중',
             category: val('vd-cat', 'category') || '기타',
             contact_name: val('vd-contact', 'contact_name'),
             address: val('vd-addr', 'address'),
-            phone: val('vd-phone', 'phone'),
+            //  휴대폰 칸이 없는 화면(생산현황 고치기)에서는 지금 값 그대로
+            mobile: mobileEl ? ((mobileEl.value || '').trim() || null) : (cur.mobile || null),
+            phone: document.getElementById('vd-phone') ? val('vd-phone', 'phone') : (current ? (cur.phone || null) : null),
             fax: val('vd-fax', 'fax'),
             email: val('vd-email', 'email'),
             ceo_name: val('vd-ceo', 'ceo_name'),
@@ -16063,22 +16205,57 @@ class BhasApp {
             lat: hasPickMap ? (this._vendorPick?.lat ?? current?.lat ?? null) : (current?.lat ?? null),
             lng: hasPickMap ? (this._vendorPick?.lng ?? current?.lng ?? null) : (current?.lng ?? null),
         };
-        let error;
-        if (id) ({ error } = await this.supabase.from('vendors').update(row).eq('id', id));
-        else ({ error } = await this.supabase.from('vendors').insert([row]));
+        const btn = document.getElementById('vd-save'); if (btn) btn.disabled = true;
+        const write = r => id ? this.supabase.from('vendors').update(r).eq('id', id).select('id').single()
+                              : this.supabase.from('vendors').insert([r]).select('id').single();
+        let { data, error } = await write(row);
+        //  109 를 깔기 전 — mobile 칸이 없으면 휴대폰을 전화 칸에 합쳐 저장한다(번호를 버리지 않는다)
+        let noMobileCol = false;
+        if (error && /mobile/.test(error.message || '')) {
+            noMobileCol = true;
+            const { mobile, ...old } = row;
+            old.phone = [row.phone, mobile].filter(Boolean).join(' / ') || null;
+            ({ data, error } = await write(old));
+        }
+        if (btn) btn.disabled = false;
         if (error) { this.showToast('저장 실패: ' + error.message); return; }
+        const vid = data?.id || id;
+        let fileMsg = '';
+        if (file && vid) fileMsg = noMobileCol ? ' (등록증 파일은 109 적용 후 올릴 수 있습니다)' : await this._uploadBizFile(vid, file, fv, current);
         this.closeGlobalModal();
         this.venEdit = false; this.contactEdit = false; this.contactNew = false;
         await this.loadVendors();
-        if (!id) { const made = (this.vendors || []).find(x => x.name === name); if (made) { this.venSel = made.id; this.contactSel = made.id; } }
-        this.showToast('저장되었습니다.');
+        if (!id && vid) { this.venSel = vid; this.contactSel = vid; }
+        this.showToast('저장되었습니다.' + fileMsg);
+    }
+    //  등록증 올리기 — 파일 먼저 올리고 줄에 경로를 적는다. 적기 실패면 올린 파일을 지우고, 성공하면 옛 파일을 지운다
+    async _uploadBizFile(vid, file, fv, current) {
+        const path = bizFilePath(vid, crypto.randomUUID(), fv.ext);
+        if (!path) return ' (등록증 저장 위치를 만들지 못했습니다)';
+        const fileName = String(file.name).normalize('NFC').slice(0, 255);
+        let uploaded = false;
+        try {
+            const { error: upErr } = await this.supabase.storage.from(VF_BUCKET).upload(path, file, { contentType: fv.mime, upsert: false });
+            if (upErr) throw upErr;
+            uploaded = true;
+            const { error } = await this.supabase.from('vendors').update({ biz_file_path: path, biz_file_name: fileName }).eq('id', vid);
+            if (error) throw error;
+        } catch (e) {
+            if (uploaded) await this._vfDropFile(path);
+            return ' 다만 등록증 올리기 실패: ' + (e?.message || e);
+        }
+        if (current?.biz_file_path && current.biz_file_path !== path) await this._vfDropFile(current.biz_file_path);
+        return ' 등록증도 올렸습니다.';
     }
 
     async deleteVendor(id) {
         if (!await this.showConfirm('이 생산처와 물품 현황을 모두 삭제할까요?', '삭제')) return;
+        const file = (this.vendors || []).find(x => String(x.id) === String(id))?.biz_file_path;
         const { error } = await this.supabase.from('vendors').delete().eq('id', id);
         if (error) { this.showToast('삭제 실패: ' + error.message); return; }
+        if (file) await this._vfDropFile(file);
         this.closeGlobalModal();
+        if (String(this.contactSel) === String(id)) { this.contactSel = null; this.contactEdit = false; }
         await this.loadVendors();
     }
 
