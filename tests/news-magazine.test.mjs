@@ -125,6 +125,8 @@ test('사진은 자르지 않는다: _photo = contain + 같은 사진 흐린 바
     const h = o._photo('https://x/a.jpg?b=1&c="2")', 'nm-ph');
     assert.match(h, /^<div class="ph-fit nm-ph" style="--ph:url\(&quot;https:\/\/x\/a\.jpg\?b=1&amp;c=%222%22%29&quot;\)">/);
     assert.match(h, /onerror="this\.parentNode\.remove\(\)"/);
+    assert.match(method('_photo'), /onload="this\.parentNode\.classList\.add\('loaded'\)"/);
+    assert.match(CSS, /\.sns-news-photo\{height:0;[^}]*opacity:0[^}]*\}\.sns-news-photo\.loaded\{height:240px;[^}]*opacity:1/);
     assert.equal(o._photo(null), '');
     assert.match(CSS, /\.ph-fit>img\{[^}]*object-fit:contain/);
     assert.match(CSS, /\.ph-fit::before\{[^}]*var\(--ph\)[^}]*blur/);

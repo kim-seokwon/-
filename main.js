@@ -16,7 +16,7 @@ import { cardDeck } from './paperCards.js';
 import { installColResize } from './colResize.js';
 // 29CM 몰 판별 — 봇(계정별 몰 29cm · 29cm-rohi)과 같은 규칙
 import { is29cmKey, cm29SyncType, cm29SyncState, kstShort } from './channel-bots/29cm/accounts.mjs';
-import { magazine, MAG, reactBits, kNum } from './newsMagazine.js';
+import { magazine, MAG, reactBits, kNum, sourceKo, whenWord } from './newsMagazine.js';
 import {
     defaultSampleConfig, configForType, renderSampleMaker,
     garmentPreviewSVG, garmentFlatSVG, garmentPatternSVG, techPackSummaryHTML, buildTechPackPrintHTML,
@@ -368,6 +368,36 @@ class BhasApp {
             this._techPacks = []; this.quotes = []; this.itemStatus = 'ACTIVE';
             this.currentView = 'items';
             this.wins = [{ id: 'preview-production3', view: 'items', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
+            this.requestRender(); return;
+        }
+        //  자료실 3단 화면 검수 — 폴더·자료·미리보기 가짜 데이터만 쓴다(DB·Storage 쓰기 없음).
+        if (devPreview === 'documents3') {
+            this._devPreviewDocuments3 = true; this._prefetched = true; this._isInitialLoading = false;
+            this._itemsLoaded = this._techPacksLoaded = this._quotesLoaded = this._noteLoaded = true;
+            this._ordersLoaded = this._mallsLoaded = this._vendorsLoaded = this._invLoaded = true;
+            this.currentUser = { id: 'preview', name: '화면 검수', role: 'MASTER', company_id: 'preview' };
+            mockData.brands = [
+                { id: 'preview-hhh', name: '하이헤이호', brand_color: '#0a84ff' },
+                { id: 'preview-lohi', name: '로하이스튜디오', brand_color: '#ff9f0a' },
+            ];
+            const image = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="640" height="420"%3E%3Crect width="640" height="420" fill="%23dbeafe"/%3E%3Ctext x="320" y="215" text-anchor="middle" font-size="34" fill="%231d4ed8"%3E26FW LOOKBOOK%3C/text%3E%3C/svg%3E';
+            mockData.products = [
+                { id: 'preview-season-1', name: '26FW 하이헤이호', brand_id: 'preview-hhh', access: 'all', photos: [{ id: 'preview-photo-1', url: image }], history: [{ date: '2026-11-15' }], documents: [
+                    { id: 'preview-doc-1', name: '26FW 메인 생산 체크리스트', category: '기타자료', date: '2026-11-14', url: 'https://example.com/production-checklist.pdf', memo: '메인 투입 전 원단·라벨·수량 확인' },
+                ] },
+                { id: 'preview-season-2', name: '26FW 로하이스튜디오', brand_id: 'preview-lohi', access: 'all', photos: [], history: [], documents: [
+                    { id: 'preview-doc-2', name: '데님 워싱 참고 이미지', category: '참고이미지', date: '2026-11-12', url: image, memo: '인디고 워싱 톤과 밑단 사양 참고' },
+                ] },
+            ];
+            mockData.globalDocuments = [];
+            this.pItems = [{ id: 'preview-item-1', name: '오버핏 기모 맨투맨', product_id: 'preview-season-1', tech_pack_id: 'preview-tp-1' }];
+            this._techPacks = [{ id: 'preview-tp-1', item_id: 'preview-item-1', style_name: '오버핏 맨투맨 작업지시서', style_no: 'HH-SW-2601', source: 'made', config: {}, created_at: '2026-11-16T09:00:00+09:00' }];
+            this.quotes = [{ id: 'preview-quote-1', item_id: 'preview-item-1', quote_no: 'Q-2026-1116', client_name: '성수봉제', quote_date: '2026-11-16' }];
+            this.noteList = []; this.docView = 'list'; this.selectedDocCategory = '전체'; this.docSel = null;
+            const q = { select: () => q, order: () => q, eq: () => q, then: (ok, ng) => Promise.resolve({ data: [], error: null }).then(ok, ng) };
+            this.supabase = { from: () => q, storage: { from: () => ({ upload: async () => ({ error: { message: '화면 검수 — 저장 안 함' } }) }) } };
+            this.currentView = 'documents';
+            this.wins = [{ id: 'preview-documents3', view: 'documents', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
         }
         //  CS 원송장 화면 검수 — Playwright 가 넣어 준 읽기 전용 데이터(window.__CS_PREVIEW: cs_tickets · shipments)로만 그린다. DB 에 쓰지 않는다.
@@ -825,27 +855,40 @@ class BhasApp {
         }, 30); // 30ms 내 중복 호출 방지
     }
 
+    _safeFileUrl(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        if (/^data:(image\/(?:png|jpe?g|gif|webp|svg\+xml)|application\/pdf)[;,]/i.test(raw)) return raw;
+        if (/^blob:/i.test(raw)) return raw;
+        try {
+            const u = new URL(raw, location.origin);
+            return ['http:', 'https:'].includes(u.protocol) ? u.href : '';
+        } catch (_e) { return ''; }
+    }
     showFileModal(url, name = '파일 미리보기') {
         const container = document.getElementById('global-modal-container');
         if (!container) return;
-
-        const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(url) || url.includes('photos/');
+        const safeUrl = this._safeFileUrl(url);
+        if (!safeUrl) { this.showToast('안전하지 않은 파일 주소라 열지 않았습니다'); return; }
+        const safeName = this._vesc(name || '파일 미리보기');
+        const attrUrl = this._vesc(safeUrl);
+        const isImage = /^data:image\//i.test(safeUrl) || /\.(jpg|jpeg|png|gif|webp)(?:$|[?#])/i.test(safeUrl) || safeUrl.includes('/photos/');
         
         container.innerHTML = `
             <div class="glass modal-content fade-in" style="width: 90%; max-width: 1000px; padding: 2rem; border-radius: 24px; position: relative; max-height: 90vh; display: flex; flex-direction: column;">
                 <button onclick="document.getElementById('global-modal-container').style.display='none'" style="position: absolute; top: 1.5rem; right: 1.5rem; background: rgba(var(--tint),0.1); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 100;"><i class="ph ph-x"></i></button>
                 <h2 style="margin-bottom: 1.5rem; font-size: 1.2rem; display: flex; align-items: center; gap: 10px;">
-                    <i class="${isImage ? 'ph ph-image' : 'ph ph-file-text'}"></i> ${name}
+                    <i class="${isImage ? 'ph ph-image' : 'ph ph-file-text'}"></i> ${safeName}
                 </h2>
                 <div style="flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 10px;">
                     ${isImage ? `
-                        <img src="${url}" style="max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px;">
+                        <img src="${attrUrl}" alt="${safeName}" style="max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px;">
                     ` : `
-                        <iframe src="${url}" style="width: 100%; height: 70vh; border: none; border-radius: 8px; background: white;"></iframe>
+                        <iframe src="${attrUrl}" sandbox title="${safeName}" style="width: 100%; height: 70vh; border: none; border-radius: 8px; background: white;"></iframe>
                     `}
                 </div>
                 <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 10px;">
-                    <a href="${url}" download="${name}" class="btn-primary" style="text-decoration: none; padding: 10px 20px; border-radius: 10px; display: flex; align-items: center; gap: 8px;">
+                    <a href="${attrUrl}" download="${safeName}" rel="noopener noreferrer" class="btn-primary" style="text-decoration: none; padding: 10px 20px; border-radius: 10px; display: flex; align-items: center; gap: 8px;">
                         <i class="ph ph-download-simple"></i> 다운로드
                     </a>
                     <button onclick="document.getElementById('global-modal-container').style.display='none'" class="btn-secondary" style="padding: 10px 20px; border-radius: 10px;">닫기</button>
@@ -1109,6 +1152,8 @@ class BhasApp {
     }
 
     switchView(viewId) {
+        // 뉴스는 별도 앱이 아니라 SNS의 네 번째 축이다. 옛 링크도 같은 SNS 창으로 모은다.
+        if (viewId === 'news') { this.snsMode = 'news'; viewId = 'sns'; }
         // 맥 모드: 바탕화면(홈)의 블록을 누르면 그 화면이 창으로 열린다.
         if (this.macMode && this.currentUser) {
             if (viewId === 'home') { this.macShowDesktop(); return; }
@@ -3584,30 +3629,72 @@ class BhasApp {
             ${this._viewNav(view)}
         </aside>`;
     }
-    // SNS 3단 — 계정/브랜드 분류 | 광고 세트·게시물 목록 | 선택 상세
+    // SNS 3단 — 사장님이 내리는 결정(판정·가동·게시물) | 해당 목록/표 | 선택 상세
     _snsShell(inner) {
         const esc = s => this._vesc(s);
-        const accs = this.igAccounts || [];
-        const cur = this.snsAcc || '전체';
-        const row = (k, label, icon) => `<div class="m3-s${String(cur) === String(k) ? ' on' : ''}"
-            onclick="app.setSnsAcc('${k}')"><i class="ph ${icon}" style="color:#c13584"></i><span>${esc(label)}</span></div>`;
+        const cur = this.snsMode || 'decision';
+        const count = this._snsSideCounts || {};
+        const row = (k, label, icon, sub) => `<div class="m3-s${cur === k ? ' on' : ''} sns3-nav"
+            onclick="app.setSnsMode('${k}')"><i class="ph ${icon}" style="color:#c13584"></i><span>${esc(label)}${sub ? `<em>${esc(sub)}</em>` : ''}</span></div>`;
         return `<div class="m3 sns3-layout${this.snsMobileDetail ? ' detail' : ''}"><aside class="m3-side">
             <div class="m3-h">SNS</div>
-            ${row('전체', '모든 계정', 'ph-instagram-logo')}
-            ${accs.map(a => row(a.id, a.username || a.name || '계정', 'ph-user-circle')).join('')
-              || '<div style="padding:8px 10px;font-size:12px;color:var(--text-muted)">연결된 계정 없음</div>'}
+            ${row('decision', '오늘 판정', 'ph-gavel', `중단 ${count.stop || 0} · 증액 ${count.up || 0}`)}
+            ${row('active', '가동 현황', 'ph-toggle-right', `가동 ${count.active || 0} · 부족 ${count.need || 0}`)}
+            ${row('posts', '게시물', 'ph-images-square', `최근 ${count.posts || 0}`)}
+            ${row('news', '뉴스', 'ph-newspaper', `오늘 ${count.news || 0}`)}
         </aside>${inner}</div>`;
+    }
+    setSnsMode(k) {
+        this.snsMode = ['decision', 'active', 'posts', 'news'].includes(k) ? k : 'decision';
+        this.snsPick = null; this.snsNewsPick = null; this.snsMobileDetail = false;
+        if (this.snsMode === 'news' && !this._newsLoaded && !this._newsLoading) this.loadNews();
+        this.requestRender();
     }
     setSnsAcc(k) {
         this.snsAcc = k;
-        const account = (this.igAccounts || []).find(a => String(a.id) === String(k));
-        this.arBrand = account?.brand_id || 'all';
+        this.arBrand = k === '전체' ? 'all' : k;
         this.snsPick = null;
         this.snsMobileDetail = false;
         this.requestRender();
     }
     selectSnsItem(k) { this.snsPick = k; this.snsMobileDetail = true; this.requestRender(); }
-    closeSnsDetail() { this.snsMobileDetail = false; this.requestRender(); }
+    selectSnsNews(i) { this.snsNewsPick = Number(i); this.snsMobileDetail = true; this.requestRender(); }
+    setSnsNewsKind(k) { this.snsNewsKind = k || 'all'; this.snsNewsPick = null; this.snsMobileDetail = false; this.requestRender(); }
+    closeSnsDetail() { this.snsMobileDetail = false; this.snsPick = null; this.snsNewsPick = null; this.requestRender(); }
+    setSnsVerdict(k) { this.snsVerdict = k || 'all'; this.snsPick = null; this.requestRender(); }
+    toggleSnsActive() { this.snsActiveOnly = !this.snsActiveOnly; this.snsPick = null; this.requestRender(); }
+    requestAdAction({ set_id, action, before, after, daily_delta = null, payload = {} }) {
+        const request = { id: `preview-${Date.now()}`, set_id, action, before, after, daily_delta, payload, status: 'requested', requested_at: new Date().toISOString() };
+        this._snsActionQueue = [...(this._snsActionQueue || []), request];
+        return request;
+    }
+    async snsQueueAction(key, action) {
+        const row = (this._snsRows || []).find(r => r.key === key && r.type === 'set'); if (!row) return;
+        const s = row.set, budget = Number(s.budget || 0);
+        let label = '', before = '', after = '', payload = {};
+        if (action === 'extend') {
+            if (!s.end) { this.showToast('종료일이 수집되지 않아 연장할 수 없습니다'); return; }
+            const d = new Date(s.end + 'T12:00:00+09:00'); d.setDate(d.getDate() + 3);
+            label = '연장 +3일'; before = s.end; after = d.toISOString().slice(0, 10); payload = { end: after };
+        } else if (action === 'raise') {
+            if (!budget) { this.showToast('현재 예산이 없어 증액할 수 없습니다'); return; }
+            const next = Math.round((budget * 1.3) / 100) * 100;
+            label = '예산 증액 +30%'; before = `${budget.toLocaleString()}원/일`; after = `${next.toLocaleString()}원/일`; payload = { daily_budget: next };
+        } else if (action === 'budget') {
+            const raw = await this.showPrompt('새 하루 예산(원)', budget || ''); if (raw === null) return;
+            const next = Number(String(raw).replace(/[^0-9]/g, ''));
+            if (!Number.isFinite(next) || next < 1000) { this.showToast('하루 예산은 1,000원 이상으로 입력해 주세요'); return; }
+            label = '예산 변경'; before = `${budget.toLocaleString()}원/일`; after = `${next.toLocaleString()}원/일`; payload = { daily_budget: next };
+        } else if (action === 'toggle') {
+            const next = s.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+            label = next === 'ACTIVE' ? '광고 켜기' : '광고 끄기'; before = s.status === 'ACTIVE' ? '가동' : '꺼짐'; after = next === 'ACTIVE' ? '가동' : '꺼짐'; payload = { status: next };
+        } else return;
+        const delta = payload.daily_budget == null ? '' : `<br>하루 비용 변화: <b>${(payload.daily_budget - budget >= 0 ? '+' : '') + (payload.daily_budget - budget).toLocaleString()}원</b>`;
+        const ok = await this.showConfirm(`<b>${this._vesc(s.name)}</b><br>${this._vesc(label)}<br><br>${this._vesc(before)} → <b>${this._vesc(after)}</b>${delta}<br><br>지금은 Meta에 바로 반영하지 않고 실행 요청 큐에 쌓습니다.`, '광고 실행 요청');
+        if (!ok) return;
+        this.requestAdAction({ set_id: s.adset_id, action, before, after, daily_delta: payload.daily_budget == null ? null : payload.daily_budget - budget, payload });
+        this.showToast(`${label} 실행 요청을 큐에 넣었습니다`); this.requestRender();
+    }
     // 생산현황 지도 아래에 붙는 타임라인 — 공정이 어디까지 갔는지 한눈에
     _vendorTimeline(products) {
         const esc = s => this._vesc(s);
@@ -4228,7 +4315,7 @@ class BhasApp {
             quotes: () => { open('quotes'); setTimeout(() => this.showQuoteModal(id), 350); },
             vendors: () => open('vendors'),
             clients: () => open('quotes'),
-            documents: () => { this.docSel = id; open('documents'); },
+            documents: () => { this.docSel = id; this.docMobileDetail = true; open('documents'); },
         };
         (pick[what] || (() => open('home')))();
         this.requestRender();
@@ -4622,7 +4709,7 @@ class BhasApp {
         if (this.currentView === 'home') return this.renderHome(products);
         if (this.currentView === 'settings') return this.renderSettings();
         if (this.currentView === 'contacts') return this.renderContacts();
-        if (this.currentView === 'news') return this.renderNews();
+        if (this.currentView === 'news') { this.snsMode = 'news'; return this._snsShell(this.renderSnsNews()); }
 
         // 데이터 정규화 및 상태 판별 헬퍼
         const isStageCompleted = (p, s) => {
@@ -4866,7 +4953,7 @@ class BhasApp {
                     aggregatedDocs.push({
                         id: doc.id || `auto-doc-${p.id}-${idx}`,
                         date: doc.date, name: doc.name,
-                        category: doc.category || '기타자료', productId: p.id, url: doc.url, memo: '',
+                        category: doc.category || '기타자료', productId: p.id, url: doc.url, memo: doc.memo || '',
                     });
                 });
             });
@@ -4909,7 +4996,7 @@ class BhasApp {
             if (q) docs = docs.filter(d => (d.name || '').toLowerCase().includes(q));
             const view = this.docView || 'list';   // 파인더 기본은 목록
             const esc = s => this._vesc(s);
-            const isImg = u => /\.(jpe?g|png|gif|webp|heic|avif)$/i.test(u || '') || (u || '').includes('photos/');
+            const isImg = u => /^data:image\//i.test(u || '') || /\.(jpe?g|png|gif|webp|heic|avif)(?:$|[?#])/i.test(u || '') || (u || '').includes('photos/');
             const kindOf = (d) => {
                 if (d.icon) return { i: d.icon, c: d.iconColor || '#8e8e93', t: d.kindText || '파일' };
                 const u = d.url || '';
@@ -4940,35 +5027,34 @@ class BhasApp {
                     ${add ? `<button class="nav-add" title="${esc(add.t)}" onclick="event.stopPropagation();${add.run}">＋</button>` : ''}
                 </div>${open ? inner : ''}`;
             };
-            const grid = docs.map(d => {
-                const k = kindOf(d);
-                return `<button class="fd-it${String(this.docSel) === String(d.id) ? ' on' : ''}"
-                        ondblclick="${d.open || `app.showFileModal('${esc(d.url)}','${esc(d.name)}')`}"
-                        onclick="app.selectDoc('${esc(String(d.id))}')"
-                        oncontextmenu="app.docMenu(event,'${esc(String(d.id))}','${esc(d.url)}','${esc(d.name)}')" title="${esc(d.name)}">
-                    <span class="fd-th">${isImg(d.url) ? `<img src="${esc(d.url)}" alt="" loading="lazy">`
-                        : `<i class="ph ${k.i}" style="color:${k.c}"></i>`}</span>
-                    <span class="fd-nm">${esc(d.name)}</span>
-                </button>`;
-            }).join('');
             //  자료실 표 — 머리글로 줄 세우고 깔때기로 거른다
             const docVal = (d, k2) => ({
                 name: d.name || '', brand: (brandOfP(d.productId) || {}).n || '',
                 season: nameOfP(d.productId), kind: kindOf(d).t, date: d.date || '',
             })[k2] ?? '';
             docs = this._applyTbl('documents', docs, docVal, aggregatedDocs);
-            const rows = docs.map(d => {
+            this._docVisible = docs;
+            const summaryOf = d => d.memo || [((brandOfP(d.productId) || {}).n || ''), nameOfP(d.productId), d.category].filter(Boolean).join(' · ');
+            const grid = docs.map((d, idx) => {
+                const k = kindOf(d), safe = this._safeFileUrl(d.url);
+                return `<button class="fd-it${String(this.docSel) === String(d.id) ? ' on' : ''}" data-id="${esc(String(d.id))}"
+                        ondblclick="app.openDocAt(${idx})" onclick="app.selectDocAt(${idx})"
+                        oncontextmenu="app.docMenuAt(event,${idx})" title="${esc(d.name)}">
+                    <span class="fd-th">${safe && isImg(safe) ? `<img src="${esc(safe)}" alt="" loading="lazy">`
+                        : `<i class="ph ${k.i}" style="color:${k.c}"></i>`}</span>
+                    <span class="fd-nm">${esc(d.name)}</span>
+                </button>`;
+            }).join('');
+            const rows = docs.map((d, idx) => {
                 const k = kindOf(d);
-                return `<div class="fd-r${String(this.docSel) === String(d.id) ? ' on' : ''}"
-                        onclick="app.selectDoc('${esc(String(d.id))}')"
-                        ondblclick="${d.open || `app.showFileModal('${esc(d.url)}','${esc(d.name)}')`}"
-                        oncontextmenu="app.docMenu(event,'${esc(String(d.id))}','${esc(d.url)}','${esc(d.name)}')">
-                    <span class="fd-rn"><i class="ph ${k.i}" style="color:${k.c}"></i>${esc(d.name)}</span>
-                    <span>${(() => { const b = brandOfP(d.productId);
-                        return b ? `<i class="ph-fill ph-circle" style="font-size:7px;color:${b.c};margin-right:5px;vertical-align:1px"></i>${esc(b.n)}` : ''; })()}</span>
-                    <span>${esc(nameOfP(d.productId))}</span>
-                    <span>${esc(k.t)}</span>
-                    <span>${esc(d.date || '')}</span>
+                return `<div class="fd3-r${String(this.docSel) === String(d.id) ? ' on' : ''}" data-id="${esc(String(d.id))}"
+                        onclick="app.selectDocAt(${idx})" ondblclick="app.openDocAt(${idx})"
+                        oncontextmenu="app.docMenuAt(event,${idx})">
+                    <i class="ph ${k.i} fd3-ic" style="color:${k.c}"></i>
+                    <span class="fd3-copy"><b>${esc(d.name || '이름 없는 자료')}</b><em>${esc(summaryOf(d) || '설명 없음')}</em></span>
+                    <span class="fd3-kind">${esc(k.t)}</span>
+                    <time>${esc(d.date ? this.formatDateToUI(String(d.date).slice(0, 10)) : '-')}</time>
+                    <i class="ph ph-caret-right fd3-go"></i>
                 </div>`;
             }).join('');
             const where = cur === '전체' ? '자료실'
@@ -4976,7 +5062,7 @@ class BhasApp {
                     ? (([pid, cat]) => nameOfP(pid) + (cat ? ' › ' + cat : ''))(cur.slice(2).split('/'))
                     : cur);
             return `
-            <div class="fd">
+            <div class="fd${this.docMobileDetail ? ' detail' : ''}">
                 <aside class="fd-side">
                     <div class="fd-sh">즐겨찾기</div>
                     ${side('전체', '모든 자료', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#0a84ff')}
@@ -5015,7 +5101,7 @@ class BhasApp {
                     <div class="fd-body">
                         ${docs.length
                             ? (view === 'grid' ? `<div class="fd-grid">${grid}</div>`
-                               : `<div class="fd-list"><div class="fd-r head">${[['name', '이름'], ['brand', '브랜드'], ['season', '시즌'], ['kind', '종류'], ['date', '날짜']]
+                               : `<div class="fd-list"><div class="fd3-head">${[['name', '자료'], ['kind', '종류'], ['date', '날짜']]
                                     .map(([k2, t]) => { const { srt, flt } = this._tblState('documents');
                                         return `<span class="fh${srt.k === k2 ? ' srt' : ''}${flt[k2] ? ' flt' : ''}" onclick="app.sortTbl('documents','${k2}')">${esc(t)}${srt.k === k2 ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f" onclick="app.openTblFilter(event,'documents','${k2}','${esc(t)}')"><i class="ph ph-funnel${flt[k2] ? '-fill' : ''}"></i></button></span>`; }).join('')}</div>${rows}</div>`)
                             : `<div class="fd-none">${q ? '찾는 자료가 없습니다' : '이 위치에 자료가 없습니다'}</div>`}
@@ -5027,10 +5113,11 @@ class BhasApp {
                 </section>
                 <aside class="fd-prev">
                     ${(() => {
-                        const d = docs.find(x => String(x.id) === String(this.docSel)) || docs[0];
-                        if (!d) return `<div class="m3-none mid">고른 자료가 없습니다</div>`;
-                        const k = kindOf(d);
+                        const d = docs.find(x => String(x.id) === String(this.docSel));
+                        if (!d) return `<div class="fd3-phead"><b>자료 상세</b></div><div class="m3-none mid">자료를 선택하세요</div>`;
+                        const k = kindOf(d), safe = this._safeFileUrl(d.url);
                         return `
+                        <div class="fd3-phead"><button class="fd3-back" onclick="app.closeDocDetail()"><i class="ph ph-arrow-left"></i><span>목록</span></button><b>자료 상세</b></div>
                         <div class="fd-pv">${(() => {
                             //  아이콘을 또 크게 띄우느니 내용을 보여준다 — 작업지시서는 도식화
                             if (String(d.id).startsWith('tp:')) {
@@ -5039,19 +5126,20 @@ class BhasApp {
                                 try { const svg = t && hasPackConfig(t) && garmentPreviewSVG(t.config, false); if (svg) return `<div class="fd-pvsvg">${svg}</div>`; } catch (_e) {}
                             }
                             return null;
-                        })() || (isImg(d.url) ? `<img src="${esc(d.url)}" alt="">`
+                        })() || (safe && isImg(safe) ? `<img src="${esc(safe)}" alt="">`
                             : `<i class="ph ${k.i}" style="color:${k.c}"></i>`)}</div>
                         <div class="fd-pn">${esc(d.name)}</div>
                         <div class="fd-pk">${esc(k.t)}</div>
+                        ${summaryOf(d) ? `<div class="fd3-summary">${esc(summaryOf(d))}</div>` : ''}
                         <div class="fd-pm">
                             <div><span>종류</span><b>${esc(k.t)}</b></div>
-                            <div><span>날짜</span><b>${esc(d.date || '-')}</b></div>
+                            <div><span>날짜</span><b>${esc(d.date ? this.formatDateToUI(String(d.date).slice(0, 10)) : '-')}</b></div>
                             <div><span>분류</span><b>${esc(d.category || '-')}</b></div>
                             <div><span>시즌</span><b>${esc(nameOfP(d.productId) || '-')}</b></div>
                         </div>
                         <div class="fd-pb">
-                            <button class="mbtn pri" onclick="${d.open || `app.showFileModal('${esc(d.url)}','${esc(d.name)}')`}">열기</button>
-                            ${d.url ? `<a class="mbtn" href="${esc(d.url)}" download style="text-decoration:none">내려받기</a>` : ''}
+                            <button class="mbtn pri" onclick="app.openSelectedDoc()">열기</button>
+                            ${safe ? `<button class="mbtn" onclick="app.downloadSelectedDoc()">내려받기</button>` : ''}
                         </div>`;
                     })()}
                 </aside>
@@ -6717,15 +6805,20 @@ class BhasApp {
         const ids = [...new Set([...(this.igAccounts || []).map(a => a.brand_id), ...(r.cards || []).map(c => c.brand_id)].filter(Boolean))];
         const brands = ids.map(id => ({ id, name: brandName(id) }));
         const links = r.links || [];
-        //  판정판 — 판정선은 ad_report_rules 행 그대로(브랜드 id 기준)
-        const rulesBy = Object.fromEntries((r.rules || []).map(x => [x.brand_id, x]));
-        const groups = r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: allBrands, period: this.apPeriod || 'yesterday', now: Date.now() }) : [];
+        // SNS 운영 판정선(사장님 11-16): 하이헤이호 700/900, 로하이·토비 800/1,000. 그 밖은 DB 규칙을 쓴다.
+        const rulesBy = Object.fromEntries((r.rules || []).map(x => [x.brand_id, { ...x }]));
+        allBrands.forEach(b => {
+            const name = String(b.name || '').replace(/\s/g, '');
+            if (name.includes('하이헤이호')) rulesBy[b.id] = { ...(rulesBy[b.id] || {}), up_max: 700, stop_over: 900 };
+            else if (name.includes('로하이') || name.includes('토비')) rulesBy[b.id] = { ...(rulesBy[b.id] || {}), up_max: 800, stop_over: 1000 };
+        });
+        const groups = r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: allBrands, period: 'three', now: Date.now() }) : [];
         const posts = filterCards(this._arCache, { brand: this.arBrand || 'all', period: this.arPeriod || 'active', now: Date.now() });
         return { groups, posts, error: !r.daily, allBrands, report: reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
             activeAds: links.filter(l => l.effective_status === 'ACTIVE').length, unlinked: links.filter(l => !l.media_id),
             brandName, now: Date.now() }) };
     }
-    adPanelPeriod(p) { this.apPeriod = p === 'cum' ? 'cum' : 'yesterday'; this.requestRender(); }
+    adPanelPeriod(p) { this.apPeriod = p === 'cum' ? 'cum' : p === 'yesterday' ? 'yesterday' : 'three'; this.requestRender(); }
     adFilter(k, v) { if (k === 'brand') this.arBrand = v; else this.arPeriod = v; this.requestRender(); }
     adDetailClose() { const el = document.getElementById('ar-sheet'); if (el) el.remove(); }
     async adDetail(i) {
@@ -6743,11 +6836,62 @@ class BhasApp {
         } catch (e) { /* 표 없이 둔다 */ }
     }
 
+    _snsCounts(ads, rows) {
+        const setRows = rows.setRows || [], canon = s => String(s || '').replace(/\s/g, '').toLowerCase();
+        const hit = [n => n.includes('하이헤이호') || n.includes('hiheiho'), n => n.includes('로하이') || n.includes('lohi'), n => n.includes('토비') || n.includes('tovee')];
+        const core = hit.map(fn => (ads.allBrands || []).find(b => fn(canon(b.name))) || null);
+        const activeFor = b => b ? setRows.filter(r => String(r.brand_id) === String(b.id) && r.set.status === 'ACTIVE').length : 0;
+        const out = {
+            active: setRows.filter(r => r.set.status === 'ACTIVE').length,
+            need: core.reduce((sum, b) => sum + Math.max(0, 5 - activeFor(b)), 0),
+            posts: (rows.postRows || []).length,
+            news: (this._snsSideCounts || {}).news || 0,
+        };
+        setRows.forEach(r => { out[r.kind] = (out[r.kind] || 0) + 1; });
+        return out;
+    }
+
+    // SNS>뉴스 3단 — 기존 news-sync 결과를 그대로 분류 | 기사 목록 | 요약·상세로만 재배치한다.
+    renderSnsNews() {
+        const mobileNav = `<div class="sns3-mobile-nav">${[['decision', '오늘 판정'], ['active', '가동'], ['posts', '게시물'], ['news', '뉴스']].map(([k, l]) => `<button class="${k === 'news' ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
+        if (!this._newsLoaded) return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>뉴스</b><span>불러오는 중</span></div></div></section><section class="m3-doc"><div class="m3-none mid">뉴스를 불러오는 중...</div></section>`;
+        const esc = s => this._vesc(s);
+        const kindOf = x => x.kind === 'competitor_post' ? 'brands' : x.kind === 'review' ? 'customer' : x.kind === 'resale' ? 'resale' : 'trend';
+        const kinds = [['all', '전체'], ['brands', '경쟁사'], ['customer', '고객 반응'], ['trend', '기사'], ['resale', '중고']];
+        const merged = [...(this.newsItems || []), ...((this.newsCols || {}).review || []), ...((this.newsCols || {}).trend || [])];
+        const raw = merged.filter((x, i) => x && (x.title || x.snippet) && merged.findIndex(y => String(y.id || y.url) === String(x.id || x.url)) === i);
+        const kind = this.snsNewsKind || 'all';
+        const rows = raw.filter(x => kind === 'all' || kindOf(x) === kind).sort((a, b) => String(b.published_at || b.created_at || '').localeCompare(String(a.published_at || a.created_at || '')));
+        // 옛 뉴스 메뉴로 바로 들어와도 광고 데이터가 도착하는 즉시 왼쪽 숫자를 복원한다.
+        if (this._igLoaded && this._arLoaded) {
+            const ads = this._adsBlock();
+            this._snsSideCounts = this._snsCounts(ads, sns3Rows({ groups: ads.groups, posts: ads.posts, accounts: this.igAccounts || [], account: '전체' }));
+        }
+        this._snsSideCounts = { ...(this._snsSideCounts || {}), news: raw.filter(x => whenWord(x.published_at || x.created_at) === '오늘').length };
+        const selected = Number.isInteger(this.snsNewsPick) ? rows[this.snsNewsPick] : null;
+        const chips = `<div class="sns3-chips sns-news-chips">${kinds.map(([k, label]) => `<button class="${kind === k ? 'on' : ''}" onclick="app.setSnsNewsKind('${k}')">${label} ${k === 'all' ? raw.length : raw.filter(x => kindOf(x) === k).length}</button>`).join('')}</div>`;
+        const source = x => sourceKo(x.source || '') || (kindOf(x) === 'brands' ? '인스타그램' : '기타');
+        const stamp = x => whenWord(x.published_at || x.created_at) || '';
+        const list = rows.map((x, i) => `<button class="m3-r sns-news-row${selected === x ? ' on' : ''}" onclick="app.selectSnsNews(${i})">
+            <b>${esc(x.title || String(x.snippet || '').slice(0, 70))}</b><div class="sub"><span>${esc(source(x))}${stamp(x) ? ` · ${esc(stamp(x))}` : ''}</span></div></button>`).join('');
+        const C = this.newsCols || { review: [], trend: [], resale: [], competitor: [] };
+        const M = magazine(C, this.competitors || [], this.compSnaps || [], { q: '' });
+        const summary = `<div class="sns-news-summary"><div class="sns-news-summary-head"><div><b>오늘 요약</b><span>${new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' })}</span></div><button onclick="app.openPaper()"><i class="ph ph-newspaper"></i> 조간 카드뉴스</button></div><div class="sns-news-tiles">${M.summary.map(s => `<div><span>${esc(s.label)}</span><b>${Number(s.value || 0).toLocaleString('ko-KR')}</b><em>${esc(s.note || '')}</em></div>`).join('')}</div></div>`;
+        const safeUrl = selected?.url && /^https?:\/\//i.test(selected.url) ? selected.url : '';
+        const detail = selected ? `<article class="m3-page sns-news-detail">
+            <div class="sns-news-meta"><span>${esc(source(selected))}</span>${stamp(selected) ? `<span>${esc(stamp(selected))}</span>` : ''}</div>
+            <h2>${esc(selected.title || '제목 없음')}</h2>${this._photo(selected.thumb, 'sns-news-photo')}
+            ${selected.snippet ? `<p>${esc(selected.snippet)}</p>` : '<p class="m3-none">본문 요약이 없습니다.</p>'}
+            ${safeUrl ? `<a class="mbtn pri" href="${esc(safeUrl)}" target="_blank" rel="noopener">원문 안전하게 열기 <i class="ph ph-arrow-square-out"></i></a>` : ''}</article>` : `<div class="m3-page">${summary}<div class="sns3-queue-note">가운데 기사를 선택하면 출처·요약·원문 링크를 확인할 수 있습니다.</div></div>`;
+        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>뉴스</b><span>${rows.length}건</span></div></div>${chips}<div class="m3-rows">${list || '<div class="m3-none">표시할 기사가 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 뉴스 목록</button>${selected ? '<b>기사 상세</b>' : '<b>오늘 요약</b>'}</div>${detail}</section>`;
+    }
+
     renderSNS() {
+        if ((this.snsMode || 'decision') === 'news') return this.renderSnsNews();
         if (!this._igLoaded) return `<section class="m3-list"><div class="m3-lbar"><div><b>SNS 운영현황</b><span>데이터를 불러오는 중...</span></div></div></section><section class="m3-doc"><div class="m3-none mid">SNS 데이터를 불러오는 중...</div></section>`;
         const allAccounts = this.igAccounts || [];
         const accSel = this.snsAcc || '전체';
-        const accounts = accSel === '전체' ? allAccounts : allAccounts.filter(a => String(a.id) === String(accSel));
+        const accounts = accSel === '전체' ? allAccounts : allAccounts.filter(a => String(a.brand_id) === String(accSel));
         const palette = ['#ec4899', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b'];
         const esc = s => this._vesc ? this._vesc(s) : String(s ?? '');
         const cards = accounts.map((a, idx) => {
@@ -6832,31 +6976,69 @@ class BhasApp {
             </div>` };
         });
         const ads = this._adsBlock();
-        const period = this.apPeriod || 'yesterday';
-        const rows = sns3Rows({ groups: ads.groups, posts: ads.posts, accounts, account: accSel });
-        const pick = [...rows.setRows, ...rows.postRows, ...rows.accountRows].find(x => x.key === this.snsPick) || null;
-        const verdict = k => ({ up: '증액', keep: '유지', stop: '중단', idle: '집행 없음', none: '판정선 없음', wait: '대기', hold: '보류', final: '최종' }[k] || k || '—');
-        const rowHtml = r => `<div class="m3-r sns3-row${pick && pick.key === r.key ? ' on' : ''}" data-sns-key="${esc(r.key)}" onclick="app.selectSnsItem('${esc(r.key)}')">
-            <b><i class="ph ${r.type === 'set' ? 'ph-megaphone-simple' : r.type === 'post' ? 'ph-image-square' : 'ph-instagram-logo'}"></i>${esc(r.title)}${r.kind ? `<em class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</em>` : ''}</b>
-            <div class="sub"><span>${r.type === 'set' ? `${r.cpf == null ? (r.spend > 0 ? '∞' : '—') : Number(r.cpf).toLocaleString()}원/명 · 지출 ${Number(r.spend || 0).toLocaleString()}원` : r.type === 'post' ? `${r.cpf == null ? '1명당 —' : Number(r.cpf).toLocaleString() + '원/명'} · ${esc(this._arBrandName(r.brand_id))}` : `${esc(this._arBrandName(r.brand_id))} · 인스타 현황`}</span></div></div>`;
-        const group = (label, list) => list.length ? `<div class="sns3-group">${label}<em>${list.length}</em></div>${list.map(rowHtml).join('')}` : '';
-        const accountOptions = `<select class="sns3-mobile-filter" onchange="app.setSnsAcc(this.value)"><option value="전체"${accSel === '전체' ? ' selected' : ''}>모든 계정</option>${allAccounts.map(a => `<option value="${esc(a.id)}"${String(accSel) === String(a.id) ? ' selected' : ''}>${esc(a.username || a.name || '계정')}</option>`).join('')}</select>`;
-        let detail = `<div class="m3-none mid">광고 세트나 게시물을 선택하세요</div>`;
-        if (pick?.type === 'set') detail = `<div class="m3-page">${snsSetDetailHtml(pick)}</div>`;
+        const rows = sns3Rows({ groups: ads.groups, posts: ads.posts, accounts: allAccounts, account: '전체' });
+        const verdict = k => ({ up: '증액', keep: '유지', stop: '중단', idle: '집행 없음', none: '보류', wait: '보류', hold: '보류', final: '최종' }[k] || k || '—');
+        const rank = { stop: 0, up: 1, keep: 2, none: 3, idle: 3, wait: 3, hold: 3 };
+        const allSetRows = rows.setRows.slice().sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9) || (Number(b.cpf) || Infinity) - (Number(a.cpf) || Infinity));
+        this._snsSideCounts = this._snsCounts(ads, rows);
+        const mode = this.snsMode || 'decision';
+        const canon = s => String(s || '').replace(/\s/g, '').toLowerCase();
+        const wanted = [
+            { key: 'hhh', name: '하이헤이호', hit: n => n.includes('하이헤이호') || n.includes('hiheiho') },
+            { key: 'lohi', name: '로하이', hit: n => n.includes('로하이') || n.includes('lohi') },
+            { key: 'tovee', name: '토비', hit: n => n.includes('토비') || n.includes('tovee') },
+        ];
+        const pool = ads.allBrands || [];
+        const coreBrands = wanted.map(w => {
+            const found = pool.find(b => w.hit(canon(b.name)));
+            return found ? { ...found, label: w.name } : { id: `missing:${w.key}`, name: w.name, label: w.name };
+        });
+        const brands = [...coreBrands, ...pool.filter(b => !wanted.some(w => w.hit(canon(b.name))) && (allSetRows.some(r => String(r.brand_id) === String(b.id)) || rows.postRows.some(r => String(r.brand_id) === String(b.id))))];
+        const brandCount = b => allSetRows.filter(r => String(r.brand_id) === String(b.id)).length;
+        const brandActive = b => allSetRows.filter(r => String(r.brand_id) === String(b.id) && r.set.status === 'ACTIVE').length;
+        const brandChips = `<div class="sns3-chips">${[['전체', '전체', allSetRows.length], ...brands.map(b => [b.id, b.label || b.name, brandCount(b)])].map(([id, name, count]) => `<button class="${String(accSel) === String(id) ? 'on' : ''}" onclick="app.setSnsAcc('${esc(id)}')">${esc(name)} ${count}</button>`).join('')}</div>`;
+        const mobileNav = `<div class="sns3-mobile-nav">${[['decision', '오늘 판정'], ['active', '가동'], ['posts', '게시물'], ['news', '뉴스']].map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
+        const allowBrand = r => accSel === '전체' || String(r.brand_id) === String(accSel);
+        const filteredSets = allSetRows.filter(allowBrand).filter(r => !this.snsVerdict || this.snsVerdict === 'all' || r.kind === this.snsVerdict).filter(r => !this.snsActiveOnly || r.set.status === 'ACTIVE');
+        this._snsRows = [...allSetRows, ...rows.postRows, ...rows.accountRows];
+        const pick = this._snsRows.find(x => x.key === this.snsPick) || null;
+        const wonTxt = n => Number(n || 0).toLocaleString() + '원';
+        const cpfTxt = r => r.cpf == null ? (r.spend > 0 ? '∞' : '—') : Number(r.cpf).toLocaleString() + '원';
+        const left = d => { if (!d) return '—'; const n = Math.ceil((new Date(d + 'T23:59:59+09:00') - Date.now()) / 86400000); return n < 0 ? `${Math.abs(n)}일 지남` : `D-${n}`; };
+        const md = d => { const p = String(d || '').slice(0, 10).split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}` : '—'; };
+        const safeThumb = r => this._safeFileUrl(r.set.media_src || '');
+        const actionButtons = r => `<div class="sns3-actions"><button onclick="event.stopPropagation();app.snsQueueAction('${esc(r.key)}','extend')">연장</button><button onclick="event.stopPropagation();app.snsQueueAction('${esc(r.key)}','raise')">증액</button><button onclick="event.stopPropagation();app.snsQueueAction('${esc(r.key)}','budget')">예산</button><button onclick="event.stopPropagation();app.snsQueueAction('${esc(r.key)}','toggle')">${r.set.status === 'ACTIVE' ? '끄기' : '켜기'}</button></div>`;
+        const tableRows = filteredSets.map(r => {
+            const s = r.set, thumb = safeThumb(r), on = s.status === 'ACTIVE';
+            return `<tr class="sns-ad-row${pick?.key === r.key ? ' on' : ''}" data-sns-key="${esc(r.key)}" onclick="app.selectSnsItem('${esc(r.key)}')">
+                <td class="sns-td-state"><span class="sns-live ${on ? 'on' : ''}">${on ? '가동' : '꺼짐'}</span></td>
+                <td class="sns-td-name"><b>${esc(r.title)}</b><small>${esc(this._arBrandName(r.brand_id))}</small></td>
+                <td class="sns-td-media">${thumb ? `<img src="${esc(thumb)}" alt="">` : '<i class="ph ph-image-square"></i>'}</td>
+                <td class="sns-td-target">${esc(s.target || '—')}</td>
+                <td class="sns-td-period">${esc(`${md(s.start)}~${md(s.end)} · ${left(s.end)}`)}</td>
+                <td class="sns-td-budget">${s.budget == null ? '—' : wonTxt(s.budget)}</td>
+                <td class="sns-td-spend"><b>${wonTxt(s.spend3)}</b><small>누적 ${wonTxt(s.spendCum)}</small></td>
+                <td class="sns-td-result"><b>${Number(s.follows3 || 0).toLocaleString()}명</b><small>${cpfTxt(r)}/명</small></td>
+                <td class="sns-td-verdict"><span class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</span></td>
+                <td class="sns-td-actions">${actionButtons(r)}</td></tr>`;
+        }).join('');
+        const sum3 = filteredSets.reduce((a, r) => a + Number(r.set.spend3 || 0), 0);
+        const sumY = filteredSets.reduce((a, r) => a + Number(r.set.spendYesterday || 0), 0);
+        const activeCards = coreBrands.map(b => `<div class="sns3-brand-kpi"><span>${esc(b.label || b.name)}</span><b>${brandActive(b)}/5</b></div>`).join('');
+        const summary = `<div class="sns3-kpis"><div><span>중단</span><b class="bad">${filteredSets.filter(r => r.kind === 'stop').length}</b></div><div><span>증액</span><b class="good">${filteredSets.filter(r => r.kind === 'up').length}</b></div><div><span>유지</span><b>${filteredSets.filter(r => r.kind === 'keep').length}</b></div>${activeCards}<div class="sns3-spend-kpi"><span>어제 / 3일 지출</span><b>${wonTxt(sumY)} / ${wonTxt(sum3)}</b></div></div>`;
+        const filters = `${brandChips}<div class="sns3-filters"><select onchange="app.setSnsVerdict(this.value)"><option value="all">모든 판정</option>${[['stop','중단'],['up','증액'],['keep','유지'],['none','보류']].map(([k,l]) => `<option value="${k}"${this.snsVerdict === k ? ' selected' : ''}>${l}</option>`).join('')}</select><label><input type="checkbox" ${this.snsActiveOnly ? 'checked' : ''} onchange="app.toggleSnsActive()"> 가동만</label></div>`;
+        const trend = pick?.type === 'set' ? `<div class="sns3-trend"><b>최근 3일 추이</b>${pick.set.daily.slice(-3).map(d => `<div><span>${esc(d.day.slice(5).replace('-', '.'))}</span><span>${wonTxt(d.spend)}</span><span>${Number(d.follows).toLocaleString()}명</span><strong>${d.follows ? Math.round(d.spend / d.follows).toLocaleString() + '원/명' : d.spend ? '∞' : '—'}</strong></div>`).join('') || '<p>일별 수집 대기</p>'}</div>` : '';
+        const setDetail = pick?.type === 'set' ? `<div class="m3-page">${snsSetDetailHtml(pick)}${trend}${actionButtons(pick)}<div class="sns3-queue-note">지금은 Meta에 바로 반영하지 않고 실행 요청 큐에 쌓입니다.</div></div>` : '';
+        const drawer = pick?.type === 'set' ? `<aside class="sns3-drawer"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 광고 표</button><button class="sns3-x" onclick="app.closeSnsDetail()" aria-label="닫기"><i class="ph ph-x"></i></button></div>${setDetail}</aside>` : '';
+
+        if (mode === 'decision') return `<section class="sns3-tablepane${pick?.type === 'set' ? ' has-detail' : ''}">${mobileNav}<div class="sns3-head"><div><b>오늘 판정</b><span>최근 3일 합산 · 판정과 실제 가동 상태를 함께 봅니다</span></div>${filters}</div>${summary}${excludedNote(ads.groups.excluded) ? `<div class="sns3-ex">${excludedNote(ads.groups.excluded)}</div>` : ''}<div class="sns3-tablewrap"><table class="sns3-table"><thead><tr><th>상태</th><th>세트명</th><th>소재</th><th>타겟</th><th>기간</th><th>일예산</th><th>지출 3일/누적</th><th>결과</th><th>판정</th><th>작업</th></tr></thead><tbody>${tableRows || '<tr><td colspan="10" class="m3-none">조건에 맞는 광고가 없습니다.</td></tr>'}</tbody></table></div>${drawer}</section>`;
+
+        const listRows = mode === 'active' ? rows.accountRows.filter(allowBrand) : rows.postRows.filter(allowBrand);
+        const rowHtml = r => `<div class="m3-r sns3-row${pick?.key === r.key ? ' on' : ''}" data-sns-key="${esc(r.key)}" onclick="app.selectSnsItem('${esc(r.key)}')"><b><i class="ph ${r.type === 'post' ? 'ph-image-square' : 'ph-instagram-logo'}"></i>${esc(r.title)}${r.kind ? `<em class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</em>` : ''}</b><div class="sub"><span>${r.type === 'post' ? `${r.cpf == null ? '1명당 —' : Number(r.cpf).toLocaleString() + '원/명'} · ${esc(this._arBrandName(r.brand_id))}` : `${esc(this._arBrandName(r.brand_id))} · 가동 광고 ${allSetRows.filter(s => s.brand_id === r.brand_id && s.set.status === 'ACTIVE').length}/5`}</span></div></div>`;
+        let detail = `<div class="m3-page sns3-overview">${summary}<div class="sns3-queue-note">항목을 선택하면 계정 또는 게시물 상세가 열립니다.</div></div>`;
         if (pick?.type === 'account') detail = `<div class="m3-page sns3-account">${(cards.find(c => c.id === pick.id) || {}).html || '<div class="m3-none">계정 정보가 없습니다.</div>'}</div>`;
-        if (pick?.type === 'post') {
-            const idx = (this._arCache || []).indexOf(pick.post);
-            detail = `<div class="m3-page sns3-post">${cardHtml(pick.post, { brandName: id => this._arBrandName(id), i: idx })}</div>`;
-        }
-        return `<section class="m3-list">
-            <div class="m3-lbar"><div><b>SNS 운영현황</b><span>${rows.setRows.length}개 세트 · ${rows.postRows.length}개 게시물</span></div>
-                <div class="ap-tog">${[['yesterday', '어제'], ['cum', '누적']].map(([k, l]) => `<button class="${period === k ? 'on' : ''}" onclick="app.adPanelPeriod('${k}')">${l}</button>`).join('')}</div></div>
-            ${excludedNote(ads.groups.excluded) ? `<div class="sns3-ex" style="padding:0 13px 8px;font-size:11px;line-height:1.4;color:#b45309;font-weight:700">${excludedNote(ads.groups.excluded)}</div>` : ''}
-            ${accountOptions}<div class="m3-rows"><div class="m3-r sns3-summary" onclick="app.selectSnsItem('summary')"><b><i class="ph ph-chart-line-up"></i>광고 리포트 요약</b><div class="sub"><span>수집 상태·필터·미연결 광고</span></div></div>
-            ${group('광고 세트', rows.setRows)}${group('광고 게시물', rows.postRows)}${group('인스타 계정', rows.accountRows)}
-            ${rows.setRows.length || rows.postRows.length || rows.accountRows.length ? '' : '<div class="m3-none">표시할 SNS 항목이 없습니다.</div>'}</div></section>
-            <section class="m3-doc"><div class="m3-tools sns3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 목록</button><span class="sp"></span></div>
-                ${this.snsPick === 'summary' ? `<div class="m3-page sns3-report">${ads.report}</div>` : detail}</section>`;
+        if (pick?.type === 'post') { const idx = (this._arCache || []).indexOf(pick.post); detail = `<div class="m3-page sns3-post">${cardHtml(pick.post, { brandName: id => this._arBrandName(id), i: idx })}</div>`; }
+        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>${mode === 'active' ? '가동 현황' : '게시물'}</b><span>${listRows.length}개</span></div></div>${brandChips}<div class="m3-rows">${listRows.map(rowHtml).join('') || '<div class="m3-none">표시할 항목이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 목록</button></div>${detail}</section>`;
     }
 
     // 인스타 피드 톤앤매너 미리보기 — 실제 인스타 프로필 화면 그대로.
@@ -7111,7 +7293,7 @@ class BhasApp {
             if (!this._noteLoaded && !this._noteLoading) this.loadNotes();
         }
         if ((v === 'vendors' || v === 'contacts' || v === 'inventory') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
-        if (v === 'news' && !this._newsLoaded && !this._newsLoading) this.loadNews();
+        if ((v === 'news' || (v === 'sns' && this.snsMode === 'news')) && !this._newsLoaded && !this._newsLoading) this.loadNews();
         if (v === 'vendors' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'sns' && !this._igLoaded && !this._igLoading) this.loadIG();
         if ((v === 'quotes' || v === 'vendors') && !this._quotesLoaded && !this._quotesLoading) this.loadQuotes();
@@ -8037,6 +8219,8 @@ class BhasApp {
     macOpen(view, opts) {
         if (view === 'home') { this.macShowDesktop(); return; }   // 홈은 바탕화면 자체다
         if (!this._viewAllowed(view)) { this.showToast('이 계정으로는 열 수 없는 화면입니다.'); return; }
+        // 옛 메뉴·알림·독의 news도 별도 창을 만들지 않고 SNS>뉴스로 연다.
+        if (view === 'news') { this.snsMode = 'news'; view = 'sns'; }
         this.wins = this.wins || [];
         const found = this._winOf(view);
         if (found) {
@@ -8209,7 +8393,7 @@ class BhasApp {
         this.currentView = prevView;
         // 바탕화면 = 홈 대시보드. 여기 블록을 누르면 switchView 를 타고 창이 열린다.
         let deskboard = '';
-        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3 || this._devPreviewProduction3) ? '' : (this.renderHome(products) || ''); }
+        try { deskboard = (this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3 || this._devPreviewProduction3 || this._devPreviewDocuments3) ? '' : (this.renderHome(products) || ''); }
         catch (e) { deskboard = `<div style="padding:2rem;color:#ef4444">바탕화면을 그리지 못했습니다: ${esc(String(e && e.message || e))}</div>`; }
         const dock = this.MAC_DOCK.filter(d => !d.tool && (d.launcher || this._viewAllowed(d.id))).map(d => {
             const open = d.launcher ? false : (d.desktop ? !this.wins.some(w => !w.min) : this._winOf(d.id));
@@ -8281,7 +8465,7 @@ class BhasApp {
     }
     _macEnsureData() {
         const prev = this.currentView;
-        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3 || this._devPreviewProduction3) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
+        const views = [...new Set([...((this._devPreviewContacts || this._devPreviewCRM || this._devPreviewReminders || this._devPreviewSales3 || this._devPreviewProduction3 || this._devPreviewDocuments3) ? [] : ['home']), ...(this.wins || []).filter(w => !w.min).map(w => w.view)])];
         views.forEach(v => { this.currentView = v; try { this.ensureViewData(); } catch (_e) {} });
         this.currentView = prev;
     }
@@ -11508,7 +11692,7 @@ class BhasApp {
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
     setCSFilter(f) { this.track?.('cs', 'cs_filter'); this.csFilter = f; this.requestRender(); }
-    setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.requestRender(); }
+    setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.docMobileDetail = false; this.requestRender(); }
     //  새 분류 — 이름을 만들어 두고, 그 분류로 자료를 올리면 자리를 잡는다
     async addDocCategory() {
         const v = await this.showPrompt('새 분류 이름', '', '자료 분류 만들기');
@@ -11531,14 +11715,43 @@ class BhasApp {
         this.docOpenP[pid] = !this.docOpenP[pid];
         this.requestRender();
     }
-    selectDoc(id) { this.docSel = id; this.requestRender(); }
-    docMenu(ev, id, url, name) {
+    selectDoc(id) { this.docSel = id; this.docMobileDetail = true; this.requestRender(); }
+    selectDocAt(idx) { const d = (this._docVisible || [])[idx]; if (d) this.selectDoc(d.id); }
+    closeDocDetail() { this.docMobileDetail = false; this.requestRender(); }
+    _openDoc(d) {
+        if (!d) return;
+        const id = String(d.id || '');
+        if (id.startsWith('tp:')) { this.openTechPack(id.slice(3)); return; }
+        if (id.startsWith('q:')) { this.showQuoteModal(id.slice(2)); return; }
+        if (id.startsWith('mt:')) { this.openMeetingNote(id.slice(3)); return; }
+        this.showFileModal(d.url, d.name);
+    }
+    openDocAt(idx) { this._openDoc((this._docVisible || [])[idx]); }
+    openSelectedDoc() { this._openDoc((this._docVisible || []).find(d => String(d.id) === String(this.docSel))); }
+    downloadSelectedDoc() {
+        const d = (this._docVisible || []).find(x => String(x.id) === String(this.docSel));
+        const url = this._safeFileUrl(d?.url); if (!url) { this.showToast('내려받을 수 있는 안전한 주소가 없습니다'); return; }
+        const a = document.createElement('a'); a.href = url; a.download = d?.name || ''; a.rel = 'noopener noreferrer';
+        document.body.appendChild(a); a.click(); a.remove();
+    }
+    docMenuAt(ev, idx) {
+        const d = (this._docVisible || [])[idx]; if (!d) return;
+        const url = this._safeFileUrl(d.url);
         this.ctxMenu(ev, [
-            { t: '열기', icon: 'ph-arrow-square-out', run: () => this.showFileModal(url, name) },
+            { t: '열기', icon: 'ph-arrow-square-out', run: () => this._openDoc(d) },
+            { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameDoc(d.id, d.name) },
+            ...(url ? [{ t: '링크 복사', icon: 'ph-link', run: () => { navigator.clipboard?.writeText(url); this.showToast('링크를 복사했습니다'); } },
+                { sep: true }, { t: '내려받기', icon: 'ph-download-simple', run: () => { this.docSel = d.id; this.downloadSelectedDoc(); } }] : []),
+        ]);
+    }
+    docMenu(ev, id, url, name) {
+        const safe = this._safeFileUrl(url);
+        this.ctxMenu(ev, [
+            { t: '열기', icon: 'ph-arrow-square-out', run: () => this.showFileModal(safe, name) },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameDoc(id, name) },
-            { t: '링크 복사', icon: 'ph-link', run: () => { navigator.clipboard?.writeText(url); this.showToast('링크를 복사했습니다'); } },
+            { t: '링크 복사', icon: 'ph-link', run: () => { if (safe) navigator.clipboard?.writeText(safe); this.showToast(safe ? '링크를 복사했습니다' : '안전한 링크가 없습니다'); } },
             { sep: true },
-            { t: '내려받기', icon: 'ph-download-simple', run: () => { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); } },
+            { t: '내려받기', icon: 'ph-download-simple', run: () => { if (!safe) return; const a = document.createElement('a'); a.href = safe; a.download = name; a.rel = 'noopener noreferrer'; a.click(); } },
         ]);
     }
     docFolderMenu(ev, key) {
@@ -14844,6 +15057,12 @@ class BhasApp {
         try { await this.openPaper(true); } catch (_e) { this.paper = null; this.requestRender(); }
     }
     async openPaper(auto) {
+        // 조간을 펼친 뒤 닫아도 사용자는 별도 뉴스 앱이 아니라 SNS>뉴스에 남는다.
+        this.snsMode = 'news';
+        if (this.currentUser && this.currentView !== 'sns') {
+            if (this.macMode) this.macOpen('sns'); else this.currentView = 'sns';
+        }
+        if (!this._newsLoaded && !this._newsLoading) this.loadNews();
         this.track?.('news', auto ? 'paper_auto' : 'paper');
         this.paper = { loading: true, data: null, auto: !!auto, idx: 0 };
         this.requestRender();
@@ -15083,7 +15302,7 @@ class BhasApp {
     _photo(url, cls = '') {
         if (!url) return '';
         const u = String(url).replace(/"/g, '%22').replace(/\)/g, '%29');
-        return `<div class="ph-fit ${cls}" style="--ph:url(&quot;${this._vesc(u)}&quot;)"><img src="${this._vesc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"></div>`;
+        return `<div class="ph-fit ${cls}" style="--ph:url(&quot;${this._vesc(u)}&quot;)"><img src="${this._vesc(url)}" alt="" loading="${cls.includes('sns-news-photo') ? 'eager' : 'lazy'}" referrerpolicy="no-referrer" onload="this.parentNode.classList.add('loaded')" onerror="this.parentNode.remove()"></div>`;
     }
     //  뉴스탭 = 누르지 않고 훑어지는 매거진 한 화면(10-22 사장님 "뉴스탭은 너무 구려. 다시 만들어").
     //  위: 오늘 요약 띠 → 섹션별 카드(사진·브랜드·한 줄 요지·반응·날짜, 누르면 원문). 빈 섹션·빈 값은 숨긴다.

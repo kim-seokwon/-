@@ -44,7 +44,7 @@ test('헤드리스 미리보기는 가짜 생산 데이터만 쓰고 DB 로드�
     assert.match(main, /this\._itemsLoaded = this\._vendorsLoaded = this\._techPacksLoaded = this\._quotesLoaded = true/);
     assert.match(main, /this\._devPreviewProduction3/);
     const start = main.indexOf("if (devPreview === 'production3')");
-    const end = main.indexOf('//  CS 원송장 화면 검수', start);
+    const end = main.indexOf('//  자료실 3단 화면 검수', start);
     assert.ok(start > 0 && end > start);
     assert.match(main.slice(start, end), /this\.supabase = \{ from: table =>/);
     assert.doesNotMatch(main.slice(start, end), /https?:\/\/|createClient\(/);

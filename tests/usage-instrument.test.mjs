@@ -69,7 +69,7 @@ test('바탕화면·링크로 다른 탭 화면을 부르면 → 같은 묶음 �
     assert.deepEqual(await sent(app), ['orders:open', 'cs:open', 'orders:open', 'inventory:open']);
 });
 
-test('다른 묶음·묶음 밖 화면은 따로 — 판매와 생산은 각자 창, 뉴스는 뉴스 창 하나', () => {
+test('다른 묶음·묶음 밖 화면은 따로 — 뉴스 옛 진입점은 SNS 창 하나로 합친다', () => {
     const app = mkApp();
     app.macOpen('cs'); app.tick();
     app.macOpen('tech_packs'); app.tick();
@@ -78,7 +78,8 @@ test('다른 묶음·묶음 밖 화면은 따로 — 판매와 생산은 각자 
     assert.deepEqual(app.wins.map(w => w.view), ['cs', 'items'], '생산 창 재사용');
     app.macOpen('news'); app.tick(); app.macOpen('news', { app: 1 }); app.tick();
     app.macOpen('calendar');
-    assert.deepEqual(app.wins.map(w => w.view), ['cs', 'items', 'news', 'calendar']);
+    assert.deepEqual(app.wins.map(w => w.view), ['cs', 'items', 'sns', 'calendar']);
+    assert.equal(app.snsMode, 'news');
 });
 
 test('내려둔 묶음 창도 다시 올린다 · 같은 화면 창이 정확히 있으면 그 창이 먼저', () => {

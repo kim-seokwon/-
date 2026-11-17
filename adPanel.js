@@ -32,7 +32,7 @@ export function brandOfLink(l, brands = []) {
     return b ? b.id : null;
 }
 
-//  period: 'yesterday' = 어제(KST) 하루 · 'cum' = 세트 시작일(KST) ~ 어제
+//  period: 'yesterday' = 어제(KST) 하루 · 'three' = 최근 3일 · 'cum' = 세트 시작일(KST) ~ 어제
 //  제외(108 ad_links.excluded — 목표 잘못 설정한 세트)는 판정·합계에서 빼고 반환 배열의 .excluded 로 따로 준다(숨긴 사실을 화면에 보이게).
 //  반환: [{ brand_id, name, rules, spend, follows, cpf, kind, sets: [{ adset_id, name, status, budget, end, spend, follows, cpf, kind }] }]
 export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], period = 'yesterday', now = Date.now() } = {}) {
@@ -43,7 +43,8 @@ export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], 
         const id = l.adset_id || 'ad:' + l.ad_id;
         if (l.excluded) { ex.sets.add(id); ex.reason ??= l.excluded_reason || null; exAd.set(String(l.ad_id), id); continue; }
         adSet.set(String(l.ad_id), id);
-        const s = sets.get(id) || { adset_id: id, name: l.adset_name || l.ad_name || l.ad_id, status: null, budget: null, start: null, end: null, brand_id: null, spend: 0, follows: 0, ads: 0 };
+        const s = sets.get(id) || { adset_id: id, name: l.adset_name || l.ad_name || l.ad_id, status: null, budget: null, start: null, end: null, brand_id: null,
+            spend: 0, follows: 0, spend3: 0, follows3: 0, spendCum: 0, followsCum: 0, spendYesterday: 0, followsYesterday: 0, daily: [], ads: 0 };
         s.ads++;
         //  세트 상태는 세트값 우선, 없으면 광고 상태 중 '진행'이 하나라도 있으면 진행
         const st = l.adset_status || l.effective_status;
@@ -52,20 +53,34 @@ export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], 
         s.start ??= l.adset_start ? kstDay(l.adset_start) : null;
         s.end ??= l.adset_end ? kstDay(l.adset_end) : null;
         s.brand_id ??= brandOfLink(l, brands);
+        s.media_src ??= l.thumb_url || l.thumbnail_url || null;
+        s.media_id ??= l.media_id || null;
+        s.target ??= l.target_summary || [l.target_age, l.target_gender, l.target_region].filter(Boolean).join(' · ') || null;
         sets.set(id, s);
     }
     //  같은 세트에 제외 안 된 광고가 섞여 있어도 세트째 뺀다(제외는 세트 단위)
     for (const id of ex.sets) sets.delete(id);
     for (const d of daily) {
         if (exAd.has(String(d.ad_id))) {
-            if (d.day && d.day <= yday && (period === 'yesterday' ? d.day === yday : true)) { ex.spend += num(d.spend); ex.follows += num(d.follows); }
+            if (d.day && d.day <= yday && (period === 'yesterday' ? d.day === yday : period === 'three' ? d.day >= addDays(yday, -2) : true)) { ex.spend += num(d.spend); ex.follows += num(d.follows); }
             continue;
         }
         const s = sets.get(adSet.get(String(d.ad_id)));
         if (!s || !d.day || d.day > yday) continue;                       // 오늘(진행 중)은 판정에 넣지 않는다
         if (d.day > addDays(yday, -7) && num(d.spend) > 0) s.recent = true;   // 최근 7일(어제까지) 지출 있음
-        if (period === 'yesterday' ? d.day !== yday : (s.start && d.day < s.start)) continue;
-        s.spend += num(d.spend); s.follows += num(d.follows);
+        const spend = num(d.spend), follows = num(d.follows);
+        if (d.day === yday) { s.spendYesterday += spend; s.followsYesterday += follows; }
+        if (d.day >= addDays(yday, -2)) { s.spend3 += spend; s.follows3 += follows; }
+        if (!s.start || d.day >= s.start) { s.spendCum += spend; s.followsCum += follows; }
+        const daily = s.daily.find(x => x.day === d.day) || (() => { const x = { day: d.day, spend: 0, follows: 0 }; s.daily.push(x); return x; })();
+        daily.spend += spend; daily.follows += follows;
+    }
+    for (const s of sets.values()) {
+        const pair = period === 'yesterday' ? [s.spendYesterday, s.followsYesterday]
+            : period === 'cum' ? [s.spendCum, s.followsCum] : [s.spend3, s.follows3];
+        [s.spend, s.follows] = pair;
+        s.cpf3 = cpfOf(s.spend3, s.follows3); s.cpfCum = cpfOf(s.spendCum, s.followsCum);
+        s.daily.sort((a, b) => String(a.day).localeCompare(String(b.day)));
     }
     const nameOf = id => (brands.find(b => b.id === id) || {}).name || '브랜드 미지정';
     const groups = new Map();
@@ -95,7 +110,7 @@ export function excludedNote(ex) {
     return `<span class="ap-ex" title="${esc(ex.reason || '')}">제외 ${ex.sets}세트(목표 오류) · 지출 ${won(ex.spend)}원 · 팔로우 ${won(ex.follows)}명은 판정·합계에서 뺌</span>`;
 }
 
-const STATUS = { ACTIVE: ['진행', '#059669'], PAUSED: ['꺼짐', '#64748b'], ADSET_PAUSED: ['꺼짐', '#64748b'], CAMPAIGN_PAUSED: ['캠페인 꺼짐', '#64748b'],
+const STATUS = { ACTIVE: ['가동', '#059669'], PAUSED: ['꺼짐', '#64748b'], ADSET_PAUSED: ['꺼짐', '#64748b'], CAMPAIGN_PAUSED: ['캠페인 꺼짐', '#64748b'],
     PENDING_REVIEW: ['검토중', '#d97706'], WITH_ISSUES: ['문제', '#dc2626'], DISAPPROVED: ['거절', '#dc2626'], ARCHIVED: ['보관', '#64748b'], DELETED: ['삭제', '#64748b'] };
 const md = d => d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : '—';
 const badge = k => { const v = PANEL_VERDICT[k] || PANEL_VERDICT.none; return `<span class="ap-badge" style="color:${v.color};background:${v.bg}">${v.label}</span>`; };
@@ -210,15 +225,17 @@ export function snsSetDetailHtml(row) {
     const s = row.set, g = row.group;
     const [stt, stc] = STATUS[s.status] || [s.status || '—', '#64748b'];
     const rule = g.rules ? `${won(g.rules.up_max)}원 이하 증액 · ${won(g.rules.stop_over)}원까지 유지 · 넘으면 중단` : '판정선 없음';
-    const why = s.spend <= 0 ? '이 기간 집행 없음' : s.follows <= 0 ? `지출 ${won(s.spend)}원 · 팔로우 0명` : `지출 ${won(s.spend)}원 ÷ 팔로우 ${won(s.follows)}명 = ${cpfTxt(s.cpf, s.spend)}`;
+    const line = s.kind === 'up' ? `증액선 ${won(g.rules?.up_max)}원 이하` : s.kind === 'keep' ? `증액선 ${won(g.rules?.up_max)}원 초과 · 중단선 ${won(g.rules?.stop_over)}원 이하` : s.kind === 'stop' ? `중단선 ${won(g.rules?.stop_over)}원 초과` : rule;
+    const why = s.spend <= 0 ? '최근 3일 집행 없음' : s.follows <= 0 ? `최근 3일 지출 ${won(s.spend)}원 · 팔로우 0명 → 중단` : `최근 3일 ${cpfTxt(s.cpf, s.spend)} · ${line} → ${PANEL_VERDICT[s.kind]?.label || '보류'}`;
     return `<div class="sns3-detail">
         <div class="m3-big">${esc(s.name)}</div><div class="m3-sub">${esc(g.name)} · 광고 세트</div>
         <div class="sns3-hero"><div><span>1명당</span><strong>${cpfTxt(s.cpf, s.spend)}</strong></div>${badge(s.kind)}</div>
-        <div class="m3-f"><i class="ph ph-wallet"></i><span class="k">지출</span><span class="v">${won(s.spend)}원</span></div>
-        <div class="m3-f"><i class="ph ph-user-plus"></i><span class="k">팔로우</span><span class="v">${won(s.follows)}명</span></div>
+        <div class="m3-f"><i class="ph ph-wallet"></i><span class="k">3일 / 누적</span><span class="v">${won(s.spend3)}원 / ${won(s.spendCum)}원</span></div>
+        <div class="m3-f"><i class="ph ph-user-plus"></i><span class="k">3일 결과</span><span class="v">팔로우 ${won(s.follows3)}명 · ${cpfTxt(s.cpf3, s.spend3)}/명</span></div>
         <div class="m3-f"><i class="ph ph-pulse"></i><span class="k">상태</span><span class="v" style="color:${stc};font-weight:700">${esc(stt)}</span></div>
         <div class="m3-f"><i class="ph ph-coins"></i><span class="k">일예산</span><span class="v">${s.budget != null ? won(s.budget) + '원' : '—'}</span></div>
         <div class="m3-f"><i class="ph ph-calendar-blank"></i><span class="k">기간</span><span class="v">${md(s.start)} ~ ${md(s.end)}</span></div>
+        <div class="m3-f"><i class="ph ph-users-three"></i><span class="k">타겟</span><span class="v">${esc(s.target || '—')}</span></div>
         <div class="sns3-reason"><b>판정 근거</b><p>${esc(why)}</p><span>${esc(rule)}</span></div>
     </div>`;
 }
