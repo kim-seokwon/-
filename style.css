@@ -5897,7 +5897,7 @@ b.sp-nm.dup{color:#ff453a}
   .sns-news-tiles span,.sns-news-tiles em,.sns-news-meta,.sns-follow-gallery article>em,.sns-follow-gallery article>small,
   .sns-fatigue-chart text,.kpi-label,.stat-label,.card-footer,.material-kpi span,.sum-b em,.dt-stock em,
   .it-tbl td.mono,.it-in.it-dt,.mp-tl span,.mp-sec,.np-x,.np-chip i,.lc-g,.rm-x,.nc-all,.nc-h span,.nc-s){font-size:var(--ui-fs-help)!important}
-.mac-desktop [style*="font-size:0.58rem"],.mac-desktop [style*="font-size:0.6rem"],.mac-desktop [style*="font-size:0.62rem"],
+.mac-desktop [style*="font-size:0.56rem"],.mac-desktop [style*="font-size:0.58rem"],.mac-desktop [style*="font-size:0.6rem"],.mac-desktop [style*="font-size:0.62rem"],
 .mac-desktop [style*="font-size:0.64rem"],.mac-desktop [style*="font-size:0.65rem"],.mac-desktop [style*="font-size:0.66rem"],
 .mac-desktop [style*="font-size:0.68rem"],.mac-desktop [style*="font-size:0.7rem"],.mac-desktop [style*="font-size:0.72rem"],
 .mac-desktop [style*="font-size:0.73rem"],.mac-desktop [style*="font-size:0.74rem"],.mac-desktop [style*="font-size:.6rem"],
@@ -5909,7 +5909,7 @@ b.sp-nm.dup{color:#ff453a}
 .mac-desktop [style*="font-size:.8rem"],.mac-desktop [style*="font-size:9px"],
 .mac-desktop [style*="font-size:10px"],.mac-desktop [style*="font-size:10.5px"],.mac-desktop [style*="font-size:11px"],
 .mac-desktop [style*="font-size:11.5px"]{font-size:var(--ui-fs-help)!important}
-.mac-desktop :where(.mac-ver,.sv-st,.sv-hint,.tip-q,.tip-wrap){font-size:var(--ui-fs-help)!important}
+.mac-desktop :where(.mac-ver,.sv-st,.sv-hint,.tip-q,.tip-wrap,.dt-li.job b){font-size:var(--ui-fs-help)!important}
 .mac-desktop svg text{font-size:var(--ui-fs-help)!important}
 .mac-desktop .warn-bar :where(b,span,em),.mac-desktop .sv :where(.sv-m small,.sv-pt span,.sv-bar b,.sv-days span,.sv-ph span,.sv-profit .f,.sv-fee .r,.sv-pf,.sv-sub span){font-size:var(--ui-fs-help)!important}
 
@@ -5922,9 +5922,9 @@ b.sp-nm.dup{color:#ff453a}
 .sales3 .inv-row td:nth-child(-n+3)>span,.sales3 .it-tbl:has(.cs-order-no) tbody td:nth-child(6)>span:not(.cs-part){display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .sales3 .inv-row{height:52px}.sales3 .it-tbl:has(.cs-order-no) tbody tr{height:54px}
 
-/* 홈은 독 위에서 끝나게 해 오늘 매출의 마지막 카드가 독 아래로 들어가지 않는다. */
-.mac-deskboard{bottom:92px;padding-bottom:24px;scroll-padding-bottom:24px}
-@media(max-width:900px){.mac-deskboard{bottom:76px;padding-bottom:24px}}
+/* 홈 스크롤 끝에는 독 실제 높이 + 여유를 예약해 마지막 블록 전체가 독 위로 올라온다. */
+.mac-deskboard{bottom:0;padding-bottom:110px;scroll-padding-bottom:110px}
+@media(max-width:900px){.mac-deskboard{bottom:0;padding-bottom:120px;scroll-padding-bottom:120px}}
 /* 주문 표 — 브랜드·채널 열 분리(전체점검-1117 ④). 폭만 정한다(글자 크기는 디자이너 토큰). 상품만 탄력, 송장은 고정폭. */
 .sales3 .ord-tbl th:nth-child(1){width:32px}.sales3 .ord-tbl th:nth-child(2){width:150px}.sales3 .ord-tbl th:nth-child(3){width:92px}
 .sales3 .ord-tbl th:nth-child(4){width:104px}.sales3 .ord-tbl th:nth-child(5){width:100px}.sales3 .ord-tbl th:nth-child(6){width:60px}
