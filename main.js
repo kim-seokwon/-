@@ -1655,7 +1655,8 @@ class BhasApp {
         const role = this.currentUser?.role;
         const set = new Set(this._menuItems().filter(it => it.visible).map(it => it.id));
         set.add('home');
-        if (role === 'MASTER' || role === 'STAFF') ['items', 'news', 'crm'].forEach(v => set.add(v));
+        if (set.has('settings')) set.add('set_account');   // 설정 창의 '내 계정·버전' 칸 — 파트너도 비밀번호를 바꾼다
+        if (role === 'MASTER' || role === 'STAFF') ['items', 'news', 'crm', 'makers', 'set_org', 'set_adrules', 'set_menu', 'set_alerts'].forEach(v => set.add(v));
         return set;
     }
     //  파트너(CLIENT)는 허용된 화면만 연다 — 독·전체 메뉴·모두 찾기 어디로 와도 막는다(자료는 099 가 DB 에서 막는다)
@@ -3263,12 +3264,88 @@ class BhasApp {
             { k: 'account', t: '계정', i: 'ph-user-circle' },
             { k: 'build', t: '버전', i: 'ph-info' },
         ];
+        //  설정 창(왼쪽 설정 메뉴) 안에서는 자기 메뉴를 빼고 그 칸 카드만 — 화면·도구 / 내 계정·버전
+        if (this._inSetShell) {
+            const secs = this.currentView === 'set_account' ? ['account', 'build'] : ['look', 'tools'];
+            const html = this._settingsCards(row, esc, role, wall, links);
+            return `<div class="settings-pane set-in">${html.filter(c => secs.includes(c.s)).map(c => c.h).join('')}</div>`;
+        }
         const side = `<aside class="appside"><div class="m3-h">설정</div>
             ${SIDE.map(x => `<div class="m3-s${sec === x.k ? ' on' : ''}" onclick="app.setSetSec('${x.k}')">
                 <i class="ph ${x.i}" style="color:#0a84ff"></i><span>${esc(x.t)}</span></div>`).join('')}</aside>`;
         return `<div class="appwrap">${side}<div class="appmain">
         <div class="settings-pane" data-sec="${esc(sec)}">
-            <div class="set-card" data-s="look">
+            ${this._settingsCards(row, esc, role, wall, links).map(c => c.h).join('')}
+        </div></div></div>`;
+    }
+    setSetSec(k) { this.setSec = k; this.requestRender(); }
+    //  ── 설정 창 새 칸 (재설계 §2) ── 지금은 읽기만. 고치는 화면은 113(조직 표·판정선 쓰기 권한) 검토 뒤에 붙인다
+    _setGo(k, label) { return `<button class="mbtn" onclick="app.switchAppTab('${this._renderingWin || ''}','${k}')">${this._vesc(label)}</button>`; }
+    renderSetOrg() {
+        const brands = (mockData.brands || []).filter(b => b.status !== 'closed');
+        const users = (mockData.companies || []).filter(c => c.username);
+        return `<div class="mpane">
+            <div class="mpane-top"><h2><i class="ph ph-buildings"></i> 조직 정보</h2></div>
+            <div class="mcard">
+                <div class="mcard-h">이 조직</div>
+                <div class="mrow"><div class="mrow-main"><div class="mrow-t">운영 중인 브랜드 ${brands.length}개</div>
+                    <div class="mrow-s">${brands.map(b => this._vesc(b.name)).join(' · ') || '없음'}</div></div>
+                    <div class="mrow-r">${this._setGo('brand_management', '브랜드')}</div></div>
+                <div class="mrow"><div class="mrow-main"><div class="mrow-t">쓰는 사람 ${users.length}명</div></div>
+                    <div class="mrow-r">${this._setGo('user_management', '사용자·권한')}</div></div>
+                <div class="set-note">조직 이름·사업자 정보는 조직 표(113) 적용 뒤 이 칸에서 고칩니다.</div>
+            </div></div>`;
+    }
+    renderSetAdRules() {
+        if (!this._arLoaded) { if (!this._arLoading) this.loadAdReport().then(() => this.requestRender()); return this._loadingSkeleton('광고 판정 기준'); }
+        const r = this.adReport || {};
+        if (r.error) return `<div class="mpane"><div class="mcard"><div class="set-note">판정 기준을 불러오지 못했습니다.</div></div></div>`;
+        //  SNS 광고 판정과 같은 규칙 — 행이 없는 브랜드는 공통 기본값
+        const def = { test_daily_budget: 10000, min_days: 2, min_spend: 10000, up_max: 1000, stop_over: 1600, early_mult: 2 };
+        const won = n => Number(n || 0).toLocaleString('ko-KR');
+        const rows = (mockData.brands || []).filter(b => b.status !== 'closed').map(b => {
+            const own = (r.rules || []).find(x => String(x.brand_id) === String(b.id));
+            const x = { ...def, ...(own || {}) };
+            return `<tr><td>${this._vesc(b.name)}${own ? '' : ' <span class="mpill gray">기본값</span>'}</td>
+                <td class="n">${won(x.test_daily_budget)}</td><td class="n">${x.min_days}일</td><td class="n">${won(x.min_spend)}</td>
+                <td class="n">${won(x.up_max)}</td><td class="n">${won(x.stop_over)}</td><td class="n">×${x.early_mult}</td></tr>`;
+        }).join('');
+        return `<div class="mpane">
+            <div class="mpane-top"><h2><i class="ph ph-gauge"></i> 광고 판정 기준</h2></div>
+            <div class="mcard"><div class="mcard-h">브랜드별 판정선 (원)</div>
+                <div class="set-scroll"><table class="set-tbl"><thead><tr><th>브랜드</th><th>테스트 하루 예산</th><th>최소 일수</th><th>최소 지출</th>
+                    <th>팔로우당 키움</th><th>팔로우당 끔</th><th>초반 배수</th></tr></thead><tbody>${rows}</tbody></table></div>
+                <div class="set-note">SNS › 광고 판정이 이 값을 씁니다. 값 고치기는 쓰기 권한 검토(113) 뒤에 붙입니다.</div>
+            </div></div>`;
+    }
+    renderSetMenu() {
+        const items = this._menuItems();
+        return `<div class="mpane">
+            <div class="mpane-top"><h2><i class="ph ph-toggle-right"></i> 메뉴 켜기/끄기</h2></div>
+            <div class="mcard"><div class="mcard-h">내 계정에 보이는 메뉴</div>
+                ${items.map(it => `<div class="mrow"><div class="mrow-main"><div class="mrow-t">${this._vesc(it.label)}</div></div>
+                    <div class="mrow-r"><span class="mpill ${it.visible ? 'green' : 'gray'}">${it.visible ? '켜짐' : '꺼짐'}</span></div></div>`).join('')}
+                <div class="set-note">사람마다 보이는 메뉴는 사용자·권한에서 고칩니다. 조직 전체 켜기/끄기는 113 적용 뒤.</div>
+                <div class="mrow"><div class="mrow-main"></div><div class="mrow-r">${this._setGo('user_management', '사용자·권한 열기')}</div></div>
+            </div></div>`;
+    }
+    renderSetAlerts() {
+        if (!this._mallsLoaded) { if (!this._mallsLoading) this.loadMalls().then(() => this.requestRender()); return this._loadingSkeleton('알림'); }
+        const malls = (this.malls || []).filter(m => m.active !== false);
+        return `<div class="mpane">
+            <div class="mpane-top"><h2><i class="ph ph-bell-ringing"></i> 알림(텔레그램)</h2></div>
+            <div class="mcard"><div class="mcard-h">주문 수집 끊김·0건 알림 받는 몰</div>
+                ${malls.map(m => `<div class="mrow"><div class="mrow-main"><div class="mrow-t">${this._vesc(m.label || m.mall_key)}</div>
+                    <div class="mrow-s">${this._vesc(m.channel || '')}</div></div>
+                    <div class="mrow-r"><span class="mpill ${m.alert_enabled === false ? 'gray' : 'green'}">${m.alert_enabled === false ? '꺼짐' : '켜짐'}</span></div></div>`).join('') || '<div class="mnone">몰이 없습니다</div>'}
+                <div class="set-note">수집이 끊기거나 주문이 0건이면 하루 한 번 텔레그램으로 알립니다. 봇·받는 방은 운영 설정(비밀값)에 있고 여기엔 보이지 않습니다.</div>
+            </div></div>`;
+    }
+    //  설정 카드 — 옛 설정 창(왼쪽 자기 메뉴)과 새 설정 창(설정 묶음 칸) 둘 다 이 목록을 쓴다
+    _settingsCards(row, esc, role, wall, links) {
+        const isLight = document.body.classList.contains('light');
+        return [
+            { s: 'look', h: `<div class="set-card" data-s="look">
                 <div class="set-head">바탕화면</div>
                 <div class="wall-pick">
                     ${this.MAC_WALLS.map(w => `
@@ -3277,39 +3354,38 @@ class BhasApp {
                             <em>${esc(w.label)}</em>
                         </button>`).join('')}
                 </div>
-            </div>
-            <div class="set-card" data-s="look">
+            </div>` },
+            { s: 'look', h: `<div class="set-card" data-s="look">
                 <div class="set-head">화면</div>
                 ${row('밝은 화면 · 어두운 화면', isLight ? '지금은 밝은 화면입니다' : '지금은 어두운 화면입니다',
                     `<button class="set-btn" onclick="app.toggleTheme()">${isLight ? '어둡게' : '밝게'}</button>`)}
 
-            </div>
-            <div class="set-card" data-s="tools">
+            </div>` },
+            { s: 'tools', h: `<div class="set-card" data-s="tools">
                 <div class="set-head">도구</div>
                 ${row('계산기 · 스티커', '독 오른쪽 끝에 있습니다',
                     `<button class="set-btn" onclick="app.openCalc()">계산기</button>
                      <button class="set-btn" onclick="app.addSticky()">스티커</button>`)}
-            </div>
-            ${links.length ? `<div class="set-card" data-s="admin">
+            </div>` },
+            { s: 'admin', h: links.length ? `<div class="set-card" data-s="admin">
                 <div class="set-head">관리</div>
                 ${links.map(l => row(l.label, '', `<button class="set-btn" onclick="${this.macMode ? `app.macOpen('${l.id}')` : `app.switchView('${l.id}')`}">열기</button>`)).join('')}
-            </div>` : ''}
-            <div class="set-card" data-s="build">
+            </div>` : '' },
+            { s: 'build', h: `<div class="set-card" data-s="build">
                 <div class="set-head">버전</div>
                 ${row('지금 쓰는 버전', this._buildTag(), `<button class="set-btn" onclick="app.checkNewBuild(true)">업데이트 확인</button>
                     <button class="set-btn" onclick="location.reload(true)">새로고침</button>`)}
-            </div>
-            <div class="set-card" data-s="account">
+            </div>` },
+            { s: 'account', h: `<div class="set-card" data-s="account">
                 <div class="set-head">계정</div>
                 ${row(this.currentUser?.name || '-', role === 'MASTER' ? '마스터 관리자' : (role === 'STAFF' ? '업무 직원' : '파트너사'),
                     `<button class="set-btn danger" onclick="app.logout()">로그아웃</button>`)}
                 ${row('아이디', this.currentUser?.username || (this.currentUser?.email || '').split('@')[0] || '-', '')}
                 ${row('비밀번호', '처음 받은 비밀번호는 바꿔서 쓰세요',
                     `<button class="set-btn" onclick="app.changeMyPassword()">비밀번호 바꾸기</button>`)}
-            </div>
-        </div></div></div>`;
+            </div>` },
+        ];
     }
-    setSetSec(k) { this.setSec = k; this.requestRender(); }
     // ── 묶음 앱 ──────────────────────────────────────────────
     //  따로 떨어져 있던 화면 중 같이 쓰는 것들을 한 앱의 탭으로 묶는다.
     //   · 주문 ↔ CS   : 주문을 찾아 그 자리에서 교환·반품을 접수한다
@@ -3328,16 +3404,34 @@ class BhasApp {
             { k: 'items', t: '제품리스트' }, { k: 'vendors', t: '생산현황' },
             { k: 'dashboard', t: '시즌', hidden: true },
             { k: 'tech_packs', t: '작업지시서' }, { k: 'sample_maker', t: '샘플·디자인' },
-            { k: 'quotes', t: '견적' },
+            { k: 'quotes', t: '견적' }, { k: 'makers', t: '생산처' },
+        ] },
+        // 설정 — LAUNCH 에 흩어져 있던 계정·브랜드·연동·불편사항을 한 창 왼쪽 메뉴로(재설계 §2). need: 'MASTER' 는 마스터만 보인다
+        { head: 'settings', label: '설정', tabs: [
+            { k: 'set_org', t: '조직 정보', need: 'MASTER' }, { k: 'brand_management', t: '브랜드', need: 'MASTER' },
+            { k: 'user_management', t: '사용자·권한', need: 'MASTER' }, { k: 'integrations', t: '몰·인스타 연동' },
+            { k: 'set_adrules', t: '광고 판정 기준' }, { k: 'set_menu', t: '메뉴 켜기/끄기', need: 'MASTER' },
+            { k: 'set_alerts', t: '알림(텔레그램)' }, { k: 'feedback', t: '불편사항', need: 'MASTER' },
+            { k: 'settings', t: '화면·도구', need: 'ANY' }, { k: 'set_account', t: '내 계정·버전', need: 'ANY' },
         ] },
     ];
+    //  설정 묶음의 칸을 이 계정이 볼 수 있나 — 마스터 전용 칸은 직원에게 안 보이고 열리지도 않는다
+    _setTabOk(k) {
+        const t = (this.APP_GROUPS.find(g => g.head === 'settings')?.tabs || []).find(x => x.k === k);
+        const role = this.currentUser?.role;
+        if (!t || t.need === 'ANY') return true;
+        if (role !== 'MASTER' && role !== 'STAFF') return false;
+        return t.need !== 'MASTER' || role === 'MASTER';
+    }
     _groupOf(view) { return this.APP_GROUPS.find(g => g.tabs.some(t => t.k === view)); }
     // 묶음 앱의 첫 칸 — 가로 탭 대신 세로 분류 목록(메모·자료실과 같은 결)
     APP_ICONS = {
         orders: 'ph-shopping-bag-open', cs: 'ph-arrows-counter-clockwise', inventory: 'ph-package',
         sales: 'ph-chart-line-up', expenses: 'ph-credit-card', analysis: 'ph-crown-simple', crm: 'ph-user-focus',
         items: 'ph-t-shirt', dashboard: 'ph-calendar-blank', vendors: 'ph-factory', tech_packs: 'ph-clipboard-text',
-        sample_maker: 'ph-scissors', quotes: 'ph-receipt',
+        sample_maker: 'ph-scissors', quotes: 'ph-receipt', makers: 'ph-buildings',
+        set_org: 'ph-buildings', brand_management: 'ph-shield-check', user_management: 'ph-users-three', integrations: 'ph-plugs-connected',
+        set_adrules: 'ph-gauge', set_menu: 'ph-toggle-right', set_alerts: 'ph-bell-ringing', feedback: 'ph-chat-dots', settings: 'ph-desktop', set_account: 'ph-user-circle',
     };
     // ── 모든 표에 쓰는 줄 세우기 · 거르기 ──────────────────────
     //  화면마다 따로 짜지 않는다. 머리글을 누르면 정렬, 깔때기를 누르면 그 칸 값으로 거른다.
@@ -3671,12 +3765,18 @@ class BhasApp {
         // 전역 사이드바가 창 이동을 맡는 맥 모드에서는 같은 탭을 창 안에 두 번 만들지 않는다.
         // 첫 칸은 현재 화면을 좁혀 보는 필터만 남긴다.
         if (this.macMode) {
+            //  설정 창 — 왼쪽은 설정 메뉴만(재설계 §2). 이 계정이 볼 수 있는 칸만
+            if (g.head === 'settings') return `<aside class="appside appside-sales-menu">
+                <div class="m3-h">설정 메뉴</div>
+                ${g.tabs.filter(t => this._setTabOk(t.k)).map(t => `<button class="sales-section-nav${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
+                    <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}"></i><span>${esc(t.t)}</span></button>`).join('')}
+            </aside>`;
             const nav = this._viewNav(view);
             return nav ? `<aside class="appside appside-filter">${nav}</aside>` : '';
         }
         return `<aside class="appside">
             <div class="m3-h">${g.head === 'items' ? '카테고리' : esc(g.label)}</div>
-            ${g.tabs.filter(t => !t.hidden).map(t => {
+            ${g.tabs.filter(t => !t.hidden && (g.head !== 'settings' || this._setTabOk(t.k))).map(t => {
                 const on = t.k === view || (t.k === 'sales' && view === 'expenses');
                 return `<div class="m3-s${on ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
                 <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}" style="color:#0a84ff"></i><span>${esc(t.t)}</span></div>`;
@@ -4209,17 +4309,16 @@ class BhasApp {
     LAUNCH = [
         { g: '판매', items: [['orders', '주문', 'ph-shopping-bag-open'], ['cs', 'CS', 'ph-arrows-counter-clockwise'],
             ['inventory', '재고', 'ph-package'], ['sales', '정산', 'ph-chart-line-up'],
-            ['expenses', '지출', 'ph-credit-card'], ['analysis', '분석', 'ph-chart-donut'],
-            ['integrations', '연동', 'ph-plugs-connected']] },
+            ['analysis', '분석', 'ph-chart-donut']] },
         { g: '생산', items: [['items', '제품리스트', 'ph-t-shirt'], ['dashboard', '시즌', 'ph-calendar-blank'], ['vendors', '생산현황', 'ph-factory'],
             ['tech_packs', '작업지시서', 'ph-clipboard-text'], ['sample_maker', '샘플·디자인', 'ph-scissors'],
-            ['quotes', '견적', 'ph-receipt']] },
+            ['quotes', '견적', 'ph-receipt'], ['makers', '생산처', 'ph-buildings']] },
         { g: '업무', items: [['notes', '메모', 'ph-note'], ['reminders', '할 일', 'ph-list-checks'],
             ['calendar', '캘린더', 'ph-calendar-dots'], ['table', '표', 'ph-table'],
             ['contacts', '연락처', 'ph-address-book'], ['sns', 'SNS', 'ph-instagram-logo'],
             ['documents', '자료실', 'ph-folder-open']] },
-        { g: '관리', items: [['settings', '설정', 'ph-gear-six'], ['user_management', '계정', 'ph-users-three'],
-            ['brand_management', '브랜드', 'ph-shield-check'], ['feedback', '불편사항', 'ph-chat-dots']] },
+        //  연동·계정·브랜드·불편사항은 설정 창 왼쪽 메뉴로 옮겼다(재설계 §2) · 지출은 판매>정산 안
+        { g: '설정', items: [['settings', '설정', 'ph-gear-six']] },
     ];
     // ============================================================
     //  모두 찾기 — 어디서든 ⌘K. 한 칸에서 전부 뒤진다.
@@ -4341,7 +4440,7 @@ class BhasApp {
                 `app.findGo('documents','${d.id}')`);
         });
         //  화면 이름도 — '재고' 라고 치면 재고 화면이 뜬다
-        this.LAUNCH.forEach(sec => sec.items.forEach(([id, label, icon]) => {
+        this.LAUNCH.forEach(sec => [...sec.items, ...(sec.g === '설정' ? this._setLaunchItems() : [])].forEach(([id, label, icon]) => {
             if (hit(label)) add('화면', icon, '#8e8e93', label, sec.g, `app.findGo('view','${id}')`);
         }));
         return out;
@@ -4454,7 +4553,8 @@ class BhasApp {
         let html = '';
         this.LAUNCH.forEach(sec => {
             let items = sec.items;
-            if (sec.g === '관리' && role !== 'MASTER') items = items.filter(i => i[0] === 'settings');
+            //  찾을 땐 설정 창 안 칸(연동·계정·브랜드…)도 이름으로 걸린다 — 런처에서 빠졌어도 '연동' 치면 나온다
+            if (sec.g === '설정' && k) items = [...items, ...this._setLaunchItems()];
             items = items.filter(i => this._viewAllowed(i[0]));
             if (k) items = items.filter(i => i[1].toLowerCase().includes(k));
             if (!items.length) return;
@@ -4463,6 +4563,11 @@ class BhasApp {
                     <span class="lc-ic"><i class="ph ${icon}"></i></span><em>${esc(label)}</em></button>`).join('') + '</div>';
         });
         body.innerHTML = html || `<div class="m3-none">찾는 화면이 없습니다</div>`;
+    }
+    //  설정 창 칸을 런처 항목 모양([id, 이름, 아이콘])으로 — 이 계정이 볼 수 있는 칸만
+    _setLaunchItems() {
+        const g = this.APP_GROUPS.find(x => x.head === 'settings');
+        return (g ? g.tabs : []).filter(t => t.k !== 'settings' && this._setTabOk(t.k)).map(t => [t.k, t.t, this.APP_ICONS[t.k] || 'ph-gear-six']);
     }
     launch(view) {
         this.closeLauncher();
@@ -4483,10 +4588,11 @@ class BhasApp {
         if (!side) return inner;
         const sales3 = this._groupOf(view)?.head === 'orders';
         const production3 = this._groupOf(view)?.head === 'items';
+        const settings3 = this._groupOf(view)?.head === 'settings';
         const detail = this._detailPane(view);
         const picked = ({ orders: this.orderSel, cs: this.csSel, inventory: this.invSel })[view];
         const emptyDetail = sales3 && !picked;
-        return `<div class="appwrap${side ? '' : ' no-appside'}${detail ? ' three' : ''}${sales3 ? ' sales3' : ''}${production3 ? ' production3' : ''}${emptyDetail ? ' empty-detail' : ''}${sales3 && this.salesMobileDetail || production3 && this.productionMobileDetail ? ' detail' : ''}">${side}<div class="appmain">${this._syncWarnBar()}${inner}</div>${detail || ''}</div>`;
+        return `<div class="appwrap${side ? '' : ' no-appside'}${detail ? ' three' : ''}${sales3 ? ' sales3' : ''}${production3 ? ' production3' : ''}${settings3 ? ' settings3' : ''}${emptyDetail ? ' empty-detail' : ''}${sales3 && this.salesMobileDetail || production3 && this.productionMobileDetail ? ' detail' : ''}">${side}<div class="appmain">${this._syncWarnBar()}${inner}</div>${detail || ''}</div>`;
     }
     //  C4. 수집이 끊겨도 아무도 모르던 걸 맨 위에 띄운다.
     //  키디키디는 2026-03-10 이후 주문이 안 들어오는데 화면 어디에도 표시가 없었다.
@@ -4799,9 +4905,20 @@ class BhasApp {
     renderSubView(products) {
         const { role, id: currentUserId, name: currentUserName } = this.currentUser;
         if (this.currentView === 'home') return this.renderHome(products);
-        if (this.currentView === 'settings') return this.renderSettings();
-        if (this.currentView === 'contacts') return this.renderContacts();
-        if (this.currentView === 'news') { this.snsMode = 'news'; return this._snsShell(this.renderSnsNews()); }
+        //  설정 묶음 — 왼쪽 설정 메뉴 | 가운데 그 칸. 원래 화면(계정·브랜드·연동·불편사항)은 그대로 가운데에 그린다
+        if (this._groupOf(this.currentView)?.head === 'settings' && !this._inSetShell) {
+            const v = this.currentView;
+            if (!this._setTabOk(v)) return this._appShell(v, `<div class="m3-none" style="padding:40px">이 계정으로는 볼 수 없는 칸입니다</div>`);
+            this._inSetShell = true;
+            try { return this._appShell(v, this.renderSubView(products) || ''); } finally { this._inSetShell = false; }
+        }
+        if (this.currentView === 'settings' || this.currentView === 'set_account') return this.renderSettings();
+        if (this.currentView === 'set_org') return this.renderSetOrg();
+        if (this.currentView === 'set_adrules') return this.renderSetAdRules();
+        if (this.currentView === 'set_menu') return this.renderSetMenu();
+        if (this.currentView === 'set_alerts') return this.renderSetAlerts();
+        if (this.currentView === 'contacts' || this.currentView === 'makers') return this.renderContacts();
+        if (this.currentView === 'news') { this.snsMode = 'news'; return this._snsShell(this.renderSnsMorning()); }
 
         // 데이터 정규화 및 상태 판별 헬퍼
         const isStageCompleted = (p, s) => {
@@ -7546,7 +7663,7 @@ class BhasApp {
             if (!this._techPacksLoaded) this.ensureTechPacks();
             if (!this._noteLoaded && !this._noteLoading) this.loadNotes();
         }
-        if ((v === 'vendors' || v === 'contacts' || v === 'inventory') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
+        if ((v === 'vendors' || v === 'contacts' || v === 'makers' || v === 'inventory') && !this._vendorsLoaded && !this._vendorsLoading) this.loadVendors();
         if ((v === 'news' || (v === 'sns' && this.snsMode === 'news')) && !this._newsLoaded && !this._newsLoading) this.loadNews();
         if (v === 'vendors' && !this._invLoaded && !this._invLoading) this.loadInventory();
         if (v === 'sns' && !this._igLoaded && !this._igLoading) this.loadIG();
@@ -8419,7 +8536,7 @@ class BhasApp {
             ] },
             { label: '생산', icon: 'ph-factory', view: 'items', items: [
                 ['items', '제품리스트', 'ph-t-shirt'], ['vendors', '생산현황', 'ph-factory'], ['tech_packs', '작업지시서', 'ph-clipboard-text'],
-                ['sample_maker', '샘플', 'ph-scissors'], ['quotes', '견적', 'ph-receipt'],
+                ['sample_maker', '샘플', 'ph-scissors'], ['quotes', '견적', 'ph-receipt'], ['makers', '생산처', 'ph-buildings'],
             ] },
             { label: 'SNS', icon: 'ph-instagram-logo', view: 'sns', items: [
                 ['sns', '진행 중 광고', 'ph-megaphone', 'active_ads'], ['sns', '광고 성과', 'ph-chart-line-up', 'performance'],
@@ -8431,8 +8548,19 @@ class BhasApp {
             ['reminders', '할 일', 'ph-list-checks'], ['calendar', '캘린더', 'ph-calendar-dots'], ['notes', '메모', 'ph-note'],
             ['contacts', '연락처', 'ph-address-book'], ['documents', '자료실', 'ph-folder-open'],
         ] },
-        { id: 'other', label: '기타', items: [['settings', '설정', 'ph-gear']] },
+        //  설정 — 설정 창 왼쪽 메뉴와 같은 칸(재설계 §2). 폰에선 창 안 왼쪽 메뉴가 숨으므로 여기서 칸을 고른다
+        { id: 'other', label: '기타', apps: [
+            { label: '설정', icon: 'ph-gear', view: 'settings', items: [
+                ['set_org', '조직 정보', 'ph-buildings'], ['brand_management', '브랜드', 'ph-shield-check'],
+                ['user_management', '사용자·권한', 'ph-users-three'], ['integrations', '몰·인스타 연동', 'ph-plugs-connected'],
+                ['set_adrules', '광고 판정 기준', 'ph-gauge'], ['set_menu', '메뉴 켜기/끄기', 'ph-toggle-right'],
+                ['set_alerts', '알림(텔레그램)', 'ph-bell-ringing'], ['feedback', '불편사항', 'ph-chat-dots'],
+                ['settings', '화면·도구', 'ph-desktop'], ['set_account', '내 계정·버전', 'ph-user-circle'],
+            ] },
+        ] },
     ];
+    //  사이드바 칸을 이 계정이 볼 수 있나 — 화면 권한 + 설정 칸의 마스터 전용
+    _sideOk(view) { return this._viewAllowed(view) && (this._groupOf(view)?.head !== 'settings' || this._setTabOk(view)); }
     _macSideWidth() { return window.innerWidth <= 900 ? 0 : (this.sideCollapsed ? 64 : 236); }
     _sideSave() {
         try {
@@ -8469,11 +8597,12 @@ class BhasApp {
         const active = (view, mode = '') => view === 'sns' ? activeView === 'sns' && (!mode || activeMode === mode) : activeView === view;
         const item = ([view, label, icon, mode = '']) => {
             if (!this._viewAllowed(view)) return '';
+            if (!this._sideOk(view)) return '';   // 설정 칸의 마스터 전용
             return `<button class="mac-side-item${active(view, mode) ? ' on' : ''}" data-view="${esc(view)}"${mode ? ` data-mode="${esc(mode)}"` : ''}
                 onclick="app.sideOpen('${esc(view)}','${esc(mode)}')" title="${esc(label)}"><i class="ph ${icon}"></i><span>${esc(label)}</span></button>`;
         };
         const app = a => {
-            const children = (a.items || []).filter(x => this._viewAllowed(x[0])); if (!children.length) return '';
+            const children = (a.items || []).filter(x => this._sideOk(x[0])); if (!children.length) return '';
             const appOn = activeGroup === a.view || activeView === a.view;
             const expanded = this.sideAppOpen == null ? appOn : this.sideAppOpen === a.view;
             return `<div class="mac-side-appwrap${appOn ? ' on' : ''}${expanded ? ' expanded' : ''}"><button class="mac-side-app" onclick="app.toggleMacSideApp('${esc(a.view)}')" title="${esc(a.label)} 펼치기/접기"><i class="ph ${a.icon}"></i><span>${esc(a.label)}</span><i class="ph ph-caret-${expanded ? 'up' : 'down'} mac-side-app-caret"></i></button><div class="mac-side-sub">${children.map(item).join('')}</div></div>`;
@@ -8529,6 +8658,9 @@ class BhasApp {
     _macTitle(view) {
         const m = (this.MAC_DOCK.find(d => d.id === view));
         if (m) return m.label;
+        //  설정 묶음 칸은 창 이름을 '설정'으로 — 칸 이름은 왼쪽 메뉴에 있다
+        if (this._groupOf(view)?.head === 'settings') return '설정';
+        if (view === 'makers') return '생산처';
         return ({ settings: '설정', contacts: '연락처', cs: 'CS', expenses: '지출', inventory: '재고', news: '뉴스',
                   sales: '정산', sample_maker: '샘플·디자인',
                   vendors: '생산현황', dashboard: '시즌', analysis: '고객 분석', crm: '고객 CRM', tech_packs: '작업지시서', quotes: '견적',
@@ -15928,7 +16060,9 @@ class BhasApp {
         const cur = this.contactCat || '전체';
         const status = this.contactStatus || '전체';
         const all = (this.vendors || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
-        let base = all;
+        //  생산>생산처 = 같은 연락처 행 중 '기타'가 아닌 분류(공장·원단·부자재…) — 복사본이 아니라 같은 행을 본다(재설계 §2 소유 경계)
+        const makers = this.currentView === 'makers';
+        let base = makers ? all.filter(v => (v.category || '기타') !== '기타') : all;
         if (cur !== '전체') base = base.filter(v => (v.category || '기타') === cur);
         if (status !== '전체') base = base.filter(v => (v.status || '거래중') === status);
         if (q) base = base.filter(v => [v.name, v.contact_name, v.mobile, v.phone, v.fax, v.email, v.address, v.ceo_name, v.biz_no, v.memo]
@@ -15965,7 +16099,7 @@ class BhasApp {
         }).join('') + (stopped.length ? `<tr class="prod-fold"><td colspan="7">${this._c3Fold('app.toggleContactDone()', this.contactShowDone, `종료(거래중단) ${stopped.length}곳`)}</td></tr>` : '');
         const center = `
             <section class="m3-list">
-                <div class="m3-lbar"><div><b>${esc(cur === '전체' ? '모든 연락처' : cur)}</b><span>${list.length}곳${list.length !== all.length ? ` / 전체 ${all.length}` : ''}</span></div>
+                <div class="m3-lbar"><div><b>${esc(cur === '전체' ? (makers ? '모든 생산처' : '모든 연락처') : cur)}</b><span>${list.length}곳${list.length !== all.length ? ` / 전체 ${all.length}` : ''}</span></div>
                     <select class="ct3-mcat" aria-label="구분" onchange="app.setContactCat(this.value)">
                         ${['전체', ...cats.map(c => c.name)].map(c => `<option value="${esc(c)}"${cur === c ? ' selected' : ''}>${esc(c === '전체' ? '모든 구분' : c)}</option>`).join('')}</select>
                     <select class="ct3-status" aria-label="거래 상태" onchange="app.contactStatus=this.value;app.contactSel=null;app.requestRender()">
@@ -15981,18 +16115,25 @@ class BhasApp {
         const docOpen = !!(sel || this.contactNew);
         return `
         <div class="m3 ct3${docOpen ? ' detail' : ''}">
-            <aside class="m3-side">
+            ${makers ? `<aside class="m3-side c3-menu">${this._prodMenu('makers')}</aside>` : `<aside class="m3-side">
                 <div class="m3-h" style="display:flex;align-items:center;justify-content:space-between">구분
                     <button onclick="app.addVendorCategory()" title="새 구분" style="border:0;background:none;color:var(--primary);cursor:pointer"><i class="ph ph-plus"></i></button></div>
                 ${side('전체', '모든 연락처', 'ph-address-book', all.length)}
                 ${cats.map(c => side(c.name, c.name, 'ph-folder-simple', cnt(c.name), c.color, true)).join('')}
                 <div style="padding:8px 12px;font-size:12px;color:var(--text-muted)">구분을 우클릭해 관리</div>
-            </aside>
+            </aside>`}
             ${center}
             <section class="m3-doc">
                 ${docOpen ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : this._contactSummaryHTML(base, cats, cur)}
             </section>
         </div>`;
+    }
+    //  생산 메뉴(연락처 화면을 생산처로 쓸 때 왼쪽) — 판매·생산 묶음 메뉴와 같은 목록
+    _prodMenu(view) {
+        const win = this._renderingWin || '';
+        const g = this.APP_GROUPS.find(x => x.head === 'items');
+        return `<div class="m3-h">생산 메뉴</div>${g.tabs.filter(t => !t.hidden).map(t => `<button class="sales-section-nav${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
+            <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}"></i><span>${this._vesc(t.t)}</span></button>`).join('')}`;
     }
     contactFind(v) { this.contactQ = v; clearTimeout(this._ctT); this._ctT = setTimeout(() => this.requestRender(), 150); }
     //  오른쪽 — 아무것도 안 골랐을 때. 지금 보이는 묶음(구분·상태·검색)의 요약
@@ -16005,7 +16146,7 @@ class BhasApp {
         return `<div class="m3-tools"><span style="font-size:12px;font-weight:700;color:var(--text-muted)">요약</span><span class="sp"></span>
                 <button onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
             <div class="m3-page ct3-sum">
-                <h2 class="m3-big">${esc(cur === '전체' ? '모든 연락처' : cur)} ${s.total}곳</h2>
+                <h2 class="m3-big">${esc(cur === '전체' ? (this.currentView === 'makers' ? '모든 생산처' : '모든 연락처') : cur)} ${s.total}곳</h2>
                 <div class="m3-sub">표에서 업체를 누르면 여기에 전부 나옵니다</div>
                 <div class="ct3-stats">${stat('거래중', s.status['거래중'] || 0, '#22c55e')}${stat('보류', s.status['보류'] || 0, '#f59e0b')}${stat('거래중단', s.status['거래중단'] || 0, '#94a3b8')}</div>
                 ${cur === '전체' && s.catRows.length ? `<div class="dt-sec">구분별</div>
@@ -17924,7 +18065,7 @@ class BhasApp {
             kidikidi: ['파트너 계정', '비밀번호', 'OTP 설정키'],
             smartstore: ['커머스API Client ID', 'Client Secret'],
         };
-        const reqHint = (chKey) => { const r = chReq[chKey]; return r ? `<div style="font-size:0.6rem;color:var(--text-muted);margin-top:5px;line-height:1.35;max-width:128px;white-space:normal">필요: ${r.join(' · ')}</div>` : ''; };
+        const reqHint = (chKey) => { const r = chReq[chKey]; return r ? `<div style="font-size:12px;color:var(--text-muted);margin-top:5px;line-height:1.35;max-width:128px;white-space:normal">필요: ${r.join(' · ')}</div>` : ''; };
         // 팩트 배지: malls.connected(인증 플래그) 대신 실제 수집 실태(수집중/지연/중단)
         const factBadge = (mall) => { const s = this._channelStatus(mall); return s ? `<span style="font-size:0.72rem;font-weight:700;color:${s.color}">● ${s.label}</span><div style="font-size:0.58rem;color:var(--text-muted);margin-top:1px">${s.sub}</div>` : `<span style="font-size:0.72rem;font-weight:700;color:#22c55e">● 연동됨</span>`;
         };
