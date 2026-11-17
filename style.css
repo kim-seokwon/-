@@ -5714,3 +5714,48 @@ b.sp-nm.dup{color:#ff453a}
   .sns-insight-tablewrap{overflow-y:auto;overflow-x:hidden;padding:0 10px 84px}.sns-insight-table,.sns-insight-table tbody{display:block;width:100%}.sns-insight-table thead{display:none}.sns-insight-table tbody{display:flex;flex-direction:column;gap:8px}.sns-insight-table tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;width:auto;padding:12px;border:1px solid var(--card-border);border-radius:10px}.sns-insight-table td{display:flex;align-items:center;justify-content:space-between;gap:8px;width:auto!important;padding:0;border:0;font-size:13px;min-width:0}.sns-insight-table td::before{font-size:12px;color:var(--text-muted);flex:0 0 auto}.sns-insight-table td:first-child{grid-column:1/-1;justify-content:flex-start;padding-bottom:8px;border-bottom:1px solid var(--card-border)}.sns-insight-table td:first-child::before{display:none}.sns-insight-name{grid-column:1/-1;display:block!important}.sns-insight-name::before{display:none}.sns-insight-name b{white-space:normal;overflow-wrap:anywhere}.sns-fatigue-table td:nth-child(2)::before{content:'상태'}.sns-fatigue-table td:nth-child(4)::before{content:'1명당'}.sns-fatigue-table td:nth-child(5)::before{content:'빈도'}.sns-fatigue-table td:nth-child(6)::before{content:'CTR'}.sns-fatigue-table td:nth-child(7){grid-column:1/-1;display:block!important}.sns-fatigue-table td:nth-child(7)::before{content:'근거';display:block;margin-bottom:3px}.sns-insight-reason{white-space:normal;overflow:visible}.sns-performance-table td:nth-child(2)::before{content:'속성'}.sns-performance-table td:nth-child(4)::before{content:'중앙값'}.sns-performance-table td:nth-child(5)::before{content:'표본'}.sns-performance-table td:nth-child(6)::before{content:'팔로우'}.sns-performance-lines{display:none}.sns-short-toggle{font-size:12px}.sns-fatigue-chart text{font-size:10px}
 }
 .sns-insight-cpf .unknown{color:var(--text-muted);font-weight:700}.sns-fatigue-chart text.axis{fill:var(--text-muted)}.sns-fatigue-chart text.base-label{font-weight:800;paint-order:stroke;stroke:var(--card-bg);stroke-width:4px;stroke-linejoin:round}
+
+/* ── 생산 3단 규칙(11-17): 왼쪽 메뉴 · 가운데 표(정렬·깔때기·브랜드 칸·종료 접기) · 오른쪽 요약/상세. 글씨 본문 14px, 최소 12px ── */
+.production3 .appside .m3-h{font-size:12px;opacity:1}
+.production3 .mp-tl span,.production3 .it-pill,.production3 .flt-off{font-size:12.5px}
+.production3 .it-pills{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.production3 .flt-off{padding:4px 9px;border-radius:999px}
+.production3 .it-none{font-size:14px}
+.prod-scroll{overflow-x:auto}
+.prod-tbl{font-size:14px;min-width:640px}
+.macwin .prod-tbl thead th,.prod-tbl th{position:sticky;top:0;font-size:12.5px!important;padding:8px 24px 8px 8px!important;cursor:pointer}
+.prod-tbl th .th-f{right:4px;opacity:.55}.prod-tbl th:hover .th-f,.prod-tbl th.flt .th-f{opacity:1}
+.prod-tbl th.flt{color:#0a84ff}
+.prod-tbl td{padding:9px 8px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.prod-tr{cursor:pointer}.prod-tr.dim{opacity:.6}
+.prod-nm{max-width:260px!important}.prod-nm b{font-weight:700}
+.prod-iss{margin-left:5px;color:#f59e0b;font-size:14px;vertical-align:-2px}
+.prod-st{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12.5px;font-weight:700;color:var(--sc);background:color-mix(in srgb,var(--sc) 12%,transparent)}
+.prod-late{color:#dc2626;font-weight:700}
+.prod-fold td{padding:6px 8px!important}
+.prod-fold button{border:0;background:transparent;color:var(--text-muted);font:inherit;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.production3 .appdet .dt-ht b{font-size:15px}.production3 .appdet .dt-ht span{font-size:12.5px}
+.production3 .appdet .dt-sec{font-size:12.5px}
+.production3 .appdet .dt-li,.production3 .appdet .dt-f,.production3 .appdet .dt-none,.production3 .appdet .dt-memo{font-size:14px}
+.prod-sm.click{cursor:pointer;border-radius:6px;margin:0 -6px;padding:6px}
+.prod-sm.click:hover{background:rgba(127,127,127,.08)}
+.prod-sm span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prod-sm b{flex:0 0 auto;font-weight:700}
+.prod-sm.bad b{color:#dc2626}.prod-sm.warn b{color:#d97706}
+.prod-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 8px}
+.production3 .prod-pills{padding:9px 14px}
+.production3 .mp-top span,.production3 .mp-top small,.production3 .mp-sub,.production3 .fd-path,.production3 .fd-none{font-size:12.5px}
+.tp-nm{max-width:280px!important}.tp-nm b{font-weight:700}
+.tp-th{display:inline-flex;width:26px;height:26px;margin-right:8px;vertical-align:middle;align-items:center;justify-content:center;border-radius:6px;background:rgba(127,127,127,.08);overflow:hidden;font-size:15px}
+.tp-th svg{width:24px;height:24px}
+.tp-tr.on,.prod-tr.on{background:rgba(10,132,255,.08)}
+/* 생산 창 안 최소 12px — 샘플·디자인 편집기, 생산현황 일정표, 견적·지시서 꼬리표 */
+
+.production3 .vtl-h em{font-size:12.5px}
+.production3 .vtl .tl-brand,.production3 .vtl .tl-progress-num,.production3 .vtl .tl-stage-name{font-size:12px}
+.production3 .tp-src{font-size:12px;padding:3px 7px}
+.production3 .it-tag{font-size:12px}
+.production3 .sm-field label,.production3 .sm-type span,.production3 .sm-measure-val span,.production3 .sm-hint,
+.production3 .sm-pl-add,.production3 .sm-pl-empty,.production3 .sm-pl-upload,.production3 .sm-tp-sub,.production3 .sm-tp-note,
+.production3 .sm-chip,.production3 .sm-tp-block th{font-size:12px!important}
+.production3 .sm-tp-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}

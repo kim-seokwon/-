@@ -376,7 +376,16 @@ class BhasApp {
                 { id: 'preview-item-2', name: '와이드 데님 팬츠', category: '하의', pattern_no: 'LH-DN-2602', brand_id: 'preview-lohi', product_id: 'preview-season-2', vendor_id: 'preview-vendor-2', status: '샘플 중', ship_date: '2026-11-27', open_date: '2026-12-05', trims: false, checked: false, sale_names: ['와이드 데님 팬츠'] },
                 { id: 'preview-item-3', name: '로고 볼캡', category: '잡화', pattern_no: 'HH-CP-2603', brand_id: 'preview-hhh', product_id: 'preview-season-1', vendor_id: null, status: '시작전', ship_date: '', open_date: '2026-12-10', trims: false, checked: false, sale_names: [] },
             ];
-            this._techPacks = []; this.quotes = []; this.itemStatus = 'ACTIVE';
+            this._techPacks = [
+                { id: 'preview-tp-a', item_id: 'preview-item-1', style_name: '오버핏 기모 맨투맨', style_no: 'HH-SW-2601', source: 'made', config: {}, created_at: '2026-11-15T10:00:00+09:00' },
+                { id: 'preview-tp-b', item_id: 'preview-item-2', style_name: '와이드 데님 팬츠(공장 원본)', source: 'upload', file_name: '데님.pdf', file_path: 'x.pdf', config: {}, created_at: '2026-11-12T10:00:00+09:00' },
+            ];
+            this.quotes = [
+                { id: 'preview-q-1', item_id: 'preview-item-1', client_name: '성수봉제', quote_date: '2026-11-14', status: 'sent', total_amount: 2640000, items: [{}, {}] },
+                { id: 'preview-q-2', item_id: 'preview-item-2', client_name: '동대문 워싱', quote_date: '2026-11-10', status: 'draft', total_amount: 880000, items: [{}] },
+                { id: 'preview-q-3', client_name: '성수봉제', quote_date: '2026-10-20', status: 'confirmed', total_amount: 1500000, items: [{}] },
+            ];
+            this.itemStatus = 'ACTIVE';
             this.currentView = 'items';
             this.wins = [{ id: 'preview-production3', view: 'items', x: 8, y: 8, w: 1400, h: 860, min: false, max: true, snap: null, z: 11 }];
             this.requestRender(); return;
@@ -4532,6 +4541,8 @@ class BhasApp {
         //  판매는 목록과 상세의 위치가 선택 전후로 흔들리지 않게 세 번째 칸을 유지한다.
         const empty = () => {
             if (!sales3 && !production3) return '';
+            //  생산은 안 골랐을 때 빈칸 대신 그 화면 요약을 보여 준다.
+            if (production3) { const sm = this._prodSummary(view); if (sm) return wrap(sm.title, sm.sub, sm.body, ''); }
             const name = ({ orders: '주문', cs: 'CS 건', inventory: '재고 품목', items: '생산 물품', vendors: '생산처', tech_packs: '작업지시서', sample_maker: '샘플', quotes: '견적' })[view] || '항목';
             return wrap('상세', '', `<div class="dt-none">${name}을 선택하세요</div>`, '');
         };
@@ -15313,7 +15324,7 @@ class BhasApp {
         const soonOf = v => actOf(v).map(j => dday(j.due_date)).filter(x => x !== null).sort((a, b) => a - b)[0];
 
         list = this._applyTbl('vendors', list, (v, k2) => ({
-            name: v.name || '', address: v.address || '', phone: callNumberOf(v),
+            name: v.name || '', category: v.category || '기타', address: v.address || '', phone: callNumberOf(v),
             act: actOf(v).length, soon: (soonOf(v) === undefined ? '' : String(soonOf(v))),
         })[k2] ?? '', all);
         const row = v => {
@@ -15322,6 +15333,7 @@ class BhasApp {
             return `<tr class="it-row${String(this.venSel) === String(v.id) ? ' on' : ''}" data-id="${v.id}"
                 onclick="app.selectVendor('${v.id}')">
                 <td class="bd">${esc(v.name || '')}</td>
+                <td>${esc(v.category || '기타')}</td>
                 <td>${esc(v.address || '')}</td>
                 <td class="nw">${esc(callNumberOf(v))}</td>
                 <td class="num">${act.length || ''}</td>
@@ -15335,14 +15347,21 @@ class BhasApp {
                     <input value="${esc(this.venQ || '')}" placeholder="상호·주소·전화" oninput="app.venFind(this.value)"></div>
                 <button class="mbtn" onclick="app.toggleVenMap()">${this.venMap ? '지도 접기' : '지도 보기'}</button>
                 <button class="mbtn pri" onclick="app.selectVendor(null,1)"><i class="ph ph-plus"></i> 생산처 등록</button>`)}
+            ${(() => {
+                //  3단 규칙 — 분류 거르기는 왼쪽이 아니라 가운데 탭. 걸린 열 필터는 칩.
+                const cats = [...new Set([...(this.vendorCategories || []).map(c => c.name), ...all.map(v => v.category || '기타')])].filter(Boolean);
+                const tab = (id, label, n) => `<button class="it-pill${cat === id ? ' on' : ''}" onclick="app.navPick('vendors','cat','${esc(id)}')">${esc(label)}<em>${n}</em></button>`;
+                const fb = this._fltBadge('vendors');
+                return `<div class="it-pills prod-pills">${tab('ALL', '전체', all.length)}${cats.map(c => tab(c, c, all.filter(v => (v.category || '기타') === c).length)).join('')}</div>${fb ? `<div class="prod-chips">${fb}</div>` : ''}`;
+            })()}
             ${this.venMap ? `<div id="vendor-map" class="ven-map"></div>` : ''}
-            <div class="it-scroll">
-                <table class="it-tbl"><thead><tr>
-                    ${this._thead('vendors', [['name', '상호'], ['address', '주소'], ['phone', '전화'],
+            <div class="it-scroll prod-scroll">
+                <table class="it-tbl prod-tbl"><thead><tr>
+                    ${this._thead('vendors', [['name', '상호'], ['category', '분류'], ['address', '주소'], ['phone', '전화'],
                         ['act', '진행', 'num'], ['soon', '가장 가까운 납기']])}
                 </tr></thead>
                 <tbody>${list.length ? list.map(row).join('')
-                    : `<tr><td colspan="5" class="it-none">${all.length ? '조건에 맞는 생산처가 없습니다' : '등록된 생산처가 없습니다 — 위 [생산처 등록]'}</td></tr>`}</tbody>
+                    : `<tr><td colspan="6" class="it-none">${all.length ? '조건에 맞는 생산처가 없습니다' : '등록된 생산처가 없습니다 — 위 [생산처 등록]'}</td></tr>`}</tbody>
                 </table>
             </div>
         </div>`;
@@ -17566,28 +17585,133 @@ class BhasApp {
             : [...new Set((this.pItems || []).map(i => i.season_name || ''))].sort((a, b) => a.localeCompare(b, 'ko'))[v];
         this.requestRender();
     }
-    // 생산 3단 가운데 칸 — 넓은 공용표 대신 메모처럼 두 줄만 보여 준다.
-    // 고치는 칸은 오른쪽 상세에 두고, 줄 선택·일괄 선택·두 번 눌러 제품 페이지 열기는 그대로 유지한다.
-    _productionItemList(rows, more, empty) {
+    // 생산 3단 가운데 칸 — 좁은 표. 머리줄 정렬·깔때기 거르기 + 브랜드 칸, 출고완료는 '종료 N개'로 접는다.
+    // 고치는 칸(단계·출고일)은 오른쪽 상세에 두고, 부자재 ✓ 만 줄에서 바로 바꾼다. 두 번 누르면 제품 페이지.
+    _productionItemList(rows, more, empty, done = null) {
         const esc = s => this._vesc(s);
-        const date = v => v ? this.formatDateToUI(String(v).slice(0, 10)) : '미정';
-        const row = it => {
-            const brand = this._brandNameById(it.brand_id);
-            const meta = [brand === '-' ? '브랜드 없음' : brand, it.status || '상태 없음', `출고 ${date(it.ship_date)}`];
-            return `<div class="prod-row it-row${String(this.itemSel) === String(it.id) ? ' on' : ''}" data-id="${it.id}"
-                role="button" tabindex="0" onclick="app.rowPick(event,'${it.id}')"
-                onkeydown="if(event.key==='Enter')app.selItem('${it.id}')" ondblclick="app.openItemPage('${it.id}',1)">
-                <label class="prod-pick" title="골라서 한꺼번에 바꾸기" onclick="event.stopPropagation()"><input class="it-ck" type="checkbox"
-                    ${this._itemPicked?.has(it.id) ? 'checked' : ''} onchange="app.pickRow('${it.id}',this.checked)"></label>
-                <span class="prod-copy"><b class="prod-name" title="${esc(it.name || '이름 없는 제품')}">${esc(it.name || '이름 없는 제품')}</b>
-                    <span class="prod-meta">${meta.map(x => `<em>${esc(x)}</em>`).join('<i>·</i>')}</span></span>
-                ${it.trims ? '' : '<span class="prod-warn" title="부자재 미준비" aria-label="부자재 미준비"></span>'}
-                <i class="ph ph-caret-right prod-go"></i>
-            </div>`;
+        const today = kstYMD();
+        const srt = this.itemSort || { k: '', dir: 1 }, cf = this.itemColF || {};
+        const cols = [['name', '상품'], ['brand_id', '브랜드'], ['status', '단계'], ['vendor_id', '생산처'],
+            ['ship_date', this.ITEM_DATE_LABEL.ship_date], ['trims', '부자재'], ['product_id', '시즌']];
+        const mu = v => v ? esc(v) : '<span class="it-mu">—</span>';
+        const row = (it, dim) => {
+            const sc = this.ITEM_SC[it.status] || '#8e8e93';
+            const brand = this._itemColVal(it, 'brand_id');
+            const ship = String(it.ship_date || '').slice(0, 10);
+            const late = ship && ship < today && it.status !== '출고완료';
+            const issues = this._itemIssues(it);
+            return `<tr class="it-row prod-tr${String(this.itemSel) === String(it.id) ? ' on' : ''}${dim ? ' dim' : ''}" data-id="${it.id}"
+                onclick="app.rowPick(event,'${it.id}')" ondblclick="app.openItemPage('${it.id}',1)">
+                <td class="it-c"><input class="it-ck" type="checkbox" aria-label="고르기" ${this._itemPicked?.has(it.id) ? 'checked' : ''}
+                    onclick="event.stopPropagation()" onchange="app.pickRow('${it.id}',this.checked)"></td>
+                <td class="prod-nm" title="${esc(it.name || '이름 없는 제품')}"><b>${esc(it.name || '이름 없는 제품')}</b>${issues.length
+                    ? `<i class="ph ph-warning-circle prod-iss" title="${esc(issues.join(' · '))}"></i>` : ''}</td>
+                <td>${mu(brand === '-' ? '' : brand)}</td>
+                <td><span class="prod-st" style="--sc:${sc}">${esc(it.status || '—')}</span></td>
+                <td>${mu(this._itemColVal(it, 'vendor_id'))}</td>
+                <td class="${late ? 'prod-late' : ''}">${ship ? esc(this.formatDateToUI(ship)) + (late ? ' 지남' : '') : '<span class="it-mu">미정</span>'}</td>
+                <td class="it-c"><input class="it-ck" type="checkbox" aria-label="부자재 준비" title="부자재 준비됨" ${it.trims ? 'checked' : ''}
+                    onclick="event.stopPropagation()" onchange="app.setItem('${it.id}','trims',this.checked,1)"></td>
+                <td>${mu(this._itemColVal(it, 'product_id'))}</td>
+            </tr>`;
         };
-        return `<div class="prod-list">${rows.length ? rows.map(row).join('')
-            : `<div class="it-none">${esc(empty || '제품이 없습니다')}</div>`}
-            ${more > 0 ? `<div class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></div>` : ''}</div>`;
+        const n = cols.length + 1;
+        const fold = done && done.length ? `<tr class="prod-fold"><td colspan="${n}"><button onclick="app.toggleItemDone()">
+                <i class="ph ph-caret-${this.itemShowDone ? 'down' : 'right'}"></i> 종료(출고완료) ${done.length}개</button></td></tr>
+                ${this.itemShowDone ? done.map(it => row(it, true)).join('') : ''}` : '';
+        return `<div class="it-scroll prod-scroll"><table class="it-tbl prod-tbl"><thead><tr>
+                <th class="it-c" title="보이는 줄 모두 고르기"><input type="checkbox" class="it-ck" aria-label="모두 고르기"
+                    ${rows.length && rows.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''} onchange="app.pickItemTableRows(this,this.checked)"></th>
+                ${cols.map(([k, label]) => `<th class="${srt.k === k ? 'srt' : ''}${cf[k] ? ' flt' : ''}" onclick="app.sortItems('${k}')"
+                    title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
+                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${cf[k] ? '-fill' : ''}"></i></button></th>`).join('')}
+            </tr></thead><tbody>${rows.length ? rows.map(it => row(it)).join('')
+                : `<tr><td colspan="${n}" class="it-none">${esc(empty || '제품이 없습니다')}</td></tr>`}
+                ${more > 0 ? `<tr><td colspan="${n}" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}
+                ${fold}</tbody></table></div>`;
+    }
+    toggleItemDone() { this.itemShowDone = !this.itemShowDone; this.requestRender(); }
+    toggleQuoteDone() { this.quoteShowDone = !this.quoteShowDone; this.requestRender(); }
+    //  요약 칸에서 누르면 그 값으로 표를 거른다(공용 tblFilt 상태만 쓴다 — 칩·깔때기와 같은 자리)
+    filterTblBy(view, k, v) {
+        this.tblFilt = this.tblFilt || {}; this.tblFilt[view] = { ...(this.tblFilt[view] || {}), [k]: [decodeURIComponent(v)] };
+        this.requestRender();
+    }
+    //  예전 왼쪽 거르기(시즌·브랜드·생산처)가 다른 화면에서 걸려 들어와도 칩으로 보이고 X로 풀린다.
+    clearItemScope(kind) {
+        if (kind === 'sea') this.itemSeason = 'ALL'; else if (kind === 'ven') this.itemVendor = 'ALL'; else this.itemBrand = 'ALL';
+        this._unpickItems(); this.itemLimit = 50; this.requestRender();
+    }
+    //  상세 칸에서 단계를 눌러 그 단계만 거른다
+    filterItemsBy(k, v) {
+        this.itemColF = { ...(this.itemColF || {}), [k]: [decodeURIComponent(v)] };
+        this.itemStatus = 'ALL'; this._unpickItems(); this.requestRender();
+    }
+    // 생산 3단 오른쪽 칸 — 아무것도 안 골랐을 때 보이는 요약
+    _prodSummary(view) {
+        const esc = s => this._vesc(s);
+        const today = kstYMD();
+        const plus = n => kstYMD(new Date(Date.parse(today + 'T12:00:00+09:00') + n * 864e5));
+        const li = (label, val, click, cls = '') => `<div class="dt-li prod-sm${click ? ' click' : ''}${cls ? ' ' + cls : ''}"${click ? ` role="button" tabindex="0" onclick="${click}"` : ''}><span>${esc(label)}</span><b>${esc(String(val))}</b></div>`;
+        const sec = t => `<div class="dt-sec">${esc(t)}</div>`;
+        const none = t => `<div class="dt-li prod-sm"><span class="it-mu">${esc(t)}</span><b></b></div>`;
+        if (view === 'items') {
+            const act = (this.pItems || []).filter(i => i.status !== '출고완료');
+            const day = i => String(i.ship_date || '').slice(0, 10);
+            const week = act.filter(i => day(i) && day(i) >= today && day(i) <= plus(7)).sort((a, b) => day(a).localeCompare(day(b)));
+            const late = act.filter(i => day(i) && day(i) < today);
+            const noTrim = act.filter(i => !i.trims && day(i) && day(i) <= plus(14) && day(i) >= today);
+            const byVen = {}; act.forEach(i => { const v = this._itemColVal(i, 'vendor_id') || '생산처 미정'; byVen[v] = (byVen[v] || 0) + 1; });
+            const pick = i => `app.selItem('${i.id}')`;
+            const nm = i => `${i.name || '이름 없는 제품'} · ${this.formatDateToUI(day(i))}`;
+            return { title: '생산 요약', sub: `진행 중 ${act.length}개`, body: `
+                ${sec('단계별 수량')}${this.ITEM_STATUSES.filter(st => st !== '출고완료').map(st => [st, act.filter(i => i.status === st).length])
+                    .filter(([, c]) => c).map(([st, c]) => li(st, c + '개', `app.filterItemsBy('status','${encodeURIComponent(st)}')`)).join('') || none('진행 중인 물품 없음')}
+                ${sec(`이번 주 출고 ${week.length}`)}${week.slice(0, 6).map(i => li(nm(i), i.status || '', pick(i))).join('') || none('7일 안 출고 없음')}
+                ${sec(`납기 위험 ${late.length + noTrim.length}`)}${late.map(i => li(nm(i), '출고일 지남', pick(i), 'bad')).join('')}${noTrim.map(i => li(nm(i), '부자재 미준비', pick(i), 'warn')).join('') || (late.length ? '' : none('위험 없음'))}
+                ${sec('공장별 적체')}${Object.entries(byVen).sort((a, b) => b[1] - a[1]).map(([v, c]) => li(v, c + '개', `app.filterItemsBy('vendor_id','${encodeURIComponent(v === '생산처 미정' ? '' : v)}')`)).join('') || none('없음')}` };
+        }
+        const dshort = d => d ? this.formatDateToUI(String(d).slice(0, 10)) : '';
+        if (view === 'vendors') {
+            const vs = this.vendors || [];
+            const jobs = vs.flatMap(v => (v.jobs || []).filter(j => j.status !== 'done').map(j => ({ ...j, _v: v })));
+            const due = j => String(j.due_date || '').slice(0, 10);
+            const late = jobs.filter(j => due(j) && due(j) < today).sort((a, b) => due(a).localeCompare(due(b)));
+            const soon = jobs.filter(j => due(j) && due(j) >= today && due(j) <= plus(7)).sort((a, b) => due(a).localeCompare(due(b)));
+            const byCat = {}; vs.forEach(v => { const c = v.category || '기타'; byCat[c] = (byCat[c] || 0) + 1; });
+            const busy = vs.map(v => [v, (v.jobs || []).filter(j => j.status !== 'done').length]).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
+            const jl = j => `${j._v.name || ''} · ${j.title || j.item_name || '작업'}`;
+            return { title: '생산현황 요약', sub: `생산처 ${vs.length} · 진행 작업 ${jobs.length}`, body: `
+                ${sec(`납기 지남 ${late.length}`)}${late.slice(0, 6).map(j => li(jl(j), dshort(due(j)), `app.selectVendor('${j._v.id}')`, 'bad')).join('') || none('지난 납기 없음')}
+                ${sec(`7일 안 납기 ${soon.length}`)}${soon.slice(0, 6).map(j => li(jl(j), dshort(due(j)), `app.selectVendor('${j._v.id}')`)).join('') || none('7일 안 납기 없음')}
+                ${sec('일 많은 생산처')}${busy.slice(0, 6).map(([v, n]) => li(v.name || '', n + '건', `app.selectVendor('${v.id}')`)).join('') || none('진행 작업 없음')}
+                ${sec('분류별')}${Object.entries(byCat).map(([c, n]) => li(c, n + '곳', `app.navPick('vendors','cat','${esc(c).replace(/'/g, '&#39;')}')`)).join('') || none('없음')}` };
+        }
+        if (view === 'tech_packs' || view === 'sample_maker') {
+            const tps = [...(this._techPacks || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+            const up = tps.filter(t => isUploadPack(t)).length;
+            const byBrand = {}; tps.forEach(t => { const it = (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
+                const id = t.brand_id || (it || {}).brand_id; const n = id ? this._brandNameById(id) : ''; const k = n && n !== '-' ? n : '공통'; byBrand[k] = (byBrand[k] || 0) + 1; });
+            const recent = tps.slice(0, 5).map(t => li(t.style_name || '무제', dshort(t.created_at), view === 'tech_packs' ? `app.selectTechPack('${t.id}')` : `app.openTechPack('${t.id}')`)).join('') || none('저장된 작업지시서 없음');
+            return { title: view === 'sample_maker' ? '샘플·디자인' : '작업지시서 요약', sub: `작업지시서 ${tps.length}건 · 제작 ${tps.length - up} · 업로드 ${up}`, body: `
+                ${view === 'sample_maker' ? `${sec('하는 일')}<div class="dt-memo">가운데에서 옷 종류·색·치수를 고르면 도식화와 작업지시서가 같이 바뀝니다. [작업지시서 저장]을 누르면 작업지시서 목록에 들어갑니다.</div>` : ''}
+                ${sec('최근 작업지시서')}${recent}
+                ${sec('브랜드별')}${Object.entries(byBrand).sort((a, b) => b[1] - a[1]).map(([b, n]) => li(b, n + '건', view === 'tech_packs' ? `app.filterTblBy('tech_packs','brand','${encodeURIComponent(b)}')` : '')).join('') || none('없음')}` };
+        }
+        if (view === 'quotes') {
+            const qs = this.quotes || [];
+            const won = n => this._won(n);
+            const sum = a => a.reduce((n, q) => n + (Number(q.total_amount) || 0), 0);
+            const by = st => qs.filter(q => (q.status || 'draft') === st);
+            const ym = today.slice(0, 7);
+            const month = qs.filter(q => String(q.quote_date || '').slice(0, 7) === ym);
+            const waiting = by('sent').sort((a, b) => String(a.quote_date || '').localeCompare(String(b.quote_date || '')));
+            return { title: '견적 요약', sub: `견적 ${qs.length}건`, body: `
+                ${sec('상태별')}${['draft', 'sent', 'confirmed'].map(st => li(this._quoteStatusLabel(st), `${by(st).length}건 · ${won(sum(by(st)))}`, `app.navPick('quotes','st','${st}')`)).join('')}
+                ${sec(`이번 달 ${month.length}건`)}${li('합계', won(sum(month)))}${li('확정', won(sum(month.filter(q => q.status === 'confirmed'))))}
+                ${sec(`답 기다리는 견적 ${waiting.length}`)}${waiting.slice(0, 6).map(q => li(q.client_name || '고객사 없음', dshort(q.quote_date), `app.showQuoteModal('${q.id}')`, 'warn')).join('') || none('발송 후 대기 없음')}` };
+        }
+        return null;
     }
     renderItems() {
         if (!this._itemsLoaded) return this._loadingSkeleton('제품리스트');
@@ -17608,7 +17732,9 @@ class BhasApp {
         const bKey = this.itemBrand || 'ALL';
         if (bKey !== 'ALL') rows = rows.filter(i => bKey === 'NONE' ? !i.brand_id : String(i.brand_id) === String(bKey));
         if (vKey !== 'ALL') rows = rows.filter(i => vKey === 'NONE' ? !i.vendor_id : String(i.vendor_id) === String(vKey));
-        if (stKey === 'ACTIVE') rows = rows.filter(i => (i.status || '') !== '출고완료');
+        //  끝난 것(출고완료)은 지우지 않고 맨 아래 '종료 N개'로 접는다 — 같은 거르기를 그대로 받는다
+        let doneRows = null;
+        if (stKey === 'ACTIVE') { doneRows = rows.filter(i => (i.status || '') === '출고완료'); rows = rows.filter(i => (i.status || '') !== '출고완료'); }
         else if (stKey === 'CHECK') rows = rows.filter(i => this._itemIssues(i).length);
         else if (stKey !== 'ALL') rows = rows.filter(i => (i.status || '') === stKey);
         if (q) rows = rows.filter(i => [i.name, i.pattern_no, this._itemMemoPlain(i)].some(v => String(v || '').toLowerCase().includes(q)));
@@ -17617,7 +17743,9 @@ class BhasApp {
         Object.keys(colF).forEach(k => {
             const keep = new Set(colF[k]);
             rows = rows.filter(i => keep.has(this._itemColVal(i, k)));
+            if (doneRows) doneRows = doneRows.filter(i => keep.has(this._itemColVal(i, k)));
         });
+        if (doneRows) doneRows = this._sortItemRows(doneRows);
 
         // 표 렌더러가 본표·임베드 모두 같은 비교 함수로 정렬한다.
         rows = this._sortItemRows(rows);
@@ -17632,6 +17760,15 @@ class BhasApp {
         const checkCnt = all.filter(i => this._itemIssues(i).length).length;
         const sp = (k, label, n, color) => `<button class="it-pill${stKey === k ? ' on' : ''}"
             ${color ? `style="--pc:${color}"` : ''} onclick="app.setItemStatus('${k}')">${esc(label)}<em>${n}</em></button>`;
+        //  걸린 거르기 = 칩. X 로 하나씩 푼다.
+        const COLN = { name: '상품', brand_id: '브랜드', status: '단계', vendor_id: '생산처', ship_date: this.ITEM_DATE_LABEL.ship_date, trims: '부자재', product_id: '시즌', checked: '확인', pattern_no: '패턴', memo: '메모', sale: '판매명', open_date: this.ITEM_DATE_LABEL.open_date };
+        const chip = (label, vals, click) => `<button class="flt-off" onclick="${click}" title="${esc(label)} 거르기 풀기"><i class="ph ph-funnel-fill"></i> ${esc(label)}: ${esc(vals)} <b>×</b></button>`;
+        const chips = [
+            sKey !== 'ALL' ? chip('시즌', sKey === 'NONE' ? '없음' : ((seasons.find(p => String(p.id) === String(sKey)) || {}).name || '?'), "app.clearItemScope('sea')") : '',
+            bKey !== 'ALL' ? chip('브랜드', bKey === 'NONE' ? '없음' : this._brandNameById(bKey), "app.clearItemScope('brand')") : '',
+            vKey !== 'ALL' ? chip('생산처', vKey === 'NONE' ? '미정' : ((vendors.find(v => String(v.id) === String(vKey)) || {}).name || '?'), "app.clearItemScope('ven')") : '',
+            ...Object.entries(colF).map(([k, v]) => chip(COLN[k] || k, v.map(x => x || '(빈칸)').join(' · '), `app.clearColFilter('${k}')`)),
+        ].join('');
         const listTitle = vKey !== 'ALL' ? (vKey === 'NONE' ? '생산처 미정' : ((vendors.find(v => String(v.id) === String(vKey)) || {}).name || '생산처'))
             : sKey !== 'ALL' ? ((seasons.find(p => String(p.id) === String(sKey)) || {}).name || '시즌 없음')
             : bKey !== 'ALL' ? (this._brandNameById(bKey) !== '-' ? this._brandNameById(bKey) : '브랜드 없음')
@@ -17639,9 +17776,7 @@ class BhasApp {
 
         return `<div class="mp it-wrap">
             <div class="mp-top">
-                <div class="mp-tl"><b>${esc(listTitle)}</b><span>${shown.length < rows.length ? `${shown.length}/${rows.length} (전체 ${all.length})` : `${rows.length}/${all.length}`}</span>
-                    ${Object.keys(this.itemColF || {}).length ? `<button class="flt-off" onclick="app.clearAllColFilters()"
-                        title="거르기 모두 풀기"><i class="ph ph-funnel-fill"></i> ${Object.keys(this.itemColF).length}칸 거르는 중 ✕</button>` : ''}</div>
+                <div class="mp-tl"><b>${esc(listTitle)}</b><span>${shown.length < rows.length ? `${shown.length}/${rows.length} (전체 ${all.length})` : `${rows.length}/${all.length}`}</span></div>
 
                 <div class="it-find"><i class="ph ph-magnifying-glass"></i>
                     <input value="${esc(this.itemQ || '')}" placeholder="이름·패턴·메모" oninput="app.itemFind(this.value)"></div>
@@ -17664,45 +17799,55 @@ class BhasApp {
                 <button class="mbtn" onclick="app.pickAllRows(false)">고르기 풀기</button>
             </div>` : ''}
             <div class="it-pills">
-                ${sp('ACTIVE', '진행 중', activeCnt)}${sp('ALL', '전체', all.length)}${sp('출고완료', '출고완료', all.filter(i => i.status === '출고완료').length)}${checkCnt ? sp('CHECK', '확인 필요', checkCnt, '#f59e0b') : ''}
+                ${sp('ACTIVE', '진행 중', activeCnt)}${sp('ALL', '전체', all.length)}${checkCnt ? sp('CHECK', '확인 필요', checkCnt, '#f59e0b') : ''}
+                ${![ 'ACTIVE', 'ALL', 'CHECK' ].includes(stKey) ? sp(stKey, stKey, all.filter(i => i.status === stKey).length) : ''}
+                ${chips}
             </div>
             ${this._productionItemList(shown, more,
-                all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 제품 추가로 한 줄 만드세요')}
+                all.length ? '조건에 맞는 제품이 없습니다' : '제품이 없습니다 — 위 제품 추가로 한 줄 만드세요', doneRows)}
         </div>`;
     }
 
     renderTechPacks() {
         const list = this._techPacks || [];
         const esc = s => this._vesc(s);
-        const when = t => t ? new Date(t).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '';
+        const day = t => String(t.created_at || '').slice(0, 10);
         //  제품리스트에서 만든 지시서는 그 제품 이름을 달고 다닌다
         const itemOf = t => (this.pItems || []).find(i => String(i.id) === String(t.item_id) || String(i.tech_pack_id) === String(t.id));
+        const brandOf = t => { const id = t.brand_id || (itemOf(t) || {}).brand_id; const n = id && this._brandNameById ? this._brandNameById(id) : ''; return n && n !== '-' ? n : '공통'; };
+        const seaOf = t => { const it = itemOf(t); const p = it && this._seasons ? this._seasons().find(x => String(x.id) === String(it.product_id)) : null; return p ? p.name : ''; };
         const kIcon = { pdf: 'ph-file-pdf', image: 'ph-image', sheet: 'ph-file-xls', hwp: 'ph-file-text' };
-        const tile = t => {
+        //  3단 규칙 — 타일 대신 표. 머리줄 정렬·깔때기 + 브랜드 칸. 작은 미리보기는 이름 칸 앞에 둔다.
+        const rows = this._applyTbl('tech_packs', list, (t, k) => ({
+            name: t.style_name || '무제', no: t.style_no || '', brand: brandOf(t), item: (itemOf(t) || {}).name || '',
+            season: seaOf(t), src: isUploadPack(t) ? '업로드' : '제작', day: day(t),
+        })[k] ?? '', list);
+        const row = t => {
             let thumb = '';
             const up = isUploadPack(t);
             if (up) thumb = `<i class="ph ${kIcon[tpKind(t)] || 'ph-file'}" style="color:#0a84ff"></i>`;
             else try { thumb = hasPackConfig(t) ? garmentPreviewSVG(t.config, false) : ''; } catch (_e) { thumb = ''; }
-            const it = itemOf(t);
-            return `<button class="fd-it tp${String(this.tpSel) === String(t.id) ? ' on' : ''}"
-                    onclick="app.selectTechPack('${t.id}')" ondblclick="app.openTechPack('${t.id}')"
-                    title="${esc(t.style_name || '무제')}">
-                <span class="fd-th tp">${thumb || '<i class="ph ph-clipboard-text" style="color:#5e5ce6"></i>'}</span>
-                <span class="fd-nm">${esc(t.style_name || '무제')}</span>
-                <span class="fd-sub"><b class="tp-src ${up ? 'up' : 'mk'}">${up ? '업로드' : '제작'}</b>${t.style_no ? esc(t.style_no) : when(t.created_at)}</span>
-                ${it ? `<em class="fd-badge tp"><i class="ph ph-t-shirt"></i></em>` : ''}
-            </button>`;
+            return `<tr class="it-row tp-tr${String(this.tpSel) === String(t.id) ? ' on' : ''}" data-id="${t.id}"
+                    onclick="app.selectTechPack('${t.id}')" ondblclick="app.openTechPack('${t.id}')">
+                <td class="tp-nm" title="${esc(t.style_name || '무제')}"><span class="tp-th">${thumb || '<i class="ph ph-clipboard-text" style="color:#5e5ce6"></i>'}</span><b>${esc(t.style_name || '무제')}</b></td>
+                <td>${esc(t.style_no || '—')}</td>
+                <td>${esc(brandOf(t))}</td>
+                <td>${esc(seaOf(t) || '—')}</td>
+                <td><b class="tp-src ${up ? 'up' : 'mk'}">${up ? '업로드' : '제작'}</b></td>
+                <td>${esc(day(t) ? this.formatDateToUI ? this.formatDateToUI(day(t)) : day(t) : '—')}</td>
+            </tr>`;
         };
+        const flt = this._fltBadge ? this._fltBadge('tech_packs') : '';
         return `<div class="mp">
             ${this._mpTop('작업지시서', `${list.length}건 · 제작 ${list.filter(t => !isUploadPack(t)).length} · 업로드 ${list.filter(isUploadPack).length} · 두 번 누르면 열린다`,
                 `<button onclick="app.showTechPackUpload()" class="mbtn"><i class="ph ph-upload-simple"></i> 파일 올리기</button>
                  <button onclick="app.newTechPack()" class="mbtn pri"><i class="ph ph-plus"></i> 새 작업지시서</button>`)}
-            <div class="fd-body">
-                ${!this._techPacksLoaded ? this._loadingSkeleton('작업지시서')
-                    : (list.length ? `<div class="fd-grid tp">${list.map(tile).join('')}</div>`
-                        : `<div class="fd-none">저장된 작업지시서가 없습니다 — <b>샘플·디자인</b>에서 만들어 저장하거나, 위 [새 작업지시서]·[파일 올리기]로 시작하세요</div>`)}
-            </div>
-            <div class="fd-path"><i class="ph ph-clipboard-text"></i><span>작업지시서 ${list.length}건</span></div>
+            ${flt ? `<div class="prod-chips">${flt}</div>` : ''}
+            ${!this._techPacksLoaded ? this._loadingSkeleton('작업지시서')
+                : (list.length ? `<div class="it-scroll prod-scroll"><table class="it-tbl prod-tbl"><thead><tr>
+                    ${this._thead('tech_packs', [['name', '스타일명'], ['no', '품번'], ['brand', '브랜드'], ['season', '시즌'], ['src', '구분'], ['day', '만든 날']])}
+                    </tr></thead><tbody>${rows.length ? rows.map(row).join('') : '<tr><td colspan="6" class="it-none">조건에 맞는 작업지시서가 없습니다</td></tr>'}</tbody></table></div>`
+                    : `<div class="fd-none">저장된 작업지시서가 없습니다 — <b>샘플·디자인</b>에서 만들어 저장하거나, 위 [새 작업지시서]·[파일 올리기]로 시작하세요</div>`)}
         </div>`;
     }
 
@@ -17969,34 +18114,52 @@ class BhasApp {
     renderQuotes() {
         if (!this._quotesLoaded) return `<div class="glass" style="padding:3rem;border-radius:20px;text-align:center;color:var(--text-muted)">견적을 불러오는 중...</div>`;
         let qs = this.quotes || [];
+        const qAll = qs, esc = s => this._vesc(s);
+        const qItem = q => (this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id));
+        const qBrand = q => { const it = qItem(q); const n = it && it.brand_id ? this._brandNameById(it.brand_id) : ''; return n && n !== '-' ? n : ''; };
         if ((this.quoteStatus || 'ALL') !== 'ALL') qs = qs.filter(q => (q.status || 'draft') === this.quoteStatus);
         if ((this.quoteClient || 'ALL') !== 'ALL') qs = qs.filter(q => q.client_name === this.quoteClient);
         const stc = st => st === 'confirmed' ? '#30d158' : (st === 'sent' ? '#0a84ff' : '#ff9f0a');
         qs = this._applyTbl('quotes', qs, (q, k2) => ({
             quote_date: q.quote_date || '', client_name: q.client_name || '',
             item: ((this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id)) || {}).name || '',
-            n: (q.items || []).length, total_amount: Number(q.total_amount) || 0,
+            brand: qBrand(q), n: (q.items || []).length, total_amount: Number(q.total_amount) || 0,
             status: this._quoteStatusLabel(q.status || 'draft'),
         })[k2] ?? '', this.quotes || []);
-        const rows = qs.map(q => {
-            const it = (this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id));
-            return `<tr class="it-row q-row" data-id="${q.id}">
+        //  3단 규칙 — 상태 탭은 가운데, 확정(끝난) 견적은 '종료 N개'로 접는다(상태 탭을 '확정'으로 고르면 펼쳐 보인다)
+        const foldDone = (this.quoteStatus || 'ALL') === 'ALL';
+        const doneQs = foldDone ? qs.filter(q => q.status === 'confirmed') : [];
+        if (foldDone) qs = qs.filter(q => q.status !== 'confirmed');
+        const qRow = (q, dim) => {
+            const it = qItem(q);
+            return `<tr class="it-row q-row${dim ? ' prod-tr dim' : ''}" data-id="${q.id}">
                 <td class="nw">${this._vesc(q.quote_date || '')}</td>
                 <td class="bd">${this._vesc(q.client_name || '')}</td>
+                <td>${qBrand(q) ? esc(qBrand(q)) : '<span class="it-mu">—</span>'}</td>
                 <td>${it ? `<span class="it-tag" style="--c:#0a84ff">${this._vesc(it.name || '제품')}</span>` : ''}</td>
                 <td>${(q.items || []).length}개 품목</td>
                 <td class="num">${this._won(q.total_amount)}</td>
                 <td><span class="it-tag" style="--c:${stc(q.status)}">${this._quoteStatusLabel(q.status)}</span>${q.tax_status === 'issued' ? ' <span class="it-tag" style="--c:#30d158">계산서</span>' : ''}</td>
                 <td class="it-c"><button class="it-ib q-print" data-id="${q.id}" title="인쇄"><i class="ph ph-printer"></i></button></td>
             </tr>`;
-        }).join('') || `<tr><td colspan="7" class="it-none">견적서가 없습니다 — 위 [새 견적]으로 시작하세요</td></tr>`;
+        };
+        const fold = doneQs.length ? `<tr class="prod-fold"><td colspan="8"><button onclick="app.toggleQuoteDone()">
+                <i class="ph ph-caret-${this.quoteShowDone ? 'down' : 'right'}"></i> 종료(확정) ${doneQs.length}개</button></td></tr>
+                ${this.quoteShowDone ? doneQs.map(q => qRow(q, true)).join('') : ''}` : '';
+        const rows = (qs.map(q => qRow(q)).join('') || `<tr><td colspan="8" class="it-none">${qAll.length ? '조건에 맞는 진행 중 견적이 없습니다' : '견적서가 없습니다 — 위 [새 견적]으로 시작하세요'}</td></tr>`) + fold;
+        const st = this.quoteStatus || 'ALL';
+        const tab = (id, label) => `<button class="it-pill${st === id ? ' on' : ''}" onclick="app.navPick('quotes','st','${id}')">${esc(label)}<em>${id === 'ALL' ? qAll.length : qAll.filter(q => (q.status || 'draft') === id).length}</em></button>`;
+        const qc = this.quoteClient || 'ALL';
+        const chips = (qc !== 'ALL' ? `<button class="flt-off" onclick="app.navPick('quotes','st','ALL')" title="고객사 거르기 풀기"><i class="ph ph-funnel-fill"></i> 고객사: ${esc(qc)} <b>×</b></button>` : '') + this._fltBadge('quotes');
         return `
         <div class="mp">
-            ${this._mpTop('견적서', `${qs.length}건 · 엑셀 대체`,
+            ${this._mpTop('견적서', `${qs.length + doneQs.length}건 · 엑셀 대체`,
                 `<button id="q-hometax-btn" class="mbtn"><i class="ph ph-microsoft-excel-logo"></i> 홈택스 엑셀</button><button id="q-new-btn" class="mbtn pri"><i class="ph ph-plus"></i> 새 견적</button>`)}
-            <div class="it-scroll">
-                <table class="it-tbl"><thead><tr>
-                    ${this._thead('quotes', [['quote_date', '견적일'], ['client_name', '고객사'], ['item', '제품'],
+            <div class="it-pills prod-pills">${tab('ALL', '진행 중')}${tab('draft', '작성중')}${tab('sent', '발송')}${tab('confirmed', '확정')}</div>
+            ${chips ? `<div class="prod-chips">${chips}</div>` : ''}
+            <div class="it-scroll prod-scroll">
+                <table class="it-tbl prod-tbl"><thead><tr>
+                    ${this._thead('quotes', [['quote_date', '견적일'], ['client_name', '고객사'], ['brand', '브랜드'], ['item', '제품'],
                         ['n', '품목', 'num'], ['total_amount', '합계', 'num'], ['status', '상태']])}<th class="it-c">인쇄</th>
                 </tr></thead><tbody>${rows}</tbody></table>
             </div>

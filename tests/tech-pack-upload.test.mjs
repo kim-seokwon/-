@@ -56,6 +56,7 @@ test('작업지시서 목록에 업로드 행이 [업로드] 배지로 뜬다', 
         ],
         _vesc: s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
         _mpTop: (title, sub, right) => `<h1>${title}</h1><p>${sub}</p>${right}`, _loadingSkeleton: () => '',
+        _applyTbl: (v, rows) => rows, _thead: () => '',
     };
     const html = method('renderTechPacks').call(t);
     assert.match(html, /제작 1 · 업로드 1/);

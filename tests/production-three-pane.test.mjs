@@ -50,12 +50,19 @@ test('헤드리스 미리보기는 가짜 생산 데이터만 쓰고 DB 로드�
     assert.doesNotMatch(main.slice(start, end), /https?:\/\/|createClient\(/);
 });
 
-test('반려1: 가운데는 두 줄 압축 목록이고 제품명은 한 줄 말줄임한다', () => {
-    assert.match(main, /_productionItemList\(rows, more, empty\)/);
-    assert.match(main, /class="prod-name"[\s\S]*?class="prod-meta"/);
-    assert.match(main, /부자재 미준비/);
+test('3단 규칙(11-17): 가운데는 머리줄 정렬·깔때기 + 브랜드 칸 표, 끝난 건 접는다', () => {
+    assert.match(main, /_productionItemList\(rows, more, empty, done = null\)/);
+    assert.match(main, /class="it-tbl prod-tbl"/);
+    assert.match(main, /\['brand_id', '브랜드'\]/);
+    assert.match(main, /app\.openColFilter\(event,'\$\{k\}'/);
+    assert.match(main, /종료\(출고완료\) \$\{done\.length\}개/);
     assert.match(main, /this\._productionItemList\(shown, more,/);
-    assert.match(css, /\.prod-name\{[^}]*overflow:hidden;[^}]*text-overflow:ellipsis;[^}]*white-space:nowrap/);
+    assert.match(css, /\.prod-tbl\{[^}]*font-size:14px/);
+});
+
+test('3단 규칙(11-17): 작업지시서는 타일 대신 브랜드 칸 있는 표', () => {
+    assert.match(main, /this\._thead\('tech_packs', \[\['name', '스타일명'\][^\n]*\['brand', '브랜드'\]/);
+    assert.match(main, /this\._applyTbl\('tech_packs', list,/);
 });
 
 test('반려1: 상태·출고일·부자재·확인은 상세에서 기존 setItem 저장 경로를 쓴다', () => {
@@ -66,9 +73,8 @@ test('반려1: 상태·출고일·부자재·확인은 상세에서 기존 setIt
 });
 
 test('반려1: 목록·상세·공정 날짜는 공용 formatDateToUI를 재사용한다', () => {
-    assert.match(main, /const date = v => v \? this\.formatDateToUI/);
+    assert.match(main, /esc\(this\.formatDateToUI\(ship\)\) \+ \(late \? ' 지남' : ''\)/);
     assert.match(main, /const shownDate = value => value \? this\.formatDateToUI/);
-    assert.match(main, /출고 \$\{date\(it\.ship_date\)\}/);
     assert.match(main, /shownDate\(it\.ship_date\)/);
     assert.match(main, /shownDate\(j\.due_date\)/);
 });
