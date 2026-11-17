@@ -160,6 +160,7 @@ class BhasApp {
                 if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
                     this._authOk = true; document.getElementById('auth-bar')?.remove(); return;
                 }
+                if (event === 'SIGNED_OUT') this._ofsReset?.();
                 if (event === 'SIGNED_OUT' && this.currentUser) { this._authOk = false; this._showAuthBar(); }
             });
         } catch (_e) { /* 안 되면 아래 주기 확인만으로 */ }
@@ -878,6 +879,7 @@ class BhasApp {
     _safeFileUrl(value) {
         const raw = String(value || '').trim();
         if (!raw) return '';
+        if (this._isOfs(raw)) return this._ofsUrl(raw);
         if (/^data:(image\/(?:png|jpe?g|gif|webp|svg\+xml)|application\/pdf)[;,]/i.test(raw)) return raw;
         if (/^blob:/i.test(raw)) return raw;
         try {
@@ -885,9 +887,58 @@ class BhasApp {
             return ['http:', 'https:'].includes(u.protocol) ? u.href : '';
         } catch (_e) { return ''; }
     }
+    //  114d d1 — 비공개 파일 참조. DB 에는 'ofs:org/<org_id>/<경로>'(버킷 org_files)를 두고, 화면이 그릴 때 서명 URL 로 바꾼다.
+    //  서명 URL 은 만료되므로 저장하지 않는다. 옛 bhas 공개 URL(http)은 그대로 읽는다.
+    _isOfs(v) { return /^ofs:org\/[0-9a-f-]{36}\/[^\s()]+$/i.test(String(v || '').trim()); }
+    //  캐시에 살아 있는 서명 URL 을 돌려준다. 없으면 '' 를 돌려주고 서명을 걸어 둔다 → 서명되면 다시 그린다.
+    _ofsUrl(ref) {
+        //  계정이 바뀌면 앞 계정이 서명한 URL 을 쓰지 않는다(로그아웃은 _ofsReset)
+        const who = String(this.currentUser?.id || '');
+        if (this._ofsWho !== who) { this._ofsReset(); this._ofsWho = who; }
+        const c = (this._ofsCache ||= new Map()).get(ref);
+        if (c && c.exp > Date.now()) return c.url;
+        (this._ofsWant ||= new Set()).add(ref);
+        clearTimeout(this._ofsT); this._ofsT = setTimeout(() => this._ofsFlush(), 0);
+        return '';
+    }
+    _ofsReset() { this._ofsCache = new Map(); this._ofsWant?.clear(); this._ofsGen = (this._ofsGen || 0) + 1; clearTimeout(this._ofsT); }
+    async _ofsFlush() {
+        const busy = (this._ofsBusy ||= new Set());
+        const refs = [...(this._ofsWant || [])].filter(r => !busy.has(r)); this._ofsWant?.clear();
+        if (!refs.length || !this.supabase?.storage) return 0;
+        refs.forEach(r => busy.add(r));
+        let ok = 0; const gen = this._ofsGen;
+        try {
+            const { data, error } = await this.supabase.storage.from('org_files').createSignedUrls(refs.map(r => r.slice(4)), 3600);
+            if (gen !== this._ofsGen) return 0;
+            const now = Date.now();
+            refs.forEach((r, i) => {
+                const u = !error && data?.[i]?.signedUrl;
+                //  실패도 1분 기억 — 다시 그릴 때마다 서명 요청이 몰리지 않게
+                this._ofsCache.set(r, u ? { url: u, exp: now + 50 * 60e3 } : { url: '', exp: now + 60e3 });
+                if (u) ok++;
+            });
+        } catch (_e) {
+            if (gen === this._ofsGen) refs.forEach(r => this._ofsCache.set(r, { url: '', exp: Date.now() + 60e3 }));
+        } finally { refs.forEach(r => busy.delete(r)); }
+        if (ok) this.requestRender?.();
+        return ok;
+    }
+    //  지금 당장 열어야 할 때(미리보기·내려받기) — 서명을 기다린다
+    async _fileUrlNow(value) {
+        const raw = String(value || '').trim();
+        if (!this._isOfs(raw)) return this._safeFileUrl(raw);
+        let u = this._safeFileUrl(raw);
+        if (!u) { clearTimeout(this._ofsT); await this._ofsFlush(); u = this._safeFileUrl(raw); clearTimeout(this._ofsT); }
+        return u;
+    }
     showFileModal(url, name = '파일 미리보기') {
         const container = document.getElementById('global-modal-container');
         if (!container) return;
+        if (this._isOfs(url) && !this._safeFileUrl(url)) {
+            this._fileUrlNow(url).then(u => u ? this.showFileModal(url, name) : this.showToast('파일을 열 권한이 없거나 찾지 못했습니다'));
+            return;
+        }
         const safeUrl = this._safeFileUrl(url);
         if (!safeUrl) { this.showToast('안전하지 않은 파일 주소라 열지 않았습니다'); return; }
         const safeName = this._vesc(name || '파일 미리보기');
@@ -3172,6 +3223,7 @@ class BhasApp {
 
     async logout() {
         try { await this.supabase.auth.signOut(); } catch (_e) {}
+        this._ofsReset?.();
         localStorage.removeItem('bhas_session_user');
         localStorage.removeItem('bhas_auto_login');
         document.querySelectorAll('.sticky').forEach(el => el.remove());
@@ -5632,7 +5684,7 @@ class BhasApp {
                                             const photoObj = typeof photo === 'string' ? {url: photo} : photo;
                                             return `
                                             <div class="photo-item" style="position: relative; cursor: pointer;" onclick="app.showFileModal('${photoObj.url}', '제작 사진')">
-                                                <img src="${photoObj.url}" alt="제작 사진">
+                                                <img src="${this._vesc(this._safeFileUrl(photoObj.url))}" alt="제작 사진">
                                                 ${this.canDelete(photoObj) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'photo', '${photoObj.id || photoObj.url}', '${product.id}')" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 4px; background: rgba(0,0,0,0.5); border: 1px solid rgba(var(--tint),0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(0,0,0,0.5)'; this.style.borderColor='rgba(var(--tint),0.2)'"><i class="ph ph-x"></i></button>` : ''}
                                             </div>
                                         `}).join('')}
@@ -5656,7 +5708,7 @@ class BhasApp {
                                                     <span style="font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.name}</span>
                                                 </div>
                                                 <div style="display: flex; gap: 8px; align-items: center;">
-                                                    <a href="${doc.url}" target="_blank" style="padding: 4px 8px; border-radius: 6px; background: rgba(37,99,235,0.1); color: var(--primary); font-size: 0.75rem; text-decoration: none;" onmouseover="this.style.background='rgba(37,99,235,0.2)'" onmouseout="this.style.background='rgba(37,99,235,0.1)'">열기</a>
+                                                    <a href="${this._vesc(this._safeFileUrl(doc.url) || '#')}" target="_blank" rel="noopener noreferrer" style="padding: 4px 8px; border-radius: 6px; background: rgba(37,99,235,0.1); color: var(--primary); font-size: 0.75rem; text-decoration: none;" onmouseover="this.style.background='rgba(37,99,235,0.2)'" onmouseout="this.style.background='rgba(37,99,235,0.1)'">열기</a>
                                                     ${this.canDelete(doc) ? `<button onclick="app.handleDelete(event, 'document', '${doc.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                                 </div>
                                             </div>
@@ -10294,7 +10346,7 @@ class BhasApp {
             }
             const img = line.match(/^!\[[^\]]*\]\((.+?)\)\s*$/);
             if (img) return `<span class="nb-ph">
-                <img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
+                <img class="nb-img" src="${esc(this._safeFileUrl(img[1]))}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
                 <button class="nb-ph-x" title="사진 지우기" onclick="event.stopPropagation();app.removeNotePhoto(${i})"><i class="ph ph-x"></i></button>
             </span>`;
             if (!line.trim()) return '<div class="nb-sp"></div>';
@@ -10482,7 +10534,7 @@ class BhasApp {
             if (embed) return `<div class="nb-row nb-embed">${this._seasonEmbedHTML(embed[1], embed[2], n)}</div>`;
             const img = line.match(/^!\[[^\]]*\]\((.+?)\)\s*$/);
             if (img) return `<div class="nb-row"><span class="nb-ph">
-                <img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
+                <img class="nb-img" src="${esc(this._safeFileUrl(img[1]))}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
                 <button class="nb-ph-x" title="사진 지우기" onclick="event.stopPropagation();app.removeNotePhoto(${i})"><i class="ph ph-x"></i></button>
             </span></div>`;
             const m = line.match(this.NOTE_TODO_RE);
@@ -11504,7 +11556,7 @@ class BhasApp {
                     <label class="ip2-ck"><input type="checkbox"${it.checked ? ' checked' : ''}
                         onchange="app.setItem('${it.id}','checked',this.checked,1)"> 확인</label>`)}
             </div>
-            ${photos.length ? `<div class="ip2-ph">${photos.map(u => `<img src="${esc(u)}" alt="">`).join('')}</div>` : ''}
+            ${photos.length ? `<div class="ip2-ph">${photos.map(u => `<img src="${esc(this._safeFileUrl(u))}" alt="">`).join('')}</div>` : ''}
             <div class="ip2-note">
                 <div class="ip2-nh">메모 <span>목록에는 첫 줄이 보입니다 · [ ] 로 적으면 할 일 · 자동 저장</span></div>
                 <textarea id="item-page-note" class="ip2-ta" placeholder="원단·부자재·수정사항·전달내용을 자유롭게 적으세요"
@@ -11571,7 +11623,7 @@ class BhasApp {
                 <td class="it-c">${chk(it, 'trims')}</td><td class="it-c">${chk(it, 'checked')}</td>
                 <td class="it-mu">${mu(vn)}</td><td class="it-mu">${mu(se)}</td>
                 <td class="it-lk">
-                    ${compact ? `${photos.length ? `<button class="ni-ph" title="사진 ${photos.length}장" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><img src="${esc(photos[0])}" alt=""><em>${photos.length}</em></button>` : ''}<button class="it-ib" title="사진 올리기" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><i class="ph ph-camera"></i></button>` : ''}
+                    ${compact ? `${photos.length ? `<button class="ni-ph" title="사진 ${photos.length}장" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><img src="${esc(this._safeFileUrl(photos[0]))}" alt=""><em>${photos.length}</em></button>` : ''}<button class="it-ib" title="사진 올리기" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><i class="ph ph-camera"></i></button>` : ''}
                     ${tp ? `<button class="it-ib on" title="작업지시서: ${esc(tp.style_name || '')}" onclick="event.stopPropagation();app.openTechPack('${tp.id}')"><i class="ph ph-clipboard-text"></i></button>`
                          : `<button class="it-ib" title="작업지시서 만들기" onclick="event.stopPropagation();app.itemNewTechPack('${it.id}')"><i class="ph ph-clipboard-text"></i></button>`}
                     ${it.quote_id ? `<button class="it-ib on" title="견적 보기" onclick="event.stopPropagation();app.itemOpenQuote('${it.id}')"><i class="ph ph-receipt"></i></button>`
@@ -12472,26 +12524,27 @@ class BhasApp {
     }
     openDocAt(idx) { this._openDoc((this._docVisible || [])[idx]); }
     openSelectedDoc() { this._openDoc((this._docVisible || []).find(d => String(d.id) === String(this.docSel))); }
-    downloadSelectedDoc() {
+    async downloadSelectedDoc() {
         const d = (this._docVisible || []).find(x => String(x.id) === String(this.docSel));
-        const url = this._safeFileUrl(d?.url); if (!url) { this.showToast('내려받을 수 있는 안전한 주소가 없습니다'); return; }
+        const url = await this._fileUrlNow(d?.url); if (!url) { this.showToast('내려받을 수 있는 안전한 주소가 없습니다'); return; }
         const a = document.createElement('a'); a.href = url; a.download = d?.name || ''; a.rel = 'noopener noreferrer';
         document.body.appendChild(a); a.click(); a.remove();
     }
     docMenuAt(ev, idx) {
         const d = (this._docVisible || [])[idx]; if (!d) return;
-        const url = this._safeFileUrl(d.url);
+        //  비공개 파일(ofs:)은 서명 URL 이 1시간 뒤 만료된다 — 복사 안내에 적는다
+        const ofs = this._isOfs(d.url), url = ofs || this._safeFileUrl(d.url);
         this.ctxMenu(ev, [
             { t: '열기', icon: 'ph-arrow-square-out', run: () => this._openDoc(d) },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameDoc(d.id, d.name) },
-            ...(url ? [{ t: '링크 복사', icon: 'ph-link', run: () => { navigator.clipboard?.writeText(url); this.showToast('링크를 복사했습니다'); } },
+            ...(url ? [{ t: '링크 복사', icon: 'ph-link', run: async () => { const u = await this._fileUrlNow(d.url); if (!u) { this.showToast('링크를 만들지 못했습니다'); return; } navigator.clipboard?.writeText(u); this.showToast(ofs ? '링크를 복사했습니다(1시간 뒤 만료)' : '링크를 복사했습니다'); } },
                 { sep: true }, { t: '내려받기', icon: 'ph-download-simple', run: () => { this.docSel = d.id; this.downloadSelectedDoc(); } }] : []),
         ]);
     }
     docMenu(ev, id, url, name) {
         const safe = this._safeFileUrl(url);
         this.ctxMenu(ev, [
-            { t: '열기', icon: 'ph-arrow-square-out', run: () => this.showFileModal(safe, name) },
+            { t: '열기', icon: 'ph-arrow-square-out', run: () => this.showFileModal(this._isOfs(url) ? url : safe, name) },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameDoc(id, name) },
             { t: '링크 복사', icon: 'ph-link', run: () => { if (safe) navigator.clipboard?.writeText(safe); this.showToast(safe ? '링크를 복사했습니다' : '안전한 링크가 없습니다'); } },
             { sep: true },
