@@ -71,6 +71,24 @@ test('반려2: 주문 식별값은 자르지 않고 상품만 툴팁 말줄임, 
     assert.match(css, /\.sales3 \.ord-no,\.sales3 \.ord-mall,\.sales3 \.ord-invoice\{overflow:visible!important/);
 });
 
+//  9e20277 반려: 위 단언은 앞쪽 규칙만 봐서, 뒤에서 .ord-invoice 를 overflow:hidden 으로 덮은 걸 못 잡았다(거짓 통과).
+//  → 주문 표의 어떤 규칙도 식별값 칸(주문번호·브랜드·채널·송장)을 자르지 못하게, 표는 내용 폭(auto)·상품 칸만 말줄임.
+//  실제 렌더(scrollWidth<=clientWidth, 상세 닫힘/열림·1440/390)는 .work/개발자/팀장반려-1117/fit.mjs 가 본다(exit 1 = 잘림).
+test('주문 표: 식별값 칸은 어떤 뒤쪽 규칙으로도 잘리지 않고, 상품 칸만 말줄임', () => {
+    const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(m => ({ sel: m[1].trim(), body: m[2] }));
+    const idCell = /\.ord-(no|brand|mall|invoice)\b/;
+    const clip = rules.filter(r => idCell.test(r.sel) && /overflow(-x)?:\s*hidden|text-overflow:\s*ellipsis|max-width/.test(r.body));
+    assert.deepEqual(clip.map(r => r.sel), [], '식별값 칸을 자르는 규칙');
+    const tblRules = rules.filter(r => /\.ord-tbl/.test(r.sel));
+    const last = (re) => tblRules.filter(r => re.test(r.body)).pop();
+    assert.match(last(/table-layout/).body, /table-layout:auto!important/, '마지막 table-layout 은 auto');
+    const cellRule = tblRules.find(r => r.sel === '.sales3 .ord-tbl th,.sales3 .ord-tbl td');
+    assert.ok(cellRule && /white-space:nowrap!important/.test(cellRule.body) && /overflow:visible!important/.test(cellRule.body), '칸 기본: 줄바꿈·자름 없음');
+    const after = tblRules.slice(tblRules.indexOf(cellRule) + 1).filter(r => /overflow:\s*hidden|text-overflow:\s*ellipsis/.test(r.body));
+    assert.ok(after.every(r => /nth-child\(7\)|ord-product/.test(r.sel)), '칸 기본 뒤에 자르는 규칙은 상품(7번째) 칸뿐: ' + after.map(r => r.sel).join(' / '));
+    assert.match(css, /\.sales3 \.table-container:has\(>\.ord-tbl\)\{overflow-x:auto!important\}/, '좁으면 표만 가로 스크롤');
+});
+
 test('반려1: 몰별은 실제 이름·건수만 그리고 이름 없는 행은 숨긴다', () => {
     assert.match(main, /malls: \[\{ mall_key: 'hiheiho', cnt: 1 \}, \{ mall_key: 'lohi', cnt: 1 \}\]/);
     assert.match(main, /const namedMalls = malls\.map\(k => \(\{ k, name: mallName\(k\), cnt: mallCnt\(k\) \}\)\)[\s\S]*?\.filter\(x => x\.k && x\.name\)/);
