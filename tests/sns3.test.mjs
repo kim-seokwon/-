@@ -112,7 +112,9 @@ test('반려4: 광고표 핵심열은 겹침 없는 너비를 쓰고 뉴스 오�
         assert.ok(main.includes(token), token);
     assert.match(main, /sns-brand-chip/);
     assert.match(style, /--c2:790px/);
-    assert.match(style, /th:nth-child\(3\)\{width:280px\}/);
+    assert.match(style, /th:nth-child\(3\)\{width:250px\}/);
     assert.match(style, /th:nth-child\(6\)\{width:126px\}/);
+    assert.match(style, /th:nth-child\(8\)\{width:112px\}/);
+    assert.match(style, /\.sns3-tablepane \.sns3-table\{width:100%;min-width:0;max-width:100%\}/);
     assert.match(style, /\.sns-td-period,.sns-td-spend\{overflow:hidden;white-space:nowrap\}/);
 });
