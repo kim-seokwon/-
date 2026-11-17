@@ -21,4 +21,9 @@ grant all on table public.order_alert_log to service_role;
 drop policy if exists order_alert_log_staff_read on public.order_alert_log;
 create policy order_alert_log_staff_read on public.order_alert_log for select to authenticated using (public.is_staff());
 
+-- 몰별 알림 스위치 — 일부러 수집을 끈 몰은 알림에서 뺀다(화면 상태 점은 그대로 보인다)
+--   스마트스토어(08-18 예약 중지, 미연결)·키디키디(봇 복구 전 수동 실행만)는 꺼서 시작한다. 수집을 다시 켜면 true 로.
+alter table public.malls add column if not exists alert_enabled boolean not null default true;
+update public.malls set alert_enabled = false where mall_key in ('smartstore', 'kidikidi');
+
 select '111 order alert log installed' as status;

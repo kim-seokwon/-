@@ -37,4 +37,5 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node channel-bots/telegram/order-alert.mjs ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
+        #  스크립트 기본은 드라이런 — 예약·수집 뒤 실행과 dry_run=false 수동 실행만 --send
+        run: node channel-bots/telegram/order-alert.mjs ${{ (github.event_name != 'workflow_dispatch' || !inputs.dry_run) && '--send' || '' }}

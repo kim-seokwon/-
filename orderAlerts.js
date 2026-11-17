@@ -5,8 +5,10 @@
 //   ① 수집 실패 연속 2회 이상 → 'fail'
 //      sync_log 의 '<mall_key>:pull_orders'(ok|error) + 카페24 가 실패 때 남기는 '<mall_key>:error' 를 시간순으로 본다.
 //   ①' 실패 기록도 없이 멈춤(크론 자체가 안 돎) → 마지막 성공이 수집 주기 2배를 넘으면 'stale'
-//   ② 평소 하루 1건 이상(직전 7일 평균 ≥ 1)인데 어제·그제 2일 연속 0건 → 'zero'
-//      수집이 끊긴 몰(①·①')은 0건이 당연하니 ②를 따로 내지 않는다.
+//   ② 평소 하루 1건 이상인데 어제·그제 2일 연속 0건 → 'zero'
+//      '평소'는 직전 7일을 평일·주말로 나눈 평균 — 0건인 날이 평일이면 평일 평균, 주말이면 주말 평균이 1 이상이어야 한다.
+//      수집 상태가 정상(ok)일 때만 본다 — 끊김·주의·기록 없음(워크플로를 끈 몰)은 0건이 당연하거나 믿을 수 없다.
+//   malls.alert_enabled = false 인 몰(일부러 수집을 끈 몰)은 알림을 안 낸다(화면 점은 그대로).
 //   같은 (날짜, 몰, 규칙)은 하루 1번만 — order_alert_log 에 남긴 것은 다시 안 보낸다.
 
 export const PULL = 'pull_orders';
@@ -68,14 +70,19 @@ export function errorText(detail) {
 }
 
 //  ② 0건 판정 — counts: { 'YYYY-MM-DD': 건수 } (KST, 없는 날 = 0). today = 오늘 KST(오늘은 덜 끝나서 안 본다)
+export const isWeekend = day => [0, 6].includes(new Date(day + 'T00:00:00Z').getUTCDay());
 export function zeroDrop(counts, today) {
     const c = d => Number((counts || {})[d]) || 0;
     const zeroDays = Array.from({ length: ZERO_DAYS }, (_, i) => addDays(today, -(i + 1)));
     const baseDays = Array.from({ length: BASE_DAYS }, (_, i) => addDays(today, -(ZERO_DAYS + 1 + i)));
-    const baseSum = baseDays.reduce((s, d) => s + c(d), 0);
-    const avg = baseSum / BASE_DAYS;
+    const mean = ds => ds.length ? ds.reduce((s, d) => s + c(d), 0) / ds.length : 0;
+    const avg = mean(baseDays);
+    const avgWeekday = mean(baseDays.filter(d => !isWeekend(d)));
+    const avgWeekend = mean(baseDays.filter(isWeekend));
+    const expect = d => isWeekend(d) ? avgWeekend : avgWeekday;
     const zeros = zeroDays.every(d => c(d) === 0);
-    return { hit: zeros && avg >= MIN_DAILY, avg, zeroDays: zeroDays.slice().reverse(), baseFrom: baseDays[baseDays.length - 1], baseTo: baseDays[0], last: zeroDays.map(c).reverse() };
+    return { hit: zeros && zeroDays.every(d => expect(d) >= MIN_DAILY), avg, avgWeekday, avgWeekend, expected: zeroDays.map(expect).reverse(),
+             zeroDays: zeroDays.slice().reverse(), baseFrom: baseDays[baseDays.length - 1], baseTo: baseDays[0], last: zeroDays.map(c).reverse() };
 }
 
 //  주문 행 → 몰별 KST 일자 건수 { mall_key: { day: n } }
@@ -124,10 +131,11 @@ export function evaluate({ malls, brands = [], logsByMall = {}, lastOkByMall = {
         let rule = h.rule, text = '';
         if (rule === 'fail') text = `수집 ${h.failStreak}회 연속 실패 · 마지막 성공 ${kstShortAt(h.lastOkAt)}${h.lastError ? ` · ${h.lastError}` : ''}`;
         else if (rule === 'stale') text = `수집 멈춤 · 마지막 성공 ${kstShortAt(h.lastOkAt)} (실패 기록도 없음)`;
-        else if (z.hit) { rule = 'zero'; text = `${z.zeroDays.map(d => d.slice(5)).join('·')} 2일 연속 주문 0건 · 직전 7일 평균 하루 ${z.avg.toFixed(1)}건 (수집은 정상)`; }
+        else if (h.state === 'ok' && z.hit) { rule = 'zero'; text = `${z.zeroDays.map(d => d.slice(5)).join('·')} 2일 연속 주문 0건 · 평소 하루 ${z.expected.map(n => n.toFixed(1)).join('·')}건 (수집은 정상)`; }
+        const off = m.alert_enabled === false;
         const dup = rule ? sentKey.has(`${m.mall_key}|${rule}`) : false;
-        rows.push({ mall_key: m.mall_key, name, channel: m.channel, state: h.state, failStreak: h.failStreak, lastOkAt: h.lastOkAt, avg7: z.avg, last2: z.last, rule, dup });
-        if (rule && !dup) alerts.push({ day: today, mall_key: m.mall_key, rule, name, text });
+        rows.push({ mall_key: m.mall_key, name, channel: m.channel, state: h.state, failStreak: h.failStreak, lastOkAt: h.lastOkAt, avg7: z.avg, last2: z.last, rule, dup, off });
+        if (rule && !dup && !off) alerts.push({ day: today, mall_key: m.mall_key, rule, name, text });
     });
     return { today, rows, alerts };
 }

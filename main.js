@@ -3450,7 +3450,9 @@ class BhasApp {
         const esc = s => this._vesc(s);
         const h = this._mallPullHealth(x.k);
         const color = { down: '#ef4444', warn: '#f59e0b', ok: '#22c55e' }[h.state] || '#8e8e93';
-        const sub = h.state === 'down' ? `끊김 · ${h.at || '성공 없음'}` : h.at ? `수집 ${h.at}` : h.state === 'none' ? '기록 없음' : '';   // 1440 폭에서 안 잘리게 짧게(시각은 title 에 전부)
+        //  몰별 칸이 좁다(1440 에서 139px) — 오늘이면 시:분, 아니면 월/일만. 전체 시각·사유는 title
+        const [md, hm] = String(h.at || '').split(' '), short = md === String(kstShort(new Date().toISOString())).split(' ')[0] ? hm : md;
+        const sub = h.state === 'down' ? `끊김 ${short || ''}`.trim() : h.at ? short : h.state === 'none' ? '기록 없음' : '';
         return `<div class="m3-s nav${on ? ' on' : ''} d1" onclick="${click}" title="${esc(h.title)}" data-pull="${h.state}">
             <i class="ph-fill ph-circle" style="font-size:7px;color:${color}"></i>
             <span style="display:flex;flex-direction:column;min-width:0;line-height:1.2"><span>${esc(x.name)}</span>${sub ? `<small style="font-size:0.66rem;color:${h.state === 'down' ? '#ef4444' : 'var(--text-muted)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sub)}</small>` : ''}</span><em>${x.cnt == null ? '' : x.cnt}</em></div>`;

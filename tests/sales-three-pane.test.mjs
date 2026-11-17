@@ -79,6 +79,13 @@ test('주문 알림: 몰별 줄에 마지막 수집 시각과 끊김 빨간 점(
     assert.match(main, /\[this\.cm29Sync, this\.pullSync\] = await Promise\.all/);
 });
 
+test('주문 알림 반려1⑤: 몰별 보조줄은 짧게(오늘 시:분 · 아니면 월/일, 끊김엔 "마지막" 없음) — 1440 에서 안 잘림', () => {
+    const row = main.slice(main.indexOf('_mallNavRow(on, x, click)'), main.indexOf('_navSec(name, key, inner)'));
+    assert.match(row, /short = md === String\(kstShort\(new Date\(\)\.toISOString\(\)\)\)\.split\(' '\)\[0\] \? hm : md/);
+    assert.match(row, /`끊김 \$\{short \|\| ''\}`/);
+    assert.doesNotMatch(row, /마지막 /);
+});
+
 test('반려1: 주문 검색 입력은 돋보기 오른쪽에서 시작한다', () => {
     assert.match(css, /\.macwin #oms-q\{padding-left:34px !important\}/);
 });
