@@ -13334,7 +13334,7 @@ class BhasApp {
                 <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" data-mall="${this._vesc(String(o.mall_key || ''))}" style="accent-color:var(--primary)" onclick="event.stopPropagation()"></td>
                 <td class="ord-no" style="padding:10px;font-family:monospace;font-size:0.82rem">${this._vesc(o.order_id)}
                     <button class="ord-cs" title="이 주문으로 CS 접수" onclick="event.stopPropagation();app.csFromOrder('${this._vesc(String(o.order_id))}','${this._vesc(String(o.mall_key || ''))}')">CS</button></td>
-                <td class="ord-brand" style="padding:10px;white-space:nowrap">${oBrand(o) ? this._vesc(oBrand(o)) : '<span style="color:var(--text-muted)">미연결</span>'}</td>
+                <td class="ord-brand" title="${this._vesc(oBrand(o))}" style="padding:10px;white-space:nowrap">${oBrand(o) ? this._vesc(oBrand(o)) : '<span style="color:var(--text-muted)">미연결</span>'}</td>
                 <td class="ord-mall" style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1', _ml = oMall(o); return `<span title="${this._vesc(_ml)}" style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._vesc(_ml)}</span>`; })()}</td>
                 <td class="ord-date" style="padding:10px;color:var(--text-muted);font-size:0.82rem">${this._orderListDateText(o.order_date) || '-'}</td>
                 <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
