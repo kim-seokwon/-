@@ -13,6 +13,10 @@ test('판매 묶음은 선택 전에도 분류·목록·상세 3단을 유지한
     assert.match(main, /<button class="mbtn inv-map"[\s\S]*?return sales3 \? empty\(\) : '';/);
     assert.match(css, /\.appwrap\.sales3\{--c1:156px;--c3:260px\}/);
     assert.match(css, /\.sales3 \.table-container\{overflow-x:hidden!important\}/);
+    assert.match(main, /g\.head === 'orders'[\s\S]*?appside appside-sales-menu/);
+    assert.match(main, /sales-section-nav\$\{on \? ' on' : ''\}/);
+    assert.match(css, /\.sns-section-nav,\.sales-section-nav\{width:100%;min-height:40px/);
+    for (const title of ['정산 요약', '고객 분석 요약', 'CRM 요약']) assert.ok(main.includes(title), title);
 });
 
 test('900px 이하는 목록→상세·목록 돌아가기로 전환한다', () => {

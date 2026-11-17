@@ -7,9 +7,10 @@ const style = readFileSync(new URL('../style.css', import.meta.url), 'utf8');
 
 test('전역 사이드바는 업무·협업·기타와 지정된 창/탭을 그린다', () => {
     for (const token of ['MAC_SIDE_GROUPS', "id: 'work', label: '업무'", "id: 'collab', label: '협업'", "id: 'other', label: '기타'",
-        "['orders', '주문'", "['cs', 'CS'", "['inventory', '재고'", "['sales', '정산'", "['analysis', '고객분석'", "['crm', 'CRM'",
+        "['orders', '주문'", "['cs', 'CS'", "['inventory', '재고'", "['analysis', '고객'", "['sales', '정산'",
         "['items', '제품리스트'", "['vendors', '생산현황'", "['tech_packs', '작업지시서'", "['sample_maker', '샘플'", "['quotes', '견적'",
-        "['sns', '진행 중 광고'", "['sns', '광고 성과'", "['sns', '광고 피로도'", "['sns', '팔로워 현황'", "['sns', '업계 뉴스'", "['reminders', '할 일'", "['settings', '설정'"])
+        "['sns', '대시보드'", "['sns', '광고현황'", "['sns', '게시물기록'", "['sns', '팔로워'", "['sns', '동종업계'", "['sns', '뉴스'",
+        "['reminders', '할 일'", "['settings', '설정'"])
         assert.ok(main.includes(token), token);
 });
 
@@ -41,10 +42,11 @@ test('사이드바 글자는 13px 이상, 항목은 36px 이상이다', () => {
     assert.doesNotMatch(style.slice(style.indexOf('/* 전역 사이드바'), style.indexOf('/* 바탕화면 =', style.indexOf('/* 전역 사이드바'))), /font-size:(?:1[0-2]|\d)px/);
 });
 
-test('맥 창 안에는 화면 이동 탭을 되풀이하지 않고 보기 필터만 남긴다', () => {
+test('맥 창 안 판매·SNS는 대분류 메뉴, 그 밖의 창은 보기 필터를 둔다', () => {
     assert.match(main, /if \(this\.macMode\) \{[\s\S]*?const nav = this\._viewNav\(view\)[\s\S]*?appside appside-filter/);
     assert.match(main, /appwrap\$\{side \? '' : ' no-appside'\}/);
-    assert.match(main, /sns3-filter-side/);
+    assert.match(main, /appside appside-sales-menu/);
+    assert.match(main, /sns3-menu-side/);
 });
 
 test('중분류는 현재 창만 펼치고 레일에서는 플라이아웃으로 상세에 간다', () => {
