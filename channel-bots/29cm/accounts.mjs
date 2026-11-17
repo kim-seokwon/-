@@ -7,11 +7,12 @@
 //  29CM 몰인가 — '29cm' 또는 '29cm-…'(계정별 몰). 화면(main.js)도 이걸 가져다 쓴다
 export const is29cmKey = k => /^29cm(-|$)/i.test(String(k || ''));
 
-//  [하이헤이호] CM29_ID/PW → 29cm · [로하이스튜디오] CM29_ID_2/PW_2 → 29cm-rohi
+//  계정 1 = CM29_ID/PW → 몰 29cm · 계정 2 = CM29_ID_2/PW_2 → 몰 29cm-rohi (몰 키는 운영 DB malls 에 이미 있는 값)
+//  어느 브랜드 몰인지는 코드에 적지 않는다 — malls.brand_id(설정 > 몰 연동)가 원본. brand 는 로그·결과 표시용 이름일 뿐.
 //  계정별 선택값: CM29_TOTP_SECRET(_2) = 구글 OTP 설정키 · CM29_OTP_TO(_2) = 인증 메일이 오는 주소(같은 Gmail 로 모일 때 구분용)
 export const CM29_ACCOUNTS = [
-  { n: '', brand: '하이헤이호', mallKey: '29cm', mallLabel: '29CM', brandMatch: ['하이헤이호', 'hiheyho'] },
-  { n: '_2', brand: '로하이스튜디오', mallKey: '29cm-rohi', mallLabel: '29CM 로하이스튜디오', brandMatch: ['로하이', 'rohi', 'lohi'] },
+  { n: '', brand: '29CM', mallKey: '29cm', mallLabel: '29CM' },
+  { n: '_2', brand: '29CM 2번 계정', mallKey: '29cm-rohi', mallLabel: '29CM 2번 계정' },
 ];
 
 //  돌릴 계정 / 건너뛸 계정(이유). 비밀값은 결과 이유 문구에 넣지 않는다.

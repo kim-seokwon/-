@@ -12201,7 +12201,16 @@ class BhasApp {
     // ── 법인카드 지출 ─────────────────────────────────────────
     //  노션 448건 분석: 사용자·요청·계산서 칼럼은 전부 빈칸이라 만들지 않았다.
     //  실제로 쓴 것은 사용처·금액·사용회사·완료 체크 네 개뿐.
-    EXP_COMPANIES = ['하이헤이호', '모마레', '로하이스튜디오', '토비', '브하스', '더하임프로모션'];
+    //  사용회사 목록 — 코드에 박지 않는다(테넌트). 실제로 쓴 회사(많이 쓴 순) + 이 조직 brands 를 합친다.
+    //  브랜드가 아닌 사업부(광고대행·컨설팅 등)도 한 번 기록되면 목록에 남는다.
+    _expCompanies() {
+        const cnt = {};
+        (this.expList || []).forEach(e => { const c = String(e.company || '').trim(); if (c) cnt[c] = (cnt[c] || 0) + 1; });
+        const used = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]);
+        const brands = (mockData.brands || []).map(b => String(b.name || '').trim()).filter(Boolean);
+        return [...new Set([...used, ...brands])];
+    }
+    _expDefaultCompany() { return this.expCompany || this._expCompanies()[0] || null; }
     async loadExpenses() {
         this._expLoading = true;
         try {
@@ -12221,7 +12230,7 @@ class BhasApp {
         try {
             const { error } = await this.supabase.from('expenses').insert([{
                 vendor, amount,
-                company: this.expCompany || '하이헤이호',
+                company: this._expDefaultCompany(),
                 spent_on: (d?.value || new Date().toISOString().slice(0, 10)),
                 created_by: this.currentUser?.name || null,
             }]);
@@ -12260,7 +12269,7 @@ class BhasApp {
         const total = list.reduce((s, e) => s + Number(e.amount || 0), 0);
         const byCo = {};
         list.forEach(e => { const k = e.company || '미지정'; byCo[k] = (byCo[k] || 0) + Number(e.amount || 0); });
-        const sel = this.expCompany || '하이헤이호';
+        const sel = this._expDefaultCompany();
 
         const esc2 = esc;
         const row = e => `<tr class="it-row" data-id="${e.id}">
@@ -12291,7 +12300,7 @@ class BhasApp {
                 <input id="exp-amount" class="nw-f" inputmode="numeric" placeholder="금액" style="width:96px">
                 <input id="exp-date" class="nw-f" type="date" value="${new Date().toISOString().slice(0, 10)}">
                 <select class="it-sel" onchange="app.setExpCompany(this.value)" style="max-width:120px">
-                    ${this.EXP_COMPANIES.map(c => `<option value="${esc(c)}"${sel === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+                    ${this._expCompanies().map(c => `<option value="${esc(c)}"${sel === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}
                 </select>
                 <button class="mbtn pri" onclick="app.addExpense()">기록</button>
             </div>

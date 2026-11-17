@@ -207,18 +207,17 @@ function mapOrder(o) {
 }
 
 // 0) kidikidi 몰 레지스트리 보장 — mall_key는 malls FK라 먼저 존재해야 upsert 됨.
-//    하이헤이호 브랜드에 매핑(키디키디=하이헤이호 판매채널).
+//    어느 브랜드 몰인지는 코드가 짐작하지 않는다(테넌트) — 없으면 브랜드 없이 만들고 설정 > 몰 연동에서 잇는다.
 async function ensureMall() {
-  const { data: existing } = await db.from('malls').select('mall_key').eq('mall_key', MALL_KEY).maybeSingle();
+  const { data: existing, error: selErr } = await db.from('malls').select('mall_key').eq('mall_key', MALL_KEY).maybeSingle();
+  if (selErr) throw selErr;   // 조회 실패를 '없음'으로 보고 upsert 하면 있던 몰의 브랜드 연결을 지운다
   if (existing) return;
-  const { data: brand } = await db.from('brands').select('id')
-    .or('name.ilike.%하이헤이호%,name.ilike.%hiheyho%,name.ilike.%hiheiho%').maybeSingle();
   const { error } = await db.from('malls').upsert({
-    mall_key: MALL_KEY, label: '키디키디(하이헤이호)', channel: 'eland',
-    brand_id: brand?.id ?? null, active: true, connected: true,
+    mall_key: MALL_KEY, label: '키디키디', channel: 'eland',
+    brand_id: null, active: true, connected: true,
   }, { onConflict: 'mall_key' });
   if (error) console.warn('[kidikidi] malls 등록 경고:', error.message);
-  else console.log(`[kidikidi] malls 등록: kidikidi → brand ${brand?.id ?? '(미매핑)'}`);
+  else console.warn('[kidikidi] malls 등록: kidikidi → 브랜드 미연결(설정 > 몰 연동에서 연결)');
 }
 
 // 수취인성 필드 탐지용 — 목록엔 없고 상세에만 있는 이름/연락처/주소 키를 찾는다.

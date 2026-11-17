@@ -8,8 +8,8 @@
 //    인증=메모리 Bearer → page.on('response')로 주문응답 가로채기.
 //
 //  환경변수(GitHub Secrets):
-//    CM29_ID, CM29_PW (+ CM29_TOTP_SECRET, CM29_OTP_TO)          : 하이헤이호 → mall_key 29cm
-//    CM29_ID_2, CM29_PW_2 (+ CM29_TOTP_SECRET_2, CM29_OTP_TO_2)  : 로하이스튜디오 → mall_key 29cm-rohi (없으면 건너뜀)
+//    CM29_ID, CM29_PW (+ CM29_TOTP_SECRET, CM29_OTP_TO)          : 1번 계정 → mall_key 29cm
+//    CM29_ID_2, CM29_PW_2 (+ CM29_TOTP_SECRET_2, CM29_OTP_TO_2)  : 2번 계정 → mall_key 29cm-rohi (없으면 건너뜀)
 //    GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN : 이메일 OTP 읽기(TOTP 없는 계정만 씀)
 //    SUPABASE_URL, SUPABASE_SERVICE_KEY
 //  계정은 하나씩 차례로 — 한 계정이 실패해도 다음 계정은 돈다. 하나라도 실패하면 끝에 exit 1(Actions 에 빨간불).
@@ -227,14 +227,13 @@ async function fetchWindow(page, fromDate, toDate) {
   return out;
 }
 
-//  계정의 몰이 없으면 만든다(있으면 안 건드림) — 브랜드는 이름으로 찾고, 못 찾으면 비워 두고 알린다
+//  계정의 몰이 없으면 만든다(있으면 안 건드림) — 브랜드는 코드가 짐작하지 않는다: 비워 두고 설정 > 몰 연동에서 잇는다
 async function ensureMall(acct) {
   const { data, error: selErr } = await db.from('malls').select('mall_key').eq('mall_key', acct.mallKey).maybeSingle();
   if (selErr) throw selErr;   // 조회가 실패했는데 '없다'로 보고 upsert 하면 있던 몰의 브랜드 연결을 지운다
   if (data) return;
-  const { data: brand } = await db.from('brands').select('id').or(acct.brandMatch.map(n => `name.ilike.%${n}%`).join(',')).limit(1).maybeSingle();
-  if (!brand) console.warn(`[29cm:${acct.brand}] 브랜드를 못 찾음 — 몰 ${acct.mallKey} 를 브랜드 없이 만든다(설정에서 연결)`);
-  const { error } = await db.from('malls').upsert({ mall_key: acct.mallKey, label: acct.mallLabel, channel: '29cm', brand_id: brand?.id ?? null, active: true, connected: true }, { onConflict: 'mall_key' });
+  console.warn(`[29cm:${acct.brand}] 몰 ${acct.mallKey} 가 없어 브랜드 없이 만든다 — 설정 > 몰 연동에서 브랜드를 연결`);
+  const { error } = await db.from('malls').upsert({ mall_key: acct.mallKey, label: acct.mallLabel, channel: '29cm', brand_id: null, active: true, connected: true }, { onConflict: 'mall_key' });
   if (error) throw error;
 }
 

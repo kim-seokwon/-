@@ -14,10 +14,10 @@ const MAIN = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 test('계정 목록: 2번째 값이 없으면 건너뛰고, 있으면 몰·브랜드가 따로', () => {
     const one = accountsFromEnv({ CM29_ID: 'a', CM29_PW: 'p', CM29_TOTP_SECRET: 'S' }, false);
     assert.deepEqual(one.run.map(a => a.mallKey), ['29cm']);
-    assert.equal(one.skip[0].brand, '로하이스튜디오'); assert.match(one.skip[0].why, /CM29_ID_2/);
+    assert.equal(one.skip[0].brand, '29CM 2번 계정'); assert.match(one.skip[0].why, /CM29_ID_2/);
 
     const two = accountsFromEnv({ CM29_ID: 'a', CM29_PW: 'p', CM29_ID_2: 'b', CM29_PW_2: 'q', CM29_OTP_TO_2: 'r@x.com' }, true);
-    assert.deepEqual(two.run.map(a => [a.mallKey, a.brand, a.id]), [['29cm', '하이헤이호', 'a'], ['29cm-rohi', '로하이스튜디오', 'b']]);
+    assert.deepEqual(two.run.map(a => [a.mallKey, a.brand, a.id]), [['29cm', '29CM', 'a'], ['29cm-rohi', '29CM 2번 계정', 'b']]);
     assert.equal(two.run[1].otpTo, 'r@x.com'); assert.equal(two.run[0].totp, '');
 
     //  OTP 수단은 계정별 — 1번은 TOTP, 2번은 TOTP·Gmail 둘 다 없으면 2번만 건너뜀
@@ -238,8 +238,8 @@ test('saleAmount 0 이면 pay_amount 0 — 정가로 바꾸지 않는다, 칸이
 //  ── 연동관리 29CM 동기화 시각 ──
 test('sync_log 기록: 계정별 channel 29cm · type <mall_key>:pull_orders · 실패는 error(숫자 가림)', () => {
     const rows = syncLogRows(CM29_ACCOUNTS, [
-        { brand: '하이헤이호', ok: true, count: 12 },
-        { brand: '로하이스튜디오', ok: false, error: '2차인증 실패 code 123456' },
+        { brand: '29CM', ok: true, count: 12 },
+        { brand: '29CM 2번 계정', ok: false, error: '2차인증 실패 code 123456' },
         { brand: '없는브랜드', ok: true, count: 1 },
     ]);
     assert.deepEqual(rows, [
