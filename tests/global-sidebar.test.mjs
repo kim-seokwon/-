@@ -56,13 +56,15 @@ test('맥 창 안 판매·SNS는 대분류 메뉴, 그 밖의 창은 보기 필�
     assert.doesNotMatch(main, /sns3-menu-side/);
 });
 
-test('대분류 클릭은 플라이아웃만 열고 중분류 선택 뒤 자동 접힌다', () => {
+test('일반 대분류는 플라이아웃만 열고, 판매 시범 대분류는 주문 창을 바로 연다', () => {
     assert.match(main, /toggleMacSideApp\(view\)/);
     assert.match(main, /this\.sideAppOpen = this\.sideAppOpen === view \? '__none' : view/);
     assert.match(main, /mac-side-appwrap\$\{appOn \? ' on' : ''\}\$\{expanded \? ' expanded' : ''\}/);
     assert.match(main, /const expanded = this\.sideAppOpen === a\.view/);
     const appBlock = main.slice(main.indexOf('        const app = a =>'), main.indexOf('        return `<button class="mac-side-backdrop"'));
-    assert.match(appBlock, /toggleMacSideApp/); assert.doesNotMatch(appBlock, /onclick="app\.sideOpen/);
+    assert.match(appBlock, /if \(a\.direct\)[\s\S]*?onclick="app\.sideOpen/);
+    assert.match(appBlock, /onclick="app\.toggleMacSideApp/);
+    assert.match(main, /view: 'orders',[\s\S]*?label: '판매',[\s\S]*?direct: true/);
     assert.match(style, /side-collapsed \.mac-side-appwrap:hover>\.mac-side-sub/);
 });
 
@@ -74,6 +76,6 @@ test('모바일 서랍은 독보다 위에 있고 열린 동안 독을 숨긴다
 
 test('맥 창 제목줄은 메뉴바 아래에 있고 모바일 독은 화면 안에서 스크롤한다', () => {
     assert.match(main, /if \(w\.max\) return `left:\$\{side \+ 8\}px;top:36px/);
-    assert.match(main, /const y = Math\.max\(36,/);
+    assert.match(main, /const y = Math\.min\(Math\.max\(36, window\.innerHeight - height - 120\), y0\)/);
     assert.match(style, /\.mac-dock\{left:12px;right:12px;[^}]*overflow-x:auto/);
 });

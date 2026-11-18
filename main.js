@@ -330,6 +330,7 @@ class BhasApp {
             this.orders = orders;
             this.opage = { rows: orders, counts: { target: 1, shipping: 1, done: 0, claim: 0, all: 2 }, total: 2, page: 0, size: 50, loaded: true, loading: false, key: 'target|ALL||0', malls: [{ mall_key: 'hiheiho', cnt: 1 }, { mall_key: 'lohi', cnt: 1 }] };
             this.csList = [
+                { id: 'preview-cs-order-1', channel_order_id: 'preview-order-1', occurred_on: '2026-11-16', kind: '교환', customer_name: '김하늘', purchase_from: '하이헤이호', order_no: '20261116-0001', product_name: '오버핏 기모 맨투맨', status: '접수', memo: '아이보리 L→XL 사이즈 교환', created_by: '김보경' },
                 { id: 'preview-cs-1', occurred_on: '2026-11-16', kind: '교환', customer_name: '박서연', purchase_from: '하이헤이호', order_no: '20261115-0042', product_name: '오버핏 기모 맨투맨', status: '접수', memo: '아이보리 L→XL 사이즈 교환', created_by: '김보경' },
                 { id: 'preview-cs-2', occurred_on: '2026-11-15', kind: '반품', customer_name: '최민준', purchase_from: '로하이스튜디오', order_no: '20261114-0011', product_name: '와이드 데님 팬츠', status: '수거접수', memo: '상품 태그 보존 확인', created_by: '김석원' },
             ];
@@ -3841,6 +3842,13 @@ class BhasApp {
         // 판매 창은 항상 대분류(메뉴) > 중분류(목록·표) > 상세의 같은 자리를 쓴다.
         // 전역 사이드바와 메뉴 이름을 맞추되, 창 안에서는 현재 화면의 위치를 보여 준다.
         if (this.macMode) {
+            //  주문·배송 시범: 전역 사이드바는 '판매' 대분류만, 실제 업무 중분류는 창 왼쪽에 한 번만 둔다.
+            if (view === 'orders') {
+                const sales = [
+                    ['orders','주문·배송','ph-receipt'], ['cs','교환·반품·CS','ph-arrows-counter-clockwise'], ['analysis','고객 분석','ph-users-three'],
+                ];
+                return `<aside class="appside sales-work-nav"><div class="m3-h">판매</div>${sales.map(([k,t,i]) => `<button class="m3-s${view === k ? ' on' : ''}" onclick="app.switchAppTab('${esc(win)}','${k}')"><i class="ph ${i}" style="color:#0a84ff"></i><span>${t}</span></button>`).join('')}</aside>`;
+            }
             //  창 안에 대분류·중분류(형제 화면) 목록을 다시 그리지 않는다 — 그건 전역 사이드바 몫(사장님 11-18).
             //  왼쪽은 그 화면 자신의 거르기만, 없으면 2단.
             const nav = this._viewNav(view);
@@ -4732,6 +4740,8 @@ class BhasApp {
         //  판매는 목록과 상세의 위치가 선택 전후로 흔들리지 않게 세 번째 칸을 유지한다.
         const empty = () => {
             if (!sales3 && !production3) return '';
+            // 주문표는 상세를 닫으면 오른쪽 칸 자체를 없애 본문 폭을 돌려준다.
+            if (view === 'orders') return '';
             //  생산은 안 골랐을 때 빈칸 대신 그 화면 요약을 보여 준다.
             if (production3) { const sm = this._prodSummary(view); if (sm) return wrap(sm.title, sm.sub, sm.body, ''); }
             const name = ({ orders: '주문', cs: 'CS 건', inventory: '재고 품목', items: '생산 물품', vendors: '생산처', tech_packs: '작업지시서', sample_maker: '샘플', quotes: '견적' })[view] || '항목';
@@ -4903,19 +4913,34 @@ class BhasApp {
             if (!o) return empty();
             const items = o.items || [];
             const cs = (this.csList || []).filter(t => t.channel_order_id ? String(t.channel_order_id) === String(o.id) : String(t.order_no) === String(o.order_id));
+            const orderWin = this._renderingWin || '';
+            const history = Array.isArray(o.history) ? o.history : Array.isArray(o.status_history) ? o.status_history : [];
+            const fallbackHistory = [
+                o.order_date && { at: o.order_date, text: '주문 접수' },
+                o.updated_at && o.updated_at !== o.order_date && { at: o.updated_at, text: this._orderLabel(o) },
+            ].filter(Boolean);
+            const shownHistory = history.length ? history : fallbackHistory;
+            const orderRows = this._orderShownRows || [];
+            const orderAt = orderRows.findIndex(x => this._ordKey(x) === this._ordKey(o));
             return wrap(o.receiver_name || o.buyer_name || '주문', o.order_id, `
+                <div class="dt-sec">배송</div>
                 ${f('주문일', this._orderDateText(o.order_date))}
-                ${f('채널', this._mallLabel(o.mall_key || o.channel))}
+                ${f('브랜드', this._mallBrand(o.mall_key)?.name || '')}
+                ${f('채널', this._orderChannelLabel(o))}
                 ${f('상태', this._orderLabel(o) + (this._orderState(o) === 'pre' && o.status === 'ready' ? (this._isCafe24Order(o) ? ' (카페24 배송대기)' : ' (송장 등록대기)') : ''))}
                 ${f('받는분', o.receiver_name)}
                 ${f('연락처', o.receiver_phone)}
                 ${f('주소', [o.receiver_zipcode && `(${o.receiver_zipcode})`, o.receiver_address].filter(Boolean).join(' '))}
                 ${f('송장', o.invoice_no ? `${o.courier || ''} ${o.invoice_no}` : '')}
-                ${items.length ? `<div class="dt-sec">상품 ${items.length}</div>
-                    ${items.map(i => `<div class="dt-li"><span>${esc(i.product_name || '-')}</span><b>${esc(String(i.quantity || 1))}</b></div>`).join('')}` : ''}
-                ${cs.length ? `<div class="dt-sec">CS ${cs.length}건</div>
-                    ${cs.map(t => `<div class="dt-li"><span>${esc(t.kind)}</span><b>${esc(t.status)}</b></div>`).join('')}` : ''}
-            `, `<button class="mbtn pri" onclick="app.csFromOrder('${esc(String(o.order_id))}','${esc(String(o.mall_key || ''))}')">CS 접수</button>`);
+                ${items.length ? `<div class="dt-sec">상품·옵션 ${items.length}</div>
+                    ${items.map(i => `<div class="dt-li ord-detail-item"><span title="${esc([i.product_name, i.option_name].filter(Boolean).join(' · '))}">${esc(i.product_name || '-')}${i.option_name ? `<small>${esc(i.option_name)}</small>` : ''}</span><b>${esc(String(i.quantity || 1))}개</b></div>`).join('')}` : ''}
+                <div class="dt-sec">CS ${cs.length ? `${cs.length}건` : ''}</div>
+                ${cs.length ? cs.map(t => `<button type="button" class="dt-li ord-cs-link" onclick="app.openOrderCS('${esc(orderWin)}','${esc(String(t.id))}')"><span>${esc(t.kind || 'CS')}</span><b>${esc([t.status, String(t.occurred_on || t.created_at || '').slice(0, 10)].filter(Boolean).join(' · '))}</b></button>`).join('') : '<div class="dt-none ord-cs-none">CS 없음</div>'}
+                <div class="dt-sec">변경 이력</div>
+                ${shownHistory.length ? shownHistory.map(h => `<div class="dt-li ord-history"><span>${esc(h.text || h.action || h.status || '변경')}</span><b>${esc(this._orderDateText(h.at || h.created_at || h.date) || String(h.at || h.created_at || h.date || '').slice(0, 16))}</b></div>`).join('') : '<div class="dt-none sm">기록 없음</div>'}
+            `, `<button class="mbtn" onclick="app.moveOrderDetail(-1)"${orderAt <= 0 ? ' disabled' : ''}><i class="ph ph-caret-left"></i> 이전 주문</button>
+                <button class="mbtn" onclick="app.moveOrderDetail(1)"${orderAt < 0 || orderAt >= orderRows.length - 1 ? ' disabled' : ''}>다음 주문 <i class="ph ph-caret-right"></i></button>
+                <button class="mbtn pri" onclick="app.csFromOrder('${esc(String(o.order_id))}','${esc(String(o.mall_key || ''))}')">CS 접수</button>`);
         }
         if (view === 'cs') {
             const t = (this.csList || []).find(x => String(x.id) === String(this.csSel));
@@ -5014,7 +5039,27 @@ class BhasApp {
         if (production3) return empty();
         return sales3 ? empty() : '';
     }
-    selectOrder(id) { this.orderSel = id; this.salesMobileDetail = true; this.requestRender(); }
+    selectOrder(id) {
+        const main = this.appContainer.querySelector('.appwrap.sales3 .appmain');
+        const table = this.appContainer.querySelector('.appwrap.sales3 .table-container');
+        this._orderScroll = { top: main?.scrollTop || 0, left: table?.scrollLeft || 0 };
+        this.orderSel = id; this.salesMobileDetail = true; this.requestRender();
+        setTimeout(() => {
+            const nextMain = this.appContainer.querySelector('.appwrap.sales3 .appmain');
+            const nextTable = this.appContainer.querySelector('.appwrap.sales3 .table-container');
+            if (nextMain) nextMain.scrollTop = this._orderScroll?.top || 0;
+            if (nextTable) nextTable.scrollLeft = this._orderScroll?.left || 0;
+        }, 0);
+    }
+    moveOrderDetail(step) {
+        const rows = this._orderShownRows || [], at = rows.findIndex(o => this._ordKey(o) === String(this.orderSel));
+        const next = rows[at + Number(step || 0)]; if (next) this.selectOrder(this._ordKey(next));
+    }
+    openOrderCS(winId, id) {
+        const w = (this.wins || []).find(x => String(x.id) === String(winId));
+        if (w) this._winView(w, 'cs'); else this.currentView = 'cs';
+        this._csPick(id); this.salesMobileDetail = true; this.requestRender();
+    }
     // 주문 선택 키 = 몰|주문번호. 몰끼리 주문번호가 겹친다(운영 49건) — 주문번호만으로 찾으면 다른 몰 주문이 열린다.
     _ordKey(o) { return `${o?.mall_key || ''}|${o?.order_id}`; }
     _findOrderBySel(sel) {
@@ -8848,7 +8893,7 @@ class BhasApp {
                 ['home', '오늘 매출', 'ph-chart-line-up', 'sales'], ['home', '이상 알림', 'ph-bell-ringing', 'alerts'],
                 ['home', '오늘 조간', 'ph-newspaper', 'paper'],
             ] },
-            { label: '판매', icon: 'ph-shopping-bag-open', view: 'orders', items: [
+            { label: '판매', icon: 'ph-shopping-bag-open', view: 'orders', direct: true, items: [
                 ['orders', '주문', 'ph-receipt'], ['cs', 'CS', 'ph-arrows-counter-clockwise'], ['inventory', '재고', 'ph-package'],
                 ['analysis', '고객', 'ph-users-three'], ['sales', '정산', 'ph-chart-line-up'],
             ] },
@@ -8946,6 +8991,10 @@ class BhasApp {
                 onclick="app.sideOpen('${esc(view)}','${esc(mode)}')" title="${esc(label)}"><i class="ph ${icon}"></i><span>${esc(label)}</span></button>`;
         };
         const app = a => {
+            if (a.direct) {
+                const appOn = activeArea === a.view;
+                return `<div class="mac-side-appwrap${appOn ? ' on' : ''}" data-area="${esc(a.view)}"><button class="mac-side-app" onclick="app.sideOpen('${esc(a.view)}')" title="${esc(a.label)} 열기"><i class="ph ${a.icon}"></i><span>${esc(a.label)}</span></button></div>`;
+            }
             const children = (a.items || []).filter(x => this._sideOk(x[0])); if (!children.length) return '';
             const appOn = activeArea === a.view;
             const expanded = this.sideAppOpen === a.view;
@@ -9089,8 +9138,8 @@ class BhasApp {
         ev.preventDefault();
         const k = ev.deltaY > 0 ? 0.94 : 1.06;
         const min = this._macMin();
-        const nw = Math.max(min.w, Math.min(window.innerWidth - (this._macSideWidth?.() || 0) - 40, Math.round(w.w * k)));
-        const nh = Math.max(min.h, Math.min(window.innerHeight - 120, Math.round(w.h * k)));
+        const nw = Math.max(min.w, Math.min(window.innerWidth - w.x - 8, Math.round(w.w * k)));
+        const nh = Math.max(min.h, Math.min(window.innerHeight - w.y - 120, Math.round(w.h * k)));
         // 왼쪽 위를 고정하고 오른쪽·아래로만 늘고 준다(가운데 기준이면 창이 제자리에서 흔들린다)
         w.w = nw; w.h = nh;
         const el = document.getElementById(id);
@@ -9109,8 +9158,11 @@ class BhasApp {
         const sx = ev.clientX, sy = ev.clientY, ox = w.x, oy = w.y;
         const hint = document.getElementById('mac-snap-hint');
         const move = (e) => {
-            w.x = Math.max((this._macSideWidth?.() || 0) + 8, Math.min(window.innerWidth - 160, ox + e.clientX - sx));
-            w.y = Math.max(0, Math.min(window.innerHeight - 90, oy + e.clientY - sy));
+            const side = this._macSideWidth?.() || 0;
+            const shownW = Math.min(Number(w.w) || 900, Math.max(160, window.innerWidth - side - 16));
+            const shownH = Math.min(Number(w.h) || 700, Math.max(160, window.innerHeight - 156));
+            w.x = Math.max(side + 8, Math.min(window.innerWidth - shownW - 8, ox + e.clientX - sx));
+            w.y = Math.max(36, Math.min(window.innerHeight - shownH - 120, oy + e.clientY - sy));
             el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
             if (hint) {
                 const near = e.clientX < 24 ? 'left' : (e.clientX > window.innerWidth - 24 ? 'right' : null);
@@ -9151,8 +9203,8 @@ class BhasApp {
         const right = ox + ow, bottom = oy + oh;
         const move = (e) => {
             const dx = e.clientX - sx, dy = e.clientY - sy;
-            if (dir.includes('e')) w.w = Math.max(min.w, ow + dx);
-            if (dir.includes('s')) w.h = Math.max(min.h, oh + dy);
+            if (dir.includes('e')) w.w = Math.max(min.w, Math.min(window.innerWidth - ox - 8, ow + dx));
+            if (dir.includes('s')) w.h = Math.max(min.h, Math.min(window.innerHeight - oy - 120, oh + dy));
             if (dir.includes('w')) { w.x = Math.max((this._macSideWidth?.() || 0) + 8, Math.min(right - min.w, ox + dx)); w.w = right - w.x; }
             if (dir.includes('n')) { w.y = Math.max(36, Math.min(bottom - min.h, oy + dy)); w.h = bottom - w.y; }
             el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
@@ -9164,10 +9216,15 @@ class BhasApp {
     _macWinStyle(w) {
         const side = this._macSideWidth?.() || 0, usable = window.innerWidth - side;
         if (w.max) return `left:${side + 8}px;top:36px;width:calc(100vw - ${side + 16}px);height:calc(100vh - 156px)`;
-        if (w.snap === 'left') return `left:${side + 8}px;top:36px;width:${Math.max(320, Math.floor(usable / 2) - 12)}px;height:calc(100vh - 156px)`;
-        if (w.snap === 'right') return `left:${side + Math.floor(usable / 2) + 4}px;top:36px;width:${Math.max(320, Math.ceil(usable / 2) - 12)}px;height:calc(100vh - 156px)`;
-        const x = Math.max(side + 8, Number(w.x) || side + 8), width = Math.min(Number(w.w) || 900, usable - 16);
-        const y = Math.max(36, Number(w.y) || 36), height = Math.min(Number(w.h) || 700, Math.max(220, window.innerHeight - y - 120));
+        if (w.snap && usable < 656) return `left:${side + 8}px;top:36px;width:${Math.max(160, usable - 16)}px;height:calc(100vh - 156px)`;
+        if (w.snap === 'left') return `left:${side + 8}px;top:36px;width:${Math.floor(usable / 2) - 12}px;height:calc(100vh - 156px)`;
+        if (w.snap === 'right') return `left:${side + Math.floor(usable / 2) + 4}px;top:36px;width:${Math.ceil(usable / 2) - 12}px;height:calc(100vh - 156px)`;
+        const width = Math.min(Number(w.w) || 900, Math.max(160, usable - 16));
+        const x0 = Math.max(side + 8, Number(w.x) || side + 8);
+        const x = Math.min(Math.max(side + 8, window.innerWidth - width - 8), x0);
+        const height = Math.min(Number(w.h) || 700, Math.max(160, window.innerHeight - 156));
+        const y0 = Math.max(36, Number(w.y) || 36);
+        const y = Math.min(Math.max(36, window.innerHeight - height - 120), y0);
         return `left:${x}px;top:${y}px;width:${width}px;height:${height}px`;
     }
     renderMacDesktop(products) {
@@ -12956,6 +13013,10 @@ class BhasApp {
     _mallLabel(key) { const m = (this.malls || []).find(m => m.mall_key === key); return m ? m.label : (key || '-'); }
     _mallBrand(key) { const m = (this.malls || []).find(m => m.mall_key === key); if (!m) return null; return (mockData.brands || []).find(b => b.id === m.brand_id) || null; }
     _mallChannel(key) { const m = (this.malls || []).find(m => m.mall_key === key); return String(m?.channel || '').toLowerCase(); }
+    _orderChannelLabel(o) {
+        const c = String(o?.channel || this._mallChannel(o?.mall_key) || '').toLowerCase();
+        return ({ cafe24: '카페24', eland: '이랜드몰', '29cm': '29CM', naver: '스마트스토어', musinsa: '무신사' })[c] || c || '-';
+    }
     _isCafe24Order(o) { return String(o?.channel || this._mallChannel(o?.mall_key) || '').toLowerCase() === 'cafe24'; }
     // 배경색 명도로 읽기 좋은 글자색(흰/검) 자동 선택
     _contrastText(hex) {
@@ -13347,15 +13408,26 @@ class BhasApp {
         const filter = this.orderFilter || 'target';
         const counts = pg.counts || { target: 0, shipping: 0, done: 0, claim: 0, all: pg.total };
         //  표 규칙(S3·S5) — 공용 머리(정렬·깔때기). 브랜드와 채널·몰을 따로 둔다. 거르기는 지금 받은 쪽(페이지) 안에서.
-        const CHN = { cafe24: '카페24', eland: '이랜드몰', '29cm': '29CM', naver: '스마트스토어', musinsa: '무신사' };
         const oBrand = o => this._mallBrand(o.mall_key)?.name || '';
-        const oChan = o => { const c = String(o.channel || this._mallChannel(o.mall_key) || ''); return CHN[c.toLowerCase()] || c; };
+        const oChan = o => this._orderChannelLabel(o);
         const oMall = o => { const l = this._mallLabel(o.mall_key), c = oChan(o); return c ? (l && l !== oBrand(o) && l !== c ? `${c} · ${l}` : c) : l; };
-        const rows = this._applyTbl('orders', pg.rows || [], (o, k) => ({
+        // 서버가 탭 상태로 받아 오지만, 미리보기·느린 응답·검색 중 재그리기에서도
+        // 켜진 탭과 행 상태가 어긋나지 않게 화면에서 한 번 더 같은 규칙을 지킨다.
+        const tabRows = (pg.rows || []).filter(o => filter === 'all'
+            || (filter === 'target' && this._orderState(o) === 'pre')
+            || (filter === 'shipping' && this._orderState(o) === 'shipping')
+            || (filter === 'done' && this._orderState(o) === 'done')
+            || (filter === 'claim' && ['cancel', 'return', 'exchange'].includes(this._orderState(o)) && !this._isUnpaidCancel(o)));
+        const rows = this._applyTbl('orders', tabRows, (o, k) => ({
             order_id: String(o.order_id || ''), brand: oBrand(o), mall: oMall(o),
             order_date: String(o.order_date || ''), receiver: o.receiver_name || o.buyer_name || '',
             product: this._orderItemsSummary(o), qty: this._orderQtySum(o), state: this._orderLabel(o), invoice: o.invoice_no ? '있음' : '없음',
-        })[k] ?? '', pg.rows || []);
+        })[k] ?? '', tabRows);
+        this._orderShownRows = rows;
+        const locallyNarrowed = tabRows.length !== (pg.rows || []).length || rows.length !== tabRows.length;
+        const pageFrom = rows.length ? (locallyNarrowed ? 1 : pg.page * pg.size + 1) : 0;
+        const pageTo = rows.length ? (locallyNarrowed ? rows.length : Math.min(pg.total, pg.page * pg.size + rows.length)) : 0;
+        const pageTotal = locallyNarrowed ? rows.length : pg.total;
 
         const ls = (this.inventory && this.inventory.lastSync) || null;
         const tab = (id, label, n) => `<button class="oms-tab ${filter === id ? 'on active' : ''}" data-f="${id}">${label} ${n}</button>`;
@@ -13401,16 +13473,16 @@ class BhasApp {
 
         return `
         <div class="mp">
-            ${this._mpTop('주문 · 배송', `배송대상 ${counts.target} · 배송중 ${counts.shipping} · 완료 ${counts.done}`, `
+            ${this._mpTop('주문 · 배송', '', `
                 <button class="mbtn" id="oms-sync-btn"><i class="ph ph-arrows-clockwise"></i> 주문 수집</button>
                 <button class="mbtn" id="oms-export-btn"><i class="ph ph-download-simple"></i> 송장양식</button>
                 <button class="mbtn pri" id="oms-epost-btn" disabled title="발번할 주문을 먼저 체크하세요"><i class="ph ph-package"></i> 우체국 발번+등록 <span class="oms-epost-n"></span></button>
                 <button class="mbtn" id="oms-upload-btn"><i class="ph ph-upload-simple"></i> 송장 업로드</button>
                 <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">`)}
             <div class="mp-body">
-            ${''/* 왼쪽 '보기'와 같은 목록 — 넓은 화면은 왼쪽만(팀장 반려 11-18 S6), 왼쪽이 숨는 좁은 화면에서만 이 줄을 쓴다 */}
-            <div class="mp-seg oms-tabrow nav-dup" style="margin-bottom:12px">
-                ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('claim', '취소·반품·교환', counts.claim)}${tab('all', '전체', counts.all)}<span class="tip-wrap">배송대상 ${tipHTML('ship_ready', TIPS)}</span>
+            <label class="sales-mobile-work"><span>판매 업무</span><select onchange="app.switchAppTab('${this._vesc(this._renderingWin || '')}',this.value)"><option value="orders" selected>주문·배송</option><option value="cs">교환·반품·CS</option><option value="analysis">고객 분석</option></select></label>
+            <div class="mp-seg oms-tabrow order-view-tabs" style="margin-bottom:12px">
+                ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('all', '전체', counts.all)}<span class="tip-wrap order-help">${tipHTML('ship_ready', TIPS)}</span>
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
                 <div style="position:relative;flex:1;min-width:220px;max-width:380px">
@@ -13421,7 +13493,7 @@ class BhasApp {
                 </div>
                 ${this.orderQuery ? `<button class="mbtn" id="oms-q-clear">검색 지우기</button>` : ''}
                 <span style="margin-left:auto;font-size:0.82rem;color:var(--text-muted);font-variant-numeric:tabular-nums">
-                    ${pg.total ? `${(pg.page * pg.size + 1).toLocaleString()}–${Math.min(pg.total, (pg.page + 1) * pg.size).toLocaleString()} / 총 ${pg.total.toLocaleString()}건` : '0건'}
+                    ${pageTotal ? `${pageFrom.toLocaleString()}–${pageTo.toLocaleString()} / 총 ${pageTotal.toLocaleString()}건` : '0건'}
                 </span>
                 <button class="mbtn" id="oms-prev" ${pg.page <= 0 ? 'disabled style="opacity:.4"' : ''}><i class="ph ph-caret-left"></i> 이전</button>
                 <button class="mbtn" id="oms-next" ${(pg.page + 1) * pg.size >= pg.total ? 'disabled style="opacity:.4"' : ''}>다음 <i class="ph ph-caret-right"></i></button>
@@ -13436,17 +13508,13 @@ class BhasApp {
                     <tbody>${body}</tbody>
                 </table>
             </div>
-            <div style="margin-top:1rem;padding:1rem;background:rgba(var(--tint),0.03);border-radius:12px;font-size:0.82rem;color:var(--text-muted);line-height:1.7">
-                <b style="color:#e2e8f0">송장 처리 흐름</b><br>
-                <b style="color:#fb7185">■ 자동(권장):</b> 주문 체크(체크한 것만 · 미입금·프리오더 제외) → <b>우체국 발번+송장등록</b> 한 번이면 → 우체국 계약택배 발번(운송장번호) → 카페24 등 채널에 배송중+송장 자동 입력까지 끝.<br>
-                <b style="color:#94a3b8">■ 수동(택배사 직접):</b> ① 송장양식 다운로드 → 택배사 프로그램 출력 → ② 송장번호 업로드(CSV) → ③ 카페24 자동 등록 ${ls && ls.result === 'dry_run' ? '<span style="color:#f59e0b">(현재 dry-run)</span>' : ''}
-            </div>
         </div></div>`;
     }
 
     bindOrdersEvents() {
         this.appContainer.querySelectorAll('.oms-tab').forEach(t => t.onclick = () => {
             this.orderFilter = t.dataset.f;
+            this.orderSel = null; this.salesMobileDetail = false;
             this.track?.('orders', ORDER_FILTER_ACTION[t.dataset.f]);
             if (this.opage) this.opage.page = 0;
             this.loadOrderPage(true);

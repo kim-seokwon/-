@@ -19,10 +19,11 @@ test('형제 화면 버튼 목록(협업·생산·판매·설정·SNS 메뉴) �
         assert.ok(!main.includes(t), t);
 });
 
-test('맥 창 왼쪽은 그 화면 자신의 거르기만, 없으면 2단', () => {
+test('맥 창 왼쪽은 자기 보기만 두되 주문 시범은 판매 업무 중분류를 둔다', () => {
     const bar = between('    _appTabBar(', '    // SNS 3단');
     const mac = bar.slice(bar.indexOf('if (this.macMode)'), bar.indexOf('        return `<aside class="appside">'));
-    assert.doesNotMatch(mac, /switchAppTab|g\.tabs/);
+    assert.match(mac, /if \(view === 'orders'\)[\s\S]*?sales-work-nav[\s\S]*?switchAppTab/);
+    assert.doesNotMatch(mac, /g\.tabs/);
     assert.match(mac, /const nav = this\._viewNav\(view\);\s*return nav \? `<aside class="appside appside-filter">\$\{nav\}<\/aside>` : '';/);
     assert.match(css, /\.appwrap\.no-appside\{grid-template-columns:1fr\}/);
     const shell = between('    _snsShell(', '    setSnsMode(');
@@ -47,9 +48,9 @@ test('협업 창은 자기 목록을 왼쪽에 둔다 — 메모 폴더·할 일
     assert.match(main, /<span class="rm-ti" aria-hidden="true">\$\{esc\(t\.glyph\)\}<\/span>/, '미리알림 타일은 외부 아이콘 폰트 없이도 보임');
 });
 
-test('팀장 반려 11-18 — 왼쪽과 같은 가운데 탭은 넓은 화면에서 숨김 · 자료실 좁은 화면 위치 버튼 · 연락처 요약 카드 없음', () => {
+test('팀장 반려 11-18 — 주문 시범의 가운데 배송 보기 탭 · 자료실 좁은 화면 위치 버튼 · 연락처 요약 카드 없음', () => {
     assert.match(css, /@media \(min-width:901px\)\{\.appwrap:not\(\.no-appside\) \.nav-dup\{display:none!important\}\}/);
-    assert.match(main, /class="mp-seg oms-tabrow nav-dup"/, '주문 상태 탭줄');
+    assert.match(main, /class="mp-seg oms-tabrow order-view-tabs"/, '주문 배송 보기 탭줄');
     assert.match(main, /it-pill\$\{k === '날짜확인' \? '' : ' nav-dup'\}/, 'CS 알약');
     assert.match(main, /class="it-pill nav-dup\$\{/, '재고 브랜드 알약');
     assert.match(main, /it-pills prod-pills nav-dup/, '생산처 분류 탭');
