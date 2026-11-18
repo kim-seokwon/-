@@ -36,7 +36,7 @@ import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from 
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
 import { fetchByMonth, fetchItems, itemPool } from './salesFetch.js';
-import { VF_BUCKET, VF_ACCEPT, phonesOf, callNumberOf, telHref, validateBizFile, bizFilePath, bizFileKind, contactSummary } from './vendorContact.js';
+import { VF_BUCKET, VF_ACCEPT, phonesOf, callNumberOf, telHref, validateBizFile, bizFilePath, bizFileKind } from './vendorContact.js';
 import { TP_BUCKET, TP_ACCEPT, validateTpFile, tpFilePath, tpDefaultName, isUploadPack, hasPackConfig, tpKind, tpKindLabel, tpSizeText } from './techPackFile.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
@@ -5435,8 +5435,9 @@ class BhasApp {
                     ? (([pid, cat]) => nameOfP(pid) + (cat ? ' › ' + cat : ''))(cur.slice(2).split('/'))
                     : cur);
             return `
-            <div class="fd${this.docMobileDetail ? ' detail' : ''}${docs.some(x => String(x.id) === String(this.docSel)) ? '' : ' nosel'}">
+            <div class="fd${this.docMobileDetail ? ' detail' : ''}${this.docSideSheet ? ' side-on' : ''}${docs.some(x => String(x.id) === String(this.docSel)) ? '' : ' nosel'}">
                 <aside class="fd-side">
+                    <button class="fd-sclose" onclick="app.toggleDocSide(false)"><i class="ph ph-x"></i> 닫기</button>
                     <div class="fd-sh">즐겨찾기</div>
                     ${side('전체', '모든 자료', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#0a84ff')}
                     ${sec('분류', categories.map(c =>
@@ -5480,6 +5481,7 @@ class BhasApp {
                             : `<div class="fd-none">${q ? '찾는 자료가 없습니다' : '이 위치에 자료가 없습니다'}</div>`}
                     </div>
                     <div class="fd-path">
+                        <button class="fd-loc" onclick="app.toggleDocSide(true)" title="위치 — 분류·시즌 폴더"><i class="ph ph-caret-left"></i> 위치</button>
                         <i class="ph ph-folder-simple"></i> ${esc(where)}
                         <span class="fd-cnt">항목 ${docs.length}개${cur !== '전체' || q ? ` · 전체 ${aggregatedDocs.length}개` : ''}</span>
                     </div>
@@ -11751,8 +11753,10 @@ class BhasApp {
             this.track?.('reminders', done ? 'todo_done' : 'todo_undo');
         } catch (e) { r.done = !done; this.showToast('변경 실패: ' + (e.message || e)); this.requestRender(); }
     }
-    setRemList(l) { this.remList2 = l; this.remPick = null; this.remMobileDetail = false; this.requestRender(); }
-    setRemGroup(g) { this.remGroup = g; this.remList2 = 'all'; this.remPick = null; this.remMobileDetail = false; this.requestRender(); }
+    setRemList(l) { this.remList2 = l; this.remPick = null; this.remMobileDetail = false; this.remSideSheet = false; this.requestRender(); }
+    setRemGroup(g) { this.remGroup = g; this.remList2 = 'all'; this.remPick = null; this.remMobileDetail = false; this.remSideSheet = false; this.requestRender(); }
+    //  좁은 화면(왼쪽 칸 숨음): '‹ 목록' → 타일·목록 칸을 연다(자료실 '‹ 위치'와 같은 방식). 고르면 닫힌다.
+    toggleRemSide(on) { this.remSideSheet = !!on; this.requestRender(); }
     selectRemItem(src, id) { this.remPick = `${src}:${id}`; this.remMobileDetail = true; this.requestRender(); }
     closeRemDetail() { this.remMobileDetail = false; this.requestRender(); }
     saveRemDetailTitle(el, src, id) {
@@ -11887,8 +11891,9 @@ class BhasApp {
             </div>` : `<div class="m3-none mid">할 일을 선택하세요</div>`;
 
         return `
-        <div class="rm${this.remMobileDetail ? ' detail' : ''}">
+        <div class="rm${this.remMobileDetail ? ' detail' : ''}${this.remSideSheet ? ' side-on' : ''}">
             <aside class="rm-side">
+                <button class="rm-sclose" onclick="app.toggleRemSide(false)"><i class="ph ph-x"></i> 닫기</button>
                 <div class="rm-tiles">
                     ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
                         title="${({today:'기한이 오늘이거나 이미 지난 것',plan:'기한이 앞으로 남은 것',all:'안 끝난 것 전부',late:'기한이 지난 것',nodate:'기한을 안 적은 것',mine:'담당이 나로 되어 있는 것',sent:'내가 만들어 남에게 넘긴 것',done:'끝낸 것'})[t.k] || ''}">
@@ -11910,6 +11915,7 @@ class BhasApp {
             </aside>
             <section class="rm-main">
                 <div class="rm-top">
+                    <button class="rm-loc" onclick="app.toggleRemSide(true)" title="목록 — 오늘·예정·목록들"><i class="ph ph-caret-left"></i> 목록</button>
                     <button class="rm-add" onclick="app.focusNewReminder()" title="새 할 일"><i class="ph ph-plus"></i></button>
                     <div class="rm-search"><i class="ph ph-magnifying-glass"></i><input placeholder="검색"
                         value="${esc(this.remQ || '')}" oninput="app.remQ=this.value;app.requestRender()"></div>
@@ -12432,7 +12438,9 @@ class BhasApp {
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
     setCSFilter(f) { this.track?.('cs', 'cs_filter'); this.csFilter = f; this.requestRender(); }
-    setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.docMobileDetail = false; this.requestRender(); }
+    setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.docMobileDetail = false; this.docSideSheet = false; this.requestRender(); }
+    //  좁은 화면(왼쪽 칸 숨음): 경로막대 '‹ 위치' → 즐겨찾기 목록을 연다(파인더 모바일 '둘러보기'처럼). 폴더를 고르면 닫힌다.
+    toggleDocSide(on) { this.docSideSheet = !!on; this.requestRender(); }
     //  새 분류 — 이름을 만들어 두고, 그 분류로 자료를 올리면 자리를 잡는다
     async addDocCategory() {
         const v = await this.showPrompt('새 분류 이름', '', '자료 분류 만들기');
@@ -12570,7 +12578,7 @@ class BhasApp {
         if (shipIds.length) setTimeout(() => this._csShipLoad(shipIds), 0);
         const cnt = k => all.filter(t => t.kind === k).length;
         const suspectCnt = all.filter(t => t.date_suspect).length;
-        const pill = (k, label, n) => `<button class="it-pill${filter === k ? ' on' : ''}" onclick="app.setCSFilter('${k}')"
+        const pill = (k, label, n) => `<button class="it-pill${k === '날짜확인' ? '' : ' nav-dup'}${filter === k ? ' on' : ''}" onclick="app.setCSFilter('${k}')"
             ${k === '교환' ? 'style="--pc:#6366f1"' : (k === '반품' ? 'style="--pc:#ef4444"' : (k === '날짜확인' ? 'style="--pc:#f59e0b"' : ''))}>${esc(label)}<em>${n}</em></button>`;
 
         return `<div class="mp">
@@ -13298,7 +13306,8 @@ class BhasApp {
                 <button class="mbtn" id="oms-upload-btn"><i class="ph ph-upload-simple"></i> 송장 업로드</button>
                 <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">`)}
             <div class="mp-body">
-            <div class="mp-seg" style="margin-bottom:12px">
+            ${''/* 왼쪽 '보기'와 같은 목록 — 넓은 화면은 왼쪽만(팀장 반려 11-18 S6), 왼쪽이 숨는 좁은 화면에서만 이 줄을 쓴다 */}
+            <div class="mp-seg oms-tabrow nav-dup" style="margin-bottom:12px">
                 ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('claim', '취소·반품·교환', counts.claim)}${tab('all', '전체', counts.all)}<span class="tip-wrap">배송대상 ${tipHTML('ship_ready', TIPS)}</span>
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
@@ -13914,7 +13923,7 @@ class BhasApp {
             .filter(r => (r.days !== null && r.days <= LEAD_DAYS) || r.i.on_hand <= r.i.safety_stock)
             .sort((a, b) => (a.days ?? 999) - (b.days ?? 999));
 
-        const brandPill = (v, label, color) => `<button class="it-pill${(this.invSelectedBrand || 'all') === v ? ' on' : ''}"
+        const brandPill = (v, label, color) => `<button class="it-pill nav-dup${(this.invSelectedBrand || 'all') === v ? ' on' : ''}"
             onclick="app.setInvBrand('${v}')"${color ? ` style="--pc:${color}"` : ''}>${this._vesc(label)}</button>`;
 
         return `
@@ -15797,7 +15806,7 @@ class BhasApp {
                 const cats = [...new Set([...(this.vendorCategories || []).map(c => c.name), ...all.map(v => v.category || '기타')])].filter(Boolean);
                 const tab = (id, label, n) => `<button class="it-pill${cat === id ? ' on' : ''}" onclick="app.navPick('vendors','cat','${esc(id)}')">${esc(label)}<em>${n}</em></button>`;
                 const fb = this._fltBadge('vendors');
-                return `<div class="it-pills prod-pills">${tab('ALL', '전체', all.length)}${cats.map(c => tab(c, c, all.filter(v => (v.category || '기타') === c).length)).join('')}</div>${fb ? `<div class="prod-chips">${fb}</div>` : ''}`;
+                return `<div class="it-pills prod-pills nav-dup">${tab('ALL', '전체', all.length)}${cats.map(c => tab(c, c, all.filter(v => (v.category || '기타') === c).length)).join('')}</div>${fb ? `<div class="prod-chips">${fb}</div>` : ''}`;
             })()}
             ${this.venMap ? `<div id="vendor-map" class="ven-map"></div>` : ''}
             <div class="it-scroll prod-scroll">
@@ -16456,7 +16465,7 @@ class BhasApp {
             </aside>
             ${center}
             <section class="m3-doc">
-                ${docOpen ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : this._contactSummaryHTML(base, cats, cur)}
+                ${docOpen ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : `<div class="nt-none big">${this.currentView === 'makers' ? '생산처' : '연락처'}를 선택하세요</div>`}
             </section>
         </div>`;
     }
@@ -16495,28 +16504,6 @@ class BhasApp {
         setTimeout(() => { const off = e => { if (!el.contains(e.target) && !e.target.closest('.ct3-colbtn')) { el.remove(); document.removeEventListener('mousedown', off); } }; document.addEventListener('mousedown', off); }, 0);
     }
     contactFind(v) { this.contactQ = v; clearTimeout(this._ctT); this._ctT = setTimeout(() => this.requestRender(), 150); }
-    //  오른쪽 — 아무것도 안 골랐을 때. 지금 보이는 묶음(구분·상태·검색)의 요약
-    _contactSummaryHTML(rows, cats, cur) {
-        const esc = s => this._vesc(s);
-        const s = contactSummary(rows, cats);
-        const stat = (label, n, color) => `<div class="ct3-stat" role="button" style="cursor:pointer" title="${esc(label)}만 보기" onclick="app.contactStatus='${label}';app.contactSel=null;app.requestRender()"><b style="color:${color}">${n}</b><span>${esc(label)}</span></div>`;
-        const miss = (label, n) => n ? `<div class="m3-f"><i class="ph ph-warning-circle" style="color:#f59e0b"></i><span class="k">${esc(label)}</span><span class="v">${n}곳</span></div>` : '';
-        const missHtml = miss('휴대폰 없음', s.missing.mobile) + miss('담당자 없음', s.missing.contact) + miss('이메일 없음', s.missing.email) + miss('등록증 없음', s.missing.bizFile);
-        return `<div class="m3-tools"><span style="font-size:12px;font-weight:700;color:var(--text-muted)">요약</span><span class="sp"></span>
-                <button onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
-            <div class="m3-page ct3-sum">
-                <h2 class="m3-big">${esc(cur === '전체' ? (this.currentView === 'makers' ? '모든 생산처' : '모든 연락처') : cur)} ${s.total}곳</h2>
-                <div class="m3-sub">표에서 업체를 누르면 여기에 전부 나옵니다</div>
-                <div class="ct3-stats">${stat('거래중', s.status['거래중'] || 0, '#22c55e')}${stat('보류', s.status['보류'] || 0, '#f59e0b')}${stat('거래중단', s.status['거래중단'] || 0, '#94a3b8')}</div>
-                ${cur === '전체' && s.catRows.length ? `<div class="dt-sec">구분별</div>
-                    ${s.catRows.map(([c, n]) => `<div class="m3-f" style="cursor:pointer" onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(c)}'))">
-                        <i class="ph ph-folder-simple" style="color:${esc((cats.find(x => x.name === c) || {}).color || '#64748b')}"></i><span class="k" style="flex:1">${esc(c)}</span><span>${n}곳</span></div>`).join('')}` : ''}
-                ${missHtml ? `<div class="dt-sec">채울 칸</div>${missHtml}` : ''}
-                ${s.recent.length ? `<div class="dt-sec">최근 고친 곳</div>
-                    ${s.recent.map(v => `<div class="m3-f" style="cursor:pointer" onclick="app.selectContact('${esc(v.id)}')"><i class="ph ph-clock-counter-clockwise"></i>
-                        <span class="v">${esc(v.name || '')}</span><span style="color:var(--text-muted)">${esc(String(v.updated_at || v.created_at || '').slice(0, 10))}</span></div>`).join('')}` : ''}
-            </div>`;
-    }
     //  오른쪽 — 고른 업체 전부(보기) 또는 고치기·새로 만들기
     _contactDocHTML(doc, { cats, badge, initial }) {
         const esc = s => this._vesc(s);

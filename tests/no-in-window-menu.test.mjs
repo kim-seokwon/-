@@ -33,9 +33,28 @@ test('협업 창은 자기 목록을 왼쪽에 둔다 — 메모 폴더·할 일
     assert.doesNotMatch(notes, /switchAppTab/);
     assert.match(main, /<aside class="rm-side">/);
     assert.match(main, /<aside class="cal-side">/);
-    assert.match(main, /<aside class="fd-side">\s*<div class="fd-sh">즐겨찾기<\/div>/);
+    assert.match(main, /<aside class="fd-side">\s*<button class="fd-sclose"[^\n]*\n\s*<div class="fd-sh">즐겨찾기<\/div>/);
     assert.match(main, /구분을 우클릭해 관리/);
     //  메모: 가운데 브랜드 태그 줄·오른쪽 요약 카드 없음(d1c14cc 이전 구조)
     assert.ok(!main.includes('nt-btags'), 'nt-btags');
     assert.match(main, /메모를 선택하세요/);
+});
+
+test('팀장 반려 11-18 — 왼쪽과 같은 가운데 탭은 넓은 화면에서 숨김 · 자료실 좁은 화면 위치 버튼 · 연락처 요약 카드 없음', () => {
+    assert.match(css, /@media \(min-width:901px\)\{\.appwrap:not\(\.no-appside\) \.nav-dup\{display:none!important\}\}/);
+    assert.match(main, /class="mp-seg oms-tabrow nav-dup"/, '주문 상태 탭줄');
+    assert.match(main, /it-pill\$\{k === '날짜확인' \? '' : ' nav-dup'\}/, 'CS 알약');
+    assert.match(main, /class="it-pill nav-dup\$\{/, '재고 브랜드 알약');
+    assert.match(main, /it-pills prod-pills nav-dup/, '생산처 분류 탭');
+    assert.match(main, /class="fd-loc" onclick="app\.toggleDocSide\(true\)"/);
+    assert.match(main, /this\.docSideSheet = false/, '폴더 고르면 닫힘');
+    assert.match(css, /\.fd\.side-on \.fd-side\{display:block!important/);
+    assert.ok(!main.includes('_contactSummaryHTML'), '연락처 요약 카드');
+    assert.match(main, /'연락처'\}를 선택하세요/);
+});
+
+test('할 일 좁은 화면 — 목록 버튼으로 타일·목록 칸을 연다, 고르면 닫힌다', () => {
+    assert.match(main, /class="rm-loc" onclick="app\.toggleRemSide\(true\)"/);
+    assert.match(main, /setRemList\(l\) \{[^}]*this\.remSideSheet = false;/);
+    assert.match(css, /\.rm\.side-on \.rm-side\{display:block!important/);
 });

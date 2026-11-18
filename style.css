@@ -5972,3 +5972,21 @@ b.sp-nm.dup{color:#ff453a}
 /* 창 안 'SNS 메뉴' 제거(사장님 11-18) — SNS 창은 목록 | 상세 2단 */
 .sns3-layout.no-side{--c1:0px;grid-template-columns:minmax(0,1fr) 380px}
 @media (max-width:900px){.sns3-layout.no-side{grid-template-columns:1fr}}
+/* 판매·생산: 왼쪽 '보기'와 같은 목록인 가운데 탭(.nav-dup)은 왼쪽이 보이는 넓은 화면에서 숨긴다 — 좁은 화면(왼쪽 숨음)에서만 쓴다(팀장 반려 11-18 S6) */
+@media (min-width:901px){.appwrap:not(.no-appside) .nav-dup{display:none!important}}
+/* 자료실 좁은 화면: 경로막대 '‹ 위치' 버튼 → 즐겨찾기 목록이 목록 자리를 덮는다(팀장 반려 11-18) */
+.fd-loc,.fd-sclose{display:none}
+@media (max-width:900px){
+  .fd-loc{display:inline-flex;align-items:center;gap:3px;border:0;background:none;color:var(--primary);font:inherit;padding:2px 6px 2px 0;cursor:pointer}
+  .fd.side-on .fd-side{display:block!important;border-right:0!important}
+  .fd.side-on .fd-main,.fd.side-on .fd-prev{display:none!important}
+  .fd.side-on .fd-sclose{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--primary);font:inherit;font-size:13px;padding:2px 4px 8px;cursor:pointer}
+}
+/* 할 일 좁은 화면: '‹ 목록' 버튼 → 타일·목록 칸(팀장 반려 11-18, 자료실과 같은 방식) */
+.rm-loc,.rm-sclose{display:none}
+@media (max-width:900px){
+  .rm-loc{display:inline-flex;align-items:center;gap:3px;border:0;background:none;color:var(--primary);font:inherit;font-size:13px;padding:2px 6px 2px 0;cursor:pointer;margin-right:auto}
+  .rm.side-on .rm-side{display:block!important;border-right:0!important;overflow:auto}
+  .rm.side-on .rm-main,.rm.side-on .rm-doc{display:none!important}
+  .rm.side-on .rm-sclose{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--primary);font:inherit;font-size:13px;padding:2px 4px 8px;cursor:pointer}
+}
