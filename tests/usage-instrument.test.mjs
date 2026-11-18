@@ -31,7 +31,7 @@ const mkApp = (extra = {}) => {
     };
     app.track = makeTracker({ send: r => { rows.push(r); }, now: () => t, later: f => f() });
     for (const n of ['_groupOf', '_winOf', '_winView', 'macOpen', 'macShowDesktop', 'switchAppTab', 'switchView', '_csPick', 'selectCS',
-        'rowPick', '_itemPick', 'selItem', 'openItemPage', '_itemNoteSaved', 'closePaper', '_pcScroll', 'setItem', 'selectInv', '_nextZ']) app[n] = grab(n);
+        'rowPick', '_itemPick', 'selItem', 'openItemPage', '_itemNoteSaved', 'closePaper', '_pcScroll', 'setItem', 'selectInv']) app[n] = grab(n);
     app.macFocus = function (id) { const w = this.wins.find(x => x.id === id); if (w) w.z = ++this._macZ; };
     return app;
 };

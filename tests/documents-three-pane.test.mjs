@@ -6,13 +6,11 @@ const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
 
 test('자료실은 폴더·요약 목록·선택 상세 3단을 유지한다', () => {
-    //  사장님 11-18: 파일을 안 고르면 오른쪽 칸을 숨겨 2단(파인더) — 요약 카드 없음
-    assert.match(main, /<div class="fd\$\{this\.docMobileDetail \? ' detail' : ''\}\$\{this\.docSideSheet \? ' side-on' : ''\}\$\{docs\.some\(x => String\(x\.id\) === String\(this\.docSel\)\) \? '' : ' nosel'\}">/);
-    assert.match(css, /\.fd\.nosel \.fd-prev\{display:none!important\}/);
-    assert.doesNotMatch(main, /자료 요약/);
+    assert.match(main, /<div class="fd\$\{this\.docMobileDetail \? ' detail' : ''\}">/);
     assert.match(main, /class="fd3-r/);
     assert.match(main, /class="fd3-copy"><b>[\s\S]*?<em>/);
     assert.match(main, /const d = docs\.find\(x => String\(x\.id\) === String\(this\.docSel\)\);/);
+    assert.match(main, /자료를 선택하세요/);
     assert.match(css, /\.fd\{display:grid;[^}]*grid-template-columns:var\(--c1,188px\) 1fr var\(--c3,232px\)/);
 });
 

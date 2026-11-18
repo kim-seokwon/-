@@ -12,12 +12,7 @@ export const PANEL_VERDICT = {
     none: { label: '판정선 없음', color: '#64748b', bg: 'rgba(100,116,139,.12)' },
 };
 //  브랜드 연결이 비어 있는 광고는 세트명 접두사로 찾는다(ad_links.brand_id 는 인스타 계정 연결이 있어야 채워짐)
-//   접두사는 코드가 아니라 브랜드별 판정선 행(ad_report_rules.ad_prefixes, 115)에서 온다 — brands[].ad_prefixes 로 넘겨받는다.
-//   브랜드 이름(띄어쓰기 뺀 것)은 늘 접두사로 친다. 여러 개 맞으면 가장 긴 접두사가 이긴다.
-export function prefixesOf(b) {
-    const own = Array.isArray(b?.ad_prefixes) ? b.ad_prefixes : [];
-    return [...new Set([...own, String(b?.name || '').replace(/\s/g, '')].map(p => String(p || '').trim().toLowerCase()).filter(Boolean))];
-}
+export const PREFIX = [['hhh', '하이헤이호'], ['하헤호', '하이헤이호'], ['lohi', '로하이'], ['tovee', '토비']];
 
 //  팔로우 0 = 1명당 무한대 → 중단. 지출도 0 이면 판정하지 않는다(그 기간 집행 없음).
 export function panelVerdict(spend, follows, rules) {
@@ -31,10 +26,10 @@ export const cpfOf = (spend, follows) => num(follows) > 0 ? Math.round(num(spend
 
 export function brandOfLink(l, brands = []) {
     if (l.brand_id) return l.brand_id;
-    const name = String(l.adset_name || l.ad_name || '').toLowerCase().replace(/\s/g, '');
-    let best = null, len = 0;
-    for (const b of brands) for (const p of prefixesOf(b)) if (p.length > len && name.startsWith(p)) { best = b; len = p.length; }
-    return best ? best.id : null;
+    const name = String(l.adset_name || l.ad_name || '').toLowerCase();
+    const hit = PREFIX.find(([p]) => name.startsWith(p.toLowerCase()));
+    const b = hit && brands.find(b => String(b.name || '').replace(/\s/g, '').includes(hit[1]));
+    return b ? b.id : null;
 }
 
 //  period: 'yesterday' = 어제(KST) 하루 · 'three' = 최근 3일 · 'cum' = 세트 시작일(KST) ~ 어제
@@ -99,14 +94,13 @@ export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], 
     }
     //  1명당 오름차순 — 팔로우 0(무한대)은 지출 큰 순으로 그 아래, 집행 없음은 맨 아래
     const key = s => s.spend <= 0 ? [2, 0] : s.cpf == null ? [1, -s.spend] : [0, s.cpf];
-    //  브랜드 순서 = 판정선 행의 sort_order(115) → 넘겨받은 브랜드 순서 → 이름. 미지정은 맨 뒤.
-    const rank = g => { const o = Number(rulesBy[g.brand_id]?.sort_order); if (Number.isFinite(o) && rulesBy[g.brand_id]?.sort_order != null) return o;
-        const i = brands.findIndex(b => b.id === g.brand_id); return i < 0 ? 1e6 : 1e3 + i; };
+    //  브랜드 순서 하이헤이호 → 로하이(스튜디오) → 토비 → 그 밖
+    const rank = n => { const i = ['하이헤이호', '로하이', '토비'].findIndex(k => String(n || '').replace(/\s/g, '').includes(k)); return i < 0 ? 99 : i; };
     const out = [...groups.values()].map(g => {
         g.sets.sort((a, b) => { const x = key(a), y = key(b); return x[0] - y[0] || x[1] - y[1] || String(a.name).localeCompare(String(b.name)); });
         g.cpf = cpfOf(g.spend, g.follows); g.kind = panelVerdict(g.spend, g.follows, g.rules);
         return g;
-    }).sort((a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name)));
+    }).sort((a, b) => rank(a.name) - rank(b.name) || String(a.name).localeCompare(String(b.name)));
     out.excluded = { sets: ex.sets.size, spend: ex.spend, follows: ex.follows, reason: ex.reason };
     return out;
 }

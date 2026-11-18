@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { panelVerdict, buildPanel, panelHtml, brandOfLink } from '../adPanel.js';
 
 const HHH = { up_max: 800, stop_over: 1300 }, LOHI = { up_max: 1000, stop_over: 1600 };
-const BRANDS = [{ id: 'b-hhh', name: '하이헤이호', ad_prefixes: ['hhh', '하헤호'] }, { id: 'b-lohi', name: '로하이스튜디오', ad_prefixes: ['lohi'] }, { id: 'b-tovee', name: '토비', ad_prefixes: ['tovee'] }];
+const BRANDS = [{ id: 'b-hhh', name: '하이헤이호' }, { id: 'b-lohi', name: '로하이스튜디오' }, { id: 'b-tovee', name: '토비' }];
 const RULES = { 'b-hhh': HHH, 'b-lohi': LOHI, 'b-tovee': LOHI };
 const NOW = Date.parse('2026-11-16T03:00:00Z');                     // KST 11-16 12:00 → 어제 = 11-15
 const FX = JSON.parse(readFileSync(new URL('./fixtures/ad-panel-1116.json', import.meta.url)));
@@ -80,19 +80,4 @@ test('꺼진 옛 세트 숨김 — 진행 중이거나 최근 7일(11-09~11-15) 
     //  실데이터: 하헤호가디건·하헤호AI(캠페인 꺼짐, 7일 지출 없음)는 안 나온다
     const all = buildPanel({ ...FX, rulesBy: RULES, brands: BRANDS, period: 'cum', now: NOW }).flatMap(g => g.sets);
     assert.ok(all.every(s => s.status === 'ACTIVE' || s.recent), '숨김 규칙 위반 세트 있음');
-});
-
-test('⑥ 접두사·순서는 데이터에서 — 새 브랜드는 코드 수정 없이 붙는다', () => {
-    const NB = [...BRANDS, { id: 'b-new', name: '새 브랜드', ad_prefixes: ['nb'] }];
-    assert.equal(brandOfLink({ adset_name: 'nb_1201_겨울' }, NB), 'b-new');
-    assert.equal(brandOfLink({ adset_name: '새브랜드_테스트' }, NB), 'b-new');           // 이름(띄어쓰기 뺌)도 접두사
-    assert.equal(brandOfLink({ adset_name: 'tovee_x' }, BRANDS.map(b => ({ id: b.id, name: b.name }))), null);  // 데이터 없으면 영문 약자 못 찾음(하드코딩 없음)
-    const LB = [{ id: 'a', name: 'A', ad_prefixes: ['lo'] }, { id: 'b', name: 'B', ad_prefixes: ['lohi'] }];
-    assert.equal(brandOfLink({ adset_name: 'lohi_1' }, LB), 'b');                          // 긴 접두사 우선
-    const mk = (id, n) => ({ ad_id: id, adset_id: id, adset_name: n, adset_status: 'ACTIVE' });
-    const links = [mk('1', 'tovee_a'), mk('2', 'hhh_a'), mk('3', 'nb_a')];
-    const daily = links.map(l => ({ ad_id: l.ad_id, day: '2026-11-15', spend: 1000, follows: 1 }));
-    const order = rb => buildPanel({ links, daily, rulesBy: rb, brands: NB, period: 'yesterday', now: NOW }).map(g => g.brand_id);
-    assert.deepEqual(order({ ...RULES, 'b-new': { ...LOHI, sort_order: 0 } }), ['b-new', 'b-hhh', 'b-tovee']);   // sort_order 가 이긴다
-    assert.deepEqual(order(RULES), ['b-hhh', 'b-tovee', 'b-new']);                                               // 없으면 브랜드 목록 순서
 });

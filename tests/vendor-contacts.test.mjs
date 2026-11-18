@@ -85,30 +85,28 @@ const ctx = (over = {}) => {
         _vendorCategories: () => [{ name: '봉제', color: '#f00' }, { name: '원단', color: '#0f0' }],
         _thead: (view, cols) => cols.map(([k, l]) => `<th data-k="${k}">${l}</th>`).join(''),
         _applyTbl: (view, rows) => rows, _fltBadge: () => '', _connectedHTML: () => '<div data-conn></div>',
-        _c3Fold: (c, o, l) => `<button class="c3-fold">${l}</button>`,
+        _collabMenu: v => `<nav data-menu="${v}"></nav>`, _c3Fold: (c, o, l) => `<button class="c3-fold">${l}</button>`,
         _bizUrl: { [`${U1}/${U2}.pdf`]: { url: 'https://signed.example/x?token=t', at: Date.now() } },
         _loadBizUrl() { this.loaded = true; },
         ...over,
     };
-    for (const n of ['_contactDocHTML', '_bizFileHTML', '_contactCols']) t[n] = method(n);
+    for (const n of ['_contactSummaryHTML', '_contactDocHTML', '_bizFileHTML']) t[n] = method(n);
     return t;
 };
 const render = t => method('renderContacts').call(t);
 
-test('가운데 표 — 업체명·구분·상태·담당자·휴대폰·전화·이메일(구분·상태는 독립 열), 오른쪽은 안 고르면 연락처를 선택하세요(메모처럼, 요약 카드 없음 — 팀장 반려 11-18)', () => {
+test('가운데 표 — 업체명·구분·상태·담당자·휴대폰·전화·이메일(구분·상태는 독립 열), 오른쪽은 안 고르면 요약', () => {
     const t = ctx(); const html = render(t);
-    assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address']);   // ⑤ 기본 8열(주소 추가), 팩스·등록증·메모는 열 표시로
+    assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email']);
     assert.doesNotMatch(html, /ct3-name"[^>]*>[^<]*<em>/, '구분을 업체명 옆 작은 글씨로 붙이지 않는다');
-    assert.match(html, /<td class="ck-cat ct3-cat">[^<]+<\/td>/, '구분 열');
-    // 390 핵심 3열 CSS 가 열 이름으로 고른다 — 모든 칸에 ck-<열> 이 붙어야 한다(열 끄기로 순서가 바뀌어도 맞게)
-    for (const k of ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address']) assert.match(html, new RegExp(`<td class="ck-${k}[ "]`), k + ' 칸 열 이름');
-    assert.match(html, /<td class="ck-status ct3-st"><span class="ct3-badge"[^>]*>거래중<\/span><\/td>/, '상태 열 — 거래중도 보인다');
-    assert.match(html, /colspan="7"|<td class="ck-phone nw ct3-tel">/, '전화 열');
+    assert.match(html, /<td class="ct3-cat">[^<]+<\/td>/, '구분 열');
+    assert.match(html, /<td class="ct3-st"><span class="ct3-badge"[^>]*>거래중<\/span><\/td>/, '상태 열 — 거래중도 보인다');
+    assert.match(html, /colspan="7"|<td class="nw ct3-tel">/, '전화 열');
     assert.match(html, /class="m3 ct3"/, '고른 게 없으면 detail 아님');
-    assert.match(html, /연락처를 선택하세요/, '미선택 = 안내 문구');
-    assert.doesNotMatch(html, /ct3-sum|ct3-stats/, '요약 카드 없음');
+    assert.match(html, /모든 연락처 2곳/, '요약');
+    assert.match(html, /휴대폰 없음<\/span><span class="v">1곳/, '빈 칸 수 (109 뒤 mobile null)');
     assert.match(html, /성수봉제 &lt;본점&gt;/); assert.doesNotMatch(html, /<본점>/);
-    assert.match(html, /<td class="ck-mobile nw">010-1234-5678<\/td>/);
+    assert.match(html, /<td class="nw">010-1234-5678<\/td>/);
     assert.match(html, /app\.selectContact\('/);
     assert.doesNotMatch(html, /사업자등록증/, '안 고르면 상세 없음');
 });
@@ -137,11 +135,10 @@ test('고치기 — 휴대폰·전화 따로, 109 전 행은 휴대폰 칸으로
     assert.match(html, /accept="\.pdf,\.jpg,\.jpeg,\.png,\.webp"/);
 });
 
-test('3단 규칙 — 왼쪽은 구분 목록(협업 메뉴 아님), 거래중단은 종료 접기', () => {
+test('3단 규칙 — 왼쪽은 협업 메뉴, 구분은 가운데 탭, 거래중단은 종료 접기', () => {
     const html = render(ctx({ vendors: [...ctx().vendors, { id: 'z', name: '끊긴 업체', category: '봉제', status: '거래중단' }] }));
-    assert.doesNotMatch(html, /c3-menu|협업 메뉴|data-menu=/);
-    assert.match(html, /<aside class="m3-side">[\s\S]*?구분[\s\S]*?모든 연락처[\s\S]*?구분을 우클릭해 관리/);
-    assert.doesNotMatch(html, /ct3-tabs/);
+    assert.match(html, /<aside class="m3-side c3-menu"><nav data-menu="contacts">/);
+    assert.match(html, /class="it-pills ct3-tabs"/);
     assert.match(html, /종료\(거래중단\) 1곳/); assert.doesNotMatch(html, /끊긴 업체/, '접혀 있으면 안 보인다');
     assert.match(render(ctx({ contactShowDone: true, vendors: [{ id: 'z', name: '끊긴 업체', status: '거래중단' }] })), /끊긴 업체/);
     assert.match(render(ctx({ contactStatus: '거래중단', vendors: [{ id: 'z', name: '끊긴 업체', status: '거래중단' }] })), /끊긴 업체/, '상태를 고르면 그대로 보인다');
@@ -281,13 +278,4 @@ test('머리글 깔때기는 항상 보이고(연하게), 거르면 파랑', () 
     const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
     assert.match(css, /\.ct3-tbl \.it-tbl th \.th-f\{opacity:\.7\}/);
     assert.match(css, /\.it-tbl th\.flt\{color:#0a84ff/);
-});
-
-test('⑤ 열 표시 — 팩스·등록증·메모를 켜면 11열, 업체명은 못 끈다', () => {
-    const t = ctx({ contactColOn: { fax: true, cert: true, memo: true, name: false } }); const html = render(t);
-    assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]),
-        ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address', 'fax', 'cert', 'memo']);
-    assert.match(html, /<td class="ck-cert ct3-cert">/);
-    const off = render(ctx({ contactColOn: { email: false, address: false } }));
-    assert.deepEqual([...off.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone']);
 });

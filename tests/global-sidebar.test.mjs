@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const main = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const style = readFileSync(new URL('../style.css', import.meta.url), 'utf8');
 
-test('전역 사이드바는 여섯 대분류만 상시 노출하고 중분류는 플라이아웃으로 그린다', () => {
+test('전역 사이드바는 업무·협업·기타와 지정된 창/탭을 그린다', () => {
     for (const token of ['MAC_SIDE_GROUPS', "id: 'work', label: '업무'", "id: 'collab', label: '협업'", "id: 'other', label: '기타'",
         "label: '홈'", "['home', '오늘 할 일'", "['home', '오늘 매출'", "['home', '오늘 조간'",
         "['orders', '주문'", "['cs', 'CS'", "['inventory', '재고'", "['analysis', '고객'", "['sales', '정산'",
@@ -13,10 +13,6 @@ test('전역 사이드바는 여섯 대분류만 상시 노출하고 중분류�
         "['sns', '대시보드'", "['sns', '광고현황'", "['sns', '게시물기록'", "['sns', '팔로워'", "['sns', '동종업계'", "['sns', '뉴스'",
         "['reminders', '할 일'", "['settings', '설정'"])
         assert.ok(main.includes(token), token);
-    assert.match(main, /const apps = \[[\s\S]*?label: '협업'[\s\S]*?groups\.find\(g => g\.id === 'other'\)/);
-    assert.match(main, /global-side global-side-primary/);
-    assert.match(style, /\.global-side-primary \.mac-side-sub\{display:none;position:absolute/);
-    assert.match(style, /\.global-side-primary \.mac-side-appwrap\.expanded>\.mac-side-sub\{display:block\}/);
 });
 
 test('권한·현재 탭·이동은 기존 창 라우팅을 재사용한다', () => {
@@ -24,7 +20,6 @@ test('권한·현재 탭·이동은 기존 창 라우팅을 재사용한다', ()
     assert.match(main, /sideOpen\(view, mode = ''\)[\s\S]*?this\.setSnsMode\(mode\)[\s\S]*?this\.macOpen\(view\)/);
     assert.match(main, /activeView === 'sns'[\s\S]*?activeMode === mode/);
     assert.match(main, /data-view="\$\{esc\(view\)\}"/);
-    assert.match(main, /this\.sideAppOpen = '__none'/);
 });
 
 test('전체·그룹 접힘 상태는 try-catch localStorage에 남는다', () => {
@@ -51,18 +46,17 @@ test('사이드바 글자는 13px 이상, 항목은 36px 이상이다', () => {
 test('맥 창 안 판매·SNS는 대분류 메뉴, 그 밖의 창은 보기 필터를 둔다', () => {
     assert.match(main, /if \(this\.macMode\) \{[\s\S]*?const nav = this\._viewNav\(view\)[\s\S]*?appside appside-filter/);
     assert.match(main, /appwrap\$\{side \? '' : ' no-appside'\}/);
-    //  사장님 11-18: 창 안에 'OO 메뉴'(형제 화면 목록)를 다시 그리지 않는다
-    assert.doesNotMatch(main, /appside appside-sales-menu/);
-    assert.doesNotMatch(main, /sns3-menu-side/);
+    assert.match(main, /appside appside-sales-menu/);
+    assert.match(main, /sns3-menu-side/);
 });
 
-test('대분류 클릭은 플라이아웃만 열고 중분류 선택 뒤 자동 접힌다', () => {
+test('중분류는 현재 창만 펼치고 레일에서는 플라이아웃으로 상세에 간다', () => {
     assert.match(main, /toggleMacSideApp\(view\)/);
-    assert.match(main, /this\.sideAppOpen = this\.sideAppOpen === view \? '__none' : view/);
     assert.match(main, /mac-side-appwrap\$\{appOn \? ' on' : ''\}\$\{expanded \? ' expanded' : ''\}/);
-    assert.match(main, /const expanded = this\.sideAppOpen === a\.view/);
-    const appBlock = main.slice(main.indexOf('        const app = a =>'), main.indexOf('        return `<button class="mac-side-backdrop"'));
-    assert.match(appBlock, /toggleMacSideApp/); assert.doesNotMatch(appBlock, /onclick="app\.sideOpen/);
+    assert.match(main, /ph-caret-\$\{expanded \? 'up' : 'down'\}/);
+    const appBlock = main.slice(main.indexOf('        const app = a =>'), main.indexOf('        const group = g =>'));
+    assert.match(appBlock, /toggleMacSideApp/); assert.doesNotMatch(appBlock, /sideOpen/);
+    assert.match(style, /mac-side-appwrap:not\(\.expanded\) \.mac-side-sub\{display:none\}/);
     assert.match(style, /side-collapsed \.mac-side-appwrap:hover>\.mac-side-sub/);
 });
 

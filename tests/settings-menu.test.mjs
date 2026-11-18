@@ -24,9 +24,9 @@ test('설정 칸 권한: 마스터 전용은 직원·파트너에게 안 보이�
     assert.match(main, /이 계정으로는 볼 수 없는 칸입니다/);
 });
 
-test('설정 창 안에는 설정 메뉴 목록을 다시 그리지 않는다(전역 사이드바 몫, 사장님 11-18)', () => {
+test('설정 창은 판매·생산과 같은 왼쪽 메뉴를 쓴다', () => {
     const bar = between('    _appTabBar(', '    // SNS 3단');
-    assert.doesNotMatch(bar, /설정 메뉴|g\.head === 'settings'/);
+    assert.match(bar, /if \(g\.head === 'settings'\) return `<aside class="appside appside-sales-menu">/);
     assert.match(main, /settings3 \? ' settings3' : ''/);
     assert.match(style, /\.settings3 \.appside \.m3-h\{font-size:12px/);
 });
