@@ -85,7 +85,7 @@ const ctx = (over = {}) => {
         _vendorCategories: () => [{ name: '봉제', color: '#f00' }, { name: '원단', color: '#0f0' }],
         _thead: (view, cols) => cols.map(([k, l]) => `<th data-k="${k}">${l}</th>`).join(''),
         _applyTbl: (view, rows) => rows, _fltBadge: () => '', _connectedHTML: () => '<div data-conn></div>',
-        _collabMenu: v => `<nav data-menu="${v}"></nav>`, _c3Fold: (c, o, l) => `<button class="c3-fold">${l}</button>`,
+        _c3Fold: (c, o, l) => `<button class="c3-fold">${l}</button>`,
         _bizUrl: { [`${U1}/${U2}.pdf`]: { url: 'https://signed.example/x?token=t', at: Date.now() } },
         _loadBizUrl() { this.loaded = true; },
         ...over,
@@ -137,10 +137,11 @@ test('고치기 — 휴대폰·전화 따로, 109 전 행은 휴대폰 칸으로
     assert.match(html, /accept="\.pdf,\.jpg,\.jpeg,\.png,\.webp"/);
 });
 
-test('3단 규칙 — 왼쪽은 협업 메뉴, 구분은 가운데 탭, 거래중단은 종료 접기', () => {
+test('3단 규칙 — 왼쪽은 구분 목록(협업 메뉴 아님), 거래중단은 종료 접기', () => {
     const html = render(ctx({ vendors: [...ctx().vendors, { id: 'z', name: '끊긴 업체', category: '봉제', status: '거래중단' }] }));
-    assert.match(html, /<aside class="m3-side c3-menu"><nav data-menu="contacts">/);
-    assert.match(html, /class="it-pills ct3-tabs"/);
+    assert.doesNotMatch(html, /c3-menu|협업 메뉴|data-menu=/);
+    assert.match(html, /<aside class="m3-side">[\s\S]*?구분[\s\S]*?모든 연락처[\s\S]*?구분을 우클릭해 관리/);
+    assert.doesNotMatch(html, /ct3-tabs/);
     assert.match(html, /종료\(거래중단\) 1곳/); assert.doesNotMatch(html, /끊긴 업체/, '접혀 있으면 안 보인다');
     assert.match(render(ctx({ contactShowDone: true, vendors: [{ id: 'z', name: '끊긴 업체', status: '거래중단' }] })), /끊긴 업체/);
     assert.match(render(ctx({ contactStatus: '거래중단', vendors: [{ id: 'z', name: '끊긴 업체', status: '거래중단' }] })), /끊긴 업체/, '상태를 고르면 그대로 보인다');

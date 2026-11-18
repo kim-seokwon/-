@@ -51,8 +51,9 @@ test('사이드바 글자는 13px 이상, 항목은 36px 이상이다', () => {
 test('맥 창 안 판매·SNS는 대분류 메뉴, 그 밖의 창은 보기 필터를 둔다', () => {
     assert.match(main, /if \(this\.macMode\) \{[\s\S]*?const nav = this\._viewNav\(view\)[\s\S]*?appside appside-filter/);
     assert.match(main, /appwrap\$\{side \? '' : ' no-appside'\}/);
-    assert.match(main, /appside appside-sales-menu/);
-    assert.match(main, /sns3-menu-side/);
+    //  사장님 11-18: 창 안에 'OO 메뉴'(형제 화면 목록)를 다시 그리지 않는다
+    assert.doesNotMatch(main, /appside appside-sales-menu/);
+    assert.doesNotMatch(main, /sns3-menu-side/);
 });
 
 test('대분류 클릭은 플라이아웃만 열고 중분류 선택 뒤 자동 접힌다', () => {

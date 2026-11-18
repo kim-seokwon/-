@@ -3348,7 +3348,7 @@ class BhasApp {
             { k: 'account', t: '계정', i: 'ph-user-circle' },
             { k: 'build', t: '버전', i: 'ph-info' },
         ];
-        //  설정 창(왼쪽 설정 메뉴) 안에서는 자기 메뉴를 빼고 그 칸 카드만 — 화면·도구 / 내 계정·버전
+        //  설정 창 안에서는 자기 메뉴를 빼고 그 칸 카드만 — 화면·도구 / 내 계정·버전
         if (this._inSetShell) {
             const secs = this.currentView === 'set_account' ? ['account', 'build'] : ['look', 'tools'];
             const html = this._settingsCards(row, esc, role, wall, links);
@@ -3853,21 +3853,8 @@ class BhasApp {
         // 판매 창은 항상 대분류(메뉴) > 중분류(목록·표) > 상세의 같은 자리를 쓴다.
         // 전역 사이드바와 메뉴 이름을 맞추되, 창 안에서는 현재 화면의 위치를 보여 준다.
         if (this.macMode) {
-            //  설정 창 — 왼쪽은 설정 메뉴만(재설계 §2). 이 계정이 볼 수 있는 칸만
-            if (g.head === 'settings') return `<aside class="appside appside-sales-menu">
-                <div class="m3-h">설정 메뉴</div>
-                ${g.tabs.filter(t => this._setTabOk(t.k)).map(t => `<button class="sales-section-nav${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
-                    <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}"></i><span>${esc(t.t)}</span></button>`).join('')}
-            </aside>`;
-            //  생산도 같은 자리 규칙 — 왼쪽은 메뉴만, 거르기(브랜드·상태·생산처)는 가운데 표 머리줄로.
-            if (g.head === 'orders' || g.head === 'items') return `<aside class="appside appside-sales-menu">
-                <div class="m3-h">${esc(g.label)} 메뉴</div>
-                ${g.tabs.filter(t => !t.hidden).map(t => {
-                    const on = t.k === view || (t.k === 'sales' && view === 'expenses') || (t.k === 'analysis' && view === 'crm');
-                    return `<button class="sales-section-nav${on ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
-                        <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}"></i><span>${esc(t.t)}</span></button>`;
-                }).join('')}
-            </aside>`;
+            //  창 안에 대분류·중분류(형제 화면) 목록을 다시 그리지 않는다 — 그건 전역 사이드바 몫(사장님 11-18).
+            //  왼쪽은 그 화면 자신의 거르기만, 없으면 2단.
             const nav = this._viewNav(view);
             return nav ? `<aside class="appside appside-filter">${nav}</aside>` : '';
         }
@@ -3890,15 +3877,8 @@ class BhasApp {
         return { color: brand?.brand_color || palette[seed % palette.length], cls: 'brand' };
     }
     _snsShell(inner) {
-        const esc = s => this._vesc(s);
-        const mode = this.snsMode || 'dashboard';
-        const menus = [
-            ['dashboard','ph-gauge','대시보드'], ['ads','ph-megaphone-simple','광고현황'],
-            ['posts','ph-images-square','게시물기록'], ['followers','ph-users-three','팔로워'],
-            ['industry','ph-binoculars','동종업계'], ['news','ph-newspaper','뉴스'],
-        ];
-        const side = `<aside class="m3-side sns3-menu-side"><div class="m3-h">SNS 메뉴</div>${menus.map(([k, icon, label]) => `<button class="sns-section-nav${mode === k ? ' on' : ''}" onclick="app.setSnsMode('${esc(k)}')"><i class="ph ${icon}"></i><span>${esc(label)}</span></button>`).join('')}</aside>`;
-        return `<div class="m3 sns3-layout${this.snsMobileDetail ? ' detail' : ''}">${side}${inner}</div>`;
+        //  SNS 화면 전환은 전역 사이드바(대시보드·광고현황…) 몫 — 창 안에 형제 화면 목록을 두지 않는다(사장님 11-18)
+        return `<div class="m3 sns3-layout no-side${this.snsMobileDetail ? ' detail' : ''}">${inner}</div>`;
     }
     setSnsMode(k) {
         const previousMode = this.snsMode;
@@ -5084,7 +5064,7 @@ class BhasApp {
     renderSubView(products) {
         const { role, id: currentUserId, name: currentUserName } = this.currentUser;
         if (this.currentView === 'home') return this.renderHome(products);
-        //  설정 묶음 — 왼쪽 설정 메뉴 | 가운데 그 칸. 원래 화면(계정·브랜드·연동·불편사항)은 그대로 가운데에 그린다
+        //  설정 묶음 — 전역 사이드바에서 칸을 고르고 창엔 그 칸만(11-18). 원래 화면(계정·브랜드·연동·불편사항)은 그대로 가운데에 그린다
         if (this._groupOf(this.currentView)?.head === 'settings' && !this._inSetShell) {
             const v = this.currentView;
             if (!this._setTabOk(v)) return this._appShell(v, `<div class="m3-none" style="padding:40px">이 계정으로는 볼 수 없는 칸입니다</div>`);
@@ -5449,26 +5429,31 @@ class BhasApp {
                     <i class="ph ph-caret-right fd3-go"></i>
                 </div>`;
             }).join('');
-            //  분류·시즌 거르기는 가운데 탭·고르기 줄(3단 규칙 1 — 왼쪽은 협업 메뉴). 우클릭 관리는 그대로.
-            const curP = cur.startsWith('p:') ? cur.slice(2).split('/')[0] : '';
-            const curC = cur.startsWith('p:') ? (cur.slice(2).split('/')[1] || '전체') : cur;
-            const tabKey = c => curP ? (c === '전체' ? 'p:' + curP : 'p:' + curP + '/' + c) : c;
-            const inP = d => !curP || String(d.productId) === String(curP);
-            const docTab = c => { const key = tabKey(c);
-                return `<button class="it-pill${cur === key ? ' on' : ''}" onclick="app.setDocCategory(decodeURIComponent('${encodeURIComponent(key)}'))"
-                    ${c !== '전체' ? `oncontextmenu="app.docFolderMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))"` : ''}>${esc(c === '전체' ? '전체' : c)}<em>${aggregatedDocs.filter(d => inP(d) && (c === '전체' || d.category === c)).length}</em></button>`; };
-            const docTabs = `<div class="it-pills fd-tabs">${['전체', ...categories].map(docTab).join('')}
-                <button class="it-pill" onclick="app.addDocCategory()" title="새 분류"><i class="ph ph-plus"></i></button>
-                <select class="fd-psel" aria-label="시즌" onchange="app.setDocCategory(this.value ? 'p:' + this.value + (decodeURIComponent('${encodeURIComponent(curC)}') !== '전체' ? '/' + decodeURIComponent('${encodeURIComponent(curC)}') : '') : decodeURIComponent('${encodeURIComponent(curC)}'))">
-                    <option value="">모든 시즌</option>${products.map(p => `<option value="${esc(String(p.id))}"${String(curP) === String(p.id) ? ' selected' : ''}>${esc(p.name)} (${aggregatedDocs.filter(d => d.productId === p.id).length})</option>`).join('')}</select>
-                <button class="it-pill" onclick="app.showProjectModal()" title="새 시즌"><i class="ph ph-calendar-plus"></i></button></div>`;
+            //  자료실 = 맥 파인더(사장님 11-18): 분류·시즌은 왼쪽 즐겨찾기 폴더로만 고른다. 가운데 탭줄 없음.
             const where = cur === '전체' ? '자료실'
                 : (cur.startsWith('p:')
                     ? (([pid, cat]) => nameOfP(pid) + (cat ? ' › ' + cat : ''))(cur.slice(2).split('/'))
                     : cur);
             return `
-            <div class="fd${this.docMobileDetail ? ' detail' : ''}">
-                <aside class="fd-side c3-menu">${this._collabMenu('documents')}</aside>
+            <div class="fd${this.docMobileDetail ? ' detail' : ''}${docs.some(x => String(x.id) === String(this.docSel)) ? '' : ' nosel'}">
+                <aside class="fd-side">
+                    <div class="fd-sh">즐겨찾기</div>
+                    ${side('전체', '모든 자료', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#0a84ff')}
+                    ${sec('분류', categories.map(c =>
+                        side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join(''), true,
+                        { t: '새 분류', run: 'app.addDocCategory()' })}
+                    ${sec('시즌', products.length ? products.map(p => {
+                        const n = aggregatedDocs.filter(d => d.productId === p.id).length;
+                        const col = ((mockData.brands || []).find(b => b.id === p.brand_id) || {}).brand_color || '#5ac8fa';
+                        const open = !!(this.docOpenP || {})[p.id];
+                        const kids = !open ? '' : categories.map(c => {
+                            const kn = aggregatedDocs.filter(d => d.productId === p.id && d.category === c).length;
+                            return side('p:' + p.id + '/' + c, c, 'ph-folder-simple', kn, '#8e8e93', 1);
+                        }).join('');
+                        return side('p:' + p.id, p.name, 'ph-folder-simple', n, col, 0, p.id, open) + kids;
+                    }).join('') : '<div class="fd-none sm">시즌 없음</div>', false,
+                        { t: '새 시즌', run: 'app.showProjectModal()' })}
+                </aside>
                 <section class="fd-main">
                     <div class="fd-bar">
                         <b>${esc(where)}</b>${this._fltBadge('documents')}
@@ -5486,7 +5471,6 @@ class BhasApp {
                         })() : ''}
                         <button class="fd-add" id="quick-add-doc-btn"><i class="ph ph-plus"></i> 올리기</button>
                     </div>
-                    ${docTabs}
                     <div class="fd-body">
                         ${docs.length
                             ? (view === 'grid' ? `<div class="fd-grid">${grid}</div>`
@@ -5503,16 +5487,7 @@ class BhasApp {
                 <aside class="fd-prev">
                     ${(() => {
                         const d = docs.find(x => String(x.id) === String(this.docSel));
-                        if (!d) {
-                            //  안 고르면 요약(3단 규칙 3) — 종류별·브랜드별 개수, 누르면 그걸로 거른다
-                            const by = f => Object.entries(docs.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
-                            return `<div class="fd3-phead"><b>자료 상세</b></div><div class="fd-sumw">${this._c3Sum('자료 요약', `지금 보이는 ${docs.length}개 / 전체 ${aggregatedDocs.length}개`,
-                                this._c3Sec('종류별') + by(x => kindOf(x).t).map(([k2, n]) => this._c3Li(k2, n)).join('')
-                                + this._c3Sec('브랜드별') + by(x => (brandOfP(x.productId) || {}).n || '공통').map(([k2, n]) => this._c3Li(k2, n)).join('')
-                                + this._c3Sec('최근 올린 것') + docs.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 5)
-                                    .map(x => this._c3Li(x.name || '이름 없는 자료', x.date ? String(x.date).slice(5, 10).replace('-', '.') : '', `app.selectDoc('${esc(String(x.id))}')`, 'fd-recent')).join(''))}
-                                <div class="m3-none">자료를 선택하세요</div></div>`;
-                        }
+                        if (!d) return '';   // 안 고르면 오른쪽 칸 자체를 숨긴다(.fd.nosel) — 파인더 미리보기처럼
                         const k = kindOf(d), safe = this._safeFileUrl(d.url);
                         return `
                         <div class="fd3-phead"><button class="fd3-back" onclick="app.closeDocDetail()"><i class="ph ph-arrow-left"></i><span>목록</span></button><b>자료 상세</b></div>
@@ -11417,21 +11392,12 @@ class BhasApp {
         const brandNames = (mockData.brands || []).filter(b => b.status !== 'closed').map(b => b.name);
         const otherFolders = [...new Set([...brandNames, '공용',
             ...all.filter(n => n.scope === 'shared').map(n => n.folder || '공용')])];
-        //  브랜드 폴더는 가운데 태그 줄로(3단 규칙 1 — 브랜드 거르기는 왼쪽에 두지 않는다). 끌어놓기·우클릭은 그대로.
-        const brandSet = new Set(brandNames);
-        const brandTags = brandNames.length ? `<div class="it-pills nt-btags">${brandNames.map(f => {
-            const br = (mockData.brands || []).find(b => b.name === f), key = 'f:' + f;
-            return `<button class="it-pill${cur === key ? ' on' : ''}" onclick="app.setNoteFolder('${key}')"
-                ondragover="app.nbDragOver(event,'${key}')" ondragleave="app.nbDragOut(event)" ondrop="app.nbDrop(event,'${key}')"
-                oncontextmenu="app.folderMenu(event,'${key}')"><i class="ph ph-tag" style="color:${br?.brand_color || '#0a84ff'}"></i>${esc(f)}<em>${cnt(n => (n.folder || '공용') === f && n.scope === 'shared')}</em></button>`;
-        }).join('')}</div>` : '';
         //  개인 메모도 폴더로 나눈다 — '개인' 은 기본 칸이라 목록에서 뺀다
         const privFolders = [...new Set(all.filter(n => n.scope === 'private' && n.owner === me)
             .map(n => n.folder || '개인'))].filter(f => f !== '개인');
         return `
         <div class="nt">
-            <aside class="nt-side c3-menu">
-                ${this._collabMenu('notes')}
+            <aside class="nt-side">
                 <div class="nt-shead tog${this.notePrivOpen !== false ? ' on' : ''}" onclick="app.togglePrivFolders()">
                     <i class="ph ph-caret-right"></i>개인
                     <button class="nt-add" title="새 개인 폴더" onclick="event.stopPropagation();app.addPrivateFolder()">＋</button></div>
@@ -11441,7 +11407,7 @@ class BhasApp {
                 <div class="nt-shead">워크스페이스
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-tray', '모든 메모', all.length, '#8e8e93')}
-                ${otherFolders.filter(f => !brandSet.has(f)).map(f => {
+                ${otherFolders.map(f => {
                     const fx = (this.noteFolders || []).find(x => x.name === f);
                     const locked = fx && fx.access === 'members';
                     const br = (mockData.brands || []).find(b => b.name === f);
@@ -11467,7 +11433,6 @@ class BhasApp {
                     ${cur === 'f:' + MEETING_FOLDER && !this._meetingOf(this._meetWeek()) ? `<button class="mbtn pri nt-meet-new" onclick="app.createWeeklyMeeting()">이번 주 회의록 만들기</button>` : ''}
                     <button class="nt-new" onclick="app.addNote()" title="새 메모"><i class="ph ph-note-pencil"></i></button>
                 </div>
-                ${brandTags}
                 ${pick.size > 1 ? `<div class="nt-bulk"><b>${pick.size}개 고름</b>
                     <button onclick="app.bulkMoveNotes()"><i class="ph ph-folder-simple"></i>폴더 옮기기</button>
                     <button class="danger" onclick="app.bulkDeleteNotes()"><i class="ph ph-trash"></i>삭제</button>
@@ -11507,11 +11472,7 @@ class BhasApp {
                               onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`
                         : this._noteLiveHTML(sel)}
                     ${this._noteItemsHTML(sel)}
-                </div>` : `<div class="nt-sumw">${this._c3Sum('메모 요약', `전체 ${all.length}개`,
-                    this._c3Sec('폴더별')
-                    + this._c3Li('개인 메모', cnt(n => n.scope === 'private' && n.owner === me), "app.setNoteFolder('private')")
-                    + otherFolders.map(f => this._c3Li(f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), `app.setNoteFolder('f:${f.replace(/'/g, '')}')`)).join('')
-                    + `<div class="dt-a"><button class="mbtn pri" onclick="app.addNote()">이 폴더에 새 메모</button></div>`)}</div>`}
+                </div>` : `<div class="nt-none big">메모를 선택하세요</div>`}
             </section>
         </div>`;
     }
@@ -11800,30 +11761,9 @@ class BhasApp {
         if (title !== old) this.setRemTitle(src, id, title);
         if (el) el.dataset.original = title;
     }
-    //  협업 창 왼쪽 = 협업 메뉴(전역 사이드바 '협업' 묶음과 같은 목록, 지금 창 진하게). 거르기는 가운데로 보낸다(3단 규칙 1).
-    _collabMenu(view, extra = '') {
-        const win = this._renderingWin || '';
-        const g = (this.MAC_SIDE_GROUPS || []).find(x => x.id === 'collab');
-        return `<div class="m3-h">협업 메뉴</div>${(g?.items || []).map(([k, t, ic]) => `<button class="sales-section-nav${k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${k}')">
-            <i class="ph ${ic}"></i><span>${this._vesc(t)}</span></button>`).join('')}${extra}`;
-    }
-    //  생산 메뉴(연락처 화면을 생산처로 쓸 때 왼쪽) — 판매·생산 묶음 메뉴와 같은 목록
-    _prodMenu(view) {
-        const win = this._renderingWin || '';
-        const g = this.APP_GROUPS.find(x => x.head === 'items');
-        return `<div class="m3-h">생산 메뉴</div>${g.tabs.filter(t => !t.hidden).map(t => `<button class="sales-section-nav${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
-            <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}"></i><span>${this._vesc(t.t)}</span></button>`).join('')}`;
-    }
-    //  협업 창 오른쪽 요약 · 접기 — 다섯 창이 같은 모양을 쓴다(3단 규칙 2·3)
-    _c3Sum(title, sub, body) { const esc = s => this._vesc(s); return `<div class="c3-sum"><div class="c3-h"><b>${esc(title)}</b>${sub ? `<em>${esc(sub)}</em>` : ''}</div>${body}</div>`; }
-    _c3Sec(t) { return `<div class="c3-sec">${this._vesc(t)}</div>`; }
-    _c3Li(label, val, click = '', cls = '') {
-        const esc = s => this._vesc(s);
-        return `<div class="c3-li${click ? ' click' : ''}${cls ? ' ' + cls : ''}"${click ? ` role="button" tabindex="0" onclick="${esc(click)}"` : ''}><span title="${esc(label)}">${esc(label)}</span><b>${esc(String(val ?? ''))}</b></div>`;
-    }
+    //  접기 버튼 — 거래중단·완료 묶음(3단 규칙 2)
     _c3Fold(click, open, label) { return `<button class="c3-fold" onclick="${click}"><i class="ph ph-caret-${open ? 'down' : 'right'}"></i>${this._vesc(label)}</button>`; }
     toggleContactDone() { this.contactShowDone = !this.contactShowDone; this.requestRender(); }
-    toggleRemDone() { this.remShowDone = !this.remShowDone; this.requestRender(); }
     // ── 할 일 (맥 '미리알림' 앱 그대로) ────────────────────────
     //  왼쪽에 색 타일 6개 + 나의 목록, 오른쪽에 목록별 색 제목 + 동그란 체크.
     //  우리 '할일(todos)'도 한 목록으로 같이 얹어서 담당자까지 보이게 했다.
@@ -11889,18 +11829,14 @@ class BhasApp {
             { k: 'nodate', label: '날짜 없음', icon: 'ph-calendar-x', cls: 'pink' },
             { k: 'mine',  label: '내 할 일', icon: 'ph-user',        cls: 'pink' },
             { k: 'sent',  label: '요청한 것', icon: 'ph-paper-plane-tilt', cls: 'teal' },
+            { k: 'done',  label: '완료됨', icon: 'ph-check',         cls: 'gray' },
         ];
         const listNames = [...new Set(all.map(x => x.list))];
         const LCOL = { '시즌': '#0a84ff', '제품': '#0a84ff', '거래처': '#ff9f0a', '기본': '#ff9f0a', '메모': '#30d158' };
         const colorOf = (l, i) => LCOL[l] || ['#ff9f0a', '#0a84ff', '#30d158', '#bf5af2', '#ff453a'][i % 5];
-        //  옛 'done' 타일로 와도 전체로 — 끝난 것은 아래 '완료 N개' 접기로 본다(3단 규칙 2)
-        const q = (this.remQ || '').trim().toLowerCase();
-        const hit = x => !q || [x.title, x.memo, x.project, x.from, x.atName].some(v => String(v || '').toLowerCase().includes(q));
-        const inScope = cur.startsWith('l:') ? (x => x.list === cur.slice(2)) : (cur === 'all' || cur === 'done' || !F[cur] ? (() => true) : (x => F[cur]({ ...x, done: false })));
-        const doneRows = all.filter(x => x.done && inScope(x) && hit(x));
-        let shown = cur.startsWith('l:') ? all.filter(x => x.list === cur.slice(2) && !x.done && hit(x))
-                                         : all.filter(x => (F[cur === 'done' ? 'all' : cur] || F.all)(x) && hit(x));
-        if (this.remShowDone) shown = [...shown, ...doneRows];
+        let shown = cur.startsWith('l:') ? all.filter(x => x.list === cur.slice(2) && !x.done)
+                                         : all.filter(F[cur] || F.all);
+        const title = cur.startsWith('l:') ? cur.slice(2) : (TILES.find(t => t.k === cur) || {}).label || '전체';
         const doneCnt = all.filter(x => x.done).length;
         // 목록별로 묶어 색 제목을 얹는다
         const groups = {};
@@ -11929,15 +11865,6 @@ class BhasApp {
                     <button class="rm-x" title="지우기" onclick="event.stopPropagation();app.delRemItem('${x.src}','${x.id}')">✕</button>
                 </div>`).join('')}`;
         }).join('') || `<div class="rm-none">항목 없음</div>`;
-        const doneFold = doneRows.length ? `${this._c3Fold('app.toggleRemDone()', this.remShowDone, `완료 ${doneRows.length}개`)}` : '';
-        //  안 골랐을 때 오른쪽 = 할 일 요약(3단 규칙 3)
-        const urgent = all.filter(x => !x.done && x.due && x.due <= today).sort((a, b) => String(a.due).localeCompare(String(b.due))).slice(0, 6);
-        const L = (label, val, click, cls) => this._c3Li(label, val, click, cls);
-        const cnt = k => all.filter(F[k]).length;
-        const summary = this._c3Sum('할 일 요약', `안 끝난 것 ${open.length} · 완료 ${doneCnt}`, `
-                ${this._c3Sec('상태별')}${L('기한 지남', cnt('late'), "app.setRemList('late')", cnt('late') ? 'bad' : '')}${L('오늘까지', cnt('today'), "app.setRemList('today')")}${L('예정', cnt('plan'), "app.setRemList('plan')")}${L('날짜 없음', cnt('nodate'), "app.setRemList('nodate')")}
-                ${this._c3Sec('사람')}${L('내 할 일', cnt('mine'), "app.setRemList('mine')")}${L('요청한 것', cnt('sent'), "app.setRemList('sent')")}
-                ${this._c3Sec(`급한 것 ${urgent.length}`)}${urgent.map(x => L(x.title, this.formatDateToUI(x.due), `app.selectRemItem('${x.src}','${esc(String(x.id))}')`, x.due < today ? 'bad' : '')).join('') || L('급한 할 일 없음', '', '', 'mu')}`);
 
         const detail = pick ? `<div class="rm-detail">
                 <div class="rm-detail-type"><i class="ph ph-check-circle"></i>${esc(pick.list || '할 일')}</div>
@@ -11957,23 +11884,19 @@ class BhasApp {
                     <button class="rm-done" onclick="app.toggleRemItem('${pick.src}','${esc(String(pick.id))}')"><i class="ph ${pick.done ? 'ph-arrow-counter-clockwise' : 'ph-check'}"></i>${pick.done ? '완료 취소' : '완료'}</button>
                     <button class="rm-delete" onclick="app.delRemItem('${pick.src}','${esc(String(pick.id))}')"><i class="ph ph-trash"></i>지우기</button>
                 </div>
-            </div>` : summary + `<div class="m3-none">할 일을 선택하세요</div>`;
+            </div>` : `<div class="m3-none mid">할 일을 선택하세요</div>`;
 
-        const curKey = cur === 'done' ? 'all' : cur;
         return `
         <div class="rm${this.remMobileDetail ? ' detail' : ''}">
-            <aside class="rm-side c3-menu">${this._collabMenu('reminders')}</aside>
-            <section class="rm-main">
-                <div class="rm-top">
-                    <button class="rm-add" onclick="app.focusNewReminder()" title="새 할 일"><i class="ph ph-plus"></i></button>
-                    <div class="rm-search"><i class="ph ph-magnifying-glass"></i><input placeholder="검색"
-                        value="${esc(this.remQ || '')}" oninput="app.remQ=this.value;app.requestRender()"></div>
+            <aside class="rm-side">
+                <div class="rm-tiles">
+                    ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
+                        title="${({today:'기한이 오늘이거나 이미 지난 것',plan:'기한이 앞으로 남은 것',all:'안 끝난 것 전부',late:'기한이 지난 것',nodate:'기한을 안 적은 것',mine:'담당이 나로 되어 있는 것',sent:'내가 만들어 남에게 넘긴 것',done:'끝낸 것'})[t.k] || ''}">
+                        <span class="rm-ti"><i class="ph ${t.icon}"></i></span>
+                        <b>${all.filter(F[t.k]).length}</b>
+                        <em>${t.label}</em>
+                    </button>`).join('')}
                 </div>
-                <div class="it-pills rm-pills">
-                    ${TILES.map(t => `<button class="it-pill${curKey === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
-                        title="${({today:'기한이 오늘이거나 이미 지난 것',plan:'기한이 앞으로 남은 것',all:'안 끝난 것 전부',late:'기한이 지난 것',nodate:'기한을 안 적은 것',mine:'담당이 나로 되어 있는 것',sent:'내가 만들어 남에게 넘긴 것'})[t.k] || ''}">${t.label}<em>${all.filter(F[t.k]).length}</em></button>`).join('')}
-                </div>
-                <div class="rm-lists">
                 <div class="rm-seg">
                     <button class="${(this.remGroup || 'list') === 'list' ? 'on' : ''}" onclick="app.setRemGroup('list')">목록별</button>
                     <button class="${this.remGroup === 'project' ? 'on' : ''}" onclick="app.setRemGroup('project')">시즌별</button>
@@ -11984,14 +11907,21 @@ class BhasApp {
                     <span class="rm-lic" style="background:${colorOf(l, i)}"><i class="ph ph-list-bullets"></i></span>
                     <span class="rm-ln">${esc(l)}</span>
                     <em>${all.filter(x => x.list === l && !x.done).length}</em></div>`).join('')}
+            </aside>
+            <section class="rm-main">
+                <div class="rm-top">
+                    <button class="rm-add" onclick="app.focusNewReminder()" title="새 할 일"><i class="ph ph-plus"></i></button>
+                    <div class="rm-search"><i class="ph ph-magnifying-glass"></i><input placeholder="검색"
+                        value="${esc(this.remQ || '')}" oninput="app.remQ=this.value;app.requestRender()"></div>
                 </div>
-                ${doneCnt ? `<div class="rm-sub"><a onclick="app.clearDoneReminders()">완료 ${doneCnt}개 지우기</a></div>` : ''}
+                <h1 class="rm-h1">${esc(title)}</h1>
+                <div class="rm-sub">${doneCnt}개 완료됨${doneCnt ? ` · <a onclick="app.clearDoneReminders()">지우기</a>` : ''}</div>
                 <div class="rm-new">
                     <button class="rm-ck ghost"></button>
                     <input id="rem-new" placeholder="새 할 일" onkeydown="if(event.key==='Enter')app.addReminder()">
                     <input id="rem-due" type="date">
                 </div>
-                <div class="rm-body">${sections}${doneFold}</div>
+                <div class="rm-body">${sections}</div>
             </section>
             <section class="rm-doc">
                 <div class="m3-tools rm-tools"><button class="rm-back" onclick="app.closeRemDetail()"><i class="ph ph-caret-left"></i> 목록</button><span class="sp"></span></div>
@@ -14975,7 +14905,28 @@ class BhasApp {
         const subscriptions = (this.calendarRoutines || []).filter(r => r.active && r.kind === 'subscription');
         return `
         <div class="cal">
-            <aside class="cal-side c3-menu">${this._collabMenu('calendar')}</aside>
+            <aside class="cal-side">
+                <div class="m3-h">이 대시보드</div>
+                ${this.CAL_SRC.map(s2 => `<div class="cal-src" onclick="app.toggleCalSrc('${s2.k}')">
+                    <span class="cal-ck${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}"></span>
+                    <span>${esc(s2.t)}</span>
+                    <em>${items.filter(x => x.kind === s2.k).length}</em></div>`).join('')}
+                <div class="cal-mini">
+                    <div class="cal-mh"><button onclick="app.calMove(-1)">‹</button>
+                        <b>${yy}년 ${mo + 1}월</b><button onclick="app.calMove(1)">›</button></div>
+                    <div class="cal-mdow">${dow.map(x => `<span>${x}</span>`).join('')}</div>
+                    <div class="cal-mgrid">${mini}</div>
+                </div>
+                <div style="margin:16px 10px 0;padding:12px;border-radius:12px;background:rgba(var(--tint),.05);font-size:12px">
+                    <b style="display:block;margin-bottom:8px">이번 달 자금</b>
+                    <div style="display:flex;justify-content:space-between;color:#ff453a"><span>나갈 돈</span><b>${money.out.toLocaleString('ko-KR')}원</b></div>
+                    <div style="display:flex;justify-content:space-between;color:#30d158;margin-top:5px"><span>들어올 돈</span><b>${money.in.toLocaleString('ko-KR')}원</b></div>
+                </div>
+                <div style="margin:14px 10px 0;font-size:12px"><b>구독 ${subscriptions.length}</b>
+                    ${subscriptions.slice(0, 8).map(r => `<div style="display:flex;justify-content:space-between;padding:5px 0;color:var(--text-muted);cursor:pointer" onclick="app.openRoutineEditor('${r.id}')">
+                        <span>${esc(r.service_name || r.title)}</span><span>${Number(r.amount || 0).toLocaleString('ko-KR')}원</span></div>`).join('') || `<div style="padding:7px 0;color:var(--text-muted)">등록된 구독 없음</div>`}
+                </div>
+            </aside>
             <section class="cal-main">
                 <div class="cal-top">
                     <button class="cal-add" onclick="app.openRoutineEditor()" title="새 고정 루틴"><i class="ph ph-repeat"></i></button>
@@ -14989,8 +14940,6 @@ class BhasApp {
                         <button onclick="app.calMove(1)">›</button></div>
                 </div>
                 ${brandBar}
-                <div class="it-pills cal-layers" title="눌러서 켜고 끄기">${this.CAL_SRC.map(s2 => `<button class="it-pill cal-layer${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}" onclick="app.toggleCalSrc('${s2.k}')">
-                    <span class="cal-ck${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}"></span>${esc(s2.t)}<em>${items.filter(x => x.kind === s2.k).length}</em></button>`).join('')}</div>
                 <h1 class="cal-h1">${yy}년 ${mo + 1}월${bsel !== CAL_BRAND_ALL ? ` <small class="cal-bnow">${esc(bsel === CAL_BRAND_NONE ? '공통' : ((brands.find(b => String(b.id) === bsel) || {}).name || ''))}</small>` : ''}</h1>
                 ${grid}
             </section>
@@ -15004,23 +14953,6 @@ class BhasApp {
                       : `<div class="m3-none">이 날은 비어 있습니다</div>`}
                 </div>
                 <div class="dt-a"><button class="mbtn pri" onclick="app.quickAddFromCalendar()">이 날에 추가</button></div>
-                <div class="cal-daysum">
-                <div class="cal-mini">
-                    <div class="cal-mh"><button onclick="app.calMove(-1)">‹</button>
-                        <b>${yy}년 ${mo + 1}월</b><button onclick="app.calMove(1)">›</button></div>
-                    <div class="cal-mdow">${dow.map(x => `<span>${x}</span>`).join('')}</div>
-                    <div class="cal-mgrid">${mini}</div>
-                </div>
-                <div style="margin:16px 10px 0;padding:12px;border-radius:12px;background:rgba(var(--tint),.05);font-size:13px">
-                    <b style="display:block;margin-bottom:8px">이번 달 자금</b>
-                    <div style="display:flex;justify-content:space-between;color:#ff453a"><span>나갈 돈</span><b>${money.out.toLocaleString('ko-KR')}원</b></div>
-                    <div style="display:flex;justify-content:space-between;color:#30d158;margin-top:5px"><span>들어올 돈</span><b>${money.in.toLocaleString('ko-KR')}원</b></div>
-                </div>
-                <div style="margin:14px 10px 0;font-size:13px"><b>구독 ${subscriptions.length}</b>
-                    ${subscriptions.slice(0, 8).map(r => `<div style="display:flex;justify-content:space-between;padding:5px 0;color:var(--text-muted);cursor:pointer" onclick="app.openRoutineEditor('${r.id}')">
-                        <span>${esc(r.service_name || r.title)}</span><span>${Number(r.amount || 0).toLocaleString('ko-KR')}원</span></div>`).join('') || `<div style="padding:7px 0;color:var(--text-muted)">등록된 구독 없음</div>`}
-                </div>
-                </div>
             </aside>
         </div>`;
     }
@@ -16466,8 +16398,12 @@ class BhasApp {
         const initial = n => (String(n || '?').trim()[0] || '?');
         const statusColor = s => ({ '거래중': '#22c55e', '보류': '#f59e0b', '거래중단': '#94a3b8' })[s] || '#94a3b8';
         const badge = s => `<span class="ct3-badge" style="color:${statusColor(s)};background:${statusColor(s)}18">${esc(s || '거래중')}</span>`;
+        const side = (key, label, icon, n, color, editable) => `<div class="m3-s${cur === key ? ' on' : ''}"
+            onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(key)}'))"
+            ${editable ? `oncontextmenu="app.vendorCategoryMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))" title="우클릭: 이름·순서·삭제"` : ''}>
+            <i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
         const filtered = q || cur !== '전체' || status !== '전체' || Object.keys((this.tblFilt || {}).contacts || {}).length;
-        //  거래중단은 아래 '종료 N개'로 접는다 — 상태를 직접 골랐거나 상태 열 필터를 걸면 그대로 보인다(3단 규칙 2)
+        //  거래중단은 아래 '종료 N곳'으로 접는다 — 상태를 직접 골랐거나 상태 열 필터를 걸면 그대로 보인다(3단 규칙 2)
         const stPicked = status !== '전체' || !!((this.tblFilt || {}).contacts || {}).status;
         const stopped = stPicked ? [] : list.filter(v => (v.status || '거래중') === '거래중단');
         const shownList = stPicked || this.contactShowDone ? list : list.filter(v => (v.status || '거래중') !== '거래중단');
@@ -16490,21 +16426,19 @@ class BhasApp {
                 onclick="app.selectContact('${esc(v.id)}')" oncontextmenu="app.contactMenu(event,'${esc(v.id)}')">
                 ${cols.map(c => td[c.k].replace(/^<td( class=")?/, m => m.length > 3 ? `<td class="ck-${c.k} ` : `<td class="ck-${c.k}"`)).join('')}</tr>`;
         }).join('') + (stopped.length ? `<tr class="prod-fold"><td colspan="${ncol}">${this._c3Fold('app.toggleContactDone()', this.contactShowDone, `종료(거래중단) ${stopped.length}곳`)}</td></tr>` : '');
-        //  구분 거르기는 가운데 탭 — 우클릭으로 이름·순서·삭제, ＋로 새 구분(전에는 왼쪽 목록)
-        const tab = (key, label, n, editable) => `<button class="it-pill${cur === key ? ' on' : ''}" onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(key)}'))"
-            ${editable ? `oncontextmenu="app.vendorCategoryMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))" title="우클릭: 이름·순서·삭제"` : ''}>${esc(label)}<em>${n}</em></button>`;
-        const tabs = `<div class="it-pills ct3-tabs">${tab('전체', '전체', all.length)}${cats.map(c => tab(c.name, c.name, cnt(c.name), true)).join('')}
-            <button class="it-pill ct3-addcat" onclick="app.addVendorCategory()" title="새 구분"><i class="ph ph-plus"></i></button></div>`;
+        //  구분은 왼쪽 목록(사장님 기준 화면 — d1c14cc 이전 구조 원복 11-18). 좁은 화면에선 왼쪽이 숨으니 가운데 고르기.
+        const showCats = makers ? cats.filter(c => c.name !== '기타') : cats;
         const stChip = status !== '전체' ? `<button class="flt-off" onclick="app.contactStatus='전체';app.requestRender()">상태: ${esc(status)} <i class="ph ph-x"></i></button>` : '';
         const fb = this._fltBadge('contacts');
         const center = `
             <section class="m3-list">
                 <div class="m3-lbar"><div><b>${esc(cur === '전체' ? (makers ? '모든 생산처' : '모든 연락처') : cur)}</b><span>${list.length}곳${list.length !== all.length ? ` / 전체 ${all.length}` : ''}</span></div>
+                    <select class="ct3-mcat" aria-label="구분" onchange="app.setContactCat(this.value)">
+                        ${['전체', ...showCats.map(c => c.name)].map(c => `<option value="${esc(c)}"${cur === c ? ' selected' : ''}>${esc(c === '전체' ? '모든 구분' : c)}</option>`).join('')}</select>
                     <button class="m3-new ct3-colbtn" onclick="app.openContactCols(event)" title="열 표시 — 팩스·주소·등록증·메모"><i class="ph ph-columns"></i></button>
                     <button class="m3-new" onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
                     <input placeholder="업체명·담당자·휴대폰·전화·이메일·주소" value="${esc(this.contactQ || '')}" oninput="app.contactFind(this.value)"></div>
-                ${tabs}
                 ${stChip || fb ? `<div class="ct3-flt">${stChip}${fb}</div>` : ''}
                 <div class="ct3-tbl"><table class="it-tbl"><thead><tr>
                     ${this._thead('contacts', cols.map(c => [c.k, c.label, 'ck-' + c.k]))}
@@ -16513,7 +16447,13 @@ class BhasApp {
         const docOpen = !!(sel || this.contactNew);
         return `
         <div class="m3 ct3${docOpen ? ' detail' : ''}">
-            <aside class="m3-side c3-menu">${makers ? this._prodMenu('makers') : this._collabMenu('contacts')}</aside>
+            <aside class="m3-side">
+                <div class="m3-h" style="display:flex;align-items:center;justify-content:space-between">구분
+                    <button onclick="app.addVendorCategory()" title="새 구분" style="border:0;background:none;color:var(--primary);cursor:pointer"><i class="ph ph-plus"></i></button></div>
+                ${side('전체', makers ? '모든 생산처' : '모든 연락처', 'ph-address-book', makers ? all.filter(v => (v.category || '기타') !== '기타').length : all.length)}
+                ${showCats.map(c => side(c.name, c.name, 'ph-folder-simple', cnt(c.name), c.color, true)).join('')}
+                <div style="padding:8px 12px;font-size:12px;color:var(--text-muted)">구분을 우클릭해 관리</div>
+            </aside>
             ${center}
             <section class="m3-doc">
                 ${docOpen ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : this._contactSummaryHTML(base, cats, cur)}

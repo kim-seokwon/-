@@ -113,7 +113,8 @@ test('대분류 > 중분류 > 상세: 왼쪽 SNS 메뉴와 가운데 브랜드 �
     const snsSide = main.slice(main.indexOf("{ label: 'SNS'"), main.indexOf("        ] },", main.indexOf("{ label: 'SNS'")));
     assert.doesNotMatch(snsSide, /'게시물'/);
     const shell = main.slice(main.indexOf('    _snsShell('), main.indexOf('    setSnsMode(', main.indexOf('    _snsShell(')));
-    assert.match(shell, /sns3-menu-side/); assert.match(shell, /sns-section-nav/);
+    //  사장님 11-18: SNS 화면 전환은 전역 사이드바만 — 창 안 'SNS 메뉴' 없음
+    assert.doesNotMatch(shell, /sns3-menu-side|SNS 메뉴/); assert.doesNotMatch(shell, /sns-section-nav/);
     assert.doesNotMatch(shell, /sns-brand-nav|_snsBrandNav/);
 });
 
@@ -123,7 +124,7 @@ test('판매 5개 중분류는 고객·정산의 하위 탭을 합쳐 유지한�
         "{ k: 'analysis', t: '고객' }", "{ k: 'crm', t: '고객 CRM', hidden: true }",
         "{ k: 'sales', t: '정산' }", "{ k: 'expenses', t: '지출', hidden: true }"]) assert.ok(tabs.includes(token), token);
     const bar = main.slice(main.indexOf('    _appTabBar('), main.indexOf('    // SNS 3단', main.indexOf('    _appTabBar(')));
-    assert.match(bar, /g\.head === 'orders'/); assert.match(bar, /appside-sales-menu/); assert.match(bar, /sales-section-nav/);
+    assert.doesNotMatch(bar, /appside-sales-menu/); assert.doesNotMatch(bar, /sales-section-nav/);
     assert.match(main, /appwrap\$\{side[\s\S]*?\$\{detail \|\| ''\}/);
 });
 

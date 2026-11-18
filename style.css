@@ -5964,3 +5964,11 @@ b.sp-nm.dup{color:#ff453a}
 .ct3-tbl .it-tbl td.ct3-addr{white-space:normal;word-break:keep-all;min-width:140px;max-width:220px}
 .ct3-tbl .it-tbl td.ct3-memo{white-space:normal;min-width:120px;max-width:200px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ct3-tbl .ct3-miss{color:var(--text-muted)}
+
+/* 자료실 = 맥 파인더(사장님 11-18) — 고른 파일이 없으면 미리보기 칸을 숨기고 2칸(즐겨찾기 | 목록) */
+.fd.nosel{grid-template-columns:var(--c1,188px) 1fr!important}
+.fd.nosel .fd-prev{display:none!important}
+@media (max-width:760px){.fd.nosel{grid-template-columns:1fr!important}}
+/* 창 안 'SNS 메뉴' 제거(사장님 11-18) — SNS 창은 목록 | 상세 2단 */
+.sns3-layout.no-side{--c1:0px;grid-template-columns:minmax(0,1fr) 380px}
+@media (max-width:900px){.sns3-layout.no-side{grid-template-columns:1fr}}
