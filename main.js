@@ -2771,7 +2771,7 @@ class BhasApp {
         //  홈은 _appShell 을 거치지 않는다 → 수집 끊김 띠를 여기서 따로 넣는다.
         //  (가장 많이 보는 화면에 경고가 없으면 경고를 단 뜻이 없다)
         const _warn = this._syncWarnBar();
-        const homeMode = ['todos', 'sales', 'orders', 'alerts', 'paper'].includes(this.homeMode) ? this.homeMode : 'todos';
+        const homeMode = ['todos', 'sales', 'orders', 'alerts', 'paper'].includes(this.homeMode) ? this.homeMode : 'sales';
         products = products || mockData.products || [];
         this._homePops = {};   // 클릭 팝오버 내용 레지스트리(요소별 KEY→{title,rows,link})
         const name = this.currentUser?.name || '';
@@ -3165,7 +3165,6 @@ class BhasApp {
 
         return `
         <div class="fade-in home-view" data-home-mode="${homeMode}" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
-            ${_warn}
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:0.6rem">
                 <h1 style="margin:0;font-size:1.35rem">👋 ${this._vesc(name)}님</h1>
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -3174,7 +3173,7 @@ class BhasApp {
                 </div>
             </div>
 
-            <section class="home-mode-pane" data-pane="sales"${homeMode === 'sales' ? '' : ' hidden'}>
+            <section class="home-mode-pane" data-pane="sales"${homeMode === 'sales' ? ' data-cur' : ''}>
             <!-- ═══ 블록 1: 매출 개요 ═══ -->
             ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
             <div class="hk-grid hk-grid5" style="margin-bottom:0.9rem">
@@ -3188,31 +3187,20 @@ class BhasApp {
                 ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
                 ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', [nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}` : '', nr?.unk ? `미분류 ${nr.unk.toLocaleString()}` : '', `객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원`], '#10b981', 'orders')}
             </div>
-            <div class="home-split" style="display:grid;grid-template-columns:7fr 3fr;gap:0.9rem;align-items:stretch">
-                <div style="display:flex;flex-direction:column;gap:0.9rem;min-width:0">
-                    ${panel(`채널·브랜드별 매출 ${tipHTML('channel_basis', TIPS)} <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>`, `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
+            ${panel(`채널·브랜드별 매출 ${tipHTML('channel_basis', TIPS)} <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>`, `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
                         <div style="flex:1;min-width:240px">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>
                         <div style="width:200px;flex-shrink:0"><div style="position:relative;display:flex;justify-content:center;margin-bottom:0.5rem">${donut(brandArr, palette)}${brandArr.length ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none"><div style="font-size:1.05rem;font-weight:800;line-height:1;color:${palette[0]}">${Math.round(brandArr[0][1] / brandGrand * 100)}%</div><div style="font-size:0.58rem;color:var(--text-muted);max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(brandArr[0][0])}</div></div>` : ''}</div>${brandTotals}</div>
                     </div>`)}
-                    <div class="hk-grid hk-grid4">${statBlocks}</div>
-                </div>
-                <div class="recent-orders-cell">
-                    <div class="glass recent-orders-panel" style="padding:1.1rem 1.25rem;border-radius:16px;min-width:0">
-                        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0.55rem;margin-bottom:0.3rem;border-bottom:2px solid var(--card-border);flex-shrink:0"><span style="font-size:0.94rem;font-weight:800">최근 주문</span><span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">전체 →</span></div>
-                        <div class="ro-scroll" style="margin-right:-6px;padding-right:6px">${recentCompact}</div>
-                    </div>
-                </div>
-            </div>
             </section>
 
-            <section class="home-mode-pane" data-pane="orders"${homeMode === 'orders' ? '' : ' hidden'}>
+            <section class="home-mode-pane" data-pane="orders"${homeMode === 'orders' ? ' data-cur' : ''}>
             ${sectionHead('ph-package', '미처리 주문·CS', '배송 전·배송 중·교환·환불과 최근 주문')}
             <div class="hk-grid hk-grid4" style="margin-bottom:0.9rem">${statBlocks}</div>
             ${panel('최근 주문', recentGrid,
                 `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">주문 전체 →</span>`)}
             </section>
 
-            <section class="home-mode-pane" data-pane="todos"${homeMode === 'todos' ? '' : ' hidden'}>
+            <section class="home-mode-pane" data-pane="todos"${homeMode === 'todos' ? ' data-cur' : ''}>
             <!-- ═══ 블록 2: 할 일 · 통합 캘린더 ═══ -->
             ${sectionHead('ph-list-checks', '할 일 · 통합 캘린더', '메모 체크 · 시즌 할 일 · 생산 작업 · 시즌 마감까지 한데')}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;align-items:stretch">
@@ -3223,12 +3211,12 @@ class BhasApp {
             </div>
             </section>
 
-            <section class="home-mode-pane" data-pane="alerts"${homeMode === 'alerts' ? '' : ' hidden'}>
+            <section class="home-mode-pane" data-pane="alerts"${homeMode === 'alerts' ? ' data-cur' : ''}>
             ${sectionHead('ph-bell-ringing', '이상 알림', '수집 지연과 운영상 확인할 항목')}
             ${panel('현재 알림', _warn || '<div class="home-empty">지금 확인할 이상 알림이 없습니다.</div>')}
             </section>
 
-            <section class="home-mode-pane" data-pane="paper"${homeMode === 'paper' ? '' : ' hidden'}>
+            <section class="home-mode-pane" data-pane="paper"${homeMode === 'paper' ? ' data-cur' : ''}>
             ${sectionHead('ph-newspaper', '오늘 조간', '지난 조간은 SNS · 뉴스에서 다시 볼 수 있습니다')}
             ${panel('2179 아침 조간', '<div class="home-paper"><i class="ph ph-newspaper-clipping"></i><div><b>오늘의 조간을 펼쳐 확인하세요</b><span>뉴스와 운영 이슈를 카드로 모아 봅니다.</span></div><button onclick="app.openPaper()">조간 펼치기</button></div>')}
             </section>
@@ -8898,6 +8886,18 @@ class BhasApp {
         if (view === 'home' && mode) this.homeMode = mode;
         this.macOpen(view);
         this.requestRender();
+        //  홈 중분류 = 숨기기가 아니라 한 화면 대시보드 안의 그 구역으로 스크롤(11-18 매출·주문 사라짐 원인)
+        if (view === 'home' && mode) this._scrollHomePane(mode);
+    }
+    _scrollHomePane(mode, tries = 10) {
+        //  다시 그리기가 끝난 뒤(requestRender는 다음 프레임) 바탕화면 스크롤 칸을 직접 옮긴다.
+        setTimeout(() => {
+            const el = document.querySelector(`.home-view [data-pane="${mode}"]`);
+            const box = el?.closest('.mac-deskboard') || document.scrollingElement;
+            if (!el || !box) { if (tries > 0) this._scrollHomePane(mode, tries - 1); return; }
+            const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 12;
+            box.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        }, 80);
     }
     _renderMacSide() {
         const esc = s => this._vesc(s), groups = this.MAC_SIDE_GROUPS || [];
@@ -8916,7 +8916,7 @@ class BhasApp {
         const activeMode = activeView === 'sns' ? ({ ads: 'active_ads', posts: 'followers' }[this.snsMode] || this.snsMode || 'active_ads') : '';
         const active = (view, mode = '') => {
             if (view === 'sns') return activeView === 'sns' && (!mode || activeMode === mode);
-            if (view === 'home') return desktopHome && (!mode || (this.homeMode || 'todos') === mode);
+            if (view === 'home') return desktopHome && (!mode || (this.homeMode || 'sales') === mode);
             return activeView === view;
         };
         const item = ([view, label, icon, mode = '']) => {
