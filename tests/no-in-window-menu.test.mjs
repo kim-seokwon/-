@@ -58,3 +58,10 @@ test('할 일 좁은 화면 — 목록 버튼으로 타일·목록 칸을 연다
     assert.match(main, /setRemList\(l\) \{[^}]*this\.remSideSheet = false;/);
     assert.match(css, /\.rm\.side-on \.rm-side\{display:block!important/);
 });
+
+test('메모 좁은 화면 — 본문 목록 버튼으로 메모 목록, 메모 고르면 닫힘(넓은 화면 구조는 그대로)', () => {
+    assert.match(main, /class="nt-loc" onclick="app\.toggleNoteList\(true\)"/);
+    assert.match(main, /selectNote\(id\) \{[^}]*this\.noteListSheet = false;/);
+    assert.match(css, /\.nt\.list-on \.nt-list\{display:flex!important/);
+    assert.match(css, /\.nt-loc,\.nt-lclose\{display:none\}/, '넓은 화면엔 안 보임');
+});

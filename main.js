@@ -9462,7 +9462,9 @@ class BhasApp {
         this.noteSeaRows = { ...(this.noteSeaRows || {}), [seaId]: !wasOpen };
         this.requestRender();
     }
-    selectNote(id) { this.saveNote(); this._nbDrop(); this.noteSel = id; this.notePreview = false; this.requestRender(); }
+    selectNote(id) { this.saveNote(); this._nbDrop(); this.noteSel = id; this.notePreview = false; this.noteListSheet = false; this.requestRender(); }
+    //  좁은 화면(목록 칸 숨음): 본문 도구줄 '‹ 목록' → 메모 목록, 목록의 '‹ 폴더' → 폴더·본문으로. 메모를 고르면 닫힌다(팀장 지시 11-18).
+    toggleNoteList(on) { this.noteListSheet = !!on; this.requestRender(); }
     togglePrivFolders() { this.notePrivOpen = this.notePrivOpen === false; this.requestRender(); }
     toggleNoteSeasons() { this.noteSeaOpen = !this.noteSeaOpen; this.requestRender(); }
     setNoteSea(v) { this.noteMulti = new Set(); this.noteSea = v; this.noteSel = null; this.requestRender(); }
@@ -9475,7 +9477,7 @@ class BhasApp {
         if (!b) return all;
         return all.filter(p => !p.brand_id || String(p.brand_id) === String(b.id));
     }
-    setNoteFolder(f) { this.saveNote(); this._nbDrop(); this.noteMulti = new Set(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
+    setNoteFolder(f) { this.saveNote(); this._nbDrop(); this.noteMulti = new Set(); this.noteFolder = f; this.noteSel = null; this.noteListSheet = true; this.requestRender(); }
     async deleteNote() {
         const n = this._curNote(); if (!n) return;
         if (!await this.showConfirm(`"${n.title || '제목 없음'}" 메모를 삭제할까요?`, '삭제')) return;
@@ -11398,7 +11400,7 @@ class BhasApp {
         const privFolders = [...new Set(all.filter(n => n.scope === 'private' && n.owner === me)
             .map(n => n.folder || '개인'))].filter(f => f !== '개인');
         return `
-        <div class="nt">
+        <div class="nt${this.noteListSheet ? ' list-on' : ''}">
             <aside class="nt-side">
                 <div class="nt-shead tog${this.notePrivOpen !== false ? ' on' : ''}" onclick="app.togglePrivFolders()">
                     <i class="ph ph-caret-right"></i>개인
@@ -11424,6 +11426,7 @@ class BhasApp {
             </aside>
             ${this._noteProductsHTML()}
             <section class="nt-list">
+                <button class="nt-lclose" onclick="app.toggleNoteList(false)"><i class="ph ph-caret-left"></i> 폴더</button>
                 <div class="nt-lbar">
                     <div><b>${esc(cur === 'private' ? '개인 메모' : (cur.startsWith('pf:') ? cur.slice(3) : (cur === 'all' ? '모든 메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2)))))}</b>
                         <span>${list.length}개의 메모</span></div>
@@ -11444,6 +11447,7 @@ class BhasApp {
             <section class="nt-doc">
                 ${sel ? `
                 <div class="nt-tools">
+                    <button class="nt-loc" onclick="app.toggleNoteList(true)" title="메모 목록"><i class="ph ph-caret-left"></i> 목록</button>
                     <button onclick="app.noteInsert('todo')" title="할 일 [ ]"><i class="ph ph-check-square"></i></button>
                     <button onclick="app.noteInsert('bullet')" title="글머리"><i class="ph ph-list-bullets"></i></button>
                     <button onclick="app.noteInsert('at')" title="사람·제품·시즌·거래처 @"><i class="ph ph-at"></i></button>
@@ -11474,7 +11478,7 @@ class BhasApp {
                               onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`
                         : this._noteLiveHTML(sel)}
                     ${this._noteItemsHTML(sel)}
-                </div>` : `<div class="nt-none big">메모를 선택하세요</div>`}
+                </div>` : `<button class="nt-loc solo" onclick="app.toggleNoteList(true)"><i class="ph ph-caret-left"></i> 목록</button><div class="nt-none big">메모를 선택하세요</div>`}
             </section>
         </div>`;
     }
