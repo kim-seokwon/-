@@ -34,5 +34,9 @@ test('홈은 한 화면 대시보드 — 매출·주문 구역이 hidden 아님,
     //  같은 정보 두 번 그리기 금지
     assert.equal(home.split('${statBlocks}').length - 1, 1, 'statBlocks 1회');
     assert.equal((home.match(/\b_warn\b/g) || []).length, 1, '알림 1회');
-    assert.ok(!home.includes('${recentCompact}'), '최근 주문은 주문 구역 recentGrid 1회');
+    assert.equal((home.match(/panel\('최근 주문', recentList/g) || []).length, 1, '최근 주문은 매출 개요 오른쪽 1회');
+    assert.match(home, /class="home-sales-recent"[\s\S]*?class="home-sales-overview"[\s\S]*?매출 개요[\s\S]*?class="home-recent-orders"[\s\S]*?최근 주문/);
+    assert.match(style, /\.home-sales-recent\{display:grid;grid-template-columns:minmax\(0,2fr\) minmax\(320px,1fr\)/);
+    assert.match(style, /\.hk-grid5\.home-sales-kpis \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
+    assert.match(style, /@media screen and \(max-width: 1080px\) \{ \.home-sales-recent\{grid-template-columns:1fr\}/);
 });

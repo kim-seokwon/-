@@ -3123,8 +3123,8 @@ class BhasApp {
         const brandGrand = brandArr.reduce((s, [, v]) => s + v, 0) || 1;
         const brandTotals = brandArr.length ? brandArr.map(([b, v], i) => `<div onclick="app.switchView('sales')" style="display:flex;align-items:center;gap:7px;padding:6px 0;border-top:1px solid var(--card-border);font-size:0.82rem;cursor:pointer"><span style="width:9px;height:9px;border-radius:2px;background:${palette[i % palette.length]};flex-shrink:0"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(b)}</span><b style="font-variant-numeric:tabular-nums">${won(v)}</b><span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);min-width:34px;text-align:right;font-variant-numeric:tabular-nums">${Math.round(v / brandGrand * 100)}%</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 0">이번달 매출 없음</div>';
         const brandPanel = panel('브랜드별 매출 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div style="display:flex;justify-content:center;margin-bottom:0.4rem">${donut(brandArr, palette)}</div>${brandTotals}`);
-        // 최근주문 — 전체폭 그리드(2줄 카드)
-        const recentGrid = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 1.4rem">${recentCompact}</div>`;
+        // 최근 주문 — 매출 개요 오른쪽의 세로 목록. 좁은 화면에서는 매출 카드 아래로 쌓인다.
+        const recentList = `<div class="home-recent-list">${recentCompact}</div>`;
 
         // ── 클릭 팝오버 내용 구성(KPI·채널·브랜드·상태) ──
         const rowsOf = (arr) => arr.map(([l, v]) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">${l}</span><b style="font-variant-numeric:tabular-nums">${v}</b></div>`).join('');
@@ -3175,25 +3175,31 @@ class BhasApp {
             </div>
 
             <section class="home-mode-pane" data-pane="orders"${homeMode === 'orders' ? ' data-cur' : ''}>
-            ${sectionHead('ph-package', '미처리 주문·CS', '배송 전·배송 중·교환·환불과 최근 주문')}
+            ${sectionHead('ph-package', '미처리 주문·CS', '배송 전·배송 중·교환·환불')}
             <div class="hk-grid hk-grid4" style="margin-bottom:0.9rem">${statBlocks}</div>
-            ${panel('최근 주문', recentGrid,
-                `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">주문 전체 →</span>`)}
             </section>
 
             <section class="home-mode-pane" data-pane="sales"${homeMode === 'sales' ? ' data-cur' : ''}>
-            <!-- ═══ 블록 1: 매출 개요 ═══ -->
-            ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
-            <div class="hk-grid hk-grid5" style="margin-bottom:0.9rem">
-                ${kpiCard('오늘 매출', wonF(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
-                ${hasFinancial
-                    ? kpiCard('주문금액', won(monthFinancial.order), '원', [`${mm}월 주문 기준`, monthFinancial.unpaid ? `미입금 <b>${won(monthFinancial.unpaid)}원</b>` : ''], '#3b82f6', 'sales')
-                    : kpiCard(`실결제금액 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
-                ${kpiCard(`환불 ${tipHTML('refund_split', TIPS)}`, wonF(hasFinancial ? monthFinancial.refund : 0), '원', hasRefundSplit
-                    ? `${mm}월 · ${monthFinancial.refundN.toLocaleString()}건`
-                    : `${mm}월 환불 기준`, '#a855f7', 'orders')}
-                ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
-                ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', [nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}` : '', nr?.unk ? `미분류 ${nr.unk.toLocaleString()}` : '', `객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원`], '#10b981', 'orders')}
+            <!-- ═══ 블록 1: 매출 개요 + 최근 주문 ═══ -->
+            <div class="home-sales-recent">
+                <div class="home-sales-overview">
+                ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
+                <div class="hk-grid hk-grid5 home-sales-kpis">
+                    ${kpiCard('오늘 매출', wonF(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
+                    ${hasFinancial
+                        ? kpiCard('주문금액', won(monthFinancial.order), '원', [`${mm}월 주문 기준`, monthFinancial.unpaid ? `미입금 <b>${won(monthFinancial.unpaid)}원</b>` : ''], '#3b82f6', 'sales')
+                        : kpiCard(`실결제금액 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', `${mm}월 결제 기준`, '#3b82f6', 'sales')}
+                    ${kpiCard(`환불 ${tipHTML('refund_split', TIPS)}`, wonF(hasFinancial ? monthFinancial.refund : 0), '원', hasRefundSplit
+                        ? `${mm}월 · ${monthFinancial.refundN.toLocaleString()}건`
+                        : `${mm}월 환불 기준`, '#a855f7', 'orders')}
+                    ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
+                    ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', [nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}` : '', nr?.unk ? `미분류 ${nr.unk.toLocaleString()}` : '', `객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원`], '#10b981', 'orders')}
+                </div>
+                </div>
+                <div class="home-recent-orders">
+                    ${panel('최근 주문', recentList,
+                        `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">주문 전체 →</span>`)}
+                </div>
             </div>
             ${panel(`채널·브랜드별 매출 ${tipHTML('channel_basis', TIPS)} <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>`, `<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
                         <div style="flex:1;min-width:240px">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>
