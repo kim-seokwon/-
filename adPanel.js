@@ -170,7 +170,7 @@ export function panelHtml({ groups = [], period = 'yesterday', now = Date.now(),
     const yday = addDays(kstDay(now), -1);
     const tog = `<div class="ap-tog">${[['yesterday', '어제'], ['cum', '누적']].map(([k, l]) => `<button class="${period === k ? 'on' : ''}" onclick="app.adPanelPeriod('${k}')">${l}</button>`).join('')}</div>`;
     const head = `<div class="ap-head"><div class="ap-title"><i class="ph ph-user-plus"></i> 광고 판정판 · 팔로우당 비용</div>${loading || error ? '' : tog}</div>
-        <div class="ap-sub">${period === 'yesterday' ? `어제(${md(yday)}) 하루` : `세트 시작일 ~ 어제(${md(yday)})`} · 1명당 = 지출 ÷ 광고로 생긴 인스타 팔로우 · 오늘 수치는 빼고 판정</div>${loading || error || !excludedNote(groups.excluded) ? '' : `<div class="ap-sub">${excludedNote(groups.excluded)}</div>`}`;
+        <div class="ap-sub">${period === 'yesterday' ? `어제(${md(yday)}) 하루` : `세트 시작일 ~ 어제(${md(yday)})`} · 팔로워 1명 획득비용 = 지출 ÷ 광고로 생긴 인스타 팔로우 · 오늘 수치는 빼고 판정</div>${loading || error || !excludedNote(groups.excluded) ? '' : `<div class="ap-sub">${excludedNote(groups.excluded)}</div>`}`;
     if (loading) return `${AP_CSS}<div class="glass ap-wrap">${head}<div class="ap-empty">불러오는 중...</div></div>`;
     if (error || !groups.length) return `${AP_CSS}<div class="glass ap-wrap">${head}<div class="ap-empty">${error ? '광고 수치를 불러올 수 없어요.' : '이 기간에 집행된 광고 세트가 없어요.'}</div></div>`;
     const brandHtml = g => {
@@ -193,7 +193,7 @@ export function panelHtml({ groups = [], period = 'yesterday', now = Date.now(),
         return `<div class="ap-brand" data-brand="${esc(g.name)}">
             <div class="ap-bh"><b>${esc(g.name)}</b>${badge(g.kind)}<span class="ap-tot">합계 <strong>${cpfTxt(g.cpf, g.spend)}</strong> · ${won(g.spend)}원 ÷ ${won(g.follows)}명</span>
                 <div class="ap-rule" style="flex-basis:100%">${esc(rule)}</div></div>
-            <table class="ap-t"><thead><tr><th>세트</th><th>상태</th><th>일예산</th><th>종료</th><th>지출</th><th>팔로우</th><th>1명당</th><th>판정</th></tr></thead><tbody>${rows}</tbody></table>
+            <table class="ap-t"><thead><tr><th>세트</th><th>상태</th><th>일예산</th><th>종료</th><th>지출</th><th>팔로우</th><th>팔로워당 비용</th><th>판정</th></tr></thead><tbody>${rows}</tbody></table>
         </div>`;
     };
     //  맨 위 브랜드 요약 — 세트가 많아도 브랜드별 판정은 첫 화면에 보이게(누르면 그 브랜드 표로)
@@ -235,7 +235,7 @@ export function snsSetDetailHtml(row) {
     const why = s.spend <= 0 ? '최근 3일 집행 없음' : s.follows <= 0 ? `최근 3일 지출 ${won(s.spend)}원 · 팔로우 0명 → 중단` : `최근 3일 ${cpfTxt(s.cpf, s.spend)} · ${line} → ${PANEL_VERDICT[s.kind]?.label || '보류'}`;
     return `<div class="sns3-detail">
         <div class="m3-big">${esc(s.name)}</div><div class="m3-sub">${esc(g.name)} · 광고 세트</div>
-        <div class="sns3-hero"><div><span>1명당</span><strong>${cpfTxt(s.cpf, s.spend)}</strong></div>${badge(s.kind)}</div>
+        <div class="sns3-hero"><div><span>팔로워당 비용</span><strong>${cpfTxt(s.cpf, s.spend)}</strong></div>${badge(s.kind)}</div>
         <div class="m3-f"><i class="ph ph-wallet"></i><span class="k">3일 / 누적</span><span class="v">${won(s.spend3)}원 / ${won(s.spendCum)}원</span></div>
         <div class="m3-f"><i class="ph ph-user-plus"></i><span class="k">3일 결과</span><span class="v">팔로우 ${won(s.follows3)}명 · ${cpfTxt(s.cpf3, s.spend3)}/명</span></div>
         <div class="m3-f"><i class="ph ph-pulse"></i><span class="k">상태</span><span class="v" style="color:${stc};font-weight:700">${esc(stt)}</span></div>

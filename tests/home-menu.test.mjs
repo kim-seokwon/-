@@ -23,12 +23,12 @@ test('홈은 펼친 사이드바 뒤에서 시작하고 12px 미만 글씨를 �
 });
 
 //  11-18 사고: 홈이 homeMode 한 칸만 보여 매출·미처리 주문이 사라졌다(7a36747~). 다시는 숨기지 않는다.
-test('홈은 한 화면 대시보드 — 매출·주문 구역이 hidden 아님, 순서 매출→주문·CS→할 일→알림→조간', () => {
+test('홈은 한 화면 대시보드 — 매출·주문 구역이 hidden 아님, 순서 주문·CS→매출→할 일→알림→조간', () => {
     const home = main.slice(main.indexOf('class="fade-in home-view"'), main.indexOf('    async logout()'));
     assert.doesNotMatch(home, /home-mode-pane[^>]*hidden/);
     assert.doesNotMatch(home, /\? '' : ' hidden'/);
     const at = m => home.indexOf(`data-pane="${m}"`);
-    const order = ['sales', 'orders', 'todos', 'alerts', 'paper'].map(at);
+    const order = ['orders', 'sales', 'todos', 'alerts', 'paper'].map(at);
     assert.ok(order.every(i => i > 0), order.join(','));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
     //  같은 정보 두 번 그리기 금지

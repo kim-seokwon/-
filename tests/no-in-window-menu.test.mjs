@@ -25,7 +25,9 @@ test('맥 창 왼쪽은 그 화면 자신의 거르기만, 없으면 2단', () =
     assert.doesNotMatch(mac, /switchAppTab|g\.tabs/);
     assert.match(mac, /const nav = this\._viewNav\(view\);\s*return nav \? `<aside class="appside appside-filter">\$\{nav\}<\/aside>` : '';/);
     assert.match(css, /\.appwrap\.no-appside\{grid-template-columns:1fr\}/);
-    assert.match(between('    _snsShell(', '    setSnsMode('), /sns3-layout no-side/);
+    const shell = between('    _snsShell(', '    setSnsMode(');
+    assert.match(shell, /const side = this\._snsSideHtml \|\| ''/);
+    assert.match(shell, /side \? '' : ' no-side'/);
 });
 
 test('협업 창은 자기 목록을 왼쪽에 둔다 — 메모 폴더·할 일 목록·캘린더·연락처 구분·자료실 즐겨찾기', () => {

@@ -48,7 +48,7 @@ test('최근 3일 합산은 어제까지 3일만 쓰고 누적을 함께 보존�
 });
 
 test('SNS 표는 필요한 열·행 작업·새 판정선을 연결하고 실행 요청은 메모리 큐에만 쌓는다', () => {
-    for (const token of ["['media','소재','sns-th-media'],['state','상태','sns-th-state'],['name','세트명','sns-th-name']", "['spend','3일 지출','sns-th-spend'],['result','결과','sns-th-result'],['cpf','1명당','sns-th-cpf']", "this._thead('sns_ads'", "this._fltBadge('sns_ads')",
+    for (const token of ["['media','소재','sns-th-media'],['state','상태','sns-th-state'],['name','세트명','sns-th-name']", "['spend','3일 지출','sns-th-spend'],['result','결과','sns-th-result'],['cpf','팔로워당 비용','sns-th-cpf']", "this._thead('sns_ads'", "this._fltBadge('sns_ads')",
         "'extend'", "'raise'", "'budget'", "'toggle'", 'requestAdAction({ set_id, action, before, after, daily_delta = null']) assert.ok(main.includes(token), token);
     assert.match(main, /const defaultRule = \{[^}]*up_max: 1000, stop_over: 1600/);
     assert.match(main, /Object\.fromEntries\(allBrands\.map\(b => \[b\.id,[\s\S]*?r\.rules[\s\S]*?brand_id[\s\S]*?b\.id/);
@@ -73,14 +73,14 @@ test('뉴스 정리: 경쟁사 계정별 묶음, 중복 제거, 날짜 구분과
         assert.ok(main.includes(token), token);
 });
 
-test('재구성: brands 테이블 순서·이름·색을 그대로 필터와 요약에 쓴다', () => {
-    assert.match(main, /<span>\$\{esc\(`\$\{md\(s\.start\)\}~\$\{md\(s\.end\)\}`\)\}<\/span><small>\$\{esc\(left\(s\.end\)\)\}<\/small>/);
+test('재구성: brands 테이블 순서·이름·색을 그대로 필터와 왼쪽 목록에 쓴다', () => {
+    assert.match(main, /class="sns-td-period" title=[\s\S]*?periodText\(s\.start, s\.end\)/);
     assert.match(main, /const coreBrands = pool\.map\(b => \(\{ \.\.\.b, label: b\.name/);
     assert.doesNotMatch(main, /missing:\$\{w\.key\}/);
-    assert.match(main, /coreBrands\.map\(b => `<div class="sns3-brand-kpi">/);
-    assert.match(main, /brandActive\(b\)\}개/);
+    assert.match(main, /const sideRows = \[\{ id: '전체'[\s\S]*?\.\.\.brandSummaryBase\.map/);
+    assert.match(main, /const sideMeta = r => topMode === 'followers'/);
     assert.match(main, /m3-list sns3-tablepane/);
-    assert.match(main, /pick\?\.type === 'set' \? setDetail : dashboardOverview/);
+    assert.match(main, /topMode === 'dashboard'[\s\S]*?detailPick = [\s\S]*?todoSets\[0\]/);
     assert.match(main, /this\._snsBrandNav = coreBrands\.map/);
 });
 
@@ -129,7 +129,7 @@ test('판매 5개 중분류는 고객·정산의 하위 탭을 합쳐 유지한�
 });
 
 test('110 인사이트: 없는 뷰는 안전하게 비우고 피로도·성과는 공용 판정을 재사용한다', () => {
-    for (const token of ["from('v_ad_fatigue_latest')", "from('v_ad_creative_3d')", "from('v_ad_daily_metrics')", '데이터 준비 중', '단기·측정 제외', 'insightAttrTable(creatives)', 'insightBrandSentences(allAttr', '일별 1명당 추이']) assert.ok(main.includes(token), token);
+    for (const token of ["from('v_ad_fatigue_latest')", "from('v_ad_creative_3d')", "from('v_ad_daily_metrics')", '데이터 준비 중', '단기·측정 제외', 'insightAttrTable(creatives)', 'insightBrandSentences(allAttr', '일별 팔로워당 비용 추이']) assert.ok(main.includes(token), token);
     assert.match(main, /r\.is_measurable === true/);
     assert.match(style, /\.sns-performance-tr\.weak/);
     assert.match(style, /\.sns-insight-table th \.th-f\{right:5px;opacity:\.68\}/);
@@ -137,30 +137,31 @@ test('110 인사이트: 없는 뷰는 안전하게 비우고 피로도·성과�
 
 test('SNS 대시보드: 할 일은 필터 표, 오른쪽은 중복 없는 근거·선택 상세다', () => {
     assert.match(main, /_applyTbl\('sns_dashboard', todoBase, dashVal, todoBase\)/);
-    assert.match(main, /_thead\('sns_dashboard', \[\['verdict','판정'\],\['name','광고명'\],\['brand','브랜드'\],\['cpf','1명당 비용'\],\['spend','3일 지출'\]\]\)/);
+    assert.match(main, /_thead\('sns_dashboard', \[\['verdict','판정'\],\['name','광고명'\],\['brand','브랜드'\],\['cpf','팔로워당 비용'\],\['spend','3일 지출'\]\]\)/);
     assert.match(main, /class="sns-dash-task[\s\S]*?app\.selectSnsItem/);
-    assert.match(main, /pick\?\.type === 'set' \? setDetail : dashboardOverview/);
-    assert.match(main, /브랜드별 어제 지출·판정 근거/);
-    assert.match(main, /가동 세트 · 기준 5개/);
+    assert.match(main, /<div class="m3-tools"><b>광고 상세<\/b><\/div>\$\{setDetail/);
+    assert.match(main, /const todoSets = currentSets\.filter/);
+    assert.doesNotMatch(main, /class="sns3-brand-kpi"/);
     assert.doesNotMatch(main, /<b>\$\{brandActive\(b\)\}\/5<\/b>/);
     assert.match(style, /\.sns3-layout\{min-height:0;overflow:hidden;background:var\(--card-bg\)\}/);
 });
 
-test('광고현황 첫 화면은 동적 브랜드 요약표이고 행을 누르면 브랜드 광고표로 들어간다', () => {
+test('광고현황은 브랜드 | 광고표 | 첫 광고 상세의 실제 3단이다', () => {
     assert.match(main, /const brandSummaryBase = coreBrands\.map\(brand =>/);
-    assert.match(main, /_applyTbl\('sns_ad_brands', brandSummaryBase, brandSummaryVal, brandSummaryBase\)/);
-    assert.match(main, /_thead\('sns_ad_brands', \[\['brand','브랜드'\],\['active','진행 광고'\],\['spendYesterday','어제 지출'\],\['spend3','3일 지출'\],\['stop','중단'\],\['up','증액'\],\['keep','유지'\],\['avgCpf','평균 1명당'\]\]\)/);
-    assert.match(main, /onclick="app\.openSnsAdsBrand\('\$\{esc\(r\.brand\.id\)\}'\)"/);
-    assert.match(main, /closeSnsAdsBrand\(\)/);
-    assert.match(main, /snsAdsBrandOpen/);
+    assert.match(main, /class="m3-side sns3-filter-side"/);
+    assert.match(main, /`\$\{r\.active\}개 · \$\{r\.dailyBudget/);
+    assert.match(main, /detailPick = \(pick\?\.type === 'set'[\s\S]*?filteredSets\[0\]/);
+    assert.match(main, /<b>광고 상세<\/b>/);
+    assert.doesNotMatch(main, /브랜드 광고 요약/);
+    assert.doesNotMatch(main, /class="sns-brand-back"/);
+    assert.match(main, /\['brand','브랜드','sns-th-brand'\]/);
+    assert.doesNotMatch(main, /sns-ad-detail-budget/);
     const summaryBlock = main.slice(main.indexOf('const brandSummaryBase'), main.indexOf("if (topMode === 'dashboard')"));
     assert.doesNotMatch(summaryBlock, /하이헤이호|로하이|토비|머문/);
     const adRowBlock = main.slice(main.indexOf('const oneRow = r =>'), main.indexOf('const tableRows =', main.indexOf('const oneRow = r =>')));
-    assert.doesNotMatch(adRowBlock, /sns-td-brand/);
+    assert.match(adRowBlock, /sns-td-brand/);
     assert.match(style, /\.sns3-tablepane \.sns3-table th \.th-f\{right:5px;opacity:\.68\}/);
-    assert.match(style, /\.sns-brand-overview-grid\{display:grid;grid-template-columns:1fr/);
     assert.match(style, /\.sns-dashboard-cards \.sns3-kpis\{padding:0 0 14px;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)\}/);
-    assert.match(style, /\.sns-brand-summary-table\{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px/);
 });
 
 test('반려4: 광고표 핵심열은 겹침 없는 너비를 쓰고 뉴스 오늘은 KST 하나로 세다', () => {
@@ -172,19 +173,20 @@ test('반려4: 광고표 핵심열은 겹침 없는 너비를 쓰고 뉴스 오�
     assert.match(style, /\.sns3-tablepane \.sns-th-name\{width:auto\}/);
     assert.match(style, /\.sns3-tablepane \.sns-th-period\{width:94px\}/);
     assert.match(style, /\.sns3-tablepane \.sns-th-spend\{width:88px\}/);
-    assert.match(style, /\.sns3-tablepane \.sns3-table\{width:100%;min-width:0;max-width:100%;table-layout:auto\}/);
+    assert.match(style, /\.sns3-tablepane \.sns3-table\{table-layout:fixed\}/);
     assert.match(style, /\.sns3-tablepane \.sns-td-state[^{]*\{white-space:nowrap;overflow:visible;text-overflow:clip\}/);
     assert.match(style, /\.sns-th-target,[^}]*\.sns-td-actions,[^}]*th:last-child\{display:none!important\}/);
     assert.match(style, /\.sns3-tablepane \.sns-td-name b\{[^}]*word-break:keep-all;overflow-wrap:normal/);
 });
 
-test('SNS 재구성 반려1: 팔로워 표·요약·상세와 모바일 브랜드 선택을 모두 제공한다', () => {
+test('SNS 재구성 반려1: 팔로워 표·첫 행 자동 상세와 모바일 브랜드 선택을 모두 제공한다', () => {
     for (const token of ["this._thead('sns_followers'", "['brand','브랜드'],['followers','팔로워'],['delta7','7일 증감'],['delta30','30일 증감'],['recent','최근 게시일'],['posts7','7일 게시물']",
-        "this._applyTbl('sns_followers'", '게시 중단 확인', 'sns-follow-chart', 'sns-follow-gallery', 'sns-mobile-brands', "mode === 'followers' ? followerCount(b) : brandCount(b)"])
+        "this._applyTbl('sns_followers'", 'accountCards[0] || null', 'sns-follow-chart', 'sns-follow-gallery', 'sns-mobile-brand-select', "mode === 'followers' ? followerCount(b) : brandCount(b)"])
         assert.ok(main.includes(token), token);
+    assert.doesNotMatch(main, /<b>전체 요약<\/b>/);
     assert.match(main, /this\.tblFilt\.sns_followers\.brand/);
     assert.match(style, /\.sns-follow-table\{width:100%/);
-    assert.match(style, /\.sns-mobile-brands\{display:flex/);
+    assert.match(style, /\.sns-mobile-brand-select\{display:flex/);
 });
 
 test('SNS 재구성 반려2: 브랜드 색 단일화·상시 필터·모바일 한 줄·독 페이드를 고정한다', () => {
@@ -194,4 +196,12 @@ test('SNS 재구성 반려2: 브랜드 색 단일화·상시 필터·모바일 �
     assert.match(style, /\.sns-follow-table th\.flt \.th-f\{color:#0a84ff\}/);
     assert.match(style, /\.sns-follow-table \.sns-follow-brand span\{display:flex;align-items:center;gap:7px\}/);
     assert.match(style, /mask-image:linear-gradient\(90deg,#000 0,#000 calc\(100% - 34px\),transparent 100%\)/);
+});
+
+test('게시물기록은 같은 자료 기준의 필터 표와 첫 행 상세를 쓴다', () => {
+    assert.match(main, /const sidePostRows = \(this\.newsItems \|\| \[\]\)\.filter/);
+    assert.match(main, /this\._applyTbl\('sns_posts', rawPosts, postVal, rawPosts\)/);
+    assert.match(main, /this\._thead\('sns_posts', \[\['thumb','썸네일'/);
+    assert.match(main, /visiblePosts\.find[\s\S]*?visiblePosts\[0\] \|\| null/);
+    assert.match(style, /\.sns-post-table\{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px\}/);
 });

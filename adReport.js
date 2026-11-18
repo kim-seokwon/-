@@ -70,7 +70,7 @@ export function judge(card, rules, { state = null, now = Date.now() } = {}) {
     // 종료 카드: 판정 대신 최종 1명당
     if (!card.any_active) {
         const cpf = cpfOf(card.total_spend, card.total_follows);
-        return out('final', { cpf, label: cpf != null ? `최종 1명당 ${won(cpf)}원` : '최종 팔로우 0',
+        return out('final', { cpf, label: cpf != null ? `최종 팔로워당 비용 ${won(cpf)}원` : '최종 팔로우 0',
             reason: `${card.first_day ? `${md(card.first_day)}~${md(card.last_day)} ` : ''}지출 ${won(card.total_spend)}원 ÷ 팔로우 ${won(card.total_follows)}${cpf != null ? ` = ${won(cpf)}원` : ''}${stamp}` });
     }
 
@@ -94,7 +94,7 @@ export function judge(card, rules, { state = null, now = Date.now() } = {}) {
         return out('stop', { cpf, early: true, provisional, label: '중단 추천 · 1일차',
             reason: `${rangeTxt} 1일차 · 지출 ${won(spend)}원 ÷ 팔로우 ${won(fol)}${cpf != null ? ` = ${won(cpf)}원 > ${won(stopOver * mult)}원(종료선 ${mult}배)` : ''} → 조기 중단 추천${stamp}${tail}` });
     }
-    return out('wait', { cpf, provisional, reason: `완결 ${Math.min(days, minDays)}/${minDays}일 · 지출 ${won(spend)}/${won(minSpend)}원${cpf != null ? ` · 지금 1명당 ${won(cpf)}원(참고)` : ''}${stamp}` });
+    return out('wait', { cpf, provisional, reason: `완결 ${Math.min(days, minDays)}/${minDays}일 · 지출 ${won(spend)}/${won(minSpend)}원${cpf != null ? ` · 현재 팔로워당 비용 ${won(cpf)}원(참고)` : ''}${stamp}` });
 }
 
 // ── 목록 ────────────────────────────────────────────────
@@ -173,7 +173,7 @@ export function cardHtml({ card: c, v }, { brandName = id => id, i = 0 } = {}) {
     const col = VERDICT[v.kind].color;
     const fol = num(c.done_follows), spend = num(c.done_spend);
     const big = v.kind === 'final' ? (v.cpf != null ? `${won(v.cpf)}<small>원/명</small>` : '—')
-        : v.cpf != null ? `${won(v.cpf)}<small>원/명</small>` : (v.kind === 'stop' && fol === 0 && spend > 0 ? '—' : '<small>1명당 —</small>');
+        : v.cpf != null ? `${won(v.cpf)}<small>원/명</small>` : (v.kind === 'stop' && fol === 0 && spend > 0 ? '—' : '<small>팔로워당 비용 —</small>');
     const posted = c.posted_day ? `게시 ${md(c.posted_day)}` : '';
     const period = c.first_day ? `광고 ${md(c.first_day)}~${c.any_active ? '진행중' : md(c.last_day)}` : (c.any_active ? '광고 진행중 · 지출 전' : '');
     const today = c.any_active && (num(c.today_spend) || num(c.today_follows)) ? `<div class="ar-line" style="color:var(--text-muted)">오늘(진행 중) ${won(c.today_spend)}원 · 팔로우 ${won(c.today_follows)}</div>` : '';
@@ -216,7 +216,7 @@ export function reportHtml({ loading = false, error = false, list = [], alerts =
         ${uploadChipsHtml(alerts)}
         <div style="margin-top:${alerts.length ? 12 : 0}px">${head}</div>
         ${bandHtml}${chips}${cards}${unl}
-        <p style="margin:.8rem 2px 0;font-size:.66rem;color:var(--text-muted)">* 판정은 어제(KST)까지 완결일만 · 1명당 = 지출 ÷ 광고로 생긴 팔로우. 판정선은 브랜드별 설정값. 카드를 누르면 일자별 표가 열려요.</p>
+        <p style="margin:.8rem 2px 0;font-size:.66rem;color:var(--text-muted)">* 판정은 어제(KST)까지 완결일만 · 팔로워 1명 획득비용 = 지출 ÷ 광고로 생긴 팔로우. 판정선은 브랜드별 설정값. 카드를 누르면 일자별 표가 열려요.</p>
     </div>`;
 }
 
@@ -236,7 +236,7 @@ export function detailHtml({ card: c, v }, daily, { brandName = id => id, now = 
             <button onclick="app.adDetailClose()" aria-label="닫기" style="border:0;background:none;font-size:1.3rem;color:var(--text-muted);cursor:pointer">×</button></div>
         <div style="margin:6px 0 10px"><span class="ar-badge" style="background:${VERDICT[v.kind].color}">${esc(v.label)}</span>
             <div class="ar-why" style="margin-top:6px">${esc(v.reason)}</div></div>
-        <table><thead><tr style="color:var(--text-muted)"><th>날짜</th><th>지출</th><th>팔로우</th><th>1명당</th><th>프로필방문</th></tr></thead>
+        <table><thead><tr style="color:var(--text-muted)"><th>날짜</th><th>지출</th><th>팔로우</th><th>팔로워당 비용</th><th>프로필방문</th></tr></thead>
             <tbody>${rows || `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">${daily == null ? '불러오는 중…' : '일자별 수치 없음'}</td></tr>`}</tbody></table>
         <div style="font-size:.72rem;color:var(--text-muted);margin-top:12px;line-height:1.6">
             도달(기간 전체, 중복 제외) ${c.reach != null ? won(c.reach) : '—'}${c.reach_since ? ` · ${md(c.reach_since)}~${md(c.reach_until)}` : ''}<br>

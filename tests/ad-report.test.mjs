@@ -52,9 +52,9 @@ test('보류 — 권한오류 · 6시간 지연 · 갱신실패 · 통화 · 판
     assert.equal(J({ ...at(500), currencies: ['USD'] }).label, '보류 · 통화 다름');
     assert.equal(J(at(500), null).kind, 'none');
 });
-test('종료 카드 → 최종 1명당 (전체 합) · 팔로우 0 은 —', () => {
+test('종료 카드 → 최종 팔로워당 비용 (전체 합) · 팔로우 0 은 —', () => {
     const v = J({ any_active: false, total_spend: 102777, total_follows: 135 });
-    assert.equal(v.kind, 'final'); assert.equal(v.label, '최종 1명당 761원');
+    assert.equal(v.kind, 'final'); assert.equal(v.label, '최종 팔로워당 비용 761원');
     assert.equal(J({ any_active: false, total_spend: 5000, total_follows: 0 }).label, '최종 팔로우 0');
 });
 test('잠정 표시 — 완결 끝이 최근 7일이면 꼬리말', () => {
