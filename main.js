@@ -36,7 +36,7 @@ import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from 
 import { partLabel, pickPlan, itemsPatch, lineKey, canTrash, CLAIM_LABEL } from './csItems.js';
 import { isUnpaidCancel, isRefund, stateLabel as unpaidStateLabel, markUnpaid, claimCount, claimMallKeys, fetchClaims } from './orderRefund.js';
 import { fetchByMonth, fetchItems, itemPool } from './salesFetch.js';
-import { VF_BUCKET, VF_ACCEPT, phonesOf, callNumberOf, telHref, validateBizFile, bizFilePath, bizFileKind, contactSummary } from './vendorContact.js';
+import { VF_BUCKET, VF_ACCEPT, phonesOf, callNumberOf, telHref, validateBizFile, bizFilePath, bizFileKind } from './vendorContact.js';
 import { TP_BUCKET, TP_ACCEPT, validateTpFile, tpFilePath, tpDefaultName, isUploadPack, hasPackConfig, tpKind, tpKindLabel, tpSizeText } from './techPackFile.js';
 
 // 빌드 시각 — 어느 판을 보고 있는지 화면에서 바로 알 수 있게 (vite 가 넣어준다)
@@ -160,6 +160,7 @@ class BhasApp {
                 if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
                     this._authOk = true; document.getElementById('auth-bar')?.remove(); return;
                 }
+                if (event === 'SIGNED_OUT') this._ofsReset?.();
                 if (event === 'SIGNED_OUT' && this.currentUser) { this._authOk = false; this._showAuthBar(); }
             });
         } catch (_e) { /* 안 되면 아래 주기 확인만으로 */ }
@@ -381,7 +382,7 @@ class BhasApp {
                 { id: 'preview-tp-b', item_id: 'preview-item-2', style_name: '와이드 데님 팬츠(공장 원본)', source: 'upload', file_name: '데님.pdf', file_path: 'x.pdf', config: {}, created_at: '2026-11-12T10:00:00+09:00' },
             ];
             this.quotes = [
-                { id: 'preview-q-1', item_id: 'preview-item-1', client_name: '성수봉제', quote_date: '2026-11-14', status: 'sent', total_amount: 2640000, items: [{}, {}] },
+                { id: 'preview-q-1', item_id: 'preview-item-1', client_name: '성수봉제', client_biz_no: '123-45-67890', client_ceo: '김대표', client_tel: '02-000-0000', quote_date: '2026-11-14', status: 'sent', supply_amount: 2400000, tax_amount: 240000, total_amount: 2640000, memo: '샘플 확인 후 메인 투입', items: [{ name: '맨투맨 봉제', spec: 'L', qty: 200, price: 9000 }, { name: '나염', spec: '1도', qty: 200, price: 3000 }] },
                 { id: 'preview-q-2', item_id: 'preview-item-2', client_name: '동대문 워싱', quote_date: '2026-11-10', status: 'draft', total_amount: 880000, items: [{}] },
                 { id: 'preview-q-3', client_name: '성수봉제', quote_date: '2026-10-20', status: 'confirmed', total_amount: 1500000, items: [{}] },
             ];
@@ -878,6 +879,7 @@ class BhasApp {
     _safeFileUrl(value) {
         const raw = String(value || '').trim();
         if (!raw) return '';
+        if (this._isOfs(raw)) return this._ofsUrl(raw);
         if (/^data:(image\/(?:png|jpe?g|gif|webp|svg\+xml)|application\/pdf)[;,]/i.test(raw)) return raw;
         if (/^blob:/i.test(raw)) return raw;
         try {
@@ -885,9 +887,72 @@ class BhasApp {
             return ['http:', 'https:'].includes(u.protocol) ? u.href : '';
         } catch (_e) { return ''; }
     }
+    //  114d d1 — 비공개 파일 참조. DB 에는 'ofs:org/<org_id>/<경로>'(버킷 org_files)를 두고, 화면이 그릴 때 서명 URL 로 바꾼다.
+    //  서명 URL 은 만료되므로 저장하지 않는다. 옛 bhas 공개 URL(http)은 그대로 읽는다.
+    //  허용 문자만(글자·숫자·._-/%) — 따옴표·괄호·공백·'..' 는 참조로 인정하지 않는다(onclick 문자열 깨짐·경로 탈출 방지)
+    _isOfs(v) { const s = String(v || '').trim(); return /^ofs:org\/[0-9a-f-]{36}\/[\p{L}\p{N}._\-\/%]+$/iu.test(s) && !s.includes('..') && !s.includes('//'); }
+    //  캐시에 살아 있는 서명 URL 을 돌려준다. 없으면 '' 를 돌려주고 서명을 걸어 둔다 → 서명되면 다시 그린다.
+    _ofsUrl(ref) {
+        //  계정이 바뀌면 앞 계정이 서명한 URL 을 쓰지 않는다(로그아웃은 _ofsReset)
+        const who = String(this.currentUser?.id || '');
+        if (this._ofsWho !== who) { this._ofsReset(); this._ofsWho = who; }
+        const c = (this._ofsCache ||= new Map()).get(ref);
+        if (c && c.exp > Date.now()) return c.url;
+        (this._ofsWant ||= new Set()).add(ref);
+        clearTimeout(this._ofsT); this._ofsT = setTimeout(() => this._ofsFlush(), 0);
+        return '';
+    }
+    //  세대(_ofsGen) 단위로 캐시·진행중 서명(_ofsPend: ref → Promise)을 통째로 갈아 끼운다.
+    //  계정이 바뀌거나 로그아웃하면 앞 세대의 진행중 서명은 결과를 버리고, 새 세대는 같은 ref 를 새로 서명한다.
+    _ofsReset() { this._ofsCache = new Map(); this._ofsPend = new Map(); this._ofsWant?.clear(); this._ofsGen = (this._ofsGen || 0) + 1; clearTimeout(this._ofsT); }
+    _ofsFlush() {
+        const pend = (this._ofsPend ||= new Map()), gen = this._ofsGen;
+        const refs = [...(this._ofsWant || [])].filter(r => !pend.has(r)); this._ofsWant?.clear();
+        if (!refs.length || !this.supabase?.storage) return Promise.resolve(0);
+        const job = (async () => {
+            await null;   // 아래 pend.set 이 먼저 끝나게(동기 예외에도 finally 가 job 을 본다)
+            let ok = 0;
+            try {
+                const { data, error } = await this.supabase.storage.from('org_files').createSignedUrls(refs.map(r => r.slice(4)), 3600);
+                if (gen !== this._ofsGen) return 0;
+                const now = Date.now();
+                refs.forEach((r, i) => {
+                    const u = !error && data?.[i]?.signedUrl;
+                    //  실패도 1분 기억 — 다시 그릴 때마다 서명 요청이 몰리지 않게
+                    this._ofsCache.set(r, u ? { url: u, exp: now + 50 * 60e3 } : { url: '', exp: now + 60e3 });
+                    if (u) ok++;
+                });
+            } catch (_e) {
+                if (gen === this._ofsGen) refs.forEach(r => this._ofsCache.set(r, { url: '', exp: Date.now() + 60e3 }));
+            } finally { refs.forEach(r => { if (pend.get(r) === job) pend.delete(r); }); }
+            if (ok && gen === this._ofsGen) this.requestRender?.();
+            return ok;
+        })();
+        refs.forEach(r => pend.set(r, job));
+        return job;
+    }
+    //  지금 당장 열어야 할 때(미리보기·내려받기) — 진행중 서명이 있으면 그걸 기다리고, 없으면 바로 서명한다.
+    //  기다리는 사이 계정이 바뀌면(세대 변경) 새 세대로 다시 서명한다(최대 3번).
+    async _fileUrlNow(value) {
+        const raw = String(value || '').trim();
+        if (!this._isOfs(raw)) return this._safeFileUrl(raw);
+        for (let i = 0; i < 3; i++) {
+            const u = this._safeFileUrl(raw);   // 계정 확인·캐시 조회·서명 예약
+            if (u) return u;
+            const c = this._ofsCache?.get(raw);
+            if (c && c.exp > Date.now()) return '';   // 거절을 기억 중
+            const job = this._ofsPend?.get(raw) || (clearTimeout(this._ofsT), this._ofsFlush());
+            await job;
+        }
+        return '';
+    }
     showFileModal(url, name = '파일 미리보기') {
         const container = document.getElementById('global-modal-container');
         if (!container) return;
+        if (this._isOfs(url) && !this._safeFileUrl(url)) {
+            this._fileUrlNow(url).then(u => u ? this.showFileModal(url, name) : this.showToast('파일을 열 권한이 없거나 찾지 못했습니다'));
+            return;
+        }
         const safeUrl = this._safeFileUrl(url);
         if (!safeUrl) { this.showToast('안전하지 않은 파일 주소라 열지 않았습니다'); return; }
         const safeName = this._vesc(name || '파일 미리보기');
@@ -3172,6 +3237,7 @@ class BhasApp {
 
     async logout() {
         try { await this.supabase.auth.signOut(); } catch (_e) {}
+        this._ofsReset?.();
         localStorage.removeItem('bhas_session_user');
         localStorage.removeItem('bhas_auto_login');
         document.querySelectorAll('.sticky').forEach(el => el.remove());
@@ -3282,7 +3348,7 @@ class BhasApp {
             { k: 'account', t: '계정', i: 'ph-user-circle' },
             { k: 'build', t: '버전', i: 'ph-info' },
         ];
-        //  설정 창(왼쪽 설정 메뉴) 안에서는 자기 메뉴를 빼고 그 칸 카드만 — 화면·도구 / 내 계정·버전
+        //  설정 창 안에서는 자기 메뉴를 빼고 그 칸 카드만 — 화면·도구 / 내 계정·버전
         if (this._inSetShell) {
             const secs = this.currentView === 'set_account' ? ['account', 'build'] : ['look', 'tools'];
             const html = this._settingsCards(row, esc, role, wall, links);
@@ -3483,7 +3549,7 @@ class BhasApp {
         cols.forEach(([k, label]) => { this._tblLabels[view][k] = label; });
         return cols.map(([k, label, cls, filterable = true]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${flt[k] ? ' flt' : ''}"
             onclick="app.sortTbl('${view}','${k}')" title="눌러서 줄 세우기${filterable ? ' · 깔때기로 거르기' : ''}">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}${filterable ? `<button class="th-f"
-            onclick="app.openTblFilter(event,'${view}','${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${flt[k] ? '-fill' : ''}"></i></button>` : ''}</th>`).join('');
+            onclick="app.openTblFilter(event,'${view}','${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph${flt[k] ? '-fill' : ''} ph-funnel"></i></button>` : ''}</th>`).join('');
     }
     //  거르고 줄 세운 결과 — val(row, key) 가 그 칸의 값을 돌려준다
     _applyTbl(view, rows, val, base) {
@@ -3528,10 +3594,11 @@ class BhasApp {
             <div class="colf-a"><button class="mbtn" id="colf-x">취소</button>
                 <button class="mbtn pri" id="colf-ok">적용</button></div>`;
         document.body.appendChild(el);
-        const th = ev && ev.target.closest('th');
+        //  머리글이 <th> 가 아닌 표(자료실 .fh 등)도 있어 머리 칸 → 버튼 자신 순으로 기준을 잡고, 화면 안으로 접는다.
+        const th = ev && (ev.target.closest('th, .fh') || ev.target.closest('button'));
         if (th) { const r = th.getBoundingClientRect();
-            el.style.left = Math.min(r.left, innerWidth - el.offsetWidth - 10) + 'px';
-            el.style.top = (r.bottom + 4) + 'px'; }
+            el.style.left = Math.max(10, Math.min(r.left, innerWidth - el.offsetWidth - 10)) + 'px';
+            el.style.top = Math.max(10, Math.min(r.bottom + 4, innerHeight - el.offsetHeight - 10)) + 'px'; }
         el.querySelector('#colf-x').onclick = () => el.remove();
         el.querySelector('#colf-ok').onclick = () => {
             const picked = [...el.querySelectorAll('input:checked')].map(i => i.value);
@@ -3547,7 +3614,7 @@ class BhasApp {
     //  거르는 중 표시 — 머리막대에 붙인다
     _fltBadge(view) {
         const flt = (this.tblFilt || {})[view] || {}, esc = s => this._vesc(s), labels = (this._tblLabels || {})[view] || {};
-        return Object.entries(flt).map(([k, vals]) => `<button class="flt-off" onclick="app.clearTblFilter('${view}','${k}')" title="${esc(labels[k] || k)} 필터 풀기"><i class="ph ph-funnel-fill"></i> ${esc(labels[k] || k)}: ${esc((vals || []).join(' · '))} <b>×</b></button>`).join('');
+        return Object.entries(flt).map(([k, vals]) => `<button class="flt-off" onclick="app.clearTblFilter('${view}','${k}')" title="${esc(labels[k] || k)} 필터 풀기"><i class="ph-fill ph-funnel"></i> ${esc(labels[k] || k)}: ${esc((vals || []).join(' · '))} <b>×</b></button>`).join('');
     }
     _syncTblFilters(view) {
         if (view !== 'sns_ads') return;
@@ -3786,21 +3853,8 @@ class BhasApp {
         // 판매 창은 항상 대분류(메뉴) > 중분류(목록·표) > 상세의 같은 자리를 쓴다.
         // 전역 사이드바와 메뉴 이름을 맞추되, 창 안에서는 현재 화면의 위치를 보여 준다.
         if (this.macMode) {
-            //  설정 창 — 왼쪽은 설정 메뉴만(재설계 §2). 이 계정이 볼 수 있는 칸만
-            if (g.head === 'settings') return `<aside class="appside appside-sales-menu">
-                <div class="m3-h">설정 메뉴</div>
-                ${g.tabs.filter(t => this._setTabOk(t.k)).map(t => `<button class="sales-section-nav${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
-                    <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}"></i><span>${esc(t.t)}</span></button>`).join('')}
-            </aside>`;
-            //  생산도 같은 자리 규칙 — 왼쪽은 메뉴만, 거르기(브랜드·상태·생산처)는 가운데 표 머리줄로.
-            if (g.head === 'orders' || g.head === 'items') return `<aside class="appside appside-sales-menu">
-                <div class="m3-h">${esc(g.label)} 메뉴</div>
-                ${g.tabs.filter(t => !t.hidden).map(t => {
-                    const on = t.k === view || (t.k === 'sales' && view === 'expenses') || (t.k === 'analysis' && view === 'crm');
-                    return `<button class="sales-section-nav${on ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
-                        <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}"></i><span>${esc(t.t)}</span></button>`;
-                }).join('')}
-            </aside>`;
+            //  창 안에 대분류·중분류(형제 화면) 목록을 다시 그리지 않는다 — 그건 전역 사이드바 몫(사장님 11-18).
+            //  왼쪽은 그 화면 자신의 거르기만, 없으면 2단.
             const nav = this._viewNav(view);
             return nav ? `<aside class="appside appside-filter">${nav}</aside>` : '';
         }
@@ -3823,15 +3877,8 @@ class BhasApp {
         return { color: brand?.brand_color || palette[seed % palette.length], cls: 'brand' };
     }
     _snsShell(inner) {
-        const esc = s => this._vesc(s);
-        const mode = this.snsMode || 'dashboard';
-        const menus = [
-            ['dashboard','ph-gauge','대시보드'], ['ads','ph-megaphone-simple','광고현황'],
-            ['posts','ph-images-square','게시물기록'], ['followers','ph-users-three','팔로워'],
-            ['industry','ph-binoculars','동종업계'], ['news','ph-newspaper','뉴스'],
-        ];
-        const side = `<aside class="m3-side sns3-menu-side"><div class="m3-h">SNS 메뉴</div>${menus.map(([k, icon, label]) => `<button class="sns-section-nav${mode === k ? ' on' : ''}" onclick="app.setSnsMode('${esc(k)}')"><i class="ph ${icon}"></i><span>${esc(label)}</span></button>`).join('')}</aside>`;
-        return `<div class="m3 sns3-layout${this.snsMobileDetail ? ' detail' : ''}">${side}${inner}</div>`;
+        //  SNS 화면 전환은 전역 사이드바(대시보드·광고현황…) 몫 — 창 안에 형제 화면 목록을 두지 않는다(사장님 11-18)
+        return `<div class="m3 sns3-layout no-side${this.snsMobileDetail ? ' detail' : ''}">${inner}</div>`;
     }
     setSnsMode(k) {
         const previousMode = this.snsMode;
@@ -4743,6 +4790,26 @@ class BhasApp {
                   }).join('') : '<div class="dt-none sm">아직 물품이 없습니다</div>'}
             `, `<button class="mbtn pri" onclick="app.toggleVenEdit()">고치기</button>`);
         }
+        //  견적 — 줄을 고르면 오른쪽에 그 견적 상세(품목·금액·고객사). 안 골랐을 땐 요약(empty → _prodSummary).
+        if (view === 'quotes') {
+            const q = (this.quotes || []).find(x => String(x.id) === String(this.quoteSel));
+            if (!q) return empty();
+            const its = Array.isArray(q.items) ? q.items : [];
+            const it = (this.pItems || []).find(i => String(i.id) === String(q.item_id) || String(i.quote_id) === String(q.id));
+            const bn = it && it.brand_id ? this._brandNameById(it.brand_id) : '';
+            const won = n => this._won(n);
+            return wrap(q.client_name || '견적', `${this._quoteStatusLabel(q.status || 'draft')} · ${q.quote_date || ''}`, `
+                <div class="dt-sec">고객사</div>
+                ${f('상호', q.client_name)}${f('사업자', q.client_biz_no)}${f('대표', q.client_ceo)}${f('담당', q.client_contact)}${f('연락처', q.client_tel)}
+                <div class="dt-sec">견적</div>
+                ${f('견적일', q.quote_date)}${f('브랜드', bn && bn !== '-' ? bn : '')}${f('제품', it ? it.name : '')}${f('세금계산서', q.tax_status === 'issued' ? '발행' : '')}
+                <div class="dt-sec">품목 ${its.length}개</div>
+                ${its.map(r => `<div class="dt-li q-dt-it"><span>${esc(r.name || '품목')}${r.spec ? ` · ${esc(r.spec)}` : ''} · ${Number(r.qty) || 0}개 × ${won(r.price)}</span><b>${won((Number(r.qty) || 0) * (Number(r.price) || 0))}</b></div>`).join('') || '<div class="dt-none sm">품목 없음</div>'}
+                <div class="dt-sec">금액</div>
+                ${f('공급가액', won(q.supply_amount))}${f('부가세', won(q.tax_amount))}${f('합계', won(q.total_amount))}
+                ${q.memo ? `<div class="dt-sec">메모</div><div class="dt-memo">${esc(q.memo)}</div>` : ''}
+            `, `<button class="mbtn" onclick="app.printQuoteById('${esc(q.id)}')"><i class="ph ph-printer"></i> 인쇄</button><button class="mbtn pri" onclick="app.showQuoteModal('${esc(q.id)}')">고치기</button>`);
+        }
         if (view === 'tech_packs') {
             const t = (this._techPacks || []).find(x => String(x.id) === String(this.tpSel));
             if (!t) return empty();
@@ -4910,6 +4977,25 @@ class BhasApp {
             `, `<button class="mbtn pri inv-adjust" data-id="${it.id}">조정</button>
                 <button class="mbtn inv-map" data-id="${it.id}">매핑</button>`);
         }
+        if (view === 'sales' && this.salesCell && this._salesMtxCtx && this._salesMtxCtx.year === this.salesCell.year) {
+            const sc = this.salesCell, ctx = this._salesMtxCtx;
+            const b = ctx.brands.find(x => x.name === sc.brand);
+            if (b) {
+                const won = n => this._won(Math.round(n || 0)) + '원';
+                const allTot = ctx.brands.reduce((s, x) => s + (sc.m == null ? x.total : (x.cells[sc.m] || 0)), 0);
+                const amt = sc.m == null ? b.total : (b.cells[sc.m] || 0);
+                const prev = sc.m != null && sc.m > 0 ? b.cells[sc.m - 1] || 0 : null;
+                const best = b.cells.reduce((bi, v, i) => v > (b.cells[bi] || 0) ? i : bi, 0);
+                const act = b.cells.filter(v => v > 0).length;
+                return wrap(b.name, sc.m == null ? `${sc.year}년 전체` : `${sc.year}년 ${sc.m + 1}월`, `
+                    ${f('매출', won(amt))}${f('전체 중 비중', allTot ? `${Math.round(amt / allTot * 100)}%` : '-')}
+                    ${prev != null ? f('전월 대비', prev > 0 ? `${amt >= prev ? '▲' : '▼'} ${Math.abs(Math.round((amt - prev) / prev * 100))}% (전월 ${won(prev)})` : '전월 매출 없음') : ''}
+                    ${sc.m == null ? `${f('매출 있는 달', `${act}개월`)}${f('월 평균', won(act ? b.total / act : 0))}${f('가장 큰 달', b.cells[best] ? `${best + 1}월 · ${won(b.cells[best])}` : '-')}` : ''}
+                    <div class="dt-sec">월별</div>
+                    ${b.cells.map((v, i) => `<div class="dt-li${sc.m === i ? ' on' : ''}" style="cursor:pointer" onclick="app.selectSalesCell('${this._vesc(b.name).replace(/'/g, '&#39;')}',${i})"><span>${i + 1}월</span><b>${v ? won(v) : '·'}</b></div>`).join('')}`,
+                    `<button class="mbtn pri" onclick="app.setSalesBrand('${this._vesc(b.name).replace(/'/g, '&#39;')}')">브랜드 상세</button>`);
+            }
+        }
         if (view === 'sales' || view === 'expenses') {
             const brand = this.salesViewBrand && this.salesViewBrand !== 'ALL' ? this.salesViewBrand : '전체 브랜드';
             const period = [this.salesViewYear, this.salesViewMonth && this.salesViewMonth !== 'ALL' ? `${this.salesViewMonth}월` : '전체 월'].filter(Boolean).join(' · ');
@@ -4978,7 +5064,7 @@ class BhasApp {
     renderSubView(products) {
         const { role, id: currentUserId, name: currentUserName } = this.currentUser;
         if (this.currentView === 'home') return this.renderHome(products);
-        //  설정 묶음 — 왼쪽 설정 메뉴 | 가운데 그 칸. 원래 화면(계정·브랜드·연동·불편사항)은 그대로 가운데에 그린다
+        //  설정 묶음 — 전역 사이드바에서 칸을 고르고 창엔 그 칸만(11-18). 원래 화면(계정·브랜드·연동·불편사항)은 그대로 가운데에 그린다
         if (this._groupOf(this.currentView)?.head === 'settings' && !this._inSetShell) {
             const v = this.currentView;
             if (!this._setTabOk(v)) return this._appShell(v, `<div class="m3-none" style="padding:40px">이 계정으로는 볼 수 없는 칸입니다</div>`);
@@ -5245,7 +5331,7 @@ class BhasApp {
                 aggregatedDocs.push({
                     id: 'tp:' + t.id, name: (t.style_name || '무제') + (t.style_no ? ` (${t.style_no})` : ''),
                     category: '작업지시서', productId: it ? it.product_id : null, url: '',
-                    date: (t.created_at || '').slice(0, 10), memo: isUploadPack(t) ? (t.file_name || '') : '', open: `app.openTechPack('${t.id}')`,
+                    date: t.created_at || '', memo: isUploadPack(t) ? (t.file_name || '') : '', open: `app.openTechPack('${t.id}')`,
                     icon: 'ph-clipboard-text', iconColor: '#5e5ce6', kindText: isUploadPack(t) ? '작업지시서(업로드)' : '작업지시서',
                 });
             });
@@ -5254,7 +5340,7 @@ class BhasApp {
                 aggregatedDocs.push({
                     id: 'q:' + qt.id, name: (qt.quote_no ? qt.quote_no + ' ' : '') + (qt.client_name || '견적서'),
                     category: '견적서', productId: it ? it.product_id : null, url: '',
-                    date: qt.quote_date || (qt.created_at || '').slice(0, 10), memo: '',
+                    date: qt.quote_date || qt.created_at || '', memo: '',
                     open: `app.showQuoteModal('${qt.id}')`, icon: 'ph-receipt', iconColor: '#30d158', kindText: '견적서',
                 });
             });
@@ -5274,6 +5360,17 @@ class BhasApp {
             if (cur.startsWith('p:')) {
                 const [pid, cat] = cur.slice(2).split('/');
                 docs = docs.filter(d => d.productId === pid && (!cat || d.category === cat));
+            } else if (cur.startsWith('b:')) {
+                const bid = cur.slice(2);
+                docs = docs.filter(d => {
+                    const p = (mockData.products || []).find(x => String(x.id) === String(d.productId));
+                    return p && String(p.brand_id) === String(bid);
+                });
+            } else if (cur === 'common') {
+                docs = docs.filter(d => !d.productId);
+            } else if (cur === 'root') {
+                // ‘자료실’ 위치는 파인더 루트처럼 분류 폴더를 보여 준다.
+                // 아래 폴더 행을 펼치면 파일을 고를 수 있어야 하므로 전체 자료는 유지한다.
             } else if (cur !== '전체') docs = docs.filter(d => d.category === cur);
             if (q) docs = docs.filter(d => (d.name || '').toLowerCase().includes(q));
             const view = this.docView || 'list';   // 파인더 기본은 목록
@@ -5288,6 +5385,21 @@ class BhasApp {
                 if (/\.(docx?|hwp)$/i.test(u)) return { i: 'ph-file-doc', c: '#2b7de9', t: '문서' };
                 if (/\.(zip|rar|7z)$/i.test(u)) return { i: 'ph-file-zip', c: '#a2845e', t: '압축' };
                 return { i: 'ph-file', c: '#8e8e93', t: '파일' };
+            };
+            const finderDate = value => {
+                if (!value) return '—';
+                const raw = String(value).trim();
+                const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+                const d = new Date(dateOnly ? `${raw}T00:00:00+09:00` : raw);
+                if (Number.isNaN(d.getTime())) return value;
+                const ymd = x => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(x);
+                const today = new Date();
+                const day = Math.round((new Date(ymd(today) + 'T00:00:00+09:00') - new Date(ymd(d) + 'T00:00:00+09:00')) / 86400000);
+                const hm = dateOnly ? '' : new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: 'numeric', minute: '2-digit' }).format(d);
+                const relative = day === 0 ? '오늘' : day === 1 ? '어제' : day === 2 ? '그저께' : '';
+                if (relative) return relative + (hm ? ` ${hm}` : '');
+                const dp = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric', month: 'long', day: 'numeric' }).format(d);
+                return dp + (hm ? ` ${hm}` : '');
             };
             const nameOfP = id => (mockData.products.find(p => p.id === id) || {}).name || '';
             const brandOfP = id => {
@@ -5312,9 +5424,11 @@ class BhasApp {
             //  자료실 표 — 머리글로 줄 세우고 깔때기로 거른다
             const docVal = (d, k2) => ({
                 name: d.name || '', brand: (brandOfP(d.productId) || {}).n || '',
-                season: nameOfP(d.productId), kind: kindOf(d).t, date: d.date || '',
+                season: nameOfP(d.productId), kind: kindOf(d).t, date: d.date || '', size: d.size || '',
             })[k2] ?? '';
             docs = this._applyTbl('documents', docs, docVal, aggregatedDocs);
+            //  머리가 <th>(_thead)가 아니라 이름표를 따로 적어 둔다 — 걸린 거르기 칩에 'kind:' 같은 속 이름이 보이지 않게
+            this._tblLabels = this._tblLabels || {}; this._tblLabels.documents = { name: '이름', brand: '태그', season: '시즌', kind: '종류', date: '수정일', size: '크기' };
             this._docVisible = docs;
             //  브랜드는 독립 열로 — 요약 줄에서는 빼서 두 번 찍지 않는다(3단 규칙 2·4)
             const summaryOf = d => d.memo || [nameOfP(d.productId), d.category].filter(Boolean).join(' · ');
@@ -5328,83 +5442,107 @@ class BhasApp {
                     <span class="fd-nm">${esc(d.name)}</span>
                 </button>`;
             }).join('');
-            const rows = docs.map((d, idx) => {
-                const k = kindOf(d);
-                return `<div class="fd3-r${String(this.docSel) === String(d.id) ? ' on' : ''}" data-id="${esc(String(d.id))}"
+            const fileRow = (d, idx, nested = false) => {
+                const k = kindOf(d), tag = brandOfP(d.productId) || { n: '공용', c: '#8e8e93' };
+                return `<div class="fd3-r${nested ? ' nested' : ''}${String(this.docSel) === String(d.id) ? ' on' : ''}" data-id="${esc(String(d.id))}"
                         onclick="app.selectDocAt(${idx})" ondblclick="app.openDocAt(${idx})"
                         oncontextmenu="app.docMenuAt(event,${idx})">
-                    <i class="ph ${k.i} fd3-ic" style="color:${k.c}"></i>
-                    <span class="fd3-copy"><b>${esc(d.name || '이름 없는 자료')}</b><em>${esc(summaryOf(d) || '설명 없음')}</em></span>
-                    <span class="fd3-brand">${esc((brandOfP(d.productId) || {}).n || '공통')}</span>
-                    <span class="fd3-kind">${esc(k.t)}</span>
-                    <time>${esc(d.date ? this.formatDateToUI(String(d.date).slice(0, 10)) : '-')}</time>
-                    <i class="ph ph-caret-right fd3-go"></i>
+                    <span class="fd3-name"><i class="fd3-pad"></i><i class="ph ${k.i} fd3-ic" style="color:${k.c}"></i><b title="${esc(d.name || '이름 없는 자료')}">${esc(d.name || '이름 없는 자료')}</b></span>
+                    <time>${esc(finderDate(String(d.date || '')))}</time>
+                    <span class="fd3-size">${esc(d.size || '—')}</span>
+                    <span class="fd3-tag"><i style="--tag:${esc(tag.c)}"></i>${esc(tag.n)}</span>
                 </div>`;
+            };
+            const rows = docs.map((d, idx) => fileRow(d, idx)).join('');
+            const rootRows = categories.map(c => {
+                const inCat = docs.filter(d => d.category === c);
+                const open = !!(this.docRowOpen || {})[c];
+                const latest = inCat.map(d => String(d.date || '')).filter(Boolean).sort().at(-1) || '';
+                return `<div class="fd3-r folder${open ? ' open' : ''}" ondblclick="app.setDocCategory('${esc(c)}')">
+                    <span class="fd3-name"><button class="fd3-disclose" onclick="event.stopPropagation();app.toggleDocRowFolder('${esc(c)}')" title="${open ? '접기' : '펼치기'}"><i class="ph ph-caret-right"></i></button><i class="ph-fill ph-folder fd3-ic"></i><b>${esc(c)}</b></span>
+                    <time>${esc(finderDate(latest))}</time><span class="fd3-size">${inCat.length ? `${inCat.length}개 항목` : '—'}</span><span class="fd3-tag"></span>
+                </div>${open ? inCat.map(d => fileRow(d, docs.indexOf(d), true)).join('') : ''}`;
             }).join('');
-            //  분류·시즌 거르기는 가운데 탭·고르기 줄(3단 규칙 1 — 왼쪽은 협업 메뉴). 우클릭 관리는 그대로.
-            const curP = cur.startsWith('p:') ? cur.slice(2).split('/')[0] : '';
-            const curC = cur.startsWith('p:') ? (cur.slice(2).split('/')[1] || '전체') : cur;
-            const tabKey = c => curP ? (c === '전체' ? 'p:' + curP : 'p:' + curP + '/' + c) : c;
-            const inP = d => !curP || String(d.productId) === String(curP);
-            const docTab = c => { const key = tabKey(c);
-                return `<button class="it-pill${cur === key ? ' on' : ''}" onclick="app.setDocCategory(decodeURIComponent('${encodeURIComponent(key)}'))"
-                    ${c !== '전체' ? `oncontextmenu="app.docFolderMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))"` : ''}>${esc(c === '전체' ? '전체' : c)}<em>${aggregatedDocs.filter(d => inP(d) && (c === '전체' || d.category === c)).length}</em></button>`; };
-            const docTabs = `<div class="it-pills fd-tabs">${['전체', ...categories].map(docTab).join('')}
-                <button class="it-pill" onclick="app.addDocCategory()" title="새 분류"><i class="ph ph-plus"></i></button>
-                <select class="fd-psel" aria-label="시즌" onchange="app.setDocCategory(this.value ? 'p:' + this.value + (decodeURIComponent('${encodeURIComponent(curC)}') !== '전체' ? '/' + decodeURIComponent('${encodeURIComponent(curC)}') : '') : decodeURIComponent('${encodeURIComponent(curC)}'))">
-                    <option value="">모든 시즌</option>${products.map(p => `<option value="${esc(String(p.id))}"${String(curP) === String(p.id) ? ' selected' : ''}>${esc(p.name)} (${aggregatedDocs.filter(d => d.productId === p.id).length})</option>`).join('')}</select>
-                <button class="it-pill" onclick="app.showProjectModal()" title="새 시즌"><i class="ph ph-calendar-plus"></i></button></div>`;
-            const where = cur === '전체' ? '자료실'
+            //  자료실 = 맥 파인더(사장님 11-18): 분류·시즌은 왼쪽 즐겨찾기 폴더로만 고른다. 가운데 탭줄 없음.
+            const brands = (mockData.brands || []).filter(b => b.status !== 'closed');
+            const where = cur === '전체' ? '최근 항목'
+                : cur === 'root' ? '자료실'
+                : cur === 'common' ? '공용'
+                : cur.startsWith('b:') ? ((brands.find(b => String(b.id) === cur.slice(2)) || {}).name || '브랜드')
                 : (cur.startsWith('p:')
                     ? (([pid, cat]) => nameOfP(pid) + (cat ? ' › ' + cat : ''))(cur.slice(2).split('/'))
                     : cur);
+            const selected = docs.find(x => String(x.id) === String(this.docSel));
+            const pathParts = ['자료실'];
+            if (!['root', '전체'].includes(cur)) pathParts.push(where);
+            if (cur === '전체') pathParts.push('최근 항목');
+            if (selected) pathParts.push(selected.name || '이름 없는 자료');
+            const pathHtml = pathParts.map((p, i) => `${i ? '<i class="ph ph-caret-right"></i>' : '<i class="ph-fill ph-folder"></i>'}<span>${esc(p)}</span>`).join('');
+            const statusText = selected
+                ? `1/${docs.length} 선택됨 · ${kindOf(selected).t}`
+                : cur === 'root' ? `${categories.length}개 폴더 · ${aggregatedDocs.length}개 항목` : `${docs.length}개 항목`;
             return `
-            <div class="fd${this.docMobileDetail ? ' detail' : ''}">
-                <aside class="fd-side c3-menu">${this._collabMenu('documents')}</aside>
+            <div class="fd${this.docMobileDetail ? ' detail' : ''}${this.docSideSheet ? ' side-on' : ''}${docs.some(x => String(x.id) === String(this.docSel)) ? '' : ' nosel'}">
+                <aside class="fd-side">
+                    <button class="fd-sclose" onclick="app.toggleDocSide(false)"><i class="ph ph-x"></i> 닫기</button>
+                    ${side('전체', '최근 항목', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#5f6368')}
+                    ${sec('즐겨찾기', categories.map(c =>
+                        side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join(''), true,
+                        { t: '새 분류', run: 'app.addDocCategory()' })}
+                    ${sec('위치', side('root', '자료실', 'ph-hard-drives', aggregatedDocs.length, '#6b7280')
+                        + brands.map(b => side('b:' + b.id, b.name, 'ph-buildings', aggregatedDocs.filter(d => {
+                            const p = (mockData.products || []).find(x => String(x.id) === String(d.productId));
+                            return p && String(p.brand_id) === String(b.id);
+                        }).length, '#6b7280')).join('')
+                        + side('common', '공용', 'ph-users-three', aggregatedDocs.filter(d => !d.productId).length, '#6b7280'), true)}
+                    ${sec('태그', products.length ? products.map(p => {
+                        const n = aggregatedDocs.filter(d => d.productId === p.id).length;
+                        const col = ((mockData.brands || []).find(b => b.id === p.brand_id) || {}).brand_color || '#5ac8fa';
+                        return side('p:' + p.id, p.name, 'ph-fill ph-circle fd-tagdot', n, col);
+                    }).join('') : '<div class="fd-none sm">태그 없음</div>', true,
+                        { t: '새 시즌', run: 'app.showProjectModal()' })}
+                </aside>
                 <section class="fd-main">
                     <div class="fd-bar">
+                        <div class="fd-nav" aria-label="탐색 기록">
+                            <button onclick="app.docNavigate(-1)" title="뒤로"${(this.docBack || []).length ? '' : ' disabled'}><i class="ph ph-caret-left"></i></button>
+                            <button onclick="app.docNavigate(1)" title="앞으로"${(this.docForward || []).length ? '' : ' disabled'}><i class="ph ph-caret-right"></i></button>
+                        </div>
                         <b>${esc(where)}</b>${this._fltBadge('documents')}
                         <div class="fd-seg">
                             <button class="${view === 'grid' ? 'on' : ''}" onclick="app.setDocView('grid')" title="아이콘"><i class="ph ph-squares-four"></i></button>
                             <button class="${view === 'list' ? 'on' : ''}" onclick="app.setDocView('list')" title="목록"><i class="ph ph-list-dashes"></i></button>
                         </div>
-                        <div class="fd-find"><i class="ph ph-magnifying-glass"></i>
-                            <input placeholder="검색" value="${esc(this.docQ || '')}" oninput="app.docQ=this.value;app.requestRender()"></div>
+                        <div class="fd-find${this.docSearchOpen ? ' open' : ''}" onclick="if(innerWidth<=760) app.toggleDocSearch(true)" title="자료 검색"><i class="ph ph-magnifying-glass"></i>
+                            <input placeholder="검색" value="${esc(this.docQ || '')}" oninput="app.docQ=this.value;app.requestRender()" onblur="if(innerWidth<=760) app.toggleDocSearch(false)"></div>
                         ${cur === '회의록' ? (() => {
                             const mt = this._meetingOf(this._meetWeek());
                             return !this._noteLoaded ? '<button class="fd-add" disabled>회의록 불러오는 중…</button>'
                                 : mt ? `<button class="fd-add" onclick="app.openMeetingNote('${mt.id}')"><i class="ph ph-notebook"></i> 이번 주 회의록 열기</button>`
                                 : `<button class="fd-add" onclick="app.createWeeklyMeeting()"><i class="ph ph-plus"></i> 이번 주 회의록 만들기</button>`;
                         })() : ''}
-                        <button class="fd-add" id="quick-add-doc-btn"><i class="ph ph-plus"></i> 올리기</button>
+                        <button class="fd-add" id="quick-add-doc-btn"><i class="ph ph-upload-simple"></i><span>올리기</span></button>
                     </div>
-                    ${docTabs}
                     <div class="fd-body">
-                        ${docs.length
-                            ? (view === 'grid' ? `<div class="fd-grid">${grid}</div>`
-                               : `<div class="fd-list"><div class="fd3-head">${[['name', '자료'], ['brand', '브랜드'], ['kind', '종류'], ['date', '날짜']]
+                        ${(docs.length || cur === 'root')
+                            ? (view === 'grid' ? `<div class="fd-grid">${cur === 'root' ? categories.map(c => `<button class="fd-it folder" onclick="app.setDocCategory('${esc(c)}')"><span class="fd-th"><i class="ph-fill ph-folder"></i></span><span class="fd-nm">${esc(c)}</span></button>`).join('') : grid}</div>`
+                               : `<div class="fd-list"><div class="fd3-head">${[['name', '이름'], ['date', '수정일'], ['size', '크기'], ['brand', '태그']]
                                     .map(([k2, t]) => { const { srt, flt } = this._tblState('documents');
-                                        return `<span class="fh${srt.k === k2 ? ' srt' : ''}${flt[k2] ? ' flt' : ''}" onclick="app.sortTbl('documents','${k2}')">${esc(t)}${srt.k === k2 ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f" onclick="app.openTblFilter(event,'documents','${k2}','${esc(t)}')"><i class="ph ph-funnel${flt[k2] ? '-fill' : ''}"></i></button></span>`; }).join('')}</div>${rows}</div>`)
+                                        return `<span class="fh fdh-${k2}${srt.k === k2 ? ' srt' : ''}${flt[k2] ? ' flt' : ''}" onclick="app.sortTbl('documents','${k2}')">${esc(t)}${srt.k === k2 ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f" onclick="app.openTblFilter(event,'documents','${k2}','${esc(t)}')"><i class="ph${flt[k2] ? '-fill' : ''} ph-funnel"></i></button></span>`; }).join('')}</div>${cur === 'root' ? rootRows : rows}</div>`)
                             : `<div class="fd-none">${q ? '찾는 자료가 없습니다' : '이 위치에 자료가 없습니다'}</div>`}
                     </div>
-                    <div class="fd-path">
-                        <i class="ph ph-folder-simple"></i> ${esc(where)}
-                        <span class="fd-cnt">항목 ${docs.length}개${cur !== '전체' || q ? ` · 전체 ${aggregatedDocs.length}개` : ''}</span>
+                    <div class="fd-foot">
+                        <div class="fd-path">
+                            <button class="fd-loc" onclick="app.toggleDocSide(true)" title="위치 — 즐겨찾기·태그"><i class="ph ph-caret-left"></i> 위치</button>
+                            ${pathHtml}
+                        </div>
+                        <div class="fd-status"><span>${statusText}</span><span>${q ? `검색 ‘${esc(this.docQ)}’` : ''}</span></div>
                     </div>
                 </section>
                 <aside class="fd-prev">
                     ${(() => {
                         const d = docs.find(x => String(x.id) === String(this.docSel));
-                        if (!d) {
-                            //  안 고르면 요약(3단 규칙 3) — 종류별·브랜드별 개수, 누르면 그걸로 거른다
-                            const by = f => Object.entries(docs.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
-                            return `<div class="fd3-phead"><b>자료 상세</b></div><div class="fd-sumw">${this._c3Sum('자료 요약', `지금 보이는 ${docs.length}개 / 전체 ${aggregatedDocs.length}개`,
-                                this._c3Sec('종류별') + by(x => kindOf(x).t).map(([k2, n]) => this._c3Li(k2, n)).join('')
-                                + this._c3Sec('브랜드별') + by(x => (brandOfP(x.productId) || {}).n || '공통').map(([k2, n]) => this._c3Li(k2, n)).join('')
-                                + this._c3Sec('최근 올린 것') + docs.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 5)
-                                    .map(x => this._c3Li(x.name || '이름 없는 자료', x.date ? String(x.date).slice(5, 10).replace('-', '.') : '', `app.selectDoc('${esc(String(x.id))}')`)).join(''))}
-                                <div class="m3-none">자료를 선택하세요</div></div>`;
-                        }
+                        if (!d) return '';   // 안 고르면 오른쪽 칸 자체를 숨긴다(.fd.nosel) — 파인더 미리보기처럼
                         const k = kindOf(d), safe = this._safeFileUrl(d.url);
                         return `
                         <div class="fd3-phead"><button class="fd3-back" onclick="app.closeDocDetail()"><i class="ph ph-arrow-left"></i><span>목록</span></button><b>자료 상세</b></div>
@@ -5589,8 +5727,8 @@ class BhasApp {
                                         ${(product.photos || []).map(photo => {
                                             const photoObj = typeof photo === 'string' ? {url: photo} : photo;
                                             return `
-                                            <div class="photo-item" style="position: relative; cursor: pointer;" onclick="app.showFileModal('${photoObj.url}', '제작 사진')">
-                                                <img src="${photoObj.url}" alt="제작 사진">
+                                            <div class="photo-item" style="position: relative; cursor: pointer;" onclick="app.showFileModal(${this._vesc(JSON.stringify(String(photoObj.url || '')))}, '제작 사진')">
+                                                <img src="${this._vesc(this._safeFileUrl(photoObj.url))}" alt="제작 사진">
                                                 ${this.canDelete(photoObj) ? `<button onclick="event.stopPropagation(); app.handleDelete(event, 'photo', '${photoObj.id || photoObj.url}', '${product.id}')" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 4px; background: rgba(0,0,0,0.5); border: 1px solid rgba(var(--tint),0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(0,0,0,0.5)'; this.style.borderColor='rgba(var(--tint),0.2)'"><i class="ph ph-x"></i></button>` : ''}
                                             </div>
                                         `}).join('')}
@@ -5614,7 +5752,7 @@ class BhasApp {
                                                     <span style="font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.name}</span>
                                                 </div>
                                                 <div style="display: flex; gap: 8px; align-items: center;">
-                                                    <a href="${doc.url}" target="_blank" style="padding: 4px 8px; border-radius: 6px; background: rgba(37,99,235,0.1); color: var(--primary); font-size: 0.75rem; text-decoration: none;" onmouseover="this.style.background='rgba(37,99,235,0.2)'" onmouseout="this.style.background='rgba(37,99,235,0.1)'">열기</a>
+                                                    <a href="${this._vesc(this._safeFileUrl(doc.url) || '#')}" target="_blank" rel="noopener noreferrer" style="padding: 4px 8px; border-radius: 6px; background: rgba(37,99,235,0.1); color: var(--primary); font-size: 0.75rem; text-decoration: none;" onmouseover="this.style.background='rgba(37,99,235,0.2)'" onmouseout="this.style.background='rgba(37,99,235,0.1)'">열기</a>
                                                     ${this.canDelete(doc) ? `<button onclick="app.handleDelete(event, 'document', '${doc.id}', '${product.id}')" style="width: 20px; height: 20px; border-radius: 4px; background: rgba(var(--tint),0.05); border: 1px solid rgba(var(--tint),0.1); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)'; this.style.color='white'; this.style.borderColor='rgba(239,68,68,1)'" onmouseout="this.style.background='rgba(var(--tint),0.05)'; this.style.color='var(--text-muted)'; this.style.borderColor='rgba(var(--tint),0.1)'"><i class="ph ph-x"></i></button>` : ''}
                                                 </div>
                                             </div>
@@ -5829,7 +5967,14 @@ class BhasApp {
     setSalesYear(y) { this.salesViewYear = y; this._salesGo(); }
     setSalesMonth(m) { this.salesViewMonth = m; this._salesGo(); }
     setSalesBrand(b) { this.salesViewBrand = b; this._salesGo(); }
-    setSalesMatrixYear(y) { this.salesMatrixYear = y; this._salesGo(); }
+    setSalesMatrixYear(y) { this.salesMatrixYear = y; this.salesCell = null; this._salesGo(); }
+    //  브랜드×월 표의 행(m=null)·칸(m=월 0~11)을 누르면 오른쪽 상세에 띄운다. 같은 걸 다시 누르면 닫는다.
+    selectSalesCell(brand, m) {
+        const ctx = this._salesMtxCtx; if (!ctx) return;
+        const same = this.salesCell && this.salesCell.brand === brand && this.salesCell.m === m && this.salesCell.year === ctx.year;
+        this.salesCell = same ? null : { brand, m, year: ctx.year };
+        this.requestRender();
+    }
     //  정산 창이 이미 맨 앞이면 switchView(맥 모드)는 창만 앞으로 올리고 다시 그리지 않아,
     //  브랜드·월을 눌러도 다른 데이터가 도착할 때까지 화면이 그대로였다(11-05 실측). 그 창이면 바로 다시 그린다.
     _salesGo() { this.switchView('sales'); if (this.macMode && this.currentUser) this.requestRender(); }
@@ -6279,6 +6424,10 @@ class BhasApp {
             const cells = mtxMonths.map(k => { const ix = mIdx(k); return ix >= 0 ? b.cells[ix].amt : 0; });
             return { name: b.name, color: palette[bi % palette.length], cells, total: cells.reduce((s, v) => s + v, 0) };
         }).filter(b => b.total > 0);
+        //  표 규칙(S3·S5) — 브랜드는 깔때기, 월·합계는 눌러서 줄 세우기. 행/칸을 누르면 오른쪽 상세(S1).
+        const mtxRows = this._applyTbl('salesmtx', mtxBrands, (b, k) => k === 'brand' ? b.name : k === 'total' ? b.total : b.cells[+k] || 0, mtxBrands);
+        this._salesMtxCtx = { year: mtxYear, months: mtxMonths, brands: mtxBrands };
+        const sc = this.salesCell && this.salesCell.year === mtxYear ? this.salesCell : null;
         const mtxColTotals = mtxMonths.map((k) => { const ix = mIdx(k); return ix >= 0 ? monthTotals[ix] : 0; });
         const mtxGrand = mtxColTotals.reduce((s, v) => s + v, 0);
         const matrix = `<div class="sv-card sv-p sv-sec" style="overflow-x:auto">
@@ -6287,9 +6436,9 @@ class BhasApp {
                     ${yearsAvail.map(y => `<option value="${y}" ${y === mtxYear ? 'selected' : ''}>${y}년</option>`).join('')}
                 </select>
             </div>
-            ${mtxBrands.length ? `<table class="mtbl" style="width:100%;border-collapse:collapse;font-size:0.8rem;white-space:nowrap">
-                <thead><tr><th style="text-align:left">브랜드</th>${mtxMonths.map(m => `<th style="text-align:right">${+m.slice(5)}월</th>`).join('')}<th style="text-align:right;border-left:1px solid var(--card-border)">합계</th></tr></thead>
-                <tbody>${mtxBrands.map(b => `<tr style="border-bottom:1px solid var(--card-border)"><td style="text-align:left;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${b.color};margin-right:6px"></span>${this._vesc(b.name)}</td>${b.cells.map(c => `<td style="text-align:right;font-variant-numeric:tabular-nums;color:${c ? 'var(--text-main)' : 'var(--text-muted)'}">${c ? won(c) : '·'}</td>`).join('')}<td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td></tr>`).join('')}</tbody>
+            ${mtxBrands.length ? `<table class="mtbl sv-mtx" style="width:100%;border-collapse:collapse;white-space:nowrap">
+                <thead><tr>${this._thead('salesmtx', [['brand', '브랜드', 'sv-mtx-b']].concat(mtxMonths.map((m, i) => [String(i), `${+m.slice(5)}월`, 'num', false]), [['total', '합계', 'num sv-mtx-t', false]]))}</tr></thead>
+                <tbody>${mtxRows.map(b => { const bn = this._vesc(b.name).replace(/'/g, '&#39;'); return `<tr class="sv-mtx-r${sc && sc.brand === b.name ? ' on' : ''}" style="border-bottom:1px solid var(--card-border);cursor:pointer" onclick="app.selectSalesCell('${bn}',null)"><td style="text-align:left;font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${b.color};margin-right:6px"></span>${this._vesc(b.name)}</td>${b.cells.map((c, i) => `<td class="${sc && sc.brand === b.name && sc.m === i ? 'on' : ''}" style="text-align:right;font-variant-numeric:tabular-nums;color:${c ? 'var(--text-main)' : 'var(--text-muted)'}" onclick="event.stopPropagation();app.selectSalesCell('${bn}',${i})">${c ? won(c) : '·'}</td>`).join('')}<td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(b.total)}</td></tr>`; }).join('') || `<tr><td colspan="14" style="padding:1.2rem;text-align:center;color:var(--text-muted)">거르기에 맞는 브랜드가 없습니다</td></tr>`}</tbody>
                 <tfoot><tr style="border-top:2px solid var(--card-border);font-weight:800"><td style="text-align:left">합계</td>${mtxColTotals.map(t => `<td style="text-align:right;font-variant-numeric:tabular-nums">${t ? won(t) : '·'}</td>`).join('')}<td style="text-align:right;font-variant-numeric:tabular-nums;border-left:1px solid var(--card-border)">${won(mtxGrand)}</td></tr></tfoot>
             </table>` : `<div class="sv-pf-none">${mtxYear}년 매출 데이터가 없습니다.</div>`}
         </div>`;
@@ -6392,16 +6541,16 @@ class BhasApp {
             const mallKeys = (this.malls || []).filter(m => { const b = (mockData.brands || []).find(x => x.id === m.brand_id); return (b ? b.name : (m.label || m.mall_key)) === brandName; }).map(m => m.mall_key);
             let q = this.supabase.from('channel_orders_slim').select('*').gte('order_date', fromISO).lt('order_date', toISO);
             if (mallKeys.length) q = q.in('mall_key', mallKeys);
-            const { data, error } = await q.order('order_date', { ascending: false });
+            const { data, error } = await this._tmo(q.order('order_date', { ascending: false }));
             if (error) throw error;
             const rows = data || [];
-            const items = await this._itemsFor(rows.map(o => o.id));
+            const items = await this._tmo(this._itemsFor(rows.map(o => o.id)));
             const byOrder = {};
             items.forEach(it => { (byOrder[it.channel_order_id] = byOrder[it.channel_order_id] || []).push(it); });
             const withItems = rows.map(o => ({ ...o, items: byOrder[o.id] || [] }));
             this.analysisScoped = { orders: withItems.filter(o => o.pay_amount != null && !this._isCancelled(o)) };
-            this._analysisScopeKey = key;
-        } catch (e) { this.analysisScoped = { orders: [] }; this._analysisScopeKey = key; }
+            this._analysisScopeKey = key; this._anaSetErr('scope', null);
+        } catch (e) { this._anaSetErr('scope', e); this.analysisScoped = { orders: [] }; this._analysisScopeKey = key; }
         this._analysisScopeLoading = false; this.requestRender();
     }
     _vipKey(r) { return String(r?.phone || r?.name || r?.nm || '').replace(/\D/g, '') || String(r?.name || r?.nm || '').trim(); }
@@ -6429,23 +6578,41 @@ class BhasApp {
         if (move === 'down') return `<span class="vip-move down">▼${n}</span>`;
         return '<span class="vip-move same">–</span>';
     }
+    //  판매>고객 — 응답이 안 오면 '불러오는 중'이 영원히 남던 문제(전체점검-1117 ③).
+    //  20초 안에 답이 없으면 실패로 끝내고, 카드마다 '불러오지 못함 + 다시 시도'를 보인다.
+    _tmo(p, ms = 20000) {
+        let t; const to = new Promise((_, ng) => { t = setTimeout(() => ng(new Error(`응답 없음(${Math.round(ms / 1000)}초)`)), ms); });
+        return Promise.race([p, to]).finally(() => clearTimeout(t));
+    }
+    _anaSetErr(k, e) { this._anaErr = { ...(this._anaErr || {}), [k]: e ? String(e.message || e) : null }; }
+    _anaFailHTML(k) {
+        const m = (this._anaErr || {})[k]; if (!m) return '';
+        return `<span class="ana-fail" style="color:#ef4444">불러오지 못했습니다</span> <span style="font-size:12px">(${this._vesc(m.slice(0, 80))})</span>
+            <button class="ana-retry" onclick="app.retryAnalysis()" style="margin-left:6px;padding:3px 10px;border-radius:7px;border:1px solid var(--primary);background:transparent;color:var(--primary);cursor:pointer">다시 시도</button>`;
+    }
+    retryAnalysis() {
+        this._analysisRepeatKey = this._goneKey = this._analysisScopeKey = null; this._anaErr = {};
+        const bf = this.analysisBrand || this._analysisBrandNames()[0];
+        if (bf && (this.custState || {})[bf] === 'error') this._retryCustProfile(bf);
+        this.requestRender(); this.ensureViewData?.();
+    }
     // 재구매율·누적금액 + VIP 현재 누적순위/선택기간 시작일 누적순위
     async _loadAnalysisRepeat(brand, fromISO, toISO) {
         const key = `${brand}|${fromISO}|${toISO}`;
         if (!brand || this._analysisRepeatKey === key || this._analysisRepeatLoading) return;
         this._analysisRepeatLoading = true; this.requestRender();
         try {
-            const [rep, ot, vip] = await Promise.all([
+            const [rep, ot, vip] = await this._tmo(Promise.all([
                 this.supabase.rpc('brand_repurchase', { p_brand: brand, p_from: fromISO, p_to: toISO }),
                 this.supabase.rpc('brand_order_types', { p_brand: brand, p_from: fromISO, p_to: toISO }),
                 this.supabase.rpc('brand_vip_rank_changes', { p_brand: brand, p_start: fromISO || null, p_limit: 10 }),
-            ]);
+            ]));
             if (rep.error) throw rep.error;
             this.analysisRepeat = { [brand]: rep.data };
             this.analysisOrderTypes = { [brand]: ot.error ? null : ot.data };
             this.analysisVip = { [brand]: vip.error ? [] : (vip.data || []) };
-            this._analysisRepeatKey = key;
-        } catch (e) { this.analysisRepeat = { [brand]: null }; this.analysisOrderTypes = { [brand]: null }; this.analysisVip = { [brand]: [] }; this._analysisRepeatKey = key; }
+            this._analysisRepeatKey = key; this._anaSetErr('repeat', null);
+        } catch (e) { this._anaSetErr('repeat', e); this.analysisRepeat = { [brand]: null }; this.analysisOrderTypes = { [brand]: null }; this.analysisVip = { [brand]: [] }; this._analysisRepeatKey = key; }
         this._analysisRepeatLoading = false; this.requestRender();
     }
     // 사이즈·색상 고객군 HTML (items 배열 → 분포)
@@ -6466,7 +6633,7 @@ class BhasApp {
         const gCol = g => g === '주요' ? '#16a34a' : g === '서브' ? '#f59e0b' : '#94a3b8';
         const rowsH = (arr, color) => arr.length ? arr.map(x => `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:0.83rem;margin-bottom:3px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(x.l)} <span style="font-size:0.64rem;font-weight:700;color:${gCol(x.g)}">${x.g}</span></span><span style="white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${x.v.toLocaleString()}</b><span style="display:inline-block;min-width:40px;text-align:right;margin-left:12px;font-size:0.72rem;color:var(--text-muted);font-weight:500;font-variant-numeric:tabular-nums">${x.share}%</span></span></div><div style="height:8px;border-radius:5px;background:rgba(148,163,184,0.15)"><div style="height:100%;width:${Math.max(3, x.share)}%;background:${color};border-radius:5px"></div></div></div>`).join('') : '<span style="color:var(--text-muted);font-size:0.82rem">데이터 없음</span>';
         const sizes = rank(szMap, 10), colors = rank(colMap, 10), combos = Object.entries(comboMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
-        if (!(sizes.length || colors.length)) return `<div class="glass" style="padding:1.6rem;border-radius:18px;color:var(--text-muted);font-size:0.86rem">${loading ? '불러오는 중…' : '이 브랜드·기간에 옵션(사이즈/색상) 데이터가 없어요.'}</div>`;
+        if (!(sizes.length || colors.length)) return `<div class="glass" style="padding:1.6rem;border-radius:18px;color:var(--text-muted);font-size:0.86rem">${loading ? '불러오는 중…' : (this._anaFailHTML('scope') || '이 브랜드·기간에 옵션(사이즈/색상) 데이터가 없어요.')}</div>`;
         return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem">
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-ruler" style="color:#6366f1"></i> 사이즈 고객군</div>${rowsH(sizes, '#6366f1')}</div>
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px"><div style="font-size:0.9rem;font-weight:700;margin-bottom:0.9rem"><i class="ph ph-palette" style="color:#818cf8"></i> 색상 고객군</div>${rowsH(colors, '#818cf8')}</div>
@@ -6488,7 +6655,7 @@ class BhasApp {
         return `<div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
             <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.6rem"><i class="ph ph-door-open" style="color:#ef4444"></i> 떠난 고객
                 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">마지막 구매 뒤 소식 없는 분</span></div>
-            ${!g ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${this._goneLoading ? '불러오는 중…' : '데이터 없음'}</div>` : `
+            ${!g ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${this._goneLoading ? '불러오는 중…' : (this._anaFailHTML('gone') || '데이터 없음')}</div>` : `
             <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:0.5rem">
                 <span style="font-size:2rem;font-weight:900;color:#ef4444;line-height:1">${Math.round((g.d90 || 0) / (g.customers || 1) * 100)}%</span>
                 <span style="font-size:0.78rem;color:var(--text-muted)">90일 넘게 안 오신 분 ${(g.d90 || 0).toLocaleString()}명</span>
@@ -6504,10 +6671,10 @@ class BhasApp {
         if (!brand || this._goneKey === key || this._goneLoading) return;
         this._goneLoading = true; this.requestRender();
         try {
-            const { data, error } = await this.supabase.rpc('brand_gone_counts', { p_brand: brand, p_from: fromISO, p_to: toISO });
+            const { data, error } = await this._tmo(this.supabase.rpc('brand_gone_counts', { p_brand: brand, p_from: fromISO, p_to: toISO }));
             if (error) throw error;
-            this.analysisGone = { [brand]: data }; this._goneCur = data;
-        } catch (e) { this.analysisGone = { [brand]: null }; this._goneCur = null; }
+            this.analysisGone = { [brand]: data }; this._goneCur = data; this._anaSetErr('gone', null);
+        } catch (e) { this._anaSetErr('gone', e); this.analysisGone = { [brand]: null }; this._goneCur = null; }
         this._goneKey = key; this._goneLoading = false; this.requestRender();
     }
 
@@ -6653,9 +6820,9 @@ class BhasApp {
                 const out = [];
                 for (let from = 0; mallKeys.length; from += 1000) {
                     // slim 뷰는 raw 를 잘라 둬서(072) 원본 표에서 필요한 칸만 뽑는다. RLS 로 볼 수 있는 브랜드만 온다.
-                    const { data, error } = await this.supabase.from('channel_orders')
+                    const { data, error } = await this._tmo(this.supabase.from('channel_orders')
                         .select('id,order_date,op_status,mem:raw->>member_id,lid:raw->>loginId,pm:raw->payment_method_name,addr:raw->receivers->0->>address1')
-                        .in('mall_key', mallKeys).order('id').range(from, from + 999);
+                        .in('mall_key', mallKeys).order('id').range(from, from + 999));
                     if (error) throw error;
                     (data || []).forEach(r => { if (r.op_status !== 'cancel' && r.op_status !== 'return') out.push(r); });
                     if (!data || data.length < 1000) break;
@@ -6665,8 +6832,8 @@ class BhasApp {
                 const c24 = malls.filter(m => (m.channel || 'cafe24') === 'cafe24' && m.active !== false).map(m => m.mall_key);
                 members = { rows: [], malls: c24 };
                 if (c24.length) {
-                    const { data: mc, error: me } = await this.supabase.from('cafe24_member_counts').select('mall_key,snap_date,total')
-                        .in('mall_key', c24).gte('snap_date', new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10)).order('snap_date');
+                    const { data: mc, error: me } = await this._tmo(this.supabase.from('cafe24_member_counts').select('mall_key,snap_date,total')
+                        .in('mall_key', c24).gte('snap_date', new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10)).order('snap_date'));
                     // 표가 아직 없으면(085 적용 전) 연결 전 안내, 그 밖의 오류는 오류로 보인다.
                     if (me) members = /42P01|PGRST205/.test(String(me.code || '')) ? members : { error: String(me.message || me) };
                     else members.rows = mc || [];
@@ -6804,14 +6971,14 @@ class BhasApp {
         const repeatCard = bf ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.3rem">
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
                 <div style="font-size:0.9rem;font-weight:700;margin-bottom:0.6rem"><i class="ph ph-repeat" style="color:#6366f1"></i> 재구매율 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">${range.label} · 전화번호 기준</span></div>
-                ${!rep ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : `
+                ${!rep ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : (this._anaFailHTML('repeat') || '데이터 없음')}</div>` : `
                 <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:0.7rem"><span style="font-size:2rem;font-weight:900;color:#6366f1;line-height:1">${rep.rate ?? 0}%</span><span style="font-size:0.78rem;color:var(--text-muted)">고객 ${(rep.customers || 0).toLocaleString()}명 중 ${(rep.repeat_customers || 0).toLocaleString()}명 재구매</span></div>
                 <div style="display:flex;gap:14px;font-size:0.76rem;color:var(--text-muted);margin-bottom:0.8rem"><span>평균 <b style="color:var(--text-main)">${rep.avg_orders ?? 0}회</b></span><span>평균 누적구매 <b style="color:var(--text-main)">${won(rep.avg_spend || 0)}원</b></span><span>최다 <b style="color:var(--text-main)">${rep.max_orders ?? 0}회</b></span></div>
                 ${this._repeatDistHTML(rep)}`}
             </div>
             <div class="glass" style="padding:1.2rem 1.3rem;border-radius:18px">
                 <div onclick="app.openCust('vip','현재 누적 구매액 순')" style="font-size:0.9rem;font-weight:700;margin-bottom:0.7rem;cursor:pointer"><i class="ph ph-crown-simple" style="color:#6366f1"></i> VIP 고객 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600">현재 누적 TOP · ${range.from ? '기간 시작일 대비' : '비교 시작일 없음'}</span> <i class="ph ph-caret-right" style="font-size:0.7rem;color:var(--text-muted)"></i></div>
-                ${!vip.length ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : '데이터 없음'}</div>` : vip.slice(0, 10).map((t, i) => { const last = t.last ? new Date(t.last).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '—'; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"><b style="color:${i < 3 ? '#4338ca' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vipMoveHTML(t)} ${this._vesc(t.name || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.orders || 0}회</span></span><span style="text-align:right;white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${won(t.spend || 0)}원</b><div style="font-size:0.66rem;color:var(--text-muted)">마지막 ${last}</div></span></div>`; }).join('')}
+                ${!vip.length ? `<div style="color:var(--text-muted);font-size:0.84rem;padding:0.8rem 0">${repLoading ? '불러오는 중…' : (this._anaFailHTML('repeat') || '데이터 없음')}</div>` : vip.slice(0, 10).map((t, i) => { const last = t.last ? new Date(t.last).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '—'; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:${i ? '1px solid var(--card-border)' : '0'};font-size:0.82rem"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"><b style="color:${i < 3 ? '#4338ca' : 'var(--text-muted)'};margin-right:6px">${i + 1}</b>${this._vipMoveHTML(t)} ${this._vesc(t.name || '-')} <span style="color:var(--text-muted);font-size:0.72rem">${t.orders || 0}회</span></span><span style="text-align:right;white-space:nowrap;flex-shrink:0"><b style="font-variant-numeric:tabular-nums">${won(t.spend || 0)}원</b><div style="font-size:0.66rem;color:var(--text-muted)">마지막 ${last}</div></span></div>`; }).join('')}
             </div>
             ${this._goneCardHTML(rep)}
         </div>` : '';
@@ -7121,7 +7288,9 @@ class BhasApp {
         const defaultRule = { test_daily_budget: 10000, min_days: 2, min_spend: 10000, up_max: 1000, stop_over: 1600, early_mult: 2 };
         const rulesBy = Object.fromEntries(allBrands.map(b => [b.id,
             { ...defaultRule, ...((r.rules || []).find(x => String(x.brand_id) === String(b.id)) || {}) }]));
-        const groups = r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: allBrands, period: 'three', now: Date.now() }) : [];
+        //  세트명 접두사는 판정선 행(ad_report_rules.ad_prefixes, 115)에서 — 브랜드 이름은 adPanel 이 늘 같이 본다
+        const panelBrands = allBrands.map(b => ({ ...b, ad_prefixes: rulesBy[b.id]?.ad_prefixes || [] }));
+        const groups = r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: panelBrands, period: 'three', now: Date.now() }) : [];
         const posts = filterCards(this._arCache, { brand: this.arBrand || 'all', period: this.arPeriod || 'active', now: Date.now() });
         return { groups, posts, error: !r.daily, allBrands, report: reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
             activeAds: links.filter(l => l.effective_status === 'ACTIVE').length, unlinked: links.filter(l => !l.media_id),
@@ -8717,15 +8886,14 @@ class BhasApp {
     toggleMacSideDrawer() { this.sideDrawer = !this.sideDrawer; this.requestRender(); }
     closeMacSideDrawer() { if (this.sideDrawer) { this.sideDrawer = false; this.requestRender(); } }
     toggleMacSideApp(view) {
-        const front = (this.wins || []).filter(w => !w.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0] || null;
-        const active = this._groupOf(front?.view)?.head === view || front?.view === view;
-        const open = this.sideAppOpen == null ? active : this.sideAppOpen === view;
-        this.sideAppOpen = open ? '__none' : view;
+        // 현재 열린 창과 무관하게 첫 클릭은 항상 펼친다. 같은 대분류를 다시 누를 때만 접는다.
+        this.sideAppOpen = this.sideAppOpen === view ? '__none' : view;
         this.requestRender();
     }
     sideOpen(view, mode = '') {
         this.sideDrawer = false;
-        this.sideAppOpen = null;
+        // 중분류를 고른 뒤 플라이아웃은 닫는다. 열린 창의 메뉴는 창 왼쪽에서 계속 보인다.
+        this.sideAppOpen = '__none';
         if (view === 'sns' && mode) this.setSnsMode(mode);
         if (view === 'home' && mode) this.homeMode = mode;
         this.macOpen(view);
@@ -8733,9 +8901,18 @@ class BhasApp {
     }
     _renderMacSide() {
         const esc = s => this._vesc(s), groups = this.MAC_SIDE_GROUPS || [];
+        const collab = groups.find(g => g.id === 'collab');
+        // 전역에는 대분류 여섯 개만 상시 노출. 중분류는 대분류를 눌렀을 때만 뜨는 플라이아웃이다.
+        const apps = [
+            ...((groups.find(g => g.id === 'work') || {}).apps || []),
+            { label: '협업', icon: 'ph-users-three', view: 'collab', items: collab?.items || [] },
+            ...((groups.find(g => g.id === 'other') || {}).apps || []),
+        ];
+        const collabViews = new Set((collab?.items || []).map(x => x[0]));
         const front = (this.wins || []).filter(w => !w.min).sort((a, b) => (b.z || 0) - (a.z || 0))[0] || null;
         const activeView = front?.view || '', activeGroup = this._groupOf(activeView)?.head || '';
         const desktopHome = !front;
+        const activeArea = desktopHome ? 'home' : (collabViews.has(activeView) ? 'collab' : (activeGroup || activeView));
         const activeMode = activeView === 'sns' ? ({ ads: 'active_ads', posts: 'followers' }[this.snsMode] || this.snsMode || 'active_ads') : '';
         const active = (view, mode = '') => {
             if (view === 'sns') return activeView === 'sns' && (!mode || activeMode === mode);
@@ -8750,17 +8927,11 @@ class BhasApp {
         };
         const app = a => {
             const children = (a.items || []).filter(x => this._sideOk(x[0])); if (!children.length) return '';
-            const appOn = activeGroup === a.view || activeView === a.view || (a.view === 'home' && desktopHome);
-            const expanded = this.sideAppOpen == null ? appOn : this.sideAppOpen === a.view;
-            return `<div class="mac-side-appwrap${appOn ? ' on' : ''}${expanded ? ' expanded' : ''}"><button class="mac-side-app" onclick="app.toggleMacSideApp('${esc(a.view)}')" title="${esc(a.label)} 펼치기/접기"><i class="ph ${a.icon}"></i><span>${esc(a.label)}</span><i class="ph ph-caret-${expanded ? 'up' : 'down'} mac-side-app-caret"></i></button><div class="mac-side-sub">${children.map(item).join('')}</div></div>`;
+            const appOn = activeArea === a.view;
+            const expanded = this.sideAppOpen === a.view;
+            return `<div class="mac-side-appwrap${appOn ? ' on' : ''}${expanded ? ' expanded' : ''}" data-area="${esc(a.view)}"><button class="mac-side-app" onclick="app.toggleMacSideApp('${esc(a.view)}')" title="${esc(a.label)} 중분류 ${expanded ? '접기' : '펼치기'}" aria-expanded="${expanded}"><i class="ph ${a.icon}"></i><span>${esc(a.label)}</span><i class="ph ph-caret-${expanded ? 'up' : 'right'} mac-side-app-caret"></i></button><div class="mac-side-sub" aria-label="${esc(a.label)} 중분류">${children.map(item).join('')}</div></div>`;
         };
-        const group = g => {
-            const open = (this.sideGroups || {})[g.id] !== false;
-            const content = g.apps ? g.apps.map(app).join('') : (g.items || []).map(item).join('');
-            if (!content) return '';
-            return `<section class="mac-side-group${open ? '' : ' shut'}" data-group="${esc(g.id)}"><button class="mac-side-group-title" onclick="app.toggleMacSideGroup('${esc(g.id)}')" aria-expanded="${open}"><span>${esc(g.label)}</span><i class="ph ph-caret-${open ? 'up' : 'down'}"></i></button><div class="mac-side-group-body">${content}</div></section>`;
-        };
-        return `<button class="mac-side-backdrop" aria-label="사이드바 닫기" onclick="app.closeMacSideDrawer()"></button><aside class="global-side" aria-label="전체 사이드바"><div class="mac-side-head"><b>2179</b><button class="mac-side-collapse" onclick="app.toggleMacSide()" title="${this.sideCollapsed ? '사이드바 펼치기' : '사이드바 접기'}"><i class="ph ph-caret-${this.sideCollapsed ? 'right' : 'left'}"></i></button><button class="mac-side-mobile-close" onclick="app.closeMacSideDrawer()" title="사이드바 닫기"><i class="ph ph-x"></i></button></div><nav>${groups.map(group).join('')}</nav></aside>`;
+        return `<button class="mac-side-backdrop" aria-label="사이드바 닫기" onclick="app.closeMacSideDrawer()"></button><aside class="global-side global-side-primary" aria-label="전체 사이드바"><div class="mac-side-head"><b>2179</b><button class="mac-side-collapse" onclick="app.toggleMacSide()" title="${this.sideCollapsed ? '사이드바 펼치기' : '사이드바 접기'}"><i class="ph ph-caret-${this.sideCollapsed ? 'right' : 'left'}"></i></button><button class="mac-side-mobile-close" onclick="app.closeMacSideDrawer()" title="사이드바 닫기"><i class="ph ph-x"></i></button></div><nav>${apps.map(app).join('')}</nav></aside>`;
     }
     MAC_DOCK = [
         { id: '__menu', label: '전체 메뉴', launcher: true, icon: 'apps' },
@@ -8852,7 +9023,7 @@ class BhasApp {
         this.wins.push({
             id: 'w' + Date.now() + n, view,
             x: side + 8, y: Math.round((vh - h) / 2) - 30 + (n % 5) * 22,
-            w, h, min: false, max: fixed, snap: null, z: ++this._macZ,
+            w, h, min: false, max: fixed, snap: null, z: this._nextZ(),
         });
         this.requestRender();
     }
@@ -8867,9 +9038,16 @@ class BhasApp {
         const el = document.getElementById(id);
         const top = Math.max(...(this.wins || []).filter(x => !x.min).map(x => x.z || 0));
         if (el && w.z === top) return;        // 이미 맨 앞이면 그대로 — 쓸데없는 재렌더가 클릭을 삼킨다
-        w.z = ++this._macZ;
+        w.z = this._nextZ();
         if (el) { el.style.zIndex = w.z; return; }   // 순서만 바꾸면 되니 다시 그리지 않는다
         this.requestRender();
+    }
+    //  창 z 카운터를 실제 창들의 최대 z 와 맞춘 뒤 하나 올린다.
+    //  미리보기·복원으로 z 가 카운터보다 큰 창이 있으면, 새로 연 창이 그 뒤에 깔리던 문제(전체점검-1117).
+    _nextZ() {
+        const top = Math.max(10, Number(this._macZ) || 0, ...(this.wins || []).map(x => Number(x.z) || 0));
+        this._macZ = top + 1;
+        return this._macZ;
     }
     macClose(id, ev) { if (ev) ev.stopPropagation(); const cw = (this.wins || []).find(w => w.id === id); if (cw) this.track?.(cw.view, 'close'); this.wins = (this.wins || []).filter(w => w.id !== id); this.requestRender(); }
     macMin(id, ev) { if (ev) ev.stopPropagation(); const w = this.wins.find(x => x.id === id); if (w) { w.min = true; this.requestRender(); } }
@@ -9337,7 +9515,9 @@ class BhasApp {
         this.noteSeaRows = { ...(this.noteSeaRows || {}), [seaId]: !wasOpen };
         this.requestRender();
     }
-    selectNote(id) { this.saveNote(); this._nbDrop(); this.noteSel = id; this.notePreview = false; this.requestRender(); }
+    selectNote(id) { this.saveNote(); this._nbDrop(); this.noteSel = id; this.notePreview = false; this.noteListSheet = false; this.requestRender(); }
+    //  좁은 화면(목록 칸 숨음): 본문 도구줄 '‹ 목록' → 메모 목록, 목록의 '‹ 폴더' → 폴더·본문으로. 메모를 고르면 닫힌다(팀장 지시 11-18).
+    toggleNoteList(on) { this.noteListSheet = !!on; this.requestRender(); }
     togglePrivFolders() { this.notePrivOpen = this.notePrivOpen === false; this.requestRender(); }
     toggleNoteSeasons() { this.noteSeaOpen = !this.noteSeaOpen; this.requestRender(); }
     setNoteSea(v) { this.noteMulti = new Set(); this.noteSea = v; this.noteSel = null; this.requestRender(); }
@@ -9350,7 +9530,7 @@ class BhasApp {
         if (!b) return all;
         return all.filter(p => !p.brand_id || String(p.brand_id) === String(b.id));
     }
-    setNoteFolder(f) { this.saveNote(); this._nbDrop(); this.noteMulti = new Set(); this.noteFolder = f; this.noteSel = null; this.requestRender(); }
+    setNoteFolder(f) { this.saveNote(); this._nbDrop(); this.noteMulti = new Set(); this.noteFolder = f; this.noteSel = null; this.noteListSheet = true; this.requestRender(); }
     async deleteNote() {
         const n = this._curNote(); if (!n) return;
         if (!await this.showConfirm(`"${n.title || '제목 없음'}" 메모를 삭제할까요?`, '삭제')) return;
@@ -10212,7 +10392,7 @@ class BhasApp {
             }
             const img = line.match(/^!\[[^\]]*\]\((.+?)\)\s*$/);
             if (img) return `<span class="nb-ph">
-                <img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
+                <img class="nb-img" src="${esc(this._safeFileUrl(img[1]))}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
                 <button class="nb-ph-x" title="사진 지우기" onclick="event.stopPropagation();app.removeNotePhoto(${i})"><i class="ph ph-x"></i></button>
             </span>`;
             if (!line.trim()) return '<div class="nb-sp"></div>';
@@ -10400,7 +10580,7 @@ class BhasApp {
             if (embed) return `<div class="nb-row nb-embed">${this._seasonEmbedHTML(embed[1], embed[2], n)}</div>`;
             const img = line.match(/^!\[[^\]]*\]\((.+?)\)\s*$/);
             if (img) return `<div class="nb-row"><span class="nb-ph">
-                <img class="nb-img" src="${esc(img[1])}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
+                <img class="nb-img" src="${esc(this._safeFileUrl(img[1]))}" alt="" onclick="app.showFileModal('${esc(img[1])}','사진')">
                 <button class="nb-ph-x" title="사진 지우기" onclick="event.stopPropagation();app.removeNotePhoto(${i})"><i class="ph ph-x"></i></button>
             </span></div>`;
             const m = line.match(this.NOTE_TODO_RE);
@@ -11269,21 +11449,12 @@ class BhasApp {
         const brandNames = (mockData.brands || []).filter(b => b.status !== 'closed').map(b => b.name);
         const otherFolders = [...new Set([...brandNames, '공용',
             ...all.filter(n => n.scope === 'shared').map(n => n.folder || '공용')])];
-        //  브랜드 폴더는 가운데 태그 줄로(3단 규칙 1 — 브랜드 거르기는 왼쪽에 두지 않는다). 끌어놓기·우클릭은 그대로.
-        const brandSet = new Set(brandNames);
-        const brandTags = brandNames.length ? `<div class="it-pills nt-btags">${brandNames.map(f => {
-            const br = (mockData.brands || []).find(b => b.name === f), key = 'f:' + f;
-            return `<button class="it-pill${cur === key ? ' on' : ''}" onclick="app.setNoteFolder('${key}')"
-                ondragover="app.nbDragOver(event,'${key}')" ondragleave="app.nbDragOut(event)" ondrop="app.nbDrop(event,'${key}')"
-                oncontextmenu="app.folderMenu(event,'${key}')"><i class="ph ph-tag" style="color:${br?.brand_color || '#0a84ff'}"></i>${esc(f)}<em>${cnt(n => (n.folder || '공용') === f && n.scope === 'shared')}</em></button>`;
-        }).join('')}</div>` : '';
         //  개인 메모도 폴더로 나눈다 — '개인' 은 기본 칸이라 목록에서 뺀다
         const privFolders = [...new Set(all.filter(n => n.scope === 'private' && n.owner === me)
             .map(n => n.folder || '개인'))].filter(f => f !== '개인');
         return `
-        <div class="nt">
-            <aside class="nt-side c3-menu">
-                ${this._collabMenu('notes')}
+        <div class="nt${this.noteListSheet ? ' list-on' : ''}">
+            <aside class="nt-side">
                 <div class="nt-shead tog${this.notePrivOpen !== false ? ' on' : ''}" onclick="app.togglePrivFolders()">
                     <i class="ph ph-caret-right"></i>개인
                     <button class="nt-add" title="새 개인 폴더" onclick="event.stopPropagation();app.addPrivateFolder()">＋</button></div>
@@ -11293,7 +11464,7 @@ class BhasApp {
                 <div class="nt-shead">워크스페이스
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
                 ${fold('all', 'ph-tray', '모든 메모', all.length, '#8e8e93')}
-                ${otherFolders.filter(f => !brandSet.has(f)).map(f => {
+                ${otherFolders.map(f => {
                     const fx = (this.noteFolders || []).find(x => x.name === f);
                     const locked = fx && fx.access === 'members';
                     const br = (mockData.brands || []).find(b => b.name === f);
@@ -11308,6 +11479,7 @@ class BhasApp {
             </aside>
             ${this._noteProductsHTML()}
             <section class="nt-list">
+                <button class="nt-lclose" onclick="app.toggleNoteList(false)"><i class="ph ph-caret-left"></i> 폴더</button>
                 <div class="nt-lbar">
                     <div><b>${esc(cur === 'private' ? '개인 메모' : (cur.startsWith('pf:') ? cur.slice(3) : (cur === 'all' ? '모든 메모' : (cur.startsWith('p:') ? (projects.find(x => 'p:' + x.id === cur)?.name || '메모') : cur.slice(2)))))}</b>
                         <span>${list.length}개의 메모</span></div>
@@ -11319,7 +11491,6 @@ class BhasApp {
                     ${cur === 'f:' + MEETING_FOLDER && !this._meetingOf(this._meetWeek()) ? `<button class="mbtn pri nt-meet-new" onclick="app.createWeeklyMeeting()">이번 주 회의록 만들기</button>` : ''}
                     <button class="nt-new" onclick="app.addNote()" title="새 메모"><i class="ph ph-note-pencil"></i></button>
                 </div>
-                ${brandTags}
                 ${pick.size > 1 ? `<div class="nt-bulk"><b>${pick.size}개 고름</b>
                     <button onclick="app.bulkMoveNotes()"><i class="ph ph-folder-simple"></i>폴더 옮기기</button>
                     <button class="danger" onclick="app.bulkDeleteNotes()"><i class="ph ph-trash"></i>삭제</button>
@@ -11329,6 +11500,7 @@ class BhasApp {
             <section class="nt-doc">
                 ${sel ? `
                 <div class="nt-tools">
+                    <button class="nt-loc" onclick="app.toggleNoteList(true)" title="메모 목록"><i class="ph ph-caret-left"></i> 목록</button>
                     <button onclick="app.noteInsert('todo')" title="할 일 [ ]"><i class="ph ph-check-square"></i></button>
                     <button onclick="app.noteInsert('bullet')" title="글머리"><i class="ph ph-list-bullets"></i></button>
                     <button onclick="app.noteInsert('at')" title="사람·제품·시즌·거래처 @"><i class="ph ph-at"></i></button>
@@ -11359,11 +11531,7 @@ class BhasApp {
                               onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`
                         : this._noteLiveHTML(sel)}
                     ${this._noteItemsHTML(sel)}
-                </div>` : `<div class="nt-sumw">${this._c3Sum('메모 요약', `전체 ${all.length}개`,
-                    this._c3Sec('폴더별')
-                    + this._c3Li('개인 메모', cnt(n => n.scope === 'private' && n.owner === me), "app.setNoteFolder('private')")
-                    + otherFolders.map(f => this._c3Li(f, cnt(n => (n.folder || '공용') === f && n.scope === 'shared'), `app.setNoteFolder('f:${f.replace(/'/g, '')}')`)).join('')
-                    + `<div class="dt-a"><button class="mbtn pri" onclick="app.addNote()">이 폴더에 새 메모</button></div>`)}</div>`}
+                </div>` : `<button class="nt-loc solo" onclick="app.toggleNoteList(true)"><i class="ph ph-caret-left"></i> 목록</button><div class="nt-none big">메모를 선택하세요</div>`}
             </section>
         </div>`;
     }
@@ -11422,7 +11590,7 @@ class BhasApp {
                     <label class="ip2-ck"><input type="checkbox"${it.checked ? ' checked' : ''}
                         onchange="app.setItem('${it.id}','checked',this.checked,1)"> 확인</label>`)}
             </div>
-            ${photos.length ? `<div class="ip2-ph">${photos.map(u => `<img src="${esc(u)}" alt="">`).join('')}</div>` : ''}
+            ${photos.length ? `<div class="ip2-ph">${photos.map(u => `<img src="${esc(this._safeFileUrl(u))}" alt="">`).join('')}</div>` : ''}
             <div class="ip2-note">
                 <div class="ip2-nh">메모 <span>목록에는 첫 줄이 보입니다 · [ ] 로 적으면 할 일 · 자동 저장</span></div>
                 <textarea id="item-page-note" class="ip2-ta" placeholder="원단·부자재·수정사항·전달내용을 자유롭게 적으세요"
@@ -11489,7 +11657,7 @@ class BhasApp {
                 <td class="it-c">${chk(it, 'trims')}</td><td class="it-c">${chk(it, 'checked')}</td>
                 <td class="it-mu">${mu(vn)}</td><td class="it-mu">${mu(se)}</td>
                 <td class="it-lk">
-                    ${compact ? `${photos.length ? `<button class="ni-ph" title="사진 ${photos.length}장" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><img src="${esc(photos[0])}" alt=""><em>${photos.length}</em></button>` : ''}<button class="it-ib" title="사진 올리기" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><i class="ph ph-camera"></i></button>` : ''}
+                    ${compact ? `${photos.length ? `<button class="ni-ph" title="사진 ${photos.length}장" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><img src="${esc(this._safeFileUrl(photos[0]))}" alt=""><em>${photos.length}</em></button>` : ''}<button class="it-ib" title="사진 올리기" onclick="event.stopPropagation();app.pickItemPhoto('${it.id}')"><i class="ph ph-camera"></i></button>` : ''}
                     ${tp ? `<button class="it-ib on" title="작업지시서: ${esc(tp.style_name || '')}" onclick="event.stopPropagation();app.openTechPack('${tp.id}')"><i class="ph ph-clipboard-text"></i></button>`
                          : `<button class="it-ib" title="작업지시서 만들기" onclick="event.stopPropagation();app.itemNewTechPack('${it.id}')"><i class="ph ph-clipboard-text"></i></button>`}
                     ${it.quote_id ? `<button class="it-ib on" title="견적 보기" onclick="event.stopPropagation();app.itemOpenQuote('${it.id}')"><i class="ph ph-receipt"></i></button>`
@@ -11505,7 +11673,7 @@ class BhasApp {
                 ${rows.length && rows.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''} onchange="app.pickItemTableRows(this,this.checked)"></th>
                 ${cols.map(([k, label, cls]) => `<th class="${cls || ''}${srt.k === k ? ' srt' : ''}${(this.itemColF || {})[k] ? ' flt' : ''}"
                     onclick="app.sortItems('${k}')" title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
-                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${(this.itemColF || {})[k] ? '-fill' : ''}"></i></button></th>`).join('')}<th>연동</th>
+                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph${(this.itemColF || {})[k] ? '-fill' : ''} ph-funnel"></i></button></th>`).join('')}<th>연동</th>
             </tr></thead><tbody>${rows.length ? rows.map(row).join('')
                 : `<tr><td colspan="12" class="it-none">${filter.empty || '제품이 없습니다'}</td></tr>`}
                 ${more > 0 ? `<tr><td colspan="12" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}
@@ -11642,8 +11810,10 @@ class BhasApp {
             this.track?.('reminders', done ? 'todo_done' : 'todo_undo');
         } catch (e) { r.done = !done; this.showToast('변경 실패: ' + (e.message || e)); this.requestRender(); }
     }
-    setRemList(l) { this.remList2 = l; this.remPick = null; this.remMobileDetail = false; this.requestRender(); }
-    setRemGroup(g) { this.remGroup = g; this.remList2 = 'all'; this.remPick = null; this.remMobileDetail = false; this.requestRender(); }
+    setRemList(l) { this.remList2 = l; this.remPick = null; this.remMobileDetail = false; this.remSideSheet = false; this.requestRender(); }
+    setRemGroup(g) { this.remGroup = g; this.remList2 = 'all'; this.remPick = null; this.remMobileDetail = false; this.remSideSheet = false; this.requestRender(); }
+    //  좁은 화면(왼쪽 칸 숨음): '‹ 목록' → 타일·목록 칸을 연다(자료실 '‹ 위치'와 같은 방식). 고르면 닫힌다.
+    toggleRemSide(on) { this.remSideSheet = !!on; this.requestRender(); }
     selectRemItem(src, id) { this.remPick = `${src}:${id}`; this.remMobileDetail = true; this.requestRender(); }
     closeRemDetail() { this.remMobileDetail = false; this.requestRender(); }
     saveRemDetailTitle(el, src, id) {
@@ -11652,30 +11822,9 @@ class BhasApp {
         if (title !== old) this.setRemTitle(src, id, title);
         if (el) el.dataset.original = title;
     }
-    //  협업 창 왼쪽 = 협업 메뉴(전역 사이드바 '협업' 묶음과 같은 목록, 지금 창 진하게). 거르기는 가운데로 보낸다(3단 규칙 1).
-    _collabMenu(view, extra = '') {
-        const win = this._renderingWin || '';
-        const g = (this.MAC_SIDE_GROUPS || []).find(x => x.id === 'collab');
-        return `<div class="m3-h">협업 메뉴</div>${(g?.items || []).map(([k, t, ic]) => `<button class="sales-section-nav${k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${k}')">
-            <i class="ph ${ic}"></i><span>${this._vesc(t)}</span></button>`).join('')}${extra}`;
-    }
-    //  생산 메뉴(연락처 화면을 생산처로 쓸 때 왼쪽) — 판매·생산 묶음 메뉴와 같은 목록
-    _prodMenu(view) {
-        const win = this._renderingWin || '';
-        const g = this.APP_GROUPS.find(x => x.head === 'items');
-        return `<div class="m3-h">생산 메뉴</div>${g.tabs.filter(t => !t.hidden).map(t => `<button class="sales-section-nav${t.k === view ? ' on' : ''}" onclick="app.switchAppTab('${win}','${t.k}')">
-            <i class="ph ${this.APP_ICONS[t.k] || 'ph-dot'}"></i><span>${this._vesc(t.t)}</span></button>`).join('')}`;
-    }
-    //  협업 창 오른쪽 요약 · 접기 — 다섯 창이 같은 모양을 쓴다(3단 규칙 2·3)
-    _c3Sum(title, sub, body) { const esc = s => this._vesc(s); return `<div class="c3-sum"><div class="c3-h"><b>${esc(title)}</b>${sub ? `<em>${esc(sub)}</em>` : ''}</div>${body}</div>`; }
-    _c3Sec(t) { return `<div class="c3-sec">${this._vesc(t)}</div>`; }
-    _c3Li(label, val, click = '', cls = '') {
-        const esc = s => this._vesc(s);
-        return `<div class="c3-li${click ? ' click' : ''}${cls ? ' ' + cls : ''}"${click ? ` role="button" tabindex="0" onclick="${esc(click)}"` : ''}><span>${esc(label)}</span><b>${esc(String(val ?? ''))}</b></div>`;
-    }
+    //  접기 버튼 — 거래중단·완료 묶음(3단 규칙 2)
     _c3Fold(click, open, label) { return `<button class="c3-fold" onclick="${click}"><i class="ph ph-caret-${open ? 'down' : 'right'}"></i>${this._vesc(label)}</button>`; }
     toggleContactDone() { this.contactShowDone = !this.contactShowDone; this.requestRender(); }
-    toggleRemDone() { this.remShowDone = !this.remShowDone; this.requestRender(); }
     // ── 할 일 (맥 '미리알림' 앱 그대로) ────────────────────────
     //  왼쪽에 색 타일 6개 + 나의 목록, 오른쪽에 목록별 색 제목 + 동그란 체크.
     //  우리 '할일(todos)'도 한 목록으로 같이 얹어서 담당자까지 보이게 했다.
@@ -11741,18 +11890,14 @@ class BhasApp {
             { k: 'nodate', label: '날짜 없음', icon: 'ph-calendar-x', cls: 'pink' },
             { k: 'mine',  label: '내 할 일', icon: 'ph-user',        cls: 'pink' },
             { k: 'sent',  label: '요청한 것', icon: 'ph-paper-plane-tilt', cls: 'teal' },
+            { k: 'done',  label: '완료됨', icon: 'ph-check',         cls: 'gray' },
         ];
         const listNames = [...new Set(all.map(x => x.list))];
         const LCOL = { '시즌': '#0a84ff', '제품': '#0a84ff', '거래처': '#ff9f0a', '기본': '#ff9f0a', '메모': '#30d158' };
         const colorOf = (l, i) => LCOL[l] || ['#ff9f0a', '#0a84ff', '#30d158', '#bf5af2', '#ff453a'][i % 5];
-        //  옛 'done' 타일로 와도 전체로 — 끝난 것은 아래 '완료 N개' 접기로 본다(3단 규칙 2)
-        const q = (this.remQ || '').trim().toLowerCase();
-        const hit = x => !q || [x.title, x.memo, x.project, x.from, x.atName].some(v => String(v || '').toLowerCase().includes(q));
-        const inScope = cur.startsWith('l:') ? (x => x.list === cur.slice(2)) : (cur === 'all' || cur === 'done' || !F[cur] ? (() => true) : (x => F[cur]({ ...x, done: false })));
-        const doneRows = all.filter(x => x.done && inScope(x) && hit(x));
-        let shown = cur.startsWith('l:') ? all.filter(x => x.list === cur.slice(2) && !x.done && hit(x))
-                                         : all.filter(x => (F[cur === 'done' ? 'all' : cur] || F.all)(x) && hit(x));
-        if (this.remShowDone) shown = [...shown, ...doneRows];
+        let shown = cur.startsWith('l:') ? all.filter(x => x.list === cur.slice(2) && !x.done)
+                                         : all.filter(F[cur] || F.all);
+        const title = cur.startsWith('l:') ? cur.slice(2) : (TILES.find(t => t.k === cur) || {}).label || '전체';
         const doneCnt = all.filter(x => x.done).length;
         // 목록별로 묶어 색 제목을 얹는다
         const groups = {};
@@ -11781,15 +11926,6 @@ class BhasApp {
                     <button class="rm-x" title="지우기" onclick="event.stopPropagation();app.delRemItem('${x.src}','${x.id}')">✕</button>
                 </div>`).join('')}`;
         }).join('') || `<div class="rm-none">항목 없음</div>`;
-        const doneFold = doneRows.length ? `${this._c3Fold('app.toggleRemDone()', this.remShowDone, `완료 ${doneRows.length}개`)}` : '';
-        //  안 골랐을 때 오른쪽 = 할 일 요약(3단 규칙 3)
-        const urgent = all.filter(x => !x.done && x.due && x.due <= today).sort((a, b) => String(a.due).localeCompare(String(b.due))).slice(0, 6);
-        const L = (label, val, click, cls) => this._c3Li(label, val, click, cls);
-        const cnt = k => all.filter(F[k]).length;
-        const summary = this._c3Sum('할 일 요약', `안 끝난 것 ${open.length} · 완료 ${doneCnt}`, `
-                ${this._c3Sec('상태별')}${L('기한 지남', cnt('late'), "app.setRemList('late')", cnt('late') ? 'bad' : '')}${L('오늘까지', cnt('today'), "app.setRemList('today')")}${L('예정', cnt('plan'), "app.setRemList('plan')")}${L('날짜 없음', cnt('nodate'), "app.setRemList('nodate')")}
-                ${this._c3Sec('사람')}${L('내 할 일', cnt('mine'), "app.setRemList('mine')")}${L('요청한 것', cnt('sent'), "app.setRemList('sent')")}
-                ${this._c3Sec(`급한 것 ${urgent.length}`)}${urgent.map(x => L(x.title, this.formatDateToUI(x.due), `app.selectRemItem('${x.src}','${esc(String(x.id))}')`, x.due < today ? 'bad' : '')).join('') || L('급한 할 일 없음', '', '', 'mu')}`);
 
         const detail = pick ? `<div class="rm-detail">
                 <div class="rm-detail-type"><i class="ph ph-check-circle"></i>${esc(pick.list || '할 일')}</div>
@@ -11809,23 +11945,20 @@ class BhasApp {
                     <button class="rm-done" onclick="app.toggleRemItem('${pick.src}','${esc(String(pick.id))}')"><i class="ph ${pick.done ? 'ph-arrow-counter-clockwise' : 'ph-check'}"></i>${pick.done ? '완료 취소' : '완료'}</button>
                     <button class="rm-delete" onclick="app.delRemItem('${pick.src}','${esc(String(pick.id))}')"><i class="ph ph-trash"></i>지우기</button>
                 </div>
-            </div>` : summary + `<div class="m3-none">할 일을 선택하세요</div>`;
+            </div>` : `<div class="m3-none mid">할 일을 선택하세요</div>`;
 
-        const curKey = cur === 'done' ? 'all' : cur;
         return `
-        <div class="rm${this.remMobileDetail ? ' detail' : ''}">
-            <aside class="rm-side c3-menu">${this._collabMenu('reminders')}</aside>
-            <section class="rm-main">
-                <div class="rm-top">
-                    <button class="rm-add" onclick="app.focusNewReminder()" title="새 할 일"><i class="ph ph-plus"></i></button>
-                    <div class="rm-search"><i class="ph ph-magnifying-glass"></i><input placeholder="검색"
-                        value="${esc(this.remQ || '')}" oninput="app.remQ=this.value;app.requestRender()"></div>
+        <div class="rm${this.remMobileDetail ? ' detail' : ''}${this.remSideSheet ? ' side-on' : ''}">
+            <aside class="rm-side">
+                <button class="rm-sclose" onclick="app.toggleRemSide(false)"><i class="ph ph-x"></i> 닫기</button>
+                <div class="rm-tiles">
+                    ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
+                        title="${({today:'기한이 오늘이거나 이미 지난 것',plan:'기한이 앞으로 남은 것',all:'안 끝난 것 전부',late:'기한이 지난 것',nodate:'기한을 안 적은 것',mine:'담당이 나로 되어 있는 것',sent:'내가 만들어 남에게 넘긴 것',done:'끝낸 것'})[t.k] || ''}">
+                        <span class="rm-ti"><i class="ph ${t.icon}"></i></span>
+                        <b>${all.filter(F[t.k]).length}</b>
+                        <em>${t.label}</em>
+                    </button>`).join('')}
                 </div>
-                <div class="it-pills rm-pills">
-                    ${TILES.map(t => `<button class="it-pill${curKey === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
-                        title="${({today:'기한이 오늘이거나 이미 지난 것',plan:'기한이 앞으로 남은 것',all:'안 끝난 것 전부',late:'기한이 지난 것',nodate:'기한을 안 적은 것',mine:'담당이 나로 되어 있는 것',sent:'내가 만들어 남에게 넘긴 것'})[t.k] || ''}">${t.label}<em>${all.filter(F[t.k]).length}</em></button>`).join('')}
-                </div>
-                <div class="rm-lists">
                 <div class="rm-seg">
                     <button class="${(this.remGroup || 'list') === 'list' ? 'on' : ''}" onclick="app.setRemGroup('list')">목록별</button>
                     <button class="${this.remGroup === 'project' ? 'on' : ''}" onclick="app.setRemGroup('project')">시즌별</button>
@@ -11836,14 +11969,22 @@ class BhasApp {
                     <span class="rm-lic" style="background:${colorOf(l, i)}"><i class="ph ph-list-bullets"></i></span>
                     <span class="rm-ln">${esc(l)}</span>
                     <em>${all.filter(x => x.list === l && !x.done).length}</em></div>`).join('')}
+            </aside>
+            <section class="rm-main">
+                <div class="rm-top">
+                    <button class="rm-loc" onclick="app.toggleRemSide(true)" title="목록 — 오늘·예정·목록들"><i class="ph ph-caret-left"></i> 목록</button>
+                    <button class="rm-add" onclick="app.focusNewReminder()" title="새 할 일"><i class="ph ph-plus"></i></button>
+                    <div class="rm-search"><i class="ph ph-magnifying-glass"></i><input placeholder="검색"
+                        value="${esc(this.remQ || '')}" oninput="app.remQ=this.value;app.requestRender()"></div>
                 </div>
-                ${doneCnt ? `<div class="rm-sub"><a onclick="app.clearDoneReminders()">완료 ${doneCnt}개 지우기</a></div>` : ''}
+                <h1 class="rm-h1">${esc(title)}</h1>
+                <div class="rm-sub">${doneCnt}개 완료됨${doneCnt ? ` · <a onclick="app.clearDoneReminders()">지우기</a>` : ''}</div>
                 <div class="rm-new">
                     <button class="rm-ck ghost"></button>
                     <input id="rem-new" placeholder="새 할 일" onkeydown="if(event.key==='Enter')app.addReminder()">
                     <input id="rem-due" type="date">
                 </div>
-                <div class="rm-body">${sections}${doneFold}</div>
+                <div class="rm-body">${sections}</div>
             </section>
             <section class="rm-doc">
                 <div class="m3-tools rm-tools"><button class="rm-back" onclick="app.closeRemDetail()"><i class="ph ph-caret-left"></i> 목록</button><span class="sp"></span></div>
@@ -12354,7 +12495,32 @@ class BhasApp {
         } catch (e) { this.showToast('저장 실패: ' + (e.message || e)); }
     }
     setCSFilter(f) { this.track?.('cs', 'cs_filter'); this.csFilter = f; this.requestRender(); }
-    setDocCategory(c) { this.selectedDocCategory = c; this.docSel = null; this.docMobileDetail = false; this.requestRender(); }
+    setDocCategory(c, remember = true) {
+        const prev = this.selectedDocCategory || '전체';
+        if (remember && prev !== c) {
+            this.docBack = [...(this.docBack || []), prev].slice(-30);
+            this.docForward = [];
+        }
+        this.selectedDocCategory = c; this.docSel = null; this.docMobileDetail = false; this.docSideSheet = false; this.requestRender();
+    }
+    docNavigate(dir) {
+        const from = dir < 0 ? (this.docBack || []) : (this.docForward || []);
+        if (!from.length) return;
+        const next = from[from.length - 1], cur = this.selectedDocCategory || '전체';
+        if (dir < 0) { this.docBack = from.slice(0, -1); this.docForward = [...(this.docForward || []), cur].slice(-30); }
+        else { this.docForward = from.slice(0, -1); this.docBack = [...(this.docBack || []), cur].slice(-30); }
+        this.setDocCategory(next, false);
+    }
+    toggleDocRowFolder(name) {
+        this.docRowOpen = { ...(this.docRowOpen || {}), [name]: !(this.docRowOpen || {})[name] };
+        this.requestRender();
+    }
+    toggleDocSearch(on) {
+        this.docSearchOpen = !!on; this.requestRender();
+        if (on) setTimeout(() => document.querySelector('.fd-find input')?.focus(), 0);
+    }
+    //  좁은 화면(왼쪽 칸 숨음): 경로막대 '‹ 위치' → 즐겨찾기 목록을 연다(파인더 모바일 '둘러보기'처럼). 폴더를 고르면 닫힌다.
+    toggleDocSide(on) { this.docSideSheet = !!on; this.requestRender(); }
     //  새 분류 — 이름을 만들어 두고, 그 분류로 자료를 올리면 자리를 잡는다
     async addDocCategory() {
         const v = await this.showPrompt('새 분류 이름', '', '자료 분류 만들기');
@@ -12390,26 +12556,27 @@ class BhasApp {
     }
     openDocAt(idx) { this._openDoc((this._docVisible || [])[idx]); }
     openSelectedDoc() { this._openDoc((this._docVisible || []).find(d => String(d.id) === String(this.docSel))); }
-    downloadSelectedDoc() {
+    async downloadSelectedDoc() {
         const d = (this._docVisible || []).find(x => String(x.id) === String(this.docSel));
-        const url = this._safeFileUrl(d?.url); if (!url) { this.showToast('내려받을 수 있는 안전한 주소가 없습니다'); return; }
+        const url = await this._fileUrlNow(d?.url); if (!url) { this.showToast('내려받을 수 있는 안전한 주소가 없습니다'); return; }
         const a = document.createElement('a'); a.href = url; a.download = d?.name || ''; a.rel = 'noopener noreferrer';
         document.body.appendChild(a); a.click(); a.remove();
     }
     docMenuAt(ev, idx) {
         const d = (this._docVisible || [])[idx]; if (!d) return;
-        const url = this._safeFileUrl(d.url);
+        //  비공개 파일(ofs:)은 서명 URL 이 1시간 뒤 만료된다 — 복사 안내에 적는다
+        const ofs = this._isOfs(d.url), url = ofs || this._safeFileUrl(d.url);
         this.ctxMenu(ev, [
             { t: '열기', icon: 'ph-arrow-square-out', run: () => this._openDoc(d) },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameDoc(d.id, d.name) },
-            ...(url ? [{ t: '링크 복사', icon: 'ph-link', run: () => { navigator.clipboard?.writeText(url); this.showToast('링크를 복사했습니다'); } },
+            ...(url ? [{ t: '링크 복사', icon: 'ph-link', run: async () => { const u = await this._fileUrlNow(d.url); if (!u) { this.showToast('링크를 만들지 못했습니다'); return; } navigator.clipboard?.writeText(u); this.showToast(ofs ? '링크를 복사했습니다(1시간 뒤 만료)' : '링크를 복사했습니다'); } },
                 { sep: true }, { t: '내려받기', icon: 'ph-download-simple', run: () => { this.docSel = d.id; this.downloadSelectedDoc(); } }] : []),
         ]);
     }
     docMenu(ev, id, url, name) {
         const safe = this._safeFileUrl(url);
         this.ctxMenu(ev, [
-            { t: '열기', icon: 'ph-arrow-square-out', run: () => this.showFileModal(safe, name) },
+            { t: '열기', icon: 'ph-arrow-square-out', run: () => this.showFileModal(this._isOfs(url) ? url : safe, name) },
             { t: '이름 바꾸기', icon: 'ph-textbox', run: () => this.renameDoc(id, name) },
             { t: '링크 복사', icon: 'ph-link', run: () => { if (safe) navigator.clipboard?.writeText(safe); this.showToast(safe ? '링크를 복사했습니다' : '안전한 링크가 없습니다'); } },
             { sep: true },
@@ -12471,7 +12638,7 @@ class BhasApp {
                 <td class="bd">${esc(t.customer_name || '')}</td>
                 <td class="cs-brand"><span class="cs-brand-chip" title="${esc([brandName, t.purchase_from].filter(Boolean).join(' · '))}">${esc(brandLabel)}</span></td>
                 <td class="nw cs-order-no">${t.order_no ? `${esc(t.order_no)}${t.channel_order_id ? ' <i class="ph ph-link" title="주문 연결됨" style="color:#0a84ff"></i>' : ''}${this._csShipLine(t)}` : ''}</td>
-                <td>${esc(t.product_name || '')}${partLabel(t.items, t.items_total) ? ` <span class="cs-part">${esc(partLabel(t.items, t.items_total))}</span>` : ''}${t.exchange_product ? ` <span class="mu">→</span> ${esc(t.exchange_product)}` : ''}</td>
+                <td title="${esc([t.product_name, t.exchange_product && `교환: ${t.exchange_product}`].filter(Boolean).join(' · '))}">${esc(t.product_name || '')}${partLabel(t.items, t.items_total) ? ` <span class="cs-part">${esc(partLabel(t.items, t.items_total))}</span>` : ''}${t.exchange_product ? ` <span class="mu">→</span> ${esc(t.exchange_product)}` : ''}</td>
                 <td><select class="it-sel it-st" style="color:${sc};border-color:${sc}44;background:${sc}1a"
                         onclick="event.stopPropagation()" onchange="app.setCSStatus('${t.id}',this.value)">
                     ${stOf(t).map(x => `<option value="${esc(x)}"${t.status === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></td>
@@ -12491,7 +12658,7 @@ class BhasApp {
         if (shipIds.length) setTimeout(() => this._csShipLoad(shipIds), 0);
         const cnt = k => all.filter(t => t.kind === k).length;
         const suspectCnt = all.filter(t => t.date_suspect).length;
-        const pill = (k, label, n) => `<button class="it-pill${filter === k ? ' on' : ''}" onclick="app.setCSFilter('${k}')"
+        const pill = (k, label, n) => `<button class="it-pill${k === '날짜확인' ? '' : ' nav-dup'}${filter === k ? ' on' : ''}" onclick="app.setCSFilter('${k}')"
             ${k === '교환' ? 'style="--pc:#6366f1"' : (k === '반품' ? 'style="--pc:#ef4444"' : (k === '날짜확인' ? 'style="--pc:#f59e0b"' : ''))}>${esc(label)}<em>${n}</em></button>`;
 
         return `<div class="mp">
@@ -13157,7 +13324,16 @@ class BhasApp {
         if (!pg.loaded) return this._loadingSkeleton('주문');
         const filter = this.orderFilter || 'target';
         const counts = pg.counts || { target: 0, shipping: 0, done: 0, claim: 0, all: pg.total };
-        const rows = pg.rows;
+        //  표 규칙(S3·S5) — 공용 머리(정렬·깔때기). 브랜드와 채널·몰을 따로 둔다. 거르기는 지금 받은 쪽(페이지) 안에서.
+        const CHN = { cafe24: '카페24', eland: '이랜드몰', '29cm': '29CM', naver: '스마트스토어', musinsa: '무신사' };
+        const oBrand = o => this._mallBrand(o.mall_key)?.name || '';
+        const oChan = o => { const c = String(o.channel || this._mallChannel(o.mall_key) || ''); return CHN[c.toLowerCase()] || c; };
+        const oMall = o => { const l = this._mallLabel(o.mall_key), c = oChan(o); return c ? (l && l !== oBrand(o) && l !== c ? `${c} · ${l}` : c) : l; };
+        const rows = this._applyTbl('orders', pg.rows || [], (o, k) => ({
+            order_id: String(o.order_id || ''), brand: oBrand(o), mall: oMall(o),
+            order_date: String(o.order_date || ''), receiver: o.receiver_name || o.buyer_name || '',
+            product: this._orderItemsSummary(o), qty: this._orderQtySum(o), state: this._orderLabel(o), invoice: o.invoice_no ? '있음' : '없음',
+        })[k] ?? '', pg.rows || []);
 
         const ls = (this.inventory && this.inventory.lastSync) || null;
         const tab = (id, label, n) => `<button class="oms-tab ${filter === id ? 'on active' : ''}" data-f="${id}">${label} ${n}</button>`;
@@ -13169,14 +13345,15 @@ class BhasApp {
             const prodCell = multi
                 ? `<button class="oms-expand" data-id="${this._vesc(this._ordKey(o))}" title="${this._vesc(product)}" style="background:none;border:none;color:var(--text-main);cursor:pointer;text-align:left;font-size:0.88rem;display:inline-flex;align-items:center;gap:6px;padding:0"><i class="ph ph-caret-right oms-caret" style="font-size:0.9rem;color:var(--primary);transition:transform .2s"></i>${this._vesc(product)}</button>`
                 : `<span class="ord-product" title="${this._vesc(product)}">${this._vesc(product)}</span>`;
-            const detail = multi ? `<tr class="oms-detail" data-for="${this._vesc(this._ordKey(o))}" style="display:none"><td colspan="9" style="padding:2px 10px 12px 42px;background:rgba(var(--tint),0.04)"><div style="display:flex;flex-direction:column;gap:5px;padding:6px 0">${items.map(it => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:0.83rem"><span style="color:var(--text-muted)">${this._vesc(it.product_name || it.variant_code || '상품')}${it.option_name ? ` · ${this._vesc(it.option_name)}` : ''}</span><span style="color:var(--text-main);font-weight:600;white-space:nowrap">${it.quantity || 1}개</span></div>`).join('')}</div></td></tr>` : '';
+            const detail = multi ? `<tr class="oms-detail" data-for="${this._vesc(this._ordKey(o))}" style="display:none"><td colspan="10" style="padding:2px 10px 12px 42px;background:rgba(var(--tint),0.04)"><div style="display:flex;flex-direction:column;gap:5px;padding:6px 0">${items.map(it => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:0.83rem"><span style="color:var(--text-muted)">${this._vesc(it.product_name || it.variant_code || '상품')}${it.option_name ? ` · ${this._vesc(it.option_name)}` : ''}</span><span style="color:var(--text-main);font-weight:600;white-space:nowrap">${it.quantity || 1}개</span></div>`).join('')}</div></td></tr>` : '';
             return `
             <tr class="ordrow${String(this.orderSel) === this._ordKey(o) ? ' on' : ''}"
                 onclick="app.selectOrder('${this._vesc(this._ordKey(o))}')" style="border-bottom:1px solid var(--card-border)">
                 <td style="padding:10px;text-align:center"><input type="checkbox" class="oms-chk" data-id="${o.order_id}" data-mall="${this._vesc(String(o.mall_key || ''))}" style="accent-color:var(--primary)" onclick="event.stopPropagation()"></td>
                 <td class="ord-no" style="padding:10px;font-family:monospace;font-size:0.82rem">${this._vesc(o.order_id)}
                     <button class="ord-cs" title="이 주문으로 CS 접수" onclick="event.stopPropagation();app.csFromOrder('${this._vesc(String(o.order_id))}','${this._vesc(String(o.mall_key || ''))}')">CS</button></td>
-                <td class="ord-mall" style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1'; return `<span style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._vesc(this._mallLabel(o.mall_key))}</span>`; })()}</td>
+                <td class="ord-brand" title="${this._vesc(oBrand(o))}" style="padding:10px;white-space:nowrap">${oBrand(o) ? this._vesc(oBrand(o)) : '<span style="color:var(--text-muted)">미연결</span>'}</td>
+                <td class="ord-mall" style="padding:10px">${(() => { const _mc = this._mallBrand(o.mall_key)?.brand_color || '#6366f1', _ml = oMall(o); return `<span title="${this._vesc(_ml)}" style="font-size:0.72rem;padding:2px 9px;border-radius:10px;background:${_mc}22;color:var(--text-main);display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span style="width:7px;height:7px;border-radius:50%;background:${_mc};flex-shrink:0"></span>${this._vesc(_ml)}</span>`; })()}</td>
                 <td class="ord-date" style="padding:10px;color:var(--text-muted);font-size:0.82rem">${this._orderListDateText(o.order_date) || '-'}</td>
                 <td style="padding:10px">${o.receiver_name || o.buyer_name || '-'}</td>
                 <td style="padding:10px;font-size:0.88rem">${prodCell}</td>
@@ -13193,8 +13370,8 @@ class BhasApp {
                 })()}</td>
                 <td class="ord-invoice" style="padding:10px;font-size:0.8rem;color:var(--text-muted)">${o.invoice_no ? `${this._vesc(o.courier || '')} ${this._vesc(o.invoice_no)}` : '-'}</td>
             </tr>${detail}`;
-        }).join('') || `<tr><td colspan="9" style="padding:2rem;text-align:center;color:var(--text-muted)">${
-            this.orderQuery
+        }).join('') || `<tr><td colspan="10" style="padding:2rem;text-align:center;color:var(--text-muted)">${
+            (pg.rows || []).length ? '열 거르기에 맞는 주문이 없습니다 — 머리글 깔때기를 풀어 보세요' : this.orderQuery
                 ? (String(this.orderQuery).replace(/[,()%_]/g, '').trim()
                     ? '검색 결과가 없습니다.'
                     : '검색에 쓸 수 있는 글자가 없습니다. ( % _ , ( ) 는 찾기에 못 씁니다 )')
@@ -13209,7 +13386,8 @@ class BhasApp {
                 <button class="mbtn" id="oms-upload-btn"><i class="ph ph-upload-simple"></i> 송장 업로드</button>
                 <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">`)}
             <div class="mp-body">
-            <div class="mp-seg" style="margin-bottom:12px">
+            ${''/* 왼쪽 '보기'와 같은 목록 — 넓은 화면은 왼쪽만(팀장 반려 11-18 S6), 왼쪽이 숨는 좁은 화면에서만 이 줄을 쓴다 */}
+            <div class="mp-seg oms-tabrow nav-dup" style="margin-bottom:12px">
                 ${tab('target', '배송대상', counts.target)}${tab('shipping', '배송중', counts.shipping)}${tab('done', '완료', counts.done)}${tab('claim', '취소·반품·교환', counts.claim)}${tab('all', '전체', counts.all)}<span class="tip-wrap">배송대상 ${tipHTML('ship_ready', TIPS)}</span>
             </div>
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
@@ -13227,11 +13405,11 @@ class BhasApp {
                 <button class="mbtn" id="oms-next" ${(pg.page + 1) * pg.size >= pg.total ? 'disabled style="opacity:.4"' : ''}>다음 <i class="ph ph-caret-right"></i></button>
             </div>
             <div class="table-container" style="overflow-x:auto">
-                <table class="mtbl" style="width:100%;border-collapse:collapse;min-width:720px">
-                    <thead><tr style="color:var(--text-muted);font-size:0.8rem;text-align:left">
+                <table class="mtbl ord-tbl" style="width:100%;border-collapse:collapse;min-width:720px">
+                    <thead><tr style="color:var(--text-muted);text-align:left">
                         <th style="text-align:center"><input type="checkbox" id="oms-chk-all" style="accent-color:var(--primary)"></th>
-                        <th>주문번호</th><th>몰</th><th>주문일</th><th>받는분</th>
-                        <th>상품</th><th style="text-align:center">수량</th><th style="text-align:center">상태</th><th>송장</th>
+                        ${this._thead('orders', [['order_id', '주문번호'], ['brand', '브랜드'], ['mall', '채널'], ['order_date', '주문일'], ['receiver', '받는분'],
+                            ['product', '상품'], ['qty', '수량', 'num'], ['state', '상태'], ['invoice', '송장']])}
                     </tr></thead>
                     <tbody>${body}</tbody>
                 </table>
@@ -13802,9 +13980,9 @@ class BhasApp {
             const low = i.on_hand <= i.safety_stock;
             return `<tr class="it-row inv-row${String(this.invSel) === String(i.id) ? ' on' : ''}" data-id="${i.id}"
                 onclick="app.rowPick(event,'${i.id}','inv')">
-                <td class="mono">${this._vesc(i.sku || '')}</td>
-                <td class="bd">${this._vesc(i.name || '')}</td>
-                <td>${this._vesc(i.option_name || '')}</td>
+                <td class="mono" title="${this._vesc(i.sku || '')}">${this._vesc(i.sku || '')}</td>
+                <td class="bd" title="${this._vesc(i.name || '')}">${this._vesc(i.name || '')}</td>
+                <td title="${this._vesc(i.option_name || '')}">${this._vesc(i.option_name || '')}</td>
                 <td>${this._vesc(this._brandNameById(i.brand_id))}</td>
                 <td class="num"><b style="${Number(i.on_hand) < 0 ? 'color:#ff453a;background:rgba(255,69,58,.14);padding:1px 7px;border-radius:7px' : (low ? 'color:#ff453a' : '')}"
                     ${Number(i.on_hand) < 0 ? 'title="마이너스 재고 — 판매는 나갔는데 입고가 안 잡혔습니다"' : ''}>${i.on_hand}</b></td>
@@ -13825,7 +14003,7 @@ class BhasApp {
             .filter(r => (r.days !== null && r.days <= LEAD_DAYS) || r.i.on_hand <= r.i.safety_stock)
             .sort((a, b) => (a.days ?? 999) - (b.days ?? 999));
 
-        const brandPill = (v, label, color) => `<button class="it-pill${(this.invSelectedBrand || 'all') === v ? ' on' : ''}"
+        const brandPill = (v, label, color) => `<button class="it-pill nav-dup${(this.invSelectedBrand || 'all') === v ? ' on' : ''}"
             onclick="app.setInvBrand('${v}')"${color ? ` style="--pc:${color}"` : ''}>${this._vesc(label)}</button>`;
 
         return `
@@ -14816,7 +14994,28 @@ class BhasApp {
         const subscriptions = (this.calendarRoutines || []).filter(r => r.active && r.kind === 'subscription');
         return `
         <div class="cal">
-            <aside class="cal-side c3-menu">${this._collabMenu('calendar')}</aside>
+            <aside class="cal-side">
+                <div class="m3-h">이 대시보드</div>
+                ${this.CAL_SRC.map(s2 => `<div class="cal-src" onclick="app.toggleCalSrc('${s2.k}')">
+                    <span class="cal-ck${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}"></span>
+                    <span>${esc(s2.t)}</span>
+                    <em>${items.filter(x => x.kind === s2.k).length}</em></div>`).join('')}
+                <div class="cal-mini">
+                    <div class="cal-mh"><button onclick="app.calMove(-1)">‹</button>
+                        <b>${yy}년 ${mo + 1}월</b><button onclick="app.calMove(1)">›</button></div>
+                    <div class="cal-mdow">${dow.map(x => `<span>${x}</span>`).join('')}</div>
+                    <div class="cal-mgrid">${mini}</div>
+                </div>
+                <div style="margin:16px 10px 0;padding:12px;border-radius:12px;background:rgba(var(--tint),.05);font-size:12px">
+                    <b style="display:block;margin-bottom:8px">이번 달 자금</b>
+                    <div style="display:flex;justify-content:space-between;color:#ff453a"><span>나갈 돈</span><b>${money.out.toLocaleString('ko-KR')}원</b></div>
+                    <div style="display:flex;justify-content:space-between;color:#30d158;margin-top:5px"><span>들어올 돈</span><b>${money.in.toLocaleString('ko-KR')}원</b></div>
+                </div>
+                <div style="margin:14px 10px 0;font-size:12px"><b>구독 ${subscriptions.length}</b>
+                    ${subscriptions.slice(0, 8).map(r => `<div style="display:flex;justify-content:space-between;padding:5px 0;color:var(--text-muted);cursor:pointer" onclick="app.openRoutineEditor('${r.id}')">
+                        <span>${esc(r.service_name || r.title)}</span><span>${Number(r.amount || 0).toLocaleString('ko-KR')}원</span></div>`).join('') || `<div style="padding:7px 0;color:var(--text-muted)">등록된 구독 없음</div>`}
+                </div>
+            </aside>
             <section class="cal-main">
                 <div class="cal-top">
                     <button class="cal-add" onclick="app.openRoutineEditor()" title="새 고정 루틴"><i class="ph ph-repeat"></i></button>
@@ -14830,8 +15029,6 @@ class BhasApp {
                         <button onclick="app.calMove(1)">›</button></div>
                 </div>
                 ${brandBar}
-                <div class="it-pills cal-layers" title="눌러서 켜고 끄기">${this.CAL_SRC.map(s2 => `<button class="it-pill cal-layer${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}" onclick="app.toggleCalSrc('${s2.k}')">
-                    <span class="cal-ck${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}"></span>${esc(s2.t)}<em>${items.filter(x => x.kind === s2.k).length}</em></button>`).join('')}</div>
                 <h1 class="cal-h1">${yy}년 ${mo + 1}월${bsel !== CAL_BRAND_ALL ? ` <small class="cal-bnow">${esc(bsel === CAL_BRAND_NONE ? '공통' : ((brands.find(b => String(b.id) === bsel) || {}).name || ''))}</small>` : ''}</h1>
                 ${grid}
             </section>
@@ -14845,23 +15042,6 @@ class BhasApp {
                       : `<div class="m3-none">이 날은 비어 있습니다</div>`}
                 </div>
                 <div class="dt-a"><button class="mbtn pri" onclick="app.quickAddFromCalendar()">이 날에 추가</button></div>
-                <div class="cal-daysum">
-                <div class="cal-mini">
-                    <div class="cal-mh"><button onclick="app.calMove(-1)">‹</button>
-                        <b>${yy}년 ${mo + 1}월</b><button onclick="app.calMove(1)">›</button></div>
-                    <div class="cal-mdow">${dow.map(x => `<span>${x}</span>`).join('')}</div>
-                    <div class="cal-mgrid">${mini}</div>
-                </div>
-                <div style="margin:16px 10px 0;padding:12px;border-radius:12px;background:rgba(var(--tint),.05);font-size:13px">
-                    <b style="display:block;margin-bottom:8px">이번 달 자금</b>
-                    <div style="display:flex;justify-content:space-between;color:#ff453a"><span>나갈 돈</span><b>${money.out.toLocaleString('ko-KR')}원</b></div>
-                    <div style="display:flex;justify-content:space-between;color:#30d158;margin-top:5px"><span>들어올 돈</span><b>${money.in.toLocaleString('ko-KR')}원</b></div>
-                </div>
-                <div style="margin:14px 10px 0;font-size:13px"><b>구독 ${subscriptions.length}</b>
-                    ${subscriptions.slice(0, 8).map(r => `<div style="display:flex;justify-content:space-between;padding:5px 0;color:var(--text-muted);cursor:pointer" onclick="app.openRoutineEditor('${r.id}')">
-                        <span>${esc(r.service_name || r.title)}</span><span>${Number(r.amount || 0).toLocaleString('ko-KR')}원</span></div>`).join('') || `<div style="padding:7px 0;color:var(--text-muted)">등록된 구독 없음</div>`}
-                </div>
-                </div>
             </aside>
         </div>`;
     }
@@ -15633,6 +15813,12 @@ class BhasApp {
             const byVendor = {};
             (jRes.data || []).forEach(j => { (byVendor[j.vendor_id] = byVendor[j.vendor_id] || []).push(j); });
             this.vendors = (vRes.data || []).map(v => ({ ...v, jobs: byVendor[v.id] || [] }));
+            //  진행 브랜드(전체점검-1117 ④) — 작업엔 브랜드가 없어 연결된 제품(item_id)의 brand_id·시즌으로 잇는다. 실패해도 표는 뜬다.
+            const iids = [...new Set((jRes.data || []).map(j => j.item_id).filter(Boolean))];
+            if (iids.length) {
+                const { data: its } = await this.supabase.from('product_items').select('id,brand_id,product_id').in('id', iids.slice(0, 500));
+                this._jobItemRef = Object.fromEntries((its || []).map(i => [i.id, i]));
+            }
             this.vendorCategories = cRes.error ? this._defaultVendorCategories() : (cRes.data || this._defaultVendorCategories());
             this._vendorCategoriesSchemaMissing = !!cRes.error;
             this._vendorsLoaded = true;
@@ -15644,6 +15830,14 @@ class BhasApp {
         this.requestRender();
     }
 
+    //  작업 하나의 브랜드 이름 — 제품(item_id)의 brand_id, 없으면 그 제품의 시즌 브랜드. 모르면 ''.
+    _jobBrandName(j) {
+        const it = (this._jobItemRef || {})[j.item_id] || (this.pItems || []).find(x => String(x.id) === String(j.item_id));
+        if (!it) return '';
+        const bid = it.brand_id || ((mockData.products || []).find(p => String(p.id) === String(it.product_id)) || {}).brand_id;
+        const b = bid && (mockData.brands || []).find(x => String(x.id) === String(bid));
+        return b ? b.name : '';
+    }
     renderVendors() {
         if (!this._vendorsLoaded) return this._loadingSkeleton('생산처');
         const esc = s => this._vesc(s);
@@ -15659,8 +15853,10 @@ class BhasApp {
         const actOf = v => (v.jobs || []).filter(j => j.status !== 'done');
         const soonOf = v => actOf(v).map(j => dday(j.due_date)).filter(x => x !== null).sort((a, b) => a - b)[0];
 
+        const brOf = v => [...new Set(actOf(v).map(j => this._jobBrandName(j)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
         list = this._applyTbl('vendors', list, (v, k2) => ({
             name: v.name || '', category: v.category || '기타', address: v.address || '', phone: callNumberOf(v),
+            brands: brOf(v).join(', ') || (actOf(v).length ? '브랜드 미연결' : '진행 없음'),
             act: actOf(v).length, soon: (soonOf(v) === undefined ? '' : String(soonOf(v))),
         })[k2] ?? '', all);
         const row = v => {
@@ -15672,6 +15868,8 @@ class BhasApp {
                 <td>${esc(v.category || '기타')}</td>
                 <td>${esc(v.address || '')}</td>
                 <td class="nw">${esc(callNumberOf(v))}</td>
+                <td class="ven-br">${(() => { const bs = brOf(v); return bs.length ? bs.map(n => `<span class="ven-chip">${esc(n)}</span>`).join('')
+                    : (act.length ? '<span style="color:var(--text-muted)">미연결</span>' : ''); })()}</td>
                 <td class="num">${act.length || ''}</td>
                 <td class="nw">${s2 === undefined ? '' : `<span style="color:${late ? '#ff453a' : (s2 <= 3 ? '#ff9f0a' : 'var(--text-muted)')};font-weight:${late ? 800 : 600}">${late ? `지연 ${-s2}일` : (s2 === 0 ? '오늘' : `D-${s2}`)}</span>`}</td>
             </tr>`;
@@ -15688,16 +15886,16 @@ class BhasApp {
                 const cats = [...new Set([...(this.vendorCategories || []).map(c => c.name), ...all.map(v => v.category || '기타')])].filter(Boolean);
                 const tab = (id, label, n) => `<button class="it-pill${cat === id ? ' on' : ''}" onclick="app.navPick('vendors','cat','${esc(id)}')">${esc(label)}<em>${n}</em></button>`;
                 const fb = this._fltBadge('vendors');
-                return `<div class="it-pills prod-pills">${tab('ALL', '전체', all.length)}${cats.map(c => tab(c, c, all.filter(v => (v.category || '기타') === c).length)).join('')}</div>${fb ? `<div class="prod-chips">${fb}</div>` : ''}`;
+                return `<div class="it-pills prod-pills nav-dup">${tab('ALL', '전체', all.length)}${cats.map(c => tab(c, c, all.filter(v => (v.category || '기타') === c).length)).join('')}</div>${fb ? `<div class="prod-chips">${fb}</div>` : ''}`;
             })()}
             ${this.venMap ? `<div id="vendor-map" class="ven-map"></div>` : ''}
             <div class="it-scroll prod-scroll">
                 <table class="it-tbl prod-tbl"><thead><tr>
-                    ${this._thead('vendors', [['name', '상호'], ['category', '분류'], ['address', '주소'], ['phone', '전화'],
+                    ${this._thead('vendors', [['name', '상호'], ['category', '분류'], ['address', '주소'], ['phone', '전화'], ['brands', '진행 브랜드'],
                         ['act', '진행', 'num'], ['soon', '가장 가까운 납기']])}
                 </tr></thead>
                 <tbody>${list.length ? list.map(row).join('')
-                    : `<tr><td colspan="6" class="it-none">${all.length ? '조건에 맞는 생산처가 없습니다' : '등록된 생산처가 없습니다 — 위 [생산처 등록]'}</td></tr>`}</tbody>
+                    : `<tr><td colspan="7" class="it-none">${all.length ? '조건에 맞는 생산처가 없습니다' : '등록된 생산처가 없습니다 — 위 [생산처 등록]'}</td></tr>`}</tbody>
                 </table>
             </div>
         </div>`;
@@ -16278,81 +16476,114 @@ class BhasApp {
         const list = this._applyTbl('contacts', base, (v, k) => ({
             name: v.name || '', cat: v.category || '기타', status: v.status || '거래중', contact: v.contact_name || '',
             mobile: phonesOf(v).mobile, phone: phonesOf(v).phone, email: v.email || '',
+            address: v.address || '', fax: v.fax || '', cert: v.biz_file_path ? '있음' : '없음', memo: v.memo || '',
         })[k] ?? '', base);
+        //  열 표시(전체점검-1117 ⑤) — 기본 8열, 팩스·등록증·메모는 '열' 버튼으로 켠다. 업체명은 끌 수 없다.
+        const CT_COLS = this._contactCols();
+        const cols = CT_COLS.filter(c => c.on);
+        const ncol = cols.length;
         const sel = this.contactNew ? null : (all.find(v => String(v.id) === String(this.contactSel)) || null);
         const cnt = c => all.filter(v => (v.category || '기타') === c).length;
         const initial = n => (String(n || '?').trim()[0] || '?');
         const statusColor = s => ({ '거래중': '#22c55e', '보류': '#f59e0b', '거래중단': '#94a3b8' })[s] || '#94a3b8';
         const badge = s => `<span class="ct3-badge" style="color:${statusColor(s)};background:${statusColor(s)}18">${esc(s || '거래중')}</span>`;
+        const side = (key, label, icon, n, color, editable) => `<div class="m3-s${cur === key ? ' on' : ''}"
+            onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(key)}'))"
+            ${editable ? `oncontextmenu="app.vendorCategoryMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))" title="우클릭: 이름·순서·삭제"` : ''}>
+            <i class="ph ${icon}" style="color:${color || '#0a84ff'}"></i><span>${esc(label)}</span><em>${n}</em></div>`;
         const filtered = q || cur !== '전체' || status !== '전체' || Object.keys((this.tblFilt || {}).contacts || {}).length;
-        //  거래중단은 아래 '종료 N개'로 접는다 — 상태를 직접 골랐거나 상태 열 필터를 걸면 그대로 보인다(3단 규칙 2)
+        //  거래중단은 아래 '종료 N곳'으로 접는다 — 상태를 직접 골랐거나 상태 열 필터를 걸면 그대로 보인다(3단 규칙 2)
         const stPicked = status !== '전체' || !!((this.tblFilt || {}).contacts || {}).status;
         const stopped = stPicked ? [] : list.filter(v => (v.status || '거래중') === '거래중단');
         const shownList = stPicked || this.contactShowDone ? list : list.filter(v => (v.status || '거래중') !== '거래중단');
         const rows = shownList.map(v => {
             const p = phonesOf(v);
+            const td = {
+                name: `<td class="bd ct3-name" title="${esc(v.name || '')}">${esc(v.name || '')}</td>`,
+                cat: `<td class="ct3-cat">${esc(v.category || '기타')}</td>`,
+                status: `<td class="ct3-st">${badge(v.status || '거래중')}</td>`,
+                contact: `<td>${esc(v.contact_name || '')}</td>`,
+                mobile: `<td class="nw">${esc(p.mobile)}</td>`,
+                phone: `<td class="nw ct3-tel">${esc(p.phone)}</td>`,
+                email: `<td class="ct3-mail" title="${esc(v.email || '')}">${esc(v.email || '')}</td>`,
+                address: `<td class="ct3-addr" title="${esc(v.address || '')}">${esc(v.address || '')}</td>`,
+                fax: `<td class="nw">${esc(v.fax || '')}</td>`,
+                cert: `<td class="ct3-cert">${v.biz_file_path ? '<i class="ph ph-file-text" title="등록증 있음"></i> 있음' : '<span class="ct3-miss">없음</span>'}</td>`,
+                memo: `<td class="ct3-memo" title="${esc(v.memo || '')}">${esc(v.memo || '')}</td>`,
+            };
             return `<tr class="it-row${sel && String(v.id) === String(sel.id) ? ' on' : ''}" data-id="${esc(v.id)}"
                 onclick="app.selectContact('${esc(v.id)}')" oncontextmenu="app.contactMenu(event,'${esc(v.id)}')">
-                <td class="bd ct3-name" title="${esc(v.name || '')}">${esc(v.name || '')}</td>
-                <td class="ct3-cat">${esc(v.category || '기타')}</td>
-                <td class="ct3-st">${badge(v.status || '거래중')}</td>
-                <td>${esc(v.contact_name || '')}</td>
-                <td class="nw">${esc(p.mobile)}</td>
-                <td class="nw ct3-tel">${esc(p.phone)}</td>
-                <td class="ct3-mail" title="${esc(v.email || '')}">${esc(v.email || '')}</td></tr>`;
-        }).join('') + (stopped.length ? `<tr class="prod-fold"><td colspan="7">${this._c3Fold('app.toggleContactDone()', this.contactShowDone, `종료(거래중단) ${stopped.length}곳`)}</td></tr>` : '');
-        //  구분 거르기는 가운데 탭 — 우클릭으로 이름·순서·삭제, ＋로 새 구분(전에는 왼쪽 목록)
-        const tab = (key, label, n, editable) => `<button class="it-pill${cur === key ? ' on' : ''}" onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(key)}'))"
-            ${editable ? `oncontextmenu="app.vendorCategoryMenu(event,decodeURIComponent('${encodeURIComponent(key)}'))" title="우클릭: 이름·순서·삭제"` : ''}>${esc(label)}<em>${n}</em></button>`;
-        const tabs = `<div class="it-pills ct3-tabs">${tab('전체', '전체', all.length)}${cats.map(c => tab(c.name, c.name, cnt(c.name), true)).join('')}
-            <button class="it-pill ct3-addcat" onclick="app.addVendorCategory()" title="새 구분"><i class="ph ph-plus"></i></button></div>`;
+                ${cols.map(c => td[c.k].replace(/^<td( class=")?/, m => m.length > 3 ? `<td class="ck-${c.k} ` : `<td class="ck-${c.k}"`)).join('')}</tr>`;
+        }).join('') + (stopped.length ? `<tr class="prod-fold"><td colspan="${ncol}">${this._c3Fold('app.toggleContactDone()', this.contactShowDone, `종료(거래중단) ${stopped.length}곳`)}</td></tr>` : '');
+        //  구분은 왼쪽 목록(사장님 기준 화면 — d1c14cc 이전 구조 원복 11-18). 좁은 화면에선 왼쪽이 숨으니 가운데 고르기.
+        const showCats = makers ? cats.filter(c => c.name !== '기타') : cats;
         const stChip = status !== '전체' ? `<button class="flt-off" onclick="app.contactStatus='전체';app.requestRender()">상태: ${esc(status)} <i class="ph ph-x"></i></button>` : '';
         const fb = this._fltBadge('contacts');
         const center = `
             <section class="m3-list">
                 <div class="m3-lbar"><div><b>${esc(cur === '전체' ? (makers ? '모든 생산처' : '모든 연락처') : cur)}</b><span>${list.length}곳${list.length !== all.length ? ` / 전체 ${all.length}` : ''}</span></div>
+                    <select class="ct3-mcat" aria-label="구분" onchange="app.setContactCat(this.value)">
+                        ${['전체', ...showCats.map(c => c.name)].map(c => `<option value="${esc(c)}"${cur === c ? ' selected' : ''}>${esc(c === '전체' ? '모든 구분' : c)}</option>`).join('')}</select>
+                    <button class="m3-new ct3-colbtn" onclick="app.openContactCols(event)" title="열 표시 — 팩스·주소·등록증·메모"><i class="ph ph-columns"></i></button>
                     <button class="m3-new" onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
                     <input placeholder="업체명·담당자·휴대폰·전화·이메일·주소" value="${esc(this.contactQ || '')}" oninput="app.contactFind(this.value)"></div>
-                ${tabs}
                 ${stChip || fb ? `<div class="ct3-flt">${stChip}${fb}</div>` : ''}
                 <div class="ct3-tbl"><table class="it-tbl"><thead><tr>
-                    ${this._thead('contacts', [['name', '업체명'], ['cat', '구분'], ['status', '상태'], ['contact', '담당자'], ['mobile', '휴대폰'], ['phone', '전화'], ['email', '이메일']])}
-                </tr></thead><tbody>${rows || `<tr><td colspan="7" class="it-none">${filtered ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다 — 위 ＋'}</td></tr>`}</tbody></table></div>
+                    ${this._thead('contacts', cols.map(c => [c.k, c.label, 'ck-' + c.k]))}
+                </tr></thead><tbody>${rows || `<tr><td colspan="${ncol}" class="it-none">${filtered ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다 — 위 ＋'}</td></tr>`}</tbody></table></div>
             </section>`;
         const docOpen = !!(sel || this.contactNew);
         return `
         <div class="m3 ct3${docOpen ? ' detail' : ''}">
-            <aside class="m3-side c3-menu">${makers ? this._prodMenu('makers') : this._collabMenu('contacts')}</aside>
+            <aside class="m3-side">
+                <div class="m3-h" style="display:flex;align-items:center;justify-content:space-between">구분
+                    <button onclick="app.addVendorCategory()" title="새 구분" style="border:0;background:none;color:var(--primary);cursor:pointer"><i class="ph ph-plus"></i></button></div>
+                ${side('전체', makers ? '모든 생산처' : '모든 연락처', 'ph-address-book', makers ? all.filter(v => (v.category || '기타') !== '기타').length : all.length)}
+                ${showCats.map(c => side(c.name, c.name, 'ph-folder-simple', cnt(c.name), c.color, true)).join('')}
+                <div style="padding:8px 12px;font-size:12px;color:var(--text-muted)">구분을 우클릭해 관리</div>
+            </aside>
             ${center}
             <section class="m3-doc">
-                ${docOpen ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : this._contactSummaryHTML(base, cats, cur)}
+                ${docOpen ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : `<div class="nt-none big">${this.currentView === 'makers' ? '생산처' : '연락처'}를 선택하세요</div>`}
             </section>
         </div>`;
     }
-    contactFind(v) { this.contactQ = v; clearTimeout(this._ctT); this._ctT = setTimeout(() => this.requestRender(), 150); }
-    //  오른쪽 — 아무것도 안 골랐을 때. 지금 보이는 묶음(구분·상태·검색)의 요약
-    _contactSummaryHTML(rows, cats, cur) {
-        const esc = s => this._vesc(s);
-        const s = contactSummary(rows, cats);
-        const stat = (label, n, color) => `<div class="ct3-stat" role="button" style="cursor:pointer" title="${esc(label)}만 보기" onclick="app.contactStatus='${label}';app.contactSel=null;app.requestRender()"><b style="color:${color}">${n}</b><span>${esc(label)}</span></div>`;
-        const miss = (label, n) => n ? `<div class="m3-f"><i class="ph ph-warning-circle" style="color:#f59e0b"></i><span class="k">${esc(label)}</span><span class="v">${n}곳</span></div>` : '';
-        const missHtml = miss('휴대폰 없음', s.missing.mobile) + miss('담당자 없음', s.missing.contact) + miss('이메일 없음', s.missing.email) + miss('등록증 없음', s.missing.bizFile);
-        return `<div class="m3-tools"><span style="font-size:12px;font-weight:700;color:var(--text-muted)">요약</span><span class="sp"></span>
-                <button onclick="app.newContact()" title="새 연락처"><i class="ph ph-plus"></i></button></div>
-            <div class="m3-page ct3-sum">
-                <h2 class="m3-big">${esc(cur === '전체' ? (this.currentView === 'makers' ? '모든 생산처' : '모든 연락처') : cur)} ${s.total}곳</h2>
-                <div class="m3-sub">표에서 업체를 누르면 여기에 전부 나옵니다</div>
-                <div class="ct3-stats">${stat('거래중', s.status['거래중'] || 0, '#22c55e')}${stat('보류', s.status['보류'] || 0, '#f59e0b')}${stat('거래중단', s.status['거래중단'] || 0, '#94a3b8')}</div>
-                ${cur === '전체' && s.catRows.length ? `<div class="dt-sec">구분별</div>
-                    ${s.catRows.map(([c, n]) => `<div class="m3-f" style="cursor:pointer" onclick="app.setContactCat(decodeURIComponent('${encodeURIComponent(c)}'))">
-                        <i class="ph ph-folder-simple" style="color:${esc((cats.find(x => x.name === c) || {}).color || '#64748b')}"></i><span class="k" style="flex:1">${esc(c)}</span><span>${n}곳</span></div>`).join('')}` : ''}
-                ${missHtml ? `<div class="dt-sec">채울 칸</div>${missHtml}` : ''}
-                ${s.recent.length ? `<div class="dt-sec">최근 고친 곳</div>
-                    ${s.recent.map(v => `<div class="m3-f" style="cursor:pointer" onclick="app.selectContact('${esc(v.id)}')"><i class="ph ph-clock-counter-clockwise"></i>
-                        <span class="v">${esc(v.name || '')}</span><span style="color:var(--text-muted)">${esc(String(v.updated_at || v.created_at || '').slice(0, 10))}</span></div>`).join('')}` : ''}
-            </div>`;
+    //  연락처 표 열 — 기본 8열(업체명~이메일·주소), 팩스·등록증·메모는 끄인 채로 시작. 고른 것은 이 브라우저에만 기억.
+    _contactCols() {
+        const ALL = [['name', '업체명', 1], ['cat', '구분', 1], ['status', '상태', 1], ['contact', '담당자', 1], ['mobile', '휴대폰', 1],
+            ['phone', '전화', 1], ['email', '이메일', 1], ['address', '주소', 1], ['fax', '팩스', 0], ['cert', '등록증', 0], ['memo', '메모', 0]];
+        if (!this.contactColOn) { try { this.contactColOn = JSON.parse(localStorage.getItem('ct3-cols') || 'null'); } catch (e) { this.contactColOn = null; } }
+        const on = this.contactColOn;
+        return ALL.map(([k, label, def]) => ({ k, label, on: k === 'name' || (on && k in on ? !!on[k] : !!def) }));
     }
+    toggleContactCol(k, v) {
+        const cur = Object.fromEntries(this._contactCols().map(c => [c.k, c.on]));
+        cur[k] = v; this.contactColOn = cur;
+        try { localStorage.setItem('ct3-cols', JSON.stringify(cur)); } catch (e) { /* 저장 못 해도 이번 화면엔 반영 */ }
+        //  끈 열에 걸려 있던 거르기는 같이 푼다 — 안 보이는 열이 몰래 행을 줄이지 않게
+        if (!v && this.tblFilt?.contacts?.[k]) delete this.tblFilt.contacts[k];
+        this.requestRender();
+        setTimeout(() => this.openContactCols(null), 30);
+    }
+    openContactCols(ev) {
+        ev && ev.stopPropagation();
+        const prev = document.getElementById('colf');
+        if (prev && ev) { prev.remove(); return; }
+        prev?.remove();
+        const btn = document.querySelector('.ct3-colbtn'); if (!btn) return;
+        const el = document.createElement('div'); el.id = 'colf'; el.className = 'colf ct3-colpick';
+        el.innerHTML = `<div class="colf-h"><b>열 표시</b><button id="colf-x"><i class="ph ph-x"></i></button></div>
+            ${this._contactCols().map(c => `<label class="colf-i${c.k === 'name' ? ' dis' : ''}"><input type="checkbox" data-k="${c.k}" ${c.on ? 'checked' : ''} ${c.k === 'name' ? 'disabled' : ''}> ${this._vesc(c.label)}</label>`).join('')}`;
+        document.body.appendChild(el);
+        const r = btn.getBoundingClientRect();
+        el.style.left = Math.max(10, Math.min(r.right - el.offsetWidth, innerWidth - el.offsetWidth - 10)) + 'px';
+        el.style.top = Math.max(10, Math.min(r.bottom + 4, innerHeight - el.offsetHeight - 10)) + 'px';
+        el.querySelector('#colf-x').onclick = () => el.remove();
+        el.querySelectorAll('input[data-k]').forEach(i => i.onchange = () => this.toggleContactCol(i.dataset.k, i.checked));
+        setTimeout(() => { const off = e => { if (!el.contains(e.target) && !e.target.closest('.ct3-colbtn')) { el.remove(); document.removeEventListener('mousedown', off); } }; document.addEventListener('mousedown', off); }, 0);
+    }
+    contactFind(v) { this.contactQ = v; clearTimeout(this._ctT); this._ctT = setTimeout(() => this.requestRender(), 150); }
     //  오른쪽 — 고른 업체 전부(보기) 또는 고치기·새로 만들기
     _contactDocHTML(doc, { cats, badge, initial }) {
         const esc = s => this._vesc(s);
@@ -17476,7 +17707,7 @@ class BhasApp {
     closeDetail(view) {
         ({ items: () => this.itemSel = null, cs: () => this.csSel = null,
            inventory: () => this.invSel = null, tech_packs: () => this.tpSel = null,
-           orders: () => this.orderSel = null, vendors: () => this.venSel = null })[view]?.();
+           orders: () => this.orderSel = null, vendors: () => this.venSel = null, quotes: () => this.quoteSel = null, sales: () => this.salesCell = null })[view]?.();
         if (this._groupOf(view)?.head === 'orders') this.salesMobileDetail = false;
         if (this._groupOf(view)?.head === 'items') this.productionMobileDetail = false;
         this.requestRender();
@@ -17639,10 +17870,11 @@ class BhasApp {
             <div class="colf-a"><button class="mbtn" id="colf-x">취소</button>
                 <button class="mbtn pri" id="colf-ok">적용</button></div>`;
         document.body.appendChild(el);
-        const th = ev && ev.target.closest('th');
+        //  머리글이 <th> 가 아닌 표(자료실 .fh 등)도 있어 머리 칸 → 버튼 자신 순으로 기준을 잡고, 화면 안으로 접는다.
+        const th = ev && (ev.target.closest('th, .fh') || ev.target.closest('button'));
         if (th) { const r = th.getBoundingClientRect();
-            el.style.left = Math.min(r.left, innerWidth - el.offsetWidth - 10) + 'px';
-            el.style.top = (r.bottom + 4) + 'px'; }
+            el.style.left = Math.max(10, Math.min(r.left, innerWidth - el.offsetWidth - 10)) + 'px';
+            el.style.top = Math.max(10, Math.min(r.bottom + 4, innerHeight - el.offsetHeight - 10)) + 'px'; }
         el.querySelector('#colf-x').onclick = () => el.remove();
         el.querySelector('#colf-ok').onclick = () => {
             const picked = [...el.querySelectorAll('input:checked')].map(i => i.value);
@@ -17978,7 +18210,7 @@ class BhasApp {
                     ${rows.length && rows.every(i => this._itemPicked?.has(i.id)) ? 'checked' : ''} onchange="app.pickItemTableRows(this,this.checked)"></th>
                 ${cols.map(([k, label]) => `<th class="${srt.k === k ? 'srt' : ''}${cf[k] ? ' flt' : ''}" onclick="app.sortItems('${k}')"
                     title="눌러서 줄 세우기 · 깔때기로 거르기">${esc(label)}${srt.k === k ? `<i class="ph ph-caret-${srt.dir > 0 ? 'up' : 'down'}"></i>` : ''}<button class="th-f"
-                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph ph-funnel${cf[k] ? '-fill' : ''}"></i></button></th>`).join('')}
+                    onclick="app.openColFilter(event,'${k}','${esc(label)}')" title="${esc(label)} 거르기"><i class="ph${cf[k] ? '-fill' : ''} ph-funnel"></i></button></th>`).join('')}
             </tr></thead><tbody>${rows.length ? rows.map(it => row(it)).join('')
                 : `<tr><td colspan="${n}" class="it-none">${esc(empty || '제품이 없습니다')}</td></tr>`}
                 ${more > 0 ? `<tr><td colspan="${n}" class="it-none"><button class="mbtn" onclick="app.moreItems()">${more}개 더 보기</button></td></tr>` : ''}
@@ -18063,7 +18295,7 @@ class BhasApp {
             return { title: '견적 요약', sub: `견적 ${qs.length}건`, body: `
                 ${sec('상태별')}${['draft', 'sent', 'confirmed'].map(st => li(this._quoteStatusLabel(st), `${by(st).length}건 · ${won(sum(by(st)))}`, `app.navPick('quotes','st','${st}')`)).join('')}
                 ${sec(`이번 달 ${month.length}건`)}${li('합계', won(sum(month)))}${li('확정', won(sum(month.filter(q => q.status === 'confirmed'))))}
-                ${sec(`답 기다리는 견적 ${waiting.length}`)}${waiting.slice(0, 6).map(q => li(q.client_name || '고객사 없음', dshort(q.quote_date), `app.showQuoteModal('${q.id}')`, 'warn')).join('') || none('발송 후 대기 없음')}` };
+                ${sec(`답 기다리는 견적 ${waiting.length}`)}${waiting.slice(0, 6).map(q => li(q.client_name || '고객사 없음', dshort(q.quote_date), `app.selectQuote('${q.id}')`, 'warn')).join('') || none('발송 후 대기 없음')}` };
         }
         return null;
     }
@@ -18116,7 +18348,7 @@ class BhasApp {
             ${color ? `style="--pc:${color}"` : ''} onclick="app.setItemStatus('${k}')">${esc(label)}<em>${n}</em></button>`;
         //  걸린 거르기 = 칩. X 로 하나씩 푼다.
         const COLN = { name: '상품', brand_id: '브랜드', status: '단계', vendor_id: '생산처', ship_date: this.ITEM_DATE_LABEL.ship_date, trims: '부자재', product_id: '시즌', checked: '확인', pattern_no: '패턴', memo: '메모', sale: '판매명', open_date: this.ITEM_DATE_LABEL.open_date };
-        const chip = (label, vals, click) => `<button class="flt-off" onclick="${click}" title="${esc(label)} 거르기 풀기"><i class="ph ph-funnel-fill"></i> ${esc(label)}: ${esc(vals)} <b>×</b></button>`;
+        const chip = (label, vals, click) => `<button class="flt-off" onclick="${click}" title="${esc(label)} 거르기 풀기"><i class="ph-fill ph-funnel"></i> ${esc(label)}: ${esc(vals)} <b>×</b></button>`;
         const chips = [
             sKey !== 'ALL' ? chip('시즌', sKey === 'NONE' ? '없음' : ((seasons.find(p => String(p.id) === String(sKey)) || {}).name || '?'), "app.clearItemScope('sea')") : '',
             bKey !== 'ALL' ? chip('브랜드', bKey === 'NONE' ? '없음' : this._brandNameById(bKey), "app.clearItemScope('brand')") : '',
@@ -18289,18 +18521,39 @@ class BhasApp {
             if (pending || failed) return `<div style="display:inline-flex;flex-direction:column;gap:4px;align-items:center"><span style="font-size:0.7rem;font-weight:700;color:${failed ? '#ef4444' : '#f59e0b'}">${failed ? '● 오류' : '○ 인증 필요'}</span><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.7rem;padding:4px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:var(--primary);cursor:pointer">다시 연동</button>${reqHint(ch.key)}</div>`;
             return `<div style="display:inline-flex;flex-direction:column;align-items:center"><button class="integ-channel-connect" data-brand="${brand.id}" data-channel="${ch.key}" style="font-size:0.74rem;padding:5px 11px;border-radius:8px;border:1px dashed rgba(59,130,246,0.45);background:transparent;color:var(--primary);cursor:pointer;font-weight:600"><i class="ph ph-plus"></i> 연동</button>${reqHint(ch.key)}</div>`;
         };
-        const rows = brands.length ? brands.map(b => `<tr style="border-bottom:1px solid var(--card-border)">
+        //  표 규칙(S3·S5) — 브랜드 검색 + 채널마다 연결 상태 깔때기·정렬(전체점검-1117 ④)
+        const stOf = (brand, ch) => {
+            const mall = mallFor(brand, ch.key);
+            if (ch.key === 'cafe24') return mall && mall.connected ? '연동' : mall ? '미인증' : '미연동';
+            const c = (this.channelConnections || []).find(x => x.brand_id === brand.id && x.channel === ch.key);
+            if (mall?.connected || c?.status === 'connected') return '연동';
+            if (c?.status === 'error') return '오류';
+            if (c?.status === 'credentials_saved' || c?.status === 'auth_required') return '대기';
+            return '미연동';
+        };
+        const iq = (this.integQ || '').trim().toLowerCase();
+        const brandsQ = iq ? brands.filter(b => String(b.name || '').toLowerCase().includes(iq)) : brands;
+        const ST_RANK = { 연동: 0, 대기: 1, 미인증: 2, 오류: 3, 미연동: 4 };
+        const shown = this._applyTbl('integrations', brandsQ, (b, k) => k === 'brand' ? (b.name || '')
+            : k === 'courier' ? ((this.brandCouriers || {})[b.id] || '우체국')
+            : k.startsWith('ch:') ? stOf(b, channels.find(c => c.key === k.slice(3))) : '', brands);
+        //  연결 상태로 줄 세울 땐 글자순이 아니라 연동 → 미연동 순
+        const srtI = this._tblState('integrations').srt;
+        if (srtI.k && srtI.k.startsWith('ch:')) { const ch = channels.find(c => c.key === srtI.k.slice(3));
+            shown.sort((a, b) => ((ST_RANK[stOf(a, ch)] ?? 9) - (ST_RANK[stOf(b, ch)] ?? 9)) * srtI.dir || String(a.name).localeCompare(String(b.name), 'ko')); }
+        const rows = shown.length ? shown.map(b => `<tr style="border-bottom:1px solid var(--card-border)">
             <td style="padding:14px 10px;font-weight:600">${this._vesc(b.name)}</td>
             ${channels.map(ch => `<td style="padding:14px 10px;text-align:center">${cell(b, ch)}</td>`).join('')}
             <td style="padding:14px 10px;text-align:center">${courierCell(b)}</td>
-        </tr>`).join('') : `<tr><td colspan="${channels.length + 2}" style="padding:2.5rem;text-align:center;color:var(--text-muted)">브랜드가 없습니다. [브랜드 추가]로 시작하세요.</td></tr>`;
+        </tr>`).join('') : `<tr><td colspan="${channels.length + 2}" style="padding:2.5rem;text-align:center;color:var(--text-muted)">${brands.length ? '검색·거르기에 맞는 브랜드가 없습니다' : '브랜드가 없습니다. [브랜드 추가]로 시작하세요.'}</td></tr>`;
         const ep = this._epostHealth;
         const epColor = ep?.ok ? '#22c55e' : (ep?.error ? '#ef4444' : '#f59e0b');
         const epText = ep?.ok ? `계약 연결 정상${ep.postNm ? ` · ${this._vesc(ep.postNm)}` : ''}` : (ep?.error ? `연결 오류 · ${this._vesc(ep.error)}` : '실제 계약 API 확인 필요');
         return `
         <div class="mp">
-            ${this._mpTop('채널 연동', '브랜드별로 판매 채널을 연동하세요',
-                `<button id="integ-addbrand-btn" class="mbtn pri"><i class="ph ph-plus"></i> 브랜드 추가</button>`)}
+            ${this._mpTop('채널 연동', `브랜드 ${shown.length}${shown.length !== brands.length ? ` / ${brands.length}` : ''} · 채널 머리글 깔때기로 연결 상태 거르기`,
+                `<div class="mp-find"><i class="ph ph-magnifying-glass"></i><input value="${this._vesc(this.integQ || '')}" placeholder="브랜드 찾기" oninput="app.integFind(this.value)"></div>${this._fltBadge('integrations')}
+                <button id="integ-addbrand-btn" class="mbtn pri"><i class="ph ph-plus"></i> 브랜드 추가</button>`)}
             <div class="mp-body">
             <div class="glass" style="padding:1rem 1.2rem;border-radius:14px;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
                 <div><div style="font-size:0.9rem;font-weight:700"><i class="ph ph-package" style="color:#e11d48"></i> 우체국 계약택배</div><div style="font-size:0.78rem;color:${epColor};margin-top:3px">● ${epText}</div></div>
@@ -18309,8 +18562,8 @@ class BhasApp {
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
                 <table class="mtbl" style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px">
                     <colgroup><col style="width:16%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:14%"></colgroup>
-                    <thead><tr style="color:var(--text-muted);font-size:0.82rem;text-align:left">
-                        <th>브랜드</th>${channels.map(ch => `<th style="text-align:center">${ch.label}</th>`).join('')}<th style="text-align:center">택배사</th>
+                    <thead><tr class="integ-th" style="color:var(--text-muted);text-align:left">
+                        ${this._thead('integrations', [['brand', '브랜드']].concat(channels.map(ch => ['ch:' + ch.key, ch.label, 'c']), [['courier', '택배사', 'c']]))}
                     </tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
@@ -18319,6 +18572,7 @@ class BhasApp {
         </div></div>`;
     }
 
+    integFind(v) { this.integQ = v; clearTimeout(this._integT); this._integT = setTimeout(() => { this.requestRender(); setTimeout(() => { const i = document.querySelector('.mp-find input[placeholder="브랜드 찾기"]'); if (i && document.activeElement !== i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 60); }, 180); }
     bindIntegrationsEvents() {
         const add = document.getElementById('integ-addbrand-btn');
         if (add) add.onclick = () => this.showAddBrandModal();
@@ -18486,7 +18740,7 @@ class BhasApp {
         if (foldDone) qs = qs.filter(q => q.status !== 'confirmed');
         const qRow = (q, dim) => {
             const it = qItem(q);
-            return `<tr class="it-row q-row${dim ? ' prod-tr dim' : ''}" data-id="${q.id}">
+            return `<tr class="it-row q-row${dim ? ' prod-tr dim' : ''}${String(q.id) === String(this.quoteSel) ? ' on' : ''}" data-id="${q.id}">
                 <td class="nw">${this._vesc(q.quote_date || '')}</td>
                 <td class="bd">${this._vesc(q.client_name || '')}</td>
                 <td>${qBrand(q) ? esc(qBrand(q)) : '<span class="it-mu">—</span>'}</td>
@@ -18504,7 +18758,7 @@ class BhasApp {
         const st = this.quoteStatus || 'ALL';
         const tab = (id, label) => `<button class="it-pill${st === id ? ' on' : ''}" onclick="app.navPick('quotes','st','${id}')">${esc(label)}<em>${id === 'ALL' ? qAll.length : qAll.filter(q => (q.status || 'draft') === id).length}</em></button>`;
         const qc = this.quoteClient || 'ALL';
-        const chips = (qc !== 'ALL' ? `<button class="flt-off" onclick="app.navPick('quotes','st','ALL')" title="고객사 거르기 풀기"><i class="ph ph-funnel-fill"></i> 고객사: ${esc(qc)} <b>×</b></button>` : '') + this._fltBadge('quotes');
+        const chips = (qc !== 'ALL' ? `<button class="flt-off" onclick="app.navPick('quotes','st','ALL')" title="고객사 거르기 풀기"><i class="ph-fill ph-funnel"></i> 고객사: ${esc(qc)} <b>×</b></button>` : '') + this._fltBadge('quotes');
         return `
         <div class="mp">
             ${this._mpTop('견적서', `${qs.length + doneQs.length}건 · 엑셀 대체`,
@@ -18522,9 +18776,19 @@ class BhasApp {
     bindQuotesEvents() {
         const n = document.getElementById('q-new-btn'); if (n) n.onclick = () => this.showQuoteModal();
         const hx = document.getElementById('q-hometax-btn'); if (hx) hx.onclick = () => this.showHometaxExcelModal();
-        this.appContainer.querySelectorAll('.q-row').forEach(r => r.onclick = (e) => { if (e.target.closest('.q-print')) return; this.showQuoteModal(r.dataset.id); });
+        this.appContainer.querySelectorAll('.q-row').forEach(r => {
+            r.onclick = (e) => { if (e.target.closest('.q-print')) return; this.selectQuote(r.dataset.id); };
+            r.ondblclick = (e) => { if (e.target.closest('.q-print')) return; this.showQuoteModal(r.dataset.id); };   // 두 번 누르면 바로 고치기
+        });
         this.appContainer.querySelectorAll('.q-print').forEach(b => b.onclick = (e) => { e.stopPropagation(); const q = (this.quotes || []).find(x => x.id === b.dataset.id); if (q) this.printQuote(q); });
     }
+    //  견적 줄 클릭 → 오른쪽 상세(3단). 고치기는 상세의 [고치기] 또는 두 번 클릭.
+    selectQuote(id) {
+        this.quoteSel = String(this.quoteSel) === String(id) ? null : id;
+        this.productionMobileDetail = !!this.quoteSel;
+        this.requestRender();
+    }
+    printQuoteById(id) { const q = (this.quotes || []).find(x => String(x.id) === String(id)); if (q) this.printQuote(q); }
     _quoteItemRow(it = {}) {
         const supply = (Number(it.qty) || 0) * (Number(it.price) || 0);
         return `<div class="q-item" style="display:grid;grid-template-columns:1.25fr 52px 48px 72px 82px 72px 1fr 22px;gap:5px;align-items:center;margin-bottom:6px">

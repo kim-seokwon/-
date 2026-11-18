@@ -7,7 +7,7 @@ import { buildPanel, sns3Rows, panelHtml, excludedNote } from '../adPanel.js';
 
 const FX = JSON.parse(readFileSync(new URL('./fixtures/ad-panel-1116.json', import.meta.url)));
 const EX = new Set(['120255644017600038', '120255644017680038', '120255644017700038', '120255666999860038']);
-const BRANDS = [{ id: 'b-hhh', name: '하이헤이호' }, { id: 'b-lohi', name: '로하이스튜디오' }, { id: 'b-tovee', name: '토비' }];
+const BRANDS = [{ id: 'b-hhh', name: '하이헤이호', ad_prefixes: ['hhh', '하헤호'] }, { id: 'b-lohi', name: '로하이스튜디오', ad_prefixes: ['lohi'] }, { id: 'b-tovee', name: '토비', ad_prefixes: ['tovee'] }];
 const RULES = { 'b-hhh': { up_max: 800, stop_over: 1300 }, 'b-lohi': { up_max: 1000, stop_over: 1600 }, 'b-tovee': { up_max: 1000, stop_over: 1600 } };
 const NOW = Date.parse('2026-11-16T03:00:00Z');
 const mark = on => FX.links.map(l => ({ ...l, excluded: on && EX.has(l.adset_id), excluded_reason: on && EX.has(l.adset_id) ? '목표 오류(VISIT_INSTAGRAM_PROFILE)' : null }));

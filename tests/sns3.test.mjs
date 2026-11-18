@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { buildPanel, sns3Rows, snsSetDetailHtml } from '../adPanel.js';
 const main = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const style = readFileSync(new URL('../style.css', import.meta.url), 'utf8');
-const BRANDS = [{ id: 'b-hhh', name: '하이헤이호' }, { id: 'b-lohi', name: '로하이스튜디오' }, { id: 'b-tovee', name: '토비' }, { id: 'b-mm', name: '머문' }];
+const BRANDS = [{ id: 'b-hhh', name: '하이헤이호', ad_prefixes: ['hhh', '하헤호'] }, { id: 'b-lohi', name: '로하이스튜디오', ad_prefixes: ['lohi'] }, { id: 'b-tovee', name: '토비', ad_prefixes: ['tovee'] }, { id: 'b-mm', name: '머문' }];
 const NOW = Date.parse('2026-11-16T12:00:00+09:00');
 const links = [['a1', 's1', 'hhh_a', 'ACTIVE', 'b-hhh'], ['a2', 's2', 'hhh_b', 'PAUSED', 'b-hhh'], ['a3', 's3', 'tovee_a', 'ACTIVE', 'b-tovee'], ['a4', 's4', 'mm_a', 'ACTIVE', 'b-mm']]
     .map(([ad_id, adset_id, adset_name, adset_status, brand_id]) => ({ ad_id, adset_id, adset_name, adset_status, brand_id }));
@@ -113,7 +113,8 @@ test('대분류 > 중분류 > 상세: 왼쪽 SNS 메뉴와 가운데 브랜드 �
     const snsSide = main.slice(main.indexOf("{ label: 'SNS'"), main.indexOf("        ] },", main.indexOf("{ label: 'SNS'")));
     assert.doesNotMatch(snsSide, /'게시물'/);
     const shell = main.slice(main.indexOf('    _snsShell('), main.indexOf('    setSnsMode(', main.indexOf('    _snsShell(')));
-    assert.match(shell, /sns3-menu-side/); assert.match(shell, /sns-section-nav/);
+    //  사장님 11-18: SNS 화면 전환은 전역 사이드바만 — 창 안 'SNS 메뉴' 없음
+    assert.doesNotMatch(shell, /sns3-menu-side|SNS 메뉴/); assert.doesNotMatch(shell, /sns-section-nav/);
     assert.doesNotMatch(shell, /sns-brand-nav|_snsBrandNav/);
 });
 
@@ -123,7 +124,7 @@ test('판매 5개 중분류는 고객·정산의 하위 탭을 합쳐 유지한�
         "{ k: 'analysis', t: '고객' }", "{ k: 'crm', t: '고객 CRM', hidden: true }",
         "{ k: 'sales', t: '정산' }", "{ k: 'expenses', t: '지출', hidden: true }"]) assert.ok(tabs.includes(token), token);
     const bar = main.slice(main.indexOf('    _appTabBar('), main.indexOf('    // SNS 3단', main.indexOf('    _appTabBar(')));
-    assert.match(bar, /g\.head === 'orders'/); assert.match(bar, /appside-sales-menu/); assert.match(bar, /sales-section-nav/);
+    assert.doesNotMatch(bar, /appside-sales-menu/); assert.doesNotMatch(bar, /sales-section-nav/);
     assert.match(main, /appwrap\$\{side[\s\S]*?\$\{detail \|\| ''\}/);
 });
 

@@ -2671,6 +2671,7 @@ body:not(.light) .global-side{color:#f2f3f5;background:rgba(25,25,30,.88);border
 .mac-side-app .mac-side-app-caret{margin-left:auto;font-size:13px;flex-basis:auto}.mac-side-appwrap:not(.expanded) .mac-side-sub{display:none}
 .mac-side-app:hover,.mac-side-item:hover{background:rgba(127,127,127,.10)}.mac-side-appwrap.on>.mac-side-app{color:var(--primary)}.mac-side-item.on{background:rgba(10,132,255,.14);color:var(--primary);font-weight:900}.mac-side-item.on i{color:var(--primary)}
 .mac-side-sub{position:relative;margin-left:19px;padding-left:8px;border-left:1px solid rgba(127,127,127,.18)}.mac-side-sub .mac-side-item{padding-left:9px}
+.global-side-primary{overflow:visible}.global-side-primary nav{overflow:visible;padding-top:12px}.global-side-primary .mac-side-appwrap{position:relative;margin:3px 0}.global-side-primary .mac-side-sub{display:none;position:absolute;left:calc(100% + 8px);top:0;width:220px;margin:0;padding:7px;border:1px solid rgba(127,127,127,.22);border-radius:10px;background:var(--card-bg);box-shadow:0 14px 36px rgba(0,0,0,.24);z-index:7000}.global-side-primary .mac-side-appwrap.expanded>.mac-side-sub{display:block}.global-side-primary .mac-side-appwrap.on>.mac-side-app{background:rgba(10,132,255,.14);color:var(--primary)}.global-side-primary .mac-side-appwrap.on>.mac-side-app i{color:var(--primary)}
 .side-collapsed .global-side{overflow:visible}.side-collapsed .mac-side-head{padding:0 8px;justify-content:center}.side-collapsed .mac-side-head b,.side-collapsed .mac-side-group-title{display:none}.side-collapsed .global-side nav{padding-left:8px;padding-right:8px;overflow:visible}.side-collapsed .mac-side-appwrap{margin-bottom:4px}.side-collapsed .mac-side-app,.side-collapsed .mac-side-item{justify-content:center;padding:0}.side-collapsed .mac-side-app span,.side-collapsed .mac-side-item span,.side-collapsed .mac-side-app-caret{display:none}.side-collapsed .mac-side-app i,.side-collapsed .mac-side-item i{font-size:19px;flex-basis:auto}
 .side-collapsed .mac-side-sub{display:none;position:absolute;left:56px;top:0;width:210px;margin:0;padding:7px;border:1px solid rgba(127,127,127,.22);border-radius:10px;background:var(--card-bg);box-shadow:0 14px 36px rgba(0,0,0,.24);z-index:7000}.side-collapsed .mac-side-appwrap:hover>.mac-side-sub,.side-collapsed .mac-side-appwrap:focus-within>.mac-side-sub{display:block}.side-collapsed .mac-side-sub .mac-side-item{justify-content:flex-start;padding:0 10px}.side-collapsed .mac-side-sub .mac-side-item span{display:inline}.side-collapsed .mac-side-sub .mac-side-item i{font-size:17px;flex-basis:20px}
 .mac-side-backdrop{display:none}.mac-deskboard{left:var(--mac-side-w)}
@@ -2680,6 +2681,7 @@ body:not(.light) .global-side{color:#f2f3f5;background:rgba(25,25,30,.88);border
  .mac-desktop.side-drawer-open .mac-side-backdrop{display:block;position:fixed;inset:28px 0 0;z-index:6000;border:0;background:rgba(0,0,0,.28);backdrop-filter:blur(2px)}.mac-desktop.side-drawer-open .mac-dock{visibility:hidden}
  .mac-deskboard{left:0}.side-collapsed .global-side{overflow:hidden}.side-collapsed .mac-side-head{padding:0 12px;justify-content:initial}.side-collapsed .mac-side-head b,.side-collapsed .mac-side-group-title{display:flex}.side-collapsed .mac-side-sub{position:relative;left:auto;top:auto;width:auto;margin-left:19px;padding-left:8px;border:0;border-left:1px solid rgba(127,127,127,.18);border-radius:0;background:transparent;box-shadow:none}.side-collapsed .mac-side-appwrap.expanded>.mac-side-sub{display:block}.side-collapsed .mac-side-appwrap:not(.expanded)>.mac-side-sub{display:none}.side-collapsed .mac-side-app span,.side-collapsed .mac-side-item span{display:inline}.side-collapsed .mac-side-app,.side-collapsed .mac-side-item{justify-content:flex-start;padding:0 10px}.side-collapsed .global-side nav{padding-left:8px;padding-right:8px;overflow:auto}
  .mac-menubar{gap:7px;padding:0 8px}.mac-menubar>b,.mac-menubar>span{white-space:nowrap}.mac-menubar>span:not(.mac-mb-right){min-width:0;overflow:hidden;text-overflow:ellipsis;max-width:92px}
+ .global-side-primary .mac-side-sub{position:relative;left:auto;right:auto;top:auto;width:auto;margin:4px 8px 8px 36px}.global-side-primary nav{overflow:auto}.global-side-primary .mac-side-appwrap.expanded>.mac-side-sub{display:block}
 }
 /* 바탕화면 = 홈 대시보드. 창 아래에 깔리고, 블록을 누르면 그 화면이 창으로 열린다. */
 .mac-deskboard{position:absolute;left:var(--mac-side-w);right:0;top:28px;bottom:0;z-index:1;overflow:auto;
@@ -3784,7 +3786,7 @@ body:not(.light) .nc-card:hover{background:rgba(70,70,78,.92)}
 .appwrap.sales3{--c1:156px;--c3:260px}.appwrap.sales3.empty-detail{--c3:132px}.appwrap.production3{--c1:170px;--c3:290px}
 .sales3 .table-container{overflow-x:hidden!important}.sales3 .mtbl{width:100%!important;min-width:0!important;table-layout:fixed}.sales3 .mtbl th,.sales3 .mtbl td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sales3 .mtbl th:nth-child(1){width:34px}.sales3 .mtbl th:nth-child(2){width:98px}.sales3 .mtbl th:nth-child(3){width:78px}.sales3 .mtbl th:nth-child(4){width:112px}.sales3 .mtbl th:nth-child(5){width:72px}.sales3 .mtbl th:nth-child(6){width:auto}.sales3 .mtbl th:nth-child(7){width:42px}.sales3 .mtbl th:nth-child(8){width:112px}.sales3 .mtbl th:nth-child(9){width:92px}
 .sales3 .mtbl th:nth-child(2){width:152px}.sales3 .mtbl th:nth-child(3){width:116px}.sales3 .mtbl th:nth-child(4){width:92px}.sales3 .mtbl th:nth-child(5){width:70px}.sales3 .mtbl th:nth-child(7){width:40px}.sales3 .mtbl th:nth-child(8){width:108px}.sales3 .mtbl th:nth-child(9){width:146px}.sales3 .ord-no,.sales3 .ord-mall,.sales3 .ord-invoice{overflow:visible!important;text-overflow:clip!important;white-space:nowrap}.sales3 .ord-product,.sales3 .oms-expand{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sales3 .it-scroll{overflow-x:hidden}.sales3 .it-tbl{width:100%;min-width:0;table-layout:fixed}.sales3 .it-tbl th,.sales3 .it-tbl td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sales3 .it-tbl th:nth-child(1){width:72px}.sales3 .it-tbl th:nth-child(2){width:54px}.sales3 .it-tbl th:nth-child(3){width:68px}.sales3 .it-tbl th:nth-child(4){width:112px}.sales3 .it-tbl th:nth-child(5){width:132px}.sales3 .it-tbl th:nth-child(6){width:auto}.sales3 .it-tbl th:nth-child(7){width:94px}.sales3 .it-tbl th:nth-child(8){width:166px}.sales3 .cs-order-no{overflow:visible!important;text-overflow:clip!important;white-space:nowrap}.cs-brand-chip{display:inline-flex;max-width:100%;padding:3px 8px;border-radius:999px;background:rgba(10,132,255,.1);color:var(--text-main);white-space:nowrap}.sales3 .cs-memo{height:38px;min-height:38px;resize:none;white-space:normal!important;line-height:1.3;overflow:hidden!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.sales3 .it-sel.it-st{width:88px;max-width:88px!important;padding-right:20px!important;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#64748b 50%),linear-gradient(135deg,#64748b 50%,transparent 50%)!important;background-position:calc(100% - 10px) 50%,calc(100% - 6px) 50%!important;background-size:4px 4px!important;background-repeat:no-repeat!important}
+.sales3 .it-scroll{overflow-x:hidden}.sales3 .it-tbl{width:100%;min-width:0;table-layout:fixed}.sales3 .it-tbl th,.sales3 .it-tbl td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sales3 .it-tbl:has(.cs-order-no) th:nth-child(1){width:72px}.sales3 .it-tbl:has(.cs-order-no) th:nth-child(2){width:54px}.sales3 .it-tbl:has(.cs-order-no) th:nth-child(3){width:68px}.sales3 .it-tbl:has(.cs-order-no) th:nth-child(4){width:112px}.sales3 .it-tbl:has(.cs-order-no) th:nth-child(5){width:132px}.sales3 .it-tbl:has(.cs-order-no) th:nth-child(6){width:auto}.sales3 .it-tbl:has(.cs-order-no) th:nth-child(7){width:94px}.sales3 .it-tbl:has(.cs-order-no) th:nth-child(8){width:166px}.sales3 .cs-order-no{overflow:visible!important;text-overflow:clip!important;white-space:nowrap}.cs-brand-chip{display:inline-flex;max-width:100%;padding:3px 8px;border-radius:999px;background:rgba(10,132,255,.1);color:var(--text-main);white-space:nowrap}.sales3 .cs-memo{height:38px;min-height:38px;resize:none;white-space:normal!important;line-height:1.3;overflow:hidden!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.sales3 .it-sel.it-st{width:88px;max-width:88px!important;padding-right:20px!important;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#64748b 50%),linear-gradient(135deg,#64748b 50%,transparent 50%)!important;background-position:calc(100% - 10px) 50%,calc(100% - 6px) 50%!important;background-size:4px 4px!important;background-repeat:no-repeat!important}
 .production3 .appmain .it-wrap{display:flex;flex-direction:column;overflow:hidden}
 .prod-list{flex:1;min-height:0;overflow:auto}
 .prod-row{display:grid;grid-template-columns:28px minmax(0,1fr) 10px 14px;align-items:center;gap:9px;
@@ -5721,12 +5723,13 @@ b.sp-nm.dup{color:#ff453a}
   .ct3.detail .m3-doc{display:flex}
   .ct3 .ct3-mcat{display:block}
   .ct3-back{display:inline-flex!important}
-  .ct3-tbl .it-tbl th:is(:nth-child(2),:nth-child(3),:nth-child(6),:nth-child(7)),
-  .ct3-tbl .it-tbl td:is(:nth-child(2),:nth-child(3),:nth-child(6),:nth-child(7)){display:none}
+  /* 좁은 화면은 핵심 3열(업체명·담당자·휴대폰)만 — 열 켜고 끄기와 무관하게 열 이름(ck-*)으로 고른다. 주소·전화 등은 상세에서. */
+  .ct3-tbl .it-tbl :is(th,td)[class*="ck-"]:not(.ck-name,.ck-contact,.ck-mobile){display:none}
   .ct3-tbl .it-tbl{table-layout:fixed}
-  .ct3-tbl .it-tbl td{white-space:normal;overflow-wrap:anywhere}
+  .ct3-tbl .it-tbl td{white-space:normal;word-break:keep-all;overflow-wrap:break-word}
   .ct3-tbl .it-tbl td.nw{white-space:nowrap}
-  .ct3-tbl .it-tbl th:nth-child(1){width:44%}.ct3-tbl .it-tbl th:nth-child(4){width:22%}
+  .ct3-tbl .it-tbl th.ck-name{width:40%}.ct3-tbl .it-tbl th.ck-contact{width:26%}.ct3-tbl .it-tbl th.ck-mobile{width:34%}
+  .ct3-tbl .it-tbl th{padding-right:24px}
   .ct3 .m3-page{padding:16px 16px 40px}
   .ct3-pv{height:240px}
 }
@@ -5873,3 +5876,183 @@ b.sp-nm.dup{color:#ff453a}
 .cal .cal-bchip em,.cal .cal-dow span,.cal .cal-d em,.cal .cal-d i,.cal .cal-chip,.cal .cal-more,.cal .dt-h span,.cal .cal-ev span,
 .cal .cal-mdow span,.cal .cal-mgrid i,
 .nt .nt-lbar span,.flt-off{font-size:12px}
+
+/* 11-17 전체 화면 글자 토큰 — 보조 12 / 본문 14 / 제목 16. 행 높이로 밀도를 흡수한다. */
+.mac-desktop{--ui-fs-help:12px;--ui-fs-body:14px;--ui-fs-title:16px}
+.macwin-body,.mac-deskboard{font-size:var(--ui-fs-body);line-height:1.4}
+.macwin-body :where(input,select,textarea,button),.mac-deskboard :where(input,select,textarea,button){font-family:inherit}
+.macwin-body :where(.it-tbl,.mtbl,.set-tbl){font-size:var(--ui-fs-body)}
+.macwin-body :where(.it-tbl,.mtbl,.set-tbl) th,.macwin thead th{font-size:var(--ui-fs-help)!important;line-height:1.35;min-height:36px}
+.macwin-body :where(.it-tbl,.mtbl,.set-tbl) td{line-height:1.4;min-height:38px}
+.macwin-body :where(.mp-tl>b,.dt-h>b,.c3-h>b),.mac-deskboard :where(h2,h3){font-size:var(--ui-fs-title)}
+.macwin p{font-size:var(--ui-fs-body)!important}
+.macwin :where(.mac-ver,.m3-h,.m3-s em,.m3-lbar span,.dt-sec,.dt-h span,.sync-b,.it-tag,.it-more,.it-pill,.ord-cs,
+  .sv-ax,.integ-auth,.cm29-err,.connected-h>span,.connected-empty,.conn-row em,.conn-row>i:last-child,
+  .fd3-copy em,.fd-path,.fd-cnt,.fd-r.head,.fd3-head,.fd3-kind,.fd3-r time,.fd-gh,.fd-sub,.fd-pk,.fd-sh,.fd-s em,
+  .nt-shead,.nt-lbar span,.nt-scope,.nt-when,.nt-chip,.nt-bar em,.rm-meta,.rm-detail-memo b,.cal-mdow span,
+  .cal-mgrid i,.cal-dow span,.cal-d em,.cal-chip,.cal-more,.cal-ev span,.cal-empty,.flt-off,.nav-group-label,
+  .cs-shl,.cs-tn,.cs-mini,.cs-shp-m,.cs-opt,.cs-part,.cs-claim,.prod-meta,.nw-rk>i,.nw-rk>em,.nw-rkmore,
+  .nw-rknote,.nw-spike,.cb-sec>h3 em,.cb-li>em,.nw-cn em,.nw-cs,.lc-hint,.cal-src em,.np-hint,.pa-opt em,
+  .pa-m em,.vtl-h em,.fd3-go,.sns3-group,.sns3-pill,.sns3-hero span,.sns3-reason b,.sns3-trend>b,
+  .sns3-trend>div,.sns3-trend p,.sns3-queue-note,.sns3-actions button,.sns-news-summary-head button,
+  .sns-news-tiles span,.sns-news-tiles em,.sns-news-meta,.sns-follow-gallery article>em,.sns-follow-gallery article>small,
+  .sns-fatigue-chart text,.kpi-label,.stat-label,.card-footer,.material-kpi span,.sum-b em,.dt-stock em,
+  .it-tbl td.mono,.it-in.it-dt,.mp-tl span,.mp-sec,.np-x,.np-chip i,.lc-g,.rm-x,.nc-all,.nc-h span,.nc-s){font-size:var(--ui-fs-help)!important}
+.mac-desktop [style*="font-size:0.56rem"],.mac-desktop [style*="font-size:0.58rem"],.mac-desktop [style*="font-size:0.6rem"],.mac-desktop [style*="font-size:0.62rem"],
+.mac-desktop [style*="font-size:0.64rem"],.mac-desktop [style*="font-size:0.65rem"],.mac-desktop [style*="font-size:0.66rem"],
+.mac-desktop [style*="font-size:0.68rem"],.mac-desktop [style*="font-size:0.7rem"],.mac-desktop [style*="font-size:0.72rem"],
+.mac-desktop [style*="font-size:0.73rem"],.mac-desktop [style*="font-size:0.74rem"],.mac-desktop [style*="font-size:.6rem"],
+.mac-desktop [style*="font-size:.62rem"],.mac-desktop [style*="font-size:.64rem"],.mac-desktop [style*="font-size:.66rem"],
+.mac-desktop [style*="font-size:.68rem"],.mac-desktop [style*="font-size:.7rem"],.mac-desktop [style*="font-size:.72rem"],
+.mac-desktop [style*="font-size:.73rem"],.mac-desktop [style*="font-size:.74rem"],.mac-desktop [style*="font-size:0.75rem"],
+.mac-desktop [style*="font-size:0.76rem"],.mac-desktop [style*="font-size:0.78rem"],.mac-desktop [style*="font-size:0.8rem"],
+.mac-desktop [style*="font-size:.75rem"],.mac-desktop [style*="font-size:.76rem"],.mac-desktop [style*="font-size:.78rem"],
+.mac-desktop [style*="font-size:.8rem"],.mac-desktop [style*="font-size:9px"],
+.mac-desktop [style*="font-size:10px"],.mac-desktop [style*="font-size:10.5px"],.mac-desktop [style*="font-size:11px"],
+.mac-desktop [style*="font-size:11.5px"]{font-size:var(--ui-fs-help)!important}
+.mac-desktop :where(.mac-ver,.sv-st,.sv-hint,.tip-q,.tip-wrap,.dt-li.job b){font-size:var(--ui-fs-help)!important}
+.mac-desktop svg text{font-size:var(--ui-fs-help)!important}
+.mac-desktop .warn-bar :where(b,span,em),.mac-desktop .sv :where(.sv-m small,.sv-pt span,.sv-bar b,.sv-days span,.sv-ph span,.sv-profit .f,.sv-fee .r,.sv-pf,.sv-sub span){font-size:var(--ui-fs-help)!important}
+
+/* 판매 긴 값: 읽을 값은 2줄까지 보이고, 고정 수치 칸이 폭을 빼앗지 않는다. */
+.sales3 .it-tbl:has(.inv-row) th:nth-child(1){width:136px}.sales3 .it-tbl:has(.inv-row) th:nth-child(2){width:188px}
+.sales3 .it-tbl:has(.inv-row) th:nth-child(3){width:132px}.sales3 .it-tbl:has(.inv-row) th:nth-child(4){width:132px}
+.sales3 .it-tbl:has(.inv-row) th:nth-child(5),.sales3 .it-tbl:has(.inv-row) th:nth-child(6){width:76px}
+.sales3 .it-tbl:has(.inv-row) th:nth-child(7){width:88px}
+.sales3 .inv-row td:nth-child(-n+3),.sales3 .it-tbl:has(.cs-order-no) tbody td:nth-child(6){white-space:normal!important;line-height:1.35;overflow-wrap:anywhere}
+.sales3 .inv-row td:nth-child(-n+3)>span,.sales3 .it-tbl:has(.cs-order-no) tbody td:nth-child(6)>span:not(.cs-part){display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sales3 .inv-row{height:52px}.sales3 .it-tbl:has(.cs-order-no) tbody tr{height:54px}
+
+/* 홈 스크롤 끝에는 독 실제 높이 + 여유를 예약해 마지막 블록 전체가 독 위로 올라온다. */
+.mac-deskboard{bottom:0;padding-bottom:110px;scroll-padding-bottom:110px}
+@media(max-width:900px){.mac-deskboard{bottom:0;padding-bottom:120px;scroll-padding-bottom:120px}}
+/* 주문 표 — 상품만 말줄임, 나머지(주문번호·브랜드·채널·송장 등)는 내용 폭 그대로 전체 표시(9e20277 디자이너 반려).
+   고정 열폭은 실데이터(로하이스튜디오 94·우체국+13자리 149)를 못 따라가 잘렸다 → 내용 폭(auto) + 상품이 남는 폭을 가져간다.
+   목록이 좁으면(상세 열림·390) 표만 가로 스크롤. 글자 크기는 디자이너 토큰. */
+.sales3 .ord-tbl{table-layout:auto!important;width:100%!important;min-width:0!important}
+.sales3 .ord-tbl th,.sales3 .ord-tbl td{width:auto!important;white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important}
+.sales3 .ord-tbl th:nth-child(7),.sales3 .ord-tbl td:nth-child(7){width:100%!important;max-width:0;min-width:64px;overflow:hidden!important;text-overflow:ellipsis!important}
+.sales3 .ord-tbl .ord-product{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sales3 .table-container:has(>.ord-tbl){overflow-x:auto!important}
+/* 주문 표 깔때기 — mtbl 은 it-tbl 의 hover 규칙을 못 받아 늘 투명이었다. 다른 표처럼 늘 보이게. */
+.sales3 .ord-tbl th{position:relative}
+.sales3 .ord-tbl th:not(:first-child){padding-right:24px!important}
+.sales3 .ord-tbl th .th-f{right:5px;opacity:.68}
+.sales3 .ord-tbl th:hover .th-f,.sales3 .ord-tbl th.flt .th-f{opacity:1}
+.sales3 .ord-tbl th.flt{color:#0a84ff!important;background:rgba(10,132,255,.1)}.sales3 .ord-tbl th.flt .th-f{color:#0a84ff}
+/* 정산 브랜드×월 — 첫 열 120px 이상, 칸 클릭 표시 */
+.sales3 .mtbl.sv-mtx,.sv-mtx{table-layout:auto!important}
+.sales3 .mtbl.sv-mtx th,.sales3 .mtbl.sv-mtx td{width:auto;overflow:visible;text-overflow:clip}
+.sales3 .mtbl.sv-mtx th.sv-mtx-b,.sales3 .mtbl.sv-mtx td:first-child,.sv-mtx th.sv-mtx-b,.sv-mtx td:first-child{min-width:120px;width:120px;text-align:left}
+.sv-mtx th.num{text-align:right}.sv-mtx th.sv-mtx-t{border-left:1px solid var(--card-border)}
+.sv-mtx tr.sv-mtx-r:hover td{background:rgba(127,127,127,.06)}
+.sv-mtx tr.sv-mtx-r.on td:first-child{color:var(--primary)}
+.sv-mtx td.on{background:color-mix(in srgb,var(--primary) 14%,transparent)!important;border-radius:6px}
+/* 생산현황 진행 브랜드 칩 */
+.ven-br{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ven-chip{display:inline-block;padding:1px 7px;margin-right:4px;border-radius:999px;background:rgba(127,127,127,.12);color:var(--text-main)}
+/* 자료실 — 깔때기 늘 보이게(다른 표와 같게), 오른쪽 최근 목록은 2줄까지 + 툴팁 */
+.fd3-head .th-f{opacity:.68}
+.c3-li.fd-recent{align-items:flex-start}
+.c3-li.fd-recent span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-all;line-height:1.35}
+/* 연동 표 — 채널 열 머리 가운데 */
+.integ-th th.c{text-align:center}
+/* 연락처 열 표시(⑤) — 너비·배치만 */
+.ct3-colpick{width:170px;max-height:min(480px,80vh);overflow:auto}
+.ct3-colpick .colf-i{display:flex;align-items:center;gap:8px;padding:4px 12px;cursor:pointer}
+.ct3-colpick .colf-i.dis{opacity:.5;cursor:default}
+.ct3-tbl .it-tbl td.ct3-addr{white-space:normal;word-break:keep-all;min-width:140px;max-width:220px}
+.ct3-tbl .it-tbl td.ct3-memo{white-space:normal;min-width:120px;max-width:200px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ct3-tbl .ct3-miss{color:var(--text-muted)}
+
+/* 자료실 = 맥 파인더(사장님 11-18) — 고른 파일이 없으면 미리보기 칸을 숨기고 2칸(즐겨찾기 | 목록) */
+.fd.nosel{grid-template-columns:var(--c1,188px) 1fr!important}
+.fd.nosel .fd-prev{display:none!important}
+@media (max-width:760px){.fd.nosel{grid-template-columns:1fr!important}}
+/* 창 안 'SNS 메뉴' 제거(사장님 11-18) — SNS 창은 목록 | 상세 2단 */
+.sns3-layout.no-side{--c1:0px;grid-template-columns:minmax(0,1fr) 380px}
+@media (max-width:900px){.sns3-layout.no-side{grid-template-columns:1fr}}
+/* 판매·생산: 왼쪽 '보기'와 같은 목록인 가운데 탭(.nav-dup)은 왼쪽이 보이는 넓은 화면에서 숨긴다 — 좁은 화면(왼쪽 숨음)에서만 쓴다(팀장 반려 11-18 S6) */
+@media (min-width:901px){.appwrap:not(.no-appside) .nav-dup{display:none!important}}
+/* 자료실 좁은 화면: 경로막대 '‹ 위치' 버튼 → 즐겨찾기 목록이 목록 자리를 덮는다(팀장 반려 11-18) */
+.fd-loc,.fd-sclose{display:none}
+@media (max-width:900px){
+  .fd-loc{display:inline-flex;align-items:center;gap:3px;border:0;background:none;color:var(--primary);font:inherit;padding:2px 6px 2px 0;cursor:pointer}
+  .fd.side-on .fd-side{display:block!important;border-right:0!important}
+  .fd.side-on .fd-main,.fd.side-on .fd-prev{display:none!important}
+  .fd.side-on .fd-sclose{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--primary);font:inherit;font-size:13px;padding:2px 4px 8px;cursor:pointer}
+}
+/* 할 일 좁은 화면: '‹ 목록' 버튼 → 타일·목록 칸(팀장 반려 11-18, 자료실과 같은 방식) */
+.rm-loc,.rm-sclose{display:none}
+@media (max-width:900px){
+  .rm-loc{display:inline-flex;align-items:center;gap:3px;border:0;background:none;color:var(--primary);font:inherit;font-size:13px;padding:2px 6px 2px 0;cursor:pointer;margin-right:auto}
+  .rm.side-on .rm-side{display:block!important;border-right:0!important;overflow:auto}
+  .rm.side-on .rm-main,.rm.side-on .rm-doc{display:none!important}
+  .rm.side-on .rm-sclose{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--primary);font:inherit;font-size:13px;padding:2px 4px 8px;cursor:pointer}
+}
+/* 메모 좁은 화면: 본문 '‹ 목록' → 메모 목록, 목록 '‹ 폴더' → 돌아감. 넓은 화면은 그대로(사장님 기준 화면 구조 유지) */
+.nt-loc,.nt-lclose{display:none}
+@media (max-width:820px){
+  .nt-loc,.nt-lclose{display:inline-flex;align-items:center;gap:3px;border:0;background:none;color:var(--primary);font:inherit;font-size:13px;padding:4px 8px 4px 0;cursor:pointer;width:auto!important;flex:0 0 auto}
+  .nt-loc:not(.solo){margin-right:2px}
+  .nt-doc .nt-tools{overflow-x:auto;scrollbar-width:none}
+  .nt-loc.solo{margin:8px 12px 0}
+  .nt-lclose{margin:8px 12px 0}
+  .nt.list-on .nt-list{display:flex!important;border-right:0!important}
+  .nt.list-on .nt-side,.nt.list-on .nt-doc{display:none!important}
+}
+
+/* 11-18 자료실 — macOS Finder 목록 보기의 위계·밀도·선택 표현을 같은 구조로 맞춘다. */
+.fd-side{background:color-mix(in srgb,var(--card-bg) 66%,rgba(148,163,184,.22));backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);padding:9px 8px 18px}
+.fd-sh{font-size:12px;font-weight:700;opacity:.68;padding:14px 10px 5px;letter-spacing:-.01em}
+.fd-s{min-height:30px;padding:4px 9px;border-radius:7px;font-size:13px;gap:7px}
+.fd-s:hover{background:rgba(127,127,127,.12)}
+.fd-s.on{background:rgba(127,127,127,.25);font-weight:650;color:inherit}
+.fd-s em{font-size:12px}.fd-s .fd-tagdot{font-size:10px!important}
+.fd-bar{min-height:47px;padding:7px 11px;gap:9px;background:color-mix(in srgb,var(--card-bg) 88%,transparent)}
+.fd-bar>b{font-size:15px;font-weight:750}
+.fd-nav,.fd-seg{display:flex;border:1px solid rgba(127,127,127,.16);background:rgba(127,127,127,.10);border-radius:8px;overflow:hidden;padding:0;gap:0}
+.fd-nav button,.fd-seg button{width:31px;height:28px;display:grid;place-items:center;border:0;border-right:1px solid rgba(127,127,127,.14);background:transparent;color:inherit;padding:0;font-size:14px}
+.fd-nav button:last-child,.fd-seg button:last-child{border-right:0}
+.fd-nav button:disabled{opacity:.28}.fd-nav button:not(:disabled):hover,.fd-seg button:hover{background:rgba(127,127,127,.14)}
+.fd-seg button.on{background:var(--card-bg);box-shadow:0 1px 3px rgba(0,0,0,.13)}
+.fd-find{height:30px;box-sizing:border-box;border:1px solid rgba(127,127,127,.12);background:rgba(127,127,127,.10);border-radius:8px;padding:4px 9px}
+.fd-find input{font-size:13px}.fd-add{height:30px;border-radius:8px;font-size:13px;padding:5px 11px}
+.fd-list{padding:0 0 10px}
+.fd3-head{grid-template-columns:minmax(240px,1fr) 190px 105px 138px;gap:0;padding:0 12px 0 18px;min-height:28px;align-items:center;background:color-mix(in srgb,var(--card-bg) 94%,rgba(127,127,127,.08));font-size:12px;border-bottom:1px solid var(--pane-line)}
+.fd3-head>span{height:28px;box-sizing:border-box;padding:0 24px 0 7px;border-right:1px solid var(--pane-line)}
+.fd3-head>span:last-child{border-right:0}
+.fd3-r{grid-template-columns:minmax(240px,1fr) 190px 105px 138px;gap:0;min-height:29px;padding:0 12px 0 18px;border-bottom:0;font-size:13px;color:inherit}
+.fd3-r:nth-child(even){background:rgba(127,127,127,.055)}
+.fd3-r:hover{background:rgba(10,132,255,.12)}
+.fd3-r.on{background:#0a84ff;color:#fff}
+.fd3-r.on time,.fd3-r.on .fd3-ic{color:#fff!important}
+.fd3-name{min-width:0;display:flex;align-items:center;gap:7px;height:29px;padding-right:12px;overflow:hidden}
+.fd3-name b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500}
+.fd3-name .fd3-pad{width:15px;flex:0 0 15px}
+.fd3-r.nested .fd3-name{padding-left:20px}
+.fd3-ic{width:18px;flex:0 0 18px;font-size:17px;color:#0a84ff;text-align:center}
+.fd3-r time{height:29px;display:flex;align-items:center;padding-left:8px;border-left:1px solid var(--pane-line);font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fd3-size,.fd3-tag{height:29px;box-sizing:border-box;display:flex;align-items:center;min-width:0;padding:0 8px;border-left:1px solid var(--pane-line);font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fd3-tag{gap:6px}.fd3-tag>i{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--tag,#8e8e93)}
+.fd3-r.on .fd3-size,.fd3-r.on .fd3-tag{color:#fff}.fd3-r.on .fd3-tag>i{box-shadow:0 0 0 1px rgba(255,255,255,.75)}
+.fd3-disclose{width:15px;height:20px;flex:0 0 15px;display:grid;place-items:center;border:0;background:transparent;color:var(--text-muted);padding:0}
+.fd3-disclose i{font-size:10px;transition:transform .12s}.fd3-r.folder.open .fd3-disclose i{transform:rotate(90deg)}
+.fd3-r.folder .fd3-name>.fd3-ic,.fd-it.folder .fd-th i{color:#0a84ff!important}
+.fd3-r.folder .fd3-name b{font-weight:600}
+.fd-foot{flex:0 0 auto;border-top:1px solid var(--pane-line);background:color-mix(in srgb,var(--card-bg) 94%,transparent)}
+.fd-path{min-height:29px;box-sizing:border-box;border-top:0!important;border-bottom:1px solid var(--pane-line);padding:4px 12px;font-size:12px;gap:4px;overflow:hidden;white-space:nowrap}
+.fd-path>span{max-width:180px;overflow:hidden;text-overflow:ellipsis}.fd-path>i{font-size:11px;flex:0 0 auto}.fd-path>i:first-of-type{color:#0a84ff;font-size:14px}
+.fd-status{height:24px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:3px 12px;font-size:12px;color:var(--text-muted)}
+@media (max-width:760px){
+  .fd-bar{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:7px;padding:7px 9px}
+  .fd-nav{display:none}.fd-bar>b{font-size:14px}.fd-seg button{width:29px}
+  .fd-find{width:34px;padding:0;justify-content:center}.fd-find input{display:none}
+  .fd-find.open{grid-column:1/-1;width:auto;justify-content:flex-start}.fd-find.open input{display:block}
+  .fd-add{width:32px;padding:0;justify-content:center}.fd-add span{display:none}
+  .fd3-head,.fd3-r{grid-template-columns:minmax(190px,1fr) 142px;padding-left:9px;padding-right:8px}
+  .fd3-head .fdh-size,.fd3-head .fdh-brand,.fd3-r .fd3-size,.fd3-r .fd3-tag{display:none}
+  .fd3-head>span{padding-left:5px}.fd3-r{font-size:13px}
+  .fd3-name .fd3-pad{width:9px;flex-basis:9px}.fd3-r.nested .fd3-name{padding-left:12px}
+  .fd-path{padding:4px 9px}.fd-path>span{max-width:96px}.fd-status{padding:3px 9px}
+}

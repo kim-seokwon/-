@@ -6,19 +6,40 @@ const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
 
 test('자료실은 폴더·요약 목록·선택 상세 3단을 유지한다', () => {
-    assert.match(main, /<div class="fd\$\{this\.docMobileDetail \? ' detail' : ''\}">/);
+    //  사장님 11-18: 파일을 안 고르면 오른쪽 칸을 숨겨 2단(파인더) — 요약 카드 없음
+    assert.match(main, /<div class="fd\$\{this\.docMobileDetail \? ' detail' : ''\}\$\{this\.docSideSheet \? ' side-on' : ''\}\$\{docs\.some\(x => String\(x\.id\) === String\(this\.docSel\)\) \? '' : ' nosel'\}">/);
+    assert.match(css, /\.fd\.nosel \.fd-prev\{display:none!important\}/);
+    assert.doesNotMatch(main, /자료 요약/);
     assert.match(main, /class="fd3-r/);
-    assert.match(main, /class="fd3-copy"><b>[\s\S]*?<em>/);
+    assert.match(main, /class="fd3-name">[\s\S]*?fd3-ic[\s\S]*?<b title=/);
     assert.match(main, /const d = docs\.find\(x => String\(x\.id\) === String\(this\.docSel\)\);/);
-    assert.match(main, /자료를 선택하세요/);
     assert.match(css, /\.fd\{display:grid;[^}]*grid-template-columns:var\(--c1,188px\) 1fr var\(--c3,232px\)/);
 });
 
 test('폴더 전환은 선택을 풀고 모바일은 목록→상세→목록이다', () => {
-    assert.match(main, /setDocCategory\(c\) \{ this\.selectedDocCategory = c; this\.docSel = null; this\.docMobileDetail = false;/);
+    assert.match(main, /setDocCategory\(c, remember = true\)[\s\S]*?this\.selectedDocCategory = c; this\.docSel = null; this\.docMobileDetail = false;/);
     assert.match(main, /selectDoc\(id\) \{ this\.docSel = id; this\.docMobileDetail = true;/);
     assert.match(main, /closeDocDetail\(\) \{ this\.docMobileDetail = false;/);
     assert.match(css, /@media \(max-width:900px\)[\s\S]*?\.fd\.detail \.fd-main\{display:none\}[\s\S]*?\.fd\.detail \.fd-prev\{display:flex\}/);
+});
+
+test('11-18 맥 순정 Finder 요소를 자료실 데이터에 맞게 재사용한다', () => {
+    for (const label of ['최근 항목', '즐겨찾기', '위치', '태그']) assert.ok(main.includes(label), label);
+    assert.match(main, /class="fd-nav"/);
+    assert.match(main, /docNavigate\(-1\)/);
+    assert.match(main, /\[\['name', '이름'\], \['date', '수정일'\], \['size', '크기'\], \['brand', '태그'\]\]/);
+    assert.match(main, /class="fd3-r folder/);
+    assert.match(main, /class="fd3-size"/);
+    assert.match(main, /class="fd3-tag"/);
+    assert.match(main, /class="fd-foot"/);
+    assert.match(main, /1\/\$\{docs\.length\} 선택됨/);
+    assert.match(main, /const dateOnly = \/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\//);
+    assert.match(main, /dateOnly \? '' : new Intl\.DateTimeFormat/);
+    assert.match(main, /date: t\.created_at \|\| ''/);
+    assert.match(main, /date: qt\.quote_date \|\| qt\.created_at \|\| ''/);
+    assert.match(main, /const statusText = selected[\s\S]*?1\/\$\{docs\.length\} 선택됨/);
+    assert.match(css, /\.fd3-r\.on\{background:#0a84ff;color:#fff\}/);
+    assert.match(css, /\.fd3-r:nth-child\(even\)/);
 });
 
 test('기존 업로드·다운로드·수정·권한 데이터 경로를 재사용한다', () => {
