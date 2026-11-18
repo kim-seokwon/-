@@ -38,7 +38,11 @@ test('협업 창은 자기 목록을 왼쪽에 둔다 — 메모 폴더·할 일
     assert.match(main, /구분을 우클릭해 관리/);
     //  메모: 가운데 브랜드 태그 줄·오른쪽 요약 카드 없음(d1c14cc 이전 구조)
     assert.ok(!main.includes('nt-btags'), 'nt-btags');
-    assert.match(main, /메모를 선택하세요/);
+    assert.match(main, /const sel = list\.find\(n => n\.id === this\.noteSel\) \|\| list\[0\]/, '메모 첫 항목 자동 선택');
+    assert.match(main, /이 폴더에는 메모가 없습니다/);
+    const calendar = between('    renderCalendar() {', '    //  캘린더에서 더하기');
+    assert.doesNotMatch(calendar, /이번 달 자금|구독 \$\{subscriptions\.length\}/, '캘린더 왼쪽 요약 금지');
+    assert.match(main, /<span class="rm-ti" aria-hidden="true">\$\{esc\(t\.glyph\)\}<\/span>/, '미리알림 타일은 외부 아이콘 폰트 없이도 보임');
 });
 
 test('팀장 반려 11-18 — 왼쪽과 같은 가운데 탭은 넓은 화면에서 숨김 · 자료실 좁은 화면 위치 버튼 · 연락처 요약 카드 없음', () => {
@@ -50,8 +54,11 @@ test('팀장 반려 11-18 — 왼쪽과 같은 가운데 탭은 넓은 화면에
     assert.match(main, /class="fd-loc" onclick="app\.toggleDocSide\(true\)"/);
     assert.match(main, /this\.docSideSheet = false/, '폴더 고르면 닫힘');
     assert.match(css, /\.fd\.side-on \.fd-side\{display:block!important/);
+    assert.match(css, /\.mac-deskboard\{overflow-x:hidden;overflow-y:auto\}/, '1440 바탕화면 가로 스크롤 금지');
+    assert.match(css, /\.mac-deskboard>\.home-view\{[^}]*overflow-x:clip/, '바탕 홈 내부가 창 아래에서 가로 크기를 늘리지 않음');
+    assert.match(css, /\.rm-lic,\.rm-detail-memo b\{font-size:12px\}/, '할 일 화면 최소 12px');
     assert.ok(!main.includes('_contactSummaryHTML'), '연락처 요약 카드');
-    assert.match(main, /'연락처'\}를 선택하세요/);
+    assert.match(main, /\|\| shownList\[0\] \|\| null/, '연락처 첫 항목 자동 선택');
 });
 
 test('할 일 좁은 화면 — 목록 버튼으로 타일·목록 칸을 연다, 고르면 닫힌다', () => {
@@ -63,6 +70,7 @@ test('할 일 좁은 화면 — 목록 버튼으로 타일·목록 칸을 연다
 test('메모 좁은 화면 — 본문 목록 버튼으로 메모 목록, 메모 고르면 닫힘(넓은 화면 구조는 그대로)', () => {
     assert.match(main, /class="nt-loc" onclick="app\.toggleNoteList\(true\)"/);
     assert.match(main, /selectNote\(id\) \{[^}]*this\.noteListSheet = false;/);
+    assert.match(css, /\.nt>\.nt-side,\.nt>\.nt-list\{display:none!important\}/);
     assert.match(css, /\.nt\.list-on \.nt-list\{display:flex!important/);
     assert.match(css, /\.nt-loc,\.nt-lclose\{display:none\}/, '넓은 화면엔 안 보임');
 });

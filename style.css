@@ -5967,6 +5967,20 @@ b.sp-nm.dup{color:#ff453a}
 .ct3-tbl .it-tbl td.ct3-memo{white-space:normal;min-width:120px;max-width:200px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ct3-tbl .ct3-miss{color:var(--text-muted)}
 
+/* 11-18 협업 4창 — macOS 기본 앱의 양쪽 칸 질감과 도구막 높이를 통일. */
+.nt-side,.rm-side,.cal-side,.ct3>.m3-side{
+  background:color-mix(in srgb,var(--card-bg) 86%,#cbd2dc 14%);
+  -webkit-backdrop-filter:blur(20px) saturate(1.15);backdrop-filter:blur(20px) saturate(1.15)
+}
+.nt-list,.rm-main,.cal-main,.ct3>.m3-list{background:var(--card-bg)}
+.nt-side :is(.nt-f,.nt-prod),.rm-side :is(.rm-l,.rm-seg),.cal-side .cal-src,.ct3>.m3-side .m3-s{min-height:32px}
+.nt-row.on,.rm-item.on,.ct3-tbl .it-row.on td{background:rgba(10,132,255,.13)}
+.nt-tools,.rm-tools,.cal-top,.ct3 .m3-lbar{min-height:42px;box-sizing:border-box}
+.nt-det{font-size:12px}
+.mac-deskboard{overflow-x:hidden;overflow-y:auto}
+.mac-deskboard>.home-view{width:100%;max-width:100%!important;box-sizing:border-box;overflow-x:clip}
+.rm-lic,.rm-detail-memo b{font-size:12px}
+
 /* 자료실 = 맥 파인더(사장님 11-18) — 고른 파일이 없으면 미리보기 칸을 숨기고 2칸(즐겨찾기 | 목록) */
 .fd.nosel{grid-template-columns:var(--c1,188px) 1fr!important}
 .fd.nosel .fd-prev{display:none!important}
@@ -5995,6 +6009,8 @@ b.sp-nm.dup{color:#ff453a}
 /* 메모 좁은 화면: 본문 '‹ 목록' → 메모 목록, 목록 '‹ 폴더' → 돌아감. 넓은 화면은 그대로(사장님 기준 화면 구조 유지) */
 .nt-loc,.nt-lclose{display:none}
 @media (max-width:820px){
+  .nt>.nt-side,.nt>.nt-list{display:none!important}
+  .nt>.nt-doc{display:flex!important}
   .nt-loc,.nt-lclose{display:inline-flex;align-items:center;gap:3px;border:0;background:none;color:var(--primary);font:inherit;font-size:13px;padding:4px 8px 4px 0;cursor:pointer;width:auto!important;flex:0 0 auto}
   .nt-loc:not(.solo){margin-right:2px}
   .nt-doc .nt-tools{overflow-x:auto;scrollbar-width:none}

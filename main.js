@@ -11531,7 +11531,7 @@ class BhasApp {
                               onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`
                         : this._noteLiveHTML(sel)}
                     ${this._noteItemsHTML(sel)}
-                </div>` : `<button class="nt-loc solo" onclick="app.toggleNoteList(true)"><i class="ph ph-caret-left"></i> 목록</button><div class="nt-none big">메모를 선택하세요</div>`}
+                </div>` : `<button class="nt-loc solo" onclick="app.toggleNoteList(true)"><i class="ph ph-caret-left"></i> 목록</button><div class="nt-none big">이 폴더에는 메모가 없습니다</div>`}
             </section>
         </div>`;
     }
@@ -11883,14 +11883,14 @@ class BhasApp {
         };
         const cur = this.remList2 || 'today';
         const TILES = [
-            { k: 'today', label: '오늘',  icon: 'ph-calendar-blank', cls: 'blue' },
-            { k: 'plan',  label: '예정',  icon: 'ph-calendar-dots',  cls: 'red' },
-            { k: 'all',   label: '전체',  icon: 'ph-tray',           cls: 'dark' },
-            { k: 'late',  label: '지연',  icon: 'ph-flag',           cls: 'orange' },
-            { k: 'nodate', label: '날짜 없음', icon: 'ph-calendar-x', cls: 'pink' },
-            { k: 'mine',  label: '내 할 일', icon: 'ph-user',        cls: 'pink' },
-            { k: 'sent',  label: '요청한 것', icon: 'ph-paper-plane-tilt', cls: 'teal' },
-            { k: 'done',  label: '완료됨', icon: 'ph-check',         cls: 'gray' },
+            { k: 'today', label: '오늘', glyph: String(new Date().getDate()), cls: 'blue' },
+            { k: 'plan',  label: '예정', glyph: '◷', cls: 'red' },
+            { k: 'all',   label: '전체', glyph: '▣', cls: 'dark' },
+            { k: 'late',  label: '지연', glyph: '!', cls: 'orange' },
+            { k: 'nodate', label: '날짜 없음', glyph: '—', cls: 'pink' },
+            { k: 'mine',  label: '내 할 일', glyph: '●', cls: 'pink' },
+            { k: 'sent',  label: '요청한 것', glyph: '↗', cls: 'teal' },
+            { k: 'done',  label: '완료됨', glyph: '✓', cls: 'gray' },
         ];
         const listNames = [...new Set(all.map(x => x.list))];
         const LCOL = { '시즌': '#0a84ff', '제품': '#0a84ff', '거래처': '#ff9f0a', '기본': '#ff9f0a', '메모': '#30d158' };
@@ -11902,7 +11902,9 @@ class BhasApp {
         // 목록별로 묶어 색 제목을 얹는다
         const groups = {};
         shown.forEach(x => { (groups[x.list] = groups[x.list] || []).push(x); });
-        const pick = all.find(x => `${x.src}:${x.id}` === this.remPick) || null;
+        // 넓은 화면은 macOS 미리알림처럼 현재 목록의 첫 항목을 바로 보여 준다.
+        // remMobileDetail은 직접 누를 때만 켜서 390px의 목록→상세 흐름은 유지한다.
+        const pick = all.find(x => `${x.src}:${x.id}` === this.remPick) || shown[0] || null;
         const sections = Object.keys(groups).map((l, i) => {
             const col = colorOf(l, listNames.indexOf(l));
             return `<div class="rm-sec" style="color:${col}">${esc(l)}</div>
@@ -11945,7 +11947,7 @@ class BhasApp {
                     <button class="rm-done" onclick="app.toggleRemItem('${pick.src}','${esc(String(pick.id))}')"><i class="ph ${pick.done ? 'ph-arrow-counter-clockwise' : 'ph-check'}"></i>${pick.done ? '완료 취소' : '완료'}</button>
                     <button class="rm-delete" onclick="app.delRemItem('${pick.src}','${esc(String(pick.id))}')"><i class="ph ph-trash"></i>지우기</button>
                 </div>
-            </div>` : `<div class="m3-none mid">할 일을 선택하세요</div>`;
+            </div>` : `<div class="m3-none mid">이 목록에는 할 일이 없습니다</div>`;
 
         return `
         <div class="rm${this.remMobileDetail ? ' detail' : ''}${this.remSideSheet ? ' side-on' : ''}">
@@ -11954,7 +11956,7 @@ class BhasApp {
                 <div class="rm-tiles">
                     ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
                         title="${({today:'기한이 오늘이거나 이미 지난 것',plan:'기한이 앞으로 남은 것',all:'안 끝난 것 전부',late:'기한이 지난 것',nodate:'기한을 안 적은 것',mine:'담당이 나로 되어 있는 것',sent:'내가 만들어 남에게 넘긴 것',done:'끝낸 것'})[t.k] || ''}">
-                        <span class="rm-ti"><i class="ph ${t.icon}"></i></span>
+                        <span class="rm-ti" aria-hidden="true">${esc(t.glyph)}</span>
                         <b>${all.filter(F[t.k]).length}</b>
                         <em>${t.label}</em>
                     </button>`).join('')}
@@ -14990,12 +14992,10 @@ class BhasApp {
         }
 
         const selList = (byDate[sel] || []).slice().sort((a, b) => a.kind.localeCompare(b.kind));
-        const money = this._routineMonthMoney(yy, mo);
-        const subscriptions = (this.calendarRoutines || []).filter(r => r.active && r.kind === 'subscription');
         return `
         <div class="cal">
             <aside class="cal-side">
-                <div class="m3-h">이 대시보드</div>
+                <div class="m3-h">내 캘린더</div>
                 ${this.CAL_SRC.map(s2 => `<div class="cal-src" onclick="app.toggleCalSrc('${s2.k}')">
                     <span class="cal-ck${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}"></span>
                     <span>${esc(s2.t)}</span>
@@ -15005,15 +15005,6 @@ class BhasApp {
                         <b>${yy}년 ${mo + 1}월</b><button onclick="app.calMove(1)">›</button></div>
                     <div class="cal-mdow">${dow.map(x => `<span>${x}</span>`).join('')}</div>
                     <div class="cal-mgrid">${mini}</div>
-                </div>
-                <div style="margin:16px 10px 0;padding:12px;border-radius:12px;background:rgba(var(--tint),.05);font-size:12px">
-                    <b style="display:block;margin-bottom:8px">이번 달 자금</b>
-                    <div style="display:flex;justify-content:space-between;color:#ff453a"><span>나갈 돈</span><b>${money.out.toLocaleString('ko-KR')}원</b></div>
-                    <div style="display:flex;justify-content:space-between;color:#30d158;margin-top:5px"><span>들어올 돈</span><b>${money.in.toLocaleString('ko-KR')}원</b></div>
-                </div>
-                <div style="margin:14px 10px 0;font-size:12px"><b>구독 ${subscriptions.length}</b>
-                    ${subscriptions.slice(0, 8).map(r => `<div style="display:flex;justify-content:space-between;padding:5px 0;color:var(--text-muted);cursor:pointer" onclick="app.openRoutineEditor('${r.id}')">
-                        <span>${esc(r.service_name || r.title)}</span><span>${Number(r.amount || 0).toLocaleString('ko-KR')}원</span></div>`).join('') || `<div style="padding:7px 0;color:var(--text-muted)">등록된 구독 없음</div>`}
                 </div>
             </aside>
             <section class="cal-main">
@@ -16482,7 +16473,6 @@ class BhasApp {
         const CT_COLS = this._contactCols();
         const cols = CT_COLS.filter(c => c.on);
         const ncol = cols.length;
-        const sel = this.contactNew ? null : (all.find(v => String(v.id) === String(this.contactSel)) || null);
         const cnt = c => all.filter(v => (v.category || '기타') === c).length;
         const initial = n => (String(n || '?').trim()[0] || '?');
         const statusColor = s => ({ '거래중': '#22c55e', '보류': '#f59e0b', '거래중단': '#94a3b8' })[s] || '#94a3b8';
@@ -16496,6 +16486,9 @@ class BhasApp {
         const stPicked = status !== '전체' || !!((this.tblFilt || {}).contacts || {}).status;
         const stopped = stPicked ? [] : list.filter(v => (v.status || '거래중') === '거래중단');
         const shownList = stPicked || this.contactShowDone ? list : list.filter(v => (v.status || '거래중') !== '거래중단');
+        // 넓은 화면에서는 첫 연락처 상세를 즉시 보이되, contactSel은 적지 않아
+        // 390px에서 사용자가 행을 누르기 전까지 목록을 유지한다.
+        const sel = this.contactNew ? null : (all.find(v => String(v.id) === String(this.contactSel)) || shownList[0] || null);
         const rows = shownList.map(v => {
             const p = phonesOf(v);
             const td = {
@@ -16533,7 +16526,7 @@ class BhasApp {
                     ${this._thead('contacts', cols.map(c => [c.k, c.label, 'ck-' + c.k]))}
                 </tr></thead><tbody>${rows || `<tr><td colspan="${ncol}" class="it-none">${filtered ? '찾는 연락처가 없습니다' : '등록된 연락처가 없습니다 — 위 ＋'}</td></tr>`}</tbody></table></div>
             </section>`;
-        const docOpen = !!(sel || this.contactNew);
+        const docOpen = !!(this.contactSel || this.contactNew);
         return `
         <div class="m3 ct3${docOpen ? ' detail' : ''}">
             <aside class="m3-side">
@@ -16545,7 +16538,7 @@ class BhasApp {
             </aside>
             ${center}
             <section class="m3-doc">
-                ${docOpen ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : `<div class="nt-none big">${this.currentView === 'makers' ? '생산처' : '연락처'}를 선택하세요</div>`}
+                ${sel || this.contactNew ? this._contactDocHTML(this.contactNew ? {} : sel, { cats, badge, initial }) : `<div class="nt-none big">등록된 ${this.currentView === 'makers' ? '생산처' : '연락처'}가 없습니다</div>`}
             </section>
         </div>`;
     }

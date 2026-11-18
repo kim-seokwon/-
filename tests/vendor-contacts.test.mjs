@@ -95,7 +95,7 @@ const ctx = (over = {}) => {
 };
 const render = t => method('renderContacts').call(t);
 
-test('가운데 표 — 업체명·구분·상태·담당자·휴대폰·전화·이메일(구분·상태는 독립 열), 오른쪽은 안 고르면 연락처를 선택하세요(메모처럼, 요약 카드 없음 — 팀장 반려 11-18)', () => {
+test('가운데 표는 실무 열을 유지하고 오른쪽은 첫 연락처를 자동 선택한다(요약 카드 없음)', () => {
     const t = ctx(); const html = render(t);
     assert.deepEqual([...html.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address']);   // ⑤ 기본 8열(주소 추가), 팩스·등록증·메모는 열 표시로
     assert.doesNotMatch(html, /ct3-name"[^>]*>[^<]*<em>/, '구분을 업체명 옆 작은 글씨로 붙이지 않는다');
@@ -104,13 +104,15 @@ test('가운데 표 — 업체명·구분·상태·담당자·휴대폰·전화�
     for (const k of ['name', 'cat', 'status', 'contact', 'mobile', 'phone', 'email', 'address']) assert.match(html, new RegExp(`<td class="ck-${k}[ "]`), k + ' 칸 열 이름');
     assert.match(html, /<td class="ck-status ct3-st"><span class="ct3-badge"[^>]*>거래중<\/span><\/td>/, '상태 열 — 거래중도 보인다');
     assert.match(html, /colspan="7"|<td class="ck-phone nw ct3-tel">/, '전화 열');
-    assert.match(html, /class="m3 ct3"/, '고른 게 없으면 detail 아님');
-    assert.match(html, /연락처를 선택하세요/, '미선택 = 안내 문구');
+    assert.match(html, /class="m3 ct3"/, '자동 선택은 390px 목록→상세를 건너뛰지 않는다');
+    assert.match(html, /class="it-row on"[^>]*data-id=/, '첫 행 자동 선택');
+    assert.match(html, /사업자등록증/, '첫 연락처 상세');
+    assert.doesNotMatch(html, /연락처를 선택하세요/);
     assert.doesNotMatch(html, /ct3-sum|ct3-stats/, '요약 카드 없음');
     assert.match(html, /성수봉제 &lt;본점&gt;/); assert.doesNotMatch(html, /<본점>/);
     assert.match(html, /<td class="ck-mobile nw">010-1234-5678<\/td>/);
     assert.match(html, /app\.selectContact\('/);
-    assert.doesNotMatch(html, /사업자등록증/, '안 고르면 상세 없음');
+    assert.match(html, /성수봉제 &lt;본점&gt;/, '첫 연락처 상세가 보인다');
 });
 
 test('고르면 전부 — 휴대폰·전화·팩스·이메일·주소·등록증(미리보기·내려받기)·메모', () => {

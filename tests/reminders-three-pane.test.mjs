@@ -11,10 +11,13 @@ const oneLineMethod = name => {
     return Function(...m[1].split(',').map(x => x.trim()).filter(Boolean), m[2]);
 };
 
-test('할 일은 분류·목록·상세 3단이며 선택 상태를 모바일 상세로 넘긴다', () => {
-    for (const token of ['class="rm-side"', 'class="rm-main"', 'class="rm-doc"', 'class="rm-detail"', '할 일을 선택하세요']) {
+test('할 일은 분류·목록·상세 3단이며 첫 항목을 자동 선택하고 모바일 상세로 넘긴다', () => {
+    for (const token of ['class="rm-side"', 'class="rm-main"', 'class="rm-doc"', 'class="rm-detail"']) {
         assert.ok(main.includes(token), token);
     }
+    assert.match(main, /const pick = all\.find\([^\n]+\) \|\| shown\[0\] \|\| null;/);
+    assert.doesNotMatch(main, /할 일을 선택하세요/);
+    assert.match(main, /이 목록에는 할 일이 없습니다/);
     assert.match(css, /\.rm\{display:grid;grid-template-columns:238px 350px minmax\(0,1fr\)/);
     assert.match(css, /@media \(max-width:900px\)[\s\S]*?\.rm\.detail \.rm-main\{display:none\}[\s\S]*?\.rm\.detail \.rm-doc\{display:flex\}/);
 
