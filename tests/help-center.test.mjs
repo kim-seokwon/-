@@ -300,3 +300,14 @@ test('092 정적: RLS 켜짐 · 버킷 private · 첨부 수정 없음 · 지우
     assert.match(SQL, /grant update \(status, admin_note, updated_at\) on public\.feedback_reports/);
     assert.ok(!/drop function[^;]*(is_staff|is_master)/.test(DOWN));
 });
+
+test('사용설명서 상품·생산 항목은 새 메뉴명을 쓴다(옛 제품리스트·생산현황·샘플·디자인·견적 탭 문구 없음)', () => {
+    const m = MANUAL.find(x => x.id === 'items');
+    assert.equal(m.title, '상품·생산');
+    const txt = [m.summary, ...m.lines].join(' ');
+    for (const old of ['제품리스트', '생산현황', '샘플·디자인', '견적 탭']) assert.ok(!txt.includes(old), old);
+    for (const now of ['상품 관리', '생산 관리', '작업지시서', '재고 관리']) assert.ok(m.lines[0].includes(now), now);
+    assert.match(m.lines[0], /견적서는 재무/);
+    //  옛 이름으로 찾아도 이 항목이 나온다
+    for (const q of ['샘플', '견적', '상품 관리']) assert.ok(searchManual(q).some(x => x.id === 'items'), q);
+});

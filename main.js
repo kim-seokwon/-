@@ -3929,6 +3929,8 @@ class BhasApp {
             //  창 안에 대분류·중분류(형제 화면) 목록을 다시 그리지 않는다 — 그건 전역 사이드바 몫(사장님 11-18).
             //  왼쪽은 그 화면 자신의 거르기만, 없으면 2단.
             const nav = this._viewNav(view);
+            //  상품·생산: 왼쪽 맨 위 중분류(생산 관리·작업지시서·재고로 창 안에서 이동) + 그 아래 그 화면 거르기
+            if (g.head === 'items') return `<aside class="appside appside-filter production-work-nav">${this._midNav(view)}${nav || ''}</aside>`;
             return nav ? `<aside class="appside appside-filter">${nav}</aside>` : '';
         }
         return `<aside class="appside">
@@ -5598,6 +5600,7 @@ class BhasApp {
             <div class="fd${this.docMobileDetail ? ' detail' : ''}${this.docSideSheet ? ' side-on' : ''}${docs.some(x => String(x.id) === String(this.docSel)) ? '' : ' nosel'}">
                 <aside class="fd-side">
                     <button class="fd-sclose" onclick="app.toggleDocSide(false)"><i class="ph ph-x"></i> 닫기</button>
+                    ${this._midNav('documents')}
                     ${side('전체', '최근 항목', 'ph-clock-counter-clockwise', aggregatedDocs.length, '#5f6368')}
                     ${sec('즐겨찾기', categories.map(c =>
                         side(c, c, 'ph-folder-simple', aggregatedDocs.filter(d => d.category === c).length, '#5ac8fa')).join(''), true,
@@ -9126,6 +9129,35 @@ class BhasApp {
         if (d) d.dataset.wall = id;
         this.requestRender();
     }
+    //  3단 접근(11-19 사장님 '직관성 있게 접근가능한지'): 창 제목·창 왼쪽 중분류는 전역 사이드바(MAC_SIDE_GROUPS) 한 원본에서.
+    //  숨은 화면은 보이는 중분류로 묶는다 — 작업지시서 작성→작업지시서 · 시즌→상품 관리 · 생산처→거래처 · 고객 CRM→고객 분석
+    MID_ALIAS = { sample_maker: 'tech_packs', dashboard: 'items', makers: 'contacts', crm: 'analysis', news: 'sns' };
+    _midPlace(view) {
+        const k = this.MID_ALIAS[view] || view;
+        for (const g of (this.MAC_SIDE_GROUPS || [])) for (const a of (g.apps || [])) {
+            const items = (a.items || []).filter(x => x[0] === k);
+            if (!items.length) continue;
+            const cur = k === 'sns' ? (items.find(x => x[3] === this.snsMode) || items[0]) : items[0];
+            return { group: g, app: a, cur };
+        }
+        return null;
+    }
+    _macWinTitle(view) {
+        const p = this._midPlace(view);
+        if (!p) return this._macTitle(view);
+        const own = { sample_maker: '작업지시서 작성', crm: '고객 CRM', dashboard: '시즌' }[view];
+        return `${p.group.label} › ${own || p.cur[1]}`;
+    }
+    //  창 왼쪽 맨 위 = 같은 대분류의 중분류 목록(지금 화면 강조). 누르면 같은 창에서 바뀐다(판매·재무 창과 같은 방식).
+    _midNav(view) {
+        const p = this._midPlace(view); if (!p) return '';
+        const esc = s => this._vesc(s), win = this._renderingWin || '';
+        const items = (p.app.items || []).filter(x => this._sideOk(x[0]));
+        return `<nav class="mid-nav category-work-nav" aria-label="${esc(p.group.label)} 중분류"><div class="m3-h">${esc(p.group.label)}</div>${items.map(x => {
+            const on = x === p.cur;
+            return `<button class="m3-s${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''} onclick="app.switchAppTab('${esc(win)}','${x[0]}')"><i class="ph ${x[2]}" style="color:#0a84ff"></i><span>${esc(x[1])}</span></button>`;
+        }).join('')}</nav>`;
+    }
     _macTitle(view) {
         //  개편 2단계 B: 연락처→거래처, 샘플→작업지시서 작성(창 제목에 '샘플' 금지). 사이드·독 이름은 A 몫
         if (view === 'contacts' || view === 'makers') return '거래처';
@@ -9333,7 +9365,7 @@ class BhasApp {
                         <button class="mw-l yellow" data-g="−" title="독으로 내리기" onclick="app.macMin('${w.id}',event)"></button>
                         <button class="mw-l green" data-g="${w.max ? '⤡' : '⤢'}" title="${w.max ? '원래 크기로' : '꽉 채우기'}" onclick="app.macZoom('${w.id}',event)"></button>
                     </span>
-                    <b>${esc(this._macTitle(w.view))}</b>
+                    <b>${esc(this._macWinTitle(w.view))}</b>
                     <span class="mw-snap">
                         <button title="왼쪽 반" onclick="event.stopPropagation();app.macSnap('${w.id}','left')">◧</button>
                         <button title="오른쪽 반" onclick="event.stopPropagation();app.macSnap('${w.id}','right')">◨</button>
@@ -11621,6 +11653,7 @@ class BhasApp {
         return `
         <div class="nt${this.noteListSheet === 'side' ? ' side-on' : (this.noteListSheet ? ' list-on' : '')}">
             <aside class="nt-side">
+                ${this._midNav('notes')}
                 <div class="nt-shead tog${this.notePrivOpen !== false ? ' on' : ''}" onclick="app.togglePrivFolders()">
                     <i class="ph ph-caret-right"></i>개인
                     <button class="nt-add" title="새 개인 폴더" onclick="event.stopPropagation();app.addPrivateFolder()">＋</button></div>
@@ -12119,6 +12152,7 @@ class BhasApp {
         <div class="rm${this.remMobileDetail ? ' detail' : ''}${this.remSideSheet ? ' side-on' : ''}">
             <aside class="rm-side">
                 <button class="rm-sclose" onclick="app.toggleRemSide(false)"><i class="ph ph-x"></i> 닫기</button>
+                ${this._midNav('reminders')}
                 <div class="rm-tiles">
                     ${TILES.map(t => `<button class="rm-tile ${t.cls}${cur === t.k ? ' on' : ''}" onclick="app.setRemList('${t.k}')"
                         title="${({today:'기한이 오늘이거나 이미 지난 것',plan:'기한이 앞으로 남은 것',all:'안 끝난 것 전부',late:'기한이 지난 것',nodate:'기한을 안 적은 것',mine:'담당이 나로 되어 있는 것',sent:'내가 만들어 남에게 넘긴 것',done:'끝낸 것'})[t.k] || ''}">
@@ -15174,6 +15208,7 @@ class BhasApp {
         return `
         <div class="cal">
             <aside class="cal-side">
+                ${this._midNav('calendar')}
                 <div class="m3-h">내 캘린더</div>
                 ${this.CAL_SRC.map(s2 => `<div class="cal-src" onclick="app.toggleCalSrc('${s2.k}')">
                     <span class="cal-ck${this._calOn(s2.k) ? ' on' : ''}" style="--c:${s2.c}"></span>
@@ -16737,6 +16772,7 @@ class BhasApp {
         return `
         <div class="m3 ct3${docOpen ? ' detail' : ''}">
             <aside class="m3-side">
+                ${this._midNav('contacts')}
                 <div class="m3-h" style="display:flex;align-items:center;justify-content:space-between">구분
                     <button onclick="app.addVendorCategory()" title="새 구분" style="border:0;background:none;color:var(--primary);cursor:pointer"><i class="ph ph-plus"></i></button></div>
                 ${side('전체', makers ? '모든 생산처' : '모든 거래처', 'ph-address-book', makers ? all.filter(v => (v.category || '기타') !== '기타').length : all.length)}

@@ -6192,3 +6192,7 @@ b.sp-nm.dup{color:#ff453a}
   .hk-grid5.home-sales-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .hk-grid5.home-sales-kpis>*,.hk-grid5.home-sales-kpis>:nth-child(n+4){grid-column:auto}
 }
+/* 3단 접근(11-19): 창 왼쪽 맨 위 중분류 목록 — 상품·생산·업무·자료 창. 아래 그 화면 거르기와 줄로 나눈다 */
+.mid-nav{display:block;padding:0 0 8px;margin:0 0 8px;border-bottom:1px solid var(--card-border)}
+.mid-nav .m3-h{margin-top:0}
+.mid-nav .m3-s{display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:8px;min-height:34px;font-size:13px}

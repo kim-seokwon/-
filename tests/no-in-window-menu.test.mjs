@@ -24,7 +24,9 @@ test('맥 창 왼쪽은 자기 보기만 두되 판매·재무는 중분류를 �
     const mac = bar.slice(bar.indexOf('if (this.macMode)'), bar.indexOf('        return `<aside class="appside">'));
     assert.match(mac, /g\.head === 'orders' \|\| g\.head === 'sales'[\s\S]*?category-work-nav[\s\S]*?switchAppTab/);
     assert.match(mac, /const tabs = g\.tabs\.filter\(t => !t\.hidden\)/);
-    assert.match(mac, /const nav = this\._viewNav\(view\);\s*return nav \? `<aside class="appside appside-filter">\$\{nav\}<\/aside>` : '';/);
+    //  11-19 3단 접근: 상품·생산도 왼쪽 맨 위 중분류(_midNav) + 그 아래 거르기
+    assert.match(mac, /g\.head === 'items'\) return `<aside class="appside appside-filter production-work-nav">\$\{this\._midNav\(view\)\}\$\{nav \|\| ''\}<\/aside>`/);
+    assert.match(mac, /return nav \? `<aside class="appside appside-filter">\$\{nav\}<\/aside>` : '';/);
     assert.match(css, /\.appwrap\.no-appside\{grid-template-columns:1fr\}/);
     const shell = between('    _snsShell(', '    setSnsMode(');
     assert.match(shell, /const side = this\._snsSideHtml \|\| ''/);
@@ -32,11 +34,13 @@ test('맥 창 왼쪽은 자기 보기만 두되 판매·재무는 중분류를 �
 });
 
 test('협업 창은 자기 목록을 왼쪽에 둔다 — 메모 폴더·할 일 목록·캘린더·연락처 구분·자료실 즐겨찾기', () => {
+    //  11-19 3단 접근: 업무·자료 창 5개는 맨 위에 같은 중분류(_midNav)만 두고, 형제 버튼을 따로 그리지 않는다
     const notes = between('            <aside class="nt-side">', '</aside>');
+    assert.match(notes, /^\s*<aside class="nt-side">\s*\$\{this\._midNav\('notes'\)\}/);
     assert.doesNotMatch(notes, /switchAppTab/);
     assert.match(main, /<aside class="rm-side">/);
     assert.match(main, /<aside class="cal-side">/);
-    assert.match(main, /<aside class="fd-side">\s*<button class="fd-sclose"[^\n]*\n\s*\$\{side\('전체', '최근 항목'/);
+    assert.match(main, /<aside class="fd-side">\s*<button class="fd-sclose"[^\n]*\n\s*\$\{this\._midNav\('documents'\)\}\s*\$\{side\('전체', '최근 항목'/);
     for (const section of ['즐겨찾기', '위치', '태그']) assert.ok(main.includes(`sec('${section}'`), section);
     assert.match(main, /구분을 우클릭해 관리/);
     //  메모: 가운데 브랜드 태그 줄·오른쪽 요약 카드 없음(d1c14cc 이전 구조)

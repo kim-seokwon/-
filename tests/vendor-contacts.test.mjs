@@ -86,6 +86,7 @@ const ctx = (over = {}) => {
         _thead: (view, cols) => cols.map(([k, l]) => `<th data-k="${k}">${l}</th>`).join(''),
         _applyTbl: (view, rows) => rows, _fltBadge: () => '', _connectedHTML: () => '<div data-conn></div>',
         _c3Fold: (c, o, l) => `<button class="c3-fold">${l}</button>`,
+        _midNav: () => '<nav class="mid-nav">MID</nav>',
         _bizUrl: { [`${U1}/${U2}.pdf`]: { url: 'https://signed.example/x?token=t', at: Date.now() } },
         _loadBizUrl() { this.loaded = true; },
         ...over,
