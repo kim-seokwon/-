@@ -2,6 +2,7 @@ import { mockData, STAGES } from './mockData.js';
 import { couponMethods, couponPreviewSupabase } from './couponView.js';
 import { makeTracker, trackAllowed, usageNotice, ORDER_FILTER_ACTION, INV_TAB_ACTION, PAPER_CLOSE_ACTION, paperSeenAction } from './uiTrack.js';
 import { TIPS, MANUAL, searchManual } from './helpDict.js';
+import { orgScopedClient, pickActiveOrg, ORG_KEY, ORG_FLAG } from './org-scope.js';
 import { tipHTML, initTips } from './helpWidget.js';
 import { helpTabs, helpFocusKey, unreadCount, validateFeedback, validateNotice, feedbackPath, helpPanelHTML, manualListHTML, helpFabHTML } from './helpCenter.js';
 import { buildRows as hometaxRows, xlsxBytes as hometaxXlsx, MAX_PER_BATCH as HX_MAX } from './hometaxExcel.js';
@@ -100,7 +101,9 @@ class BhasApp {
         window.app = this; // 전역 참조 추가 (타임라인 등에서 필요)
         // 로컬에서 화면을 확인할 때만 데이터에 손댈 수 있게 열어둔다(배포본에선 안 열린다)
         if (['localhost', '127.0.0.1'].includes(location.hostname)) window.mockData = mockData;
-        this.supabase = supabase;
+        //  M(A4): D 표 insert/upsert 에 활성 조직 org_id 를 명시해 넣는다(org-scope.js). 화면 검수 대역은 아래에서 따로 갈아끼움.
+        this._orgIds = []; this._activeOrg = null;
+        this.supabase = orgScopedClient(supabase, () => this._activeOrg);
         
         this.products = [];
         this.companies = [];
@@ -135,6 +138,7 @@ class BhasApp {
             const { data } = await this.supabase.auth.getSession();
             if (data && data.session) {
                 this._authOk = true;
+                await this._loadOrgScope(data.session.user?.id);
                 document.getElementById('auth-bar')?.remove();
                 return true;
             }
@@ -144,6 +148,27 @@ class BhasApp {
         else this.forceLogin('로그인이 만료되었습니다. 다시 로그인해 주세요.');
         return false;
     }
+    //  M(A4) 활성 조직: 내 소속 org 를 읽어 고른다. 실패하면 null 로 둔다 → 아무것도 안 넣음 = DB 기본값(지금과 같음).
+    async _loadOrgScope(uid) {
+        if (!uid) return this._activeOrg;
+        try {
+            const { data, error } = await this.supabase.from('org_memberships').select('org_id').eq('user_id', uid);
+            if (!error) this._orgIds = (data || []).map(r => r.org_id);
+        } catch (_e) { /* 그대로 */ }
+        let stored = null, flag = false;
+        try { stored = localStorage.getItem(ORG_KEY); flag = localStorage.getItem(ORG_FLAG) === '1'; } catch (_e) { /* 저장소 막힘 */ }
+        this._activeOrg = pickActiveOrg({ orgIds: this._orgIds, stored, flag });
+        return this._activeOrg;
+    }
+    //  조직 바꾸기(깃발 켠 사람만, 소속 org 만). 읽기 쪽 org 거르기는 아직 없다 — 쓰기만 이 조직으로 들어간다.
+    setActiveOrg(orgId) {
+        let flag = false;
+        try { flag = localStorage.getItem(ORG_FLAG) === '1'; } catch (_e) { /* 막힘 */ }
+        if (!flag || !(this._orgIds || []).includes(orgId)) return false;
+        try { localStorage.setItem(ORG_KEY, orgId); } catch (_e) { /* 막힘 */ }
+        this._activeOrg = pickActiveOrg({ orgIds: this._orgIds, stored: orgId, flag });
+        return this._activeOrg === orgId;
+    }
     // 저장이 안 되는 상태로 화면만 띄워두지 않는다 — 곧장 로그인으로 보낸다
     forceLogin(msg) {
         this._loginNotice = msg || '다시 로그인해 주세요.';
@@ -151,7 +176,7 @@ class BhasApp {
         localStorage.removeItem('bhas_auto_login');
         document.querySelectorAll('#auth-bar, .sticky, #calc-pop, #noti-center, #launcher, #sticky-list, #ctx-menu')
             .forEach(el => el.remove());
-        this.wins = []; this._stickiesRestored = false;
+        this.wins = []; this._stickiesRestored = false; this._orgIds = []; this._activeOrg = null;
         this.currentUser = null; this.currentView = 'login'; this._isInitialLoading = false;
         this.render();
     }
@@ -1651,6 +1676,7 @@ class BhasApp {
                     }
 
                     this.currentUser = authData.user;
+                    await this._loadOrgScope(authData.user.id);
                     if (companyProfile) {
                         this.currentUser.role = companyProfile.role;
                         this.currentUser.company_id = companyProfile.id;
