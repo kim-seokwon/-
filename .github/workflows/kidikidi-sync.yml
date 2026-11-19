@@ -9,6 +9,10 @@ on:
         description: '이랜드 계정 연장 요청 [확인] 누르기 (사장님 승인 후 1회)'
         type: boolean
         default: false
+      dry:
+        description: '미리보기만(저장 안 함) — 월별 주문 수·여러 줄 주문 수 로그'
+        type: boolean
+        default: false
 
 concurrency:
   group: kidikidi-order-sync
@@ -34,5 +38,6 @@ jobs:
           ELAND_PW: ${{ secrets.ELAND_PW }}
           ELAND_TOTP_SECRET: ${{ secrets.ELAND_TOTP_SECRET }}
           ELAND_EXTEND: ${{ inputs.extend && '1' || '' }}
+          DRY: ${{ inputs.dry && '1' || '' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

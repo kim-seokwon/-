@@ -14,6 +14,7 @@
 import { chromium } from 'playwright';
 import { authenticator } from 'otplib';
 import { createClient } from '@supabase/supabase-js';
+import { groupElandLines, splitRows } from './lines.mjs';
 
 const {
   ELAND_ID, ELAND_PW, ELAND_TOTP_SECRET,
@@ -150,17 +151,16 @@ async function fetchWindow(page, fromDate, toDate) {
   return acc;
 }
 
-// 전체 기간을 90일 창으로 청킹 + 각 창 페이지네이션
+// 전체 기간을 90일 창으로 청킹 + 각 창 페이지네이션. 창별 배열로 돌려준다(groupElandLines 가 창 겹침을 판정).
 async function fetchOrders(page, fromDate, toDate) {
   const CHUNK = 89 * 864e5;
   const startMs = new Date(fromDate).getTime(), endMs = new Date(toDate).getTime();
-  const all = [];
+  const wins = [];
   for (let ws = startMs; ws <= endMs; ws += CHUNK + 864e5) {
     const we = Math.min(ws + CHUNK, endMs);
-    const win = await fetchWindow(page, ymd(new Date(ws)), ymd(new Date(we)));
-    all.push(...win);
+    wins.push(await fetchWindow(page, ymd(new Date(ws)), ymd(new Date(we))));
   }
-  return all;
+  return wins;
 }
 
 // envelope 안에서 주문 배열 추출 (성공 응답 구조는 첫 실주문에서 최종 확정)
@@ -189,7 +189,9 @@ function parseTs(v) {
   if (m) return `${m[1]}-${m[2]}-${m[3]}T${m[4] || '00'}:${m[5] || '00'}:${m[6] || '00'}`;
   return null;
 }
-function mapOrder(o) {
+//  g = groupElandLines 결과 한 건. raw = 첫 줄 필드 그대로 + items[](전 줄). pay_amount = 줄 금액 합.
+function mapOrder(g) {
+  const o = g.raw;
   return {
     channel: 'eland',
     mall_key: MALL_KEY,
@@ -199,9 +201,9 @@ function mapOrder(o) {
     receiver_name: null,      // 목록엔 마스킹/부재 → 배송관리 상세 API에서 채움(TODO)
     receiver_phone: null,
     receiver_address: null,
-    pay_amount: Number(o.sellAmount ?? o.sellPrice ?? 0),
+    pay_amount: g.pay_amount,
     channel_status: o.ordChangeScode != null ? String(o.ordChangeScode) : null,
-    status: 'new',            // 조회 orderCodes 1010~1060 = 배송준비 이하 → new
+    status: 'new',            // 새 주문에만 쓴다. 이미 있는 주문은 splitRows 가 status 를 빼고 갱신(처리한 상태를 new 로 덮지 않음)
     raw: o,
   };
 }
@@ -360,23 +362,49 @@ async function run() {
   const from = new Date(Date.now() - LOOKBACK * 864e5);
   const browser = await chromium.launch({ headless: true });
   try {
-    await ensureMall();
+    if (process.env.DRY !== '1') await ensureMall();   // 미리보기는 아무것도 안 쓴다
     const { page } = await login(browser);
-    const list = await fetchOrders(page, ymd(from), ymd(to));  // 전체 페이지·창 수집된 배열
-    // 주문번호 단위 중복 제거(품목별 여러 줄 → 대표 1건, 금액 합산)
-    const byOrd = {};
-    for (const o of list) { const k = String(o.ordNo); if (!byOrd[k]) { byOrd[k] = mapOrder(o); byOrd[k].pay_amount = 0; } byOrd[k].pay_amount += Number(o.sellAmount ?? o.sellPrice ?? 0); }
-    const deduped = Object.values(byOrd);
-    console.log(`[kidikidi] 주문 라인 ${list.length} → 주문 ${deduped.length}건`);
-    if (deduped.length) {
-      const rows = deduped;
-      // 유니크 제약은 (mall_key, order_id) — 005 마이그레이션에서 (channel,order_id) 대체됨
-      const { error } = await db.from('channel_orders')
-        .upsert(rows, { onConflict: 'mall_key,order_id', ignoreDuplicates: false });
-      if (error) throw error;
-      console.log(`[kidikidi] Supabase 저장 완료 ${rows.length}건`);
+    const wins = await fetchOrders(page, ymd(from), ymd(to));  // 창별 줄 배열
+    //  주문번호로 묶되 줄은 raw.items[] 에 전부 남긴다(104 상품별 판매가 줄마다 나눔). 중복 키 규칙은 lines.mjs.
+    const groups = groupElandLines(wins);
+    const lineN = wins.reduce((s, w) => s + w.length, 0);
+    const multi = groups.filter(g => g.raw.items.length > 1);
+    const byMode = groups.reduce((m, g) => (m[g.dedupe] = (m[g.dedupe] || 0) + 1, m), {});
+    console.log(`[kidikidi] 주문 라인 ${lineN} → 주문 ${groups.length}건 · 여러 줄 주문 ${multi.length} · 중복키 ${JSON.stringify(byMode)}`);
+    const rows = groups.map(mapOrder);
+    if (process.env.DRY === '1') {
+      //  미리보기: 저장 없이 월별 주문 수·여러 줄 주문 수·여러 줄 주문의 둘째 줄 이후 금액(지금 #unknown 에서 상품으로 옮겨갈 몫)
+      const m = {};
+      for (const g of groups) {
+        const ym = String(parseTs(g.raw.ordTs) || '').slice(0, 7) || '(날짜없음)';
+        const r = m[ym] || (m[ym] = { orders: 0, multi: 0, moved: 0 });
+        r.orders++;
+        if (g.raw.items.length > 1) { r.multi++; r.moved += g.pay_amount - g.raw.items[0].sellAmount; }
+      }
+      console.log('[kidikidi] DRY 월별', JSON.stringify(m));
+      return 0;
     }
-    return deduped.length;
+    if (rows.length) {
+      //  이미 있는 주문 = 수집 칸만 갱신, 새 주문 = 전체 행(status new). 유니크 제약 (mall_key, order_id).
+      const existing = [];
+      for (let i = 0; i < rows.length; i += 200) {
+        const { data, error } = await db.from('channel_orders').select('order_id')
+          .eq('mall_key', MALL_KEY).in('order_id', rows.slice(i, i + 200).map(r => r.order_id));
+        if (error) throw error;   // 조회 실패를 '없음'으로 보면 처리한 주문을 new 로 덮는다
+        existing.push(...data.map(d => d.order_id));
+      }
+      const { fresh, update } = splitRows(rows, existing);
+      if (fresh.length) {
+        const { error } = await db.from('channel_orders').insert(fresh);
+        if (error) throw error;
+      }
+      if (update.length) {
+        const { error } = await db.from('channel_orders').upsert(update, { onConflict: 'mall_key,order_id', ignoreDuplicates: false });
+        if (error) throw error;
+      }
+      console.log(`[kidikidi] Supabase 저장 완료 새 ${fresh.length}건 · 갱신 ${update.length}건`);
+    }
+    return rows.length;
   } finally {
     await browser.close();
   }
@@ -384,7 +412,7 @@ async function run() {
 
 //  sync_log — 연동관리·주문 수집 알림(orderAlerts.js)이 '<mall_key>:pull_orders' 성공/실패를 본다. 진단(DIAG)은 수집이 아니라 안 남긴다.
 async function logSync(result, detail) {
-  if (process.env.DIAG === '1') return;
+  if (process.env.DIAG === '1' || process.env.DRY === '1') return;   // 미리보기는 수집 성공이 아니다
   const { error } = await db.from('sync_log').insert([{ channel: 'eland', type: `${MALL_KEY}:pull_orders`, result, detail }]);
   if (error) console.warn('[kidikidi] sync_log 기록 실패:', error.message);
 }
