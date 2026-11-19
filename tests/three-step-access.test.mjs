@@ -109,7 +109,7 @@ test('11-19 Q 메모 창 — 업무·자료 5개를 한 줄 아이콘 바로(지
     assert.match(html, /class="mid-nav category-work-nav mid-icons"/);
     assert.ok(!html.includes('m3-h'), '머리글(업무·자료) 줄 없음');
     assert.ok(!html.includes('<span>'), '글자 없음 — 아이콘만');
-    const btns = [...html.matchAll(/<button class="m3-s( on)?"[^>]*onclick="app\.switchAppTab\('w1','([a-z_]+)'\)" title="([^"]+)" aria-label="([^"]+)"><i class="ph [^"]+"><\/i><\/button>/g)];
+    const btns = [...html.matchAll(/<button class="m3-s( on)?"[^>]*onclick="app\.switchAppTab\('w1','([a-z_]+)'\)" data-tip="([^"]+)" aria-label="([^"]+)"><i class="ph [^"]+"><\/i><\/button>/g)];
     assert.deepEqual(btns.map(m => m[3]), ['할 일', '통합 캘린더', '메모', '자료실', '거래처']);
     assert.deepEqual(btns.filter(m => m[1]).map(m => m[2]), ['notes'], '메모만 강조');
     assert.match(html, /m3-s on" aria-current="page"/);
@@ -118,6 +118,10 @@ test('11-19 Q 메모 창 — 업무·자료 5개를 한 줄 아이콘 바로(지
     assert.match(mk()._midNav('reminders'), /<div class="m3-h">업무·자료<\/div>/);
     assert.match(css, /\.mid-nav\.mid-icons\{display:flex/);
     assert.match(css, /\.mid-nav\.mid-icons \.m3-s\.on\{/);
+    //  11-19 R: 이름은 CSS 말풍선(data-tip) — 마우스·키보드 포커스에 바로 보임, 브라우저 title 과 겹치지 않게 title 없음
+    assert.ok(!/ title="/.test(html), 'title 없음');
+    assert.match(css, /\.mid-nav\.mid-icons \.m3-s::after\{content:attr\(data-tip\)/);
+    assert.match(css, /\.mid-nav\.mid-icons \.m3-s:hover::after,\.mid-nav\.mid-icons \.m3-s:focus-visible::after\{opacity:1\}/);
 });
 
 test('11-19 Q 메모 폴더 숫자 = 눌렀을 때 목록 수 — 제품 기록장(item_id)은 빼고 센다', () => {

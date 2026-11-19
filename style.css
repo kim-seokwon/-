@@ -6229,6 +6229,13 @@ b.sp-nm.dup{color:#ff453a}
 .mid-nav.mid-icons .m3-s:hover{background:var(--hover-bg,rgba(0,0,0,.05))}
 .mid-nav.mid-icons .m3-s.on{color:#0a84ff;background:rgba(10,132,255,.14)}
 .mid-nav.mid-icons .m3-s:focus-visible{outline:2px solid #0a84ff;outline-offset:-2px}
+/* 11-19 R: 이름 말풍선 — 브라우저 title 은 늦게 뜨고 안 뜨는 환경이 있어 CSS 로 바로 보인다(키보드 포커스에도) */
+.mid-nav.mid-icons .m3-s{position:relative}
+.mid-nav.mid-icons .m3-s::after{content:attr(data-tip);position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);z-index:5;white-space:nowrap;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:600;line-height:1.4;background:rgba(30,30,32,.92);color:#fff;pointer-events:none;opacity:0;transition:opacity .12s}
+.mid-nav.mid-icons .m3-s:first-child::after{left:0;transform:none}
+.mid-nav.mid-icons .m3-s:last-child::after{left:auto;right:0;transform:none}
+.mid-nav.mid-icons .m3-s:hover::after,.mid-nav.mid-icons .m3-s:focus-visible::after{opacity:1}
+body:not(.light) .mid-nav.mid-icons .m3-s::after{background:rgba(242,242,247,.95);color:#1c1c1e}
 /* 11-19 C 반려: 901~1100 에서 마케팅 3단 가운데 칸 최소 300px — 좌·우를 줄이고, 현황 숫자 칸은 칸 폭에 맞춰 줄 수를 바꾼다(글자 세로 파손 금지) */
 /*   901~1100: 오른쪽 상세는 고르기 전엔 접고(가운데가 다 씀), 고르면 오른쪽에 겹쳐 연다 — 사장님 원문 4절 '겹쳐 열기'·5절 '좁으면 상세 접기' */
 @media (min-width:901px) and (max-width:1100px){

@@ -901,7 +901,8 @@ class BhasApp {
             const cls = String(icon.className || '');
             const title = btn.title || btn.getAttribute('aria-label')
                 || labels.find(([key]) => cls.includes(key))?.[1] || '기능 실행';
-            btn.title = title;
+            //  data-tip 버튼(메모 아이콘 바 등)은 CSS 말풍선이 이름을 보여 준다 — title 까지 달면 말풍선이 두 개 뜬다(11-19 R)
+            if (!btn.dataset.tip) btn.title = title;
             if (!btn.getAttribute('aria-label')) btn.setAttribute('aria-label', title);
             if (!btn.classList.contains('mw-l')) btn.classList.add('icon-hit');
         });
@@ -9213,7 +9214,7 @@ class BhasApp {
             const on = x === p.cur;
             //  마케팅 6개는 한 화면(sns)의 모드 — 같은 창을 sns 로 두고 모드만 바꾼다
             const go = x[3] ? `app.switchAppTab('${esc(win)}','${x[0]}');app.setSnsMode('${x[3]}')` : `app.switchAppTab('${esc(win)}','${x[0]}')`;
-            if (icons) return `<button class="m3-s${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''} onclick="${go}" title="${esc(x[1])}" aria-label="${esc(x[1])}"><i class="ph ${x[2]}"></i></button>`;
+            if (icons) return `<button class="m3-s${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''} onclick="${go}" data-tip="${esc(x[1])}" aria-label="${esc(x[1])}"><i class="ph ${x[2]}"></i></button>`;
             return `<button class="m3-s${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''} onclick="${go}"><i class="ph ${x[2]}" style="color:#0a84ff"></i><span>${esc(x[1])}</span></button>`;
         }).join('')}</nav>`;
     }
