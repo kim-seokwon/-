@@ -14,6 +14,10 @@ on:
         description: '미리보기만(저장 안 함) — 월별 주문 수·여러 줄 주문 수 로그'
         type: boolean
         default: false
+      lookback_days:
+        description: '조회 기간(일) — 비우면 400. 2025-07 까지 보려면 520 (11-19 H)'
+        type: string
+        default: ''
 
 concurrency:
   group: kidikidi-order-sync
@@ -40,5 +44,6 @@ jobs:
           ELAND_TOTP_SECRET: ${{ secrets.ELAND_TOTP_SECRET }}
           ELAND_EXTEND: ${{ inputs.extend && '1' || '' }}
           DRY: ${{ inputs.dry && '1' || '' }}
+          LOOKBACK_DAYS: ${{ inputs.lookback_days }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

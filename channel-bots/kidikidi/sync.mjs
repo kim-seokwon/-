@@ -357,7 +357,9 @@ async function diag() {
 async function run() {
   if (process.env.DIAG === '1') return diag();
   // 조회 기간: 기본 400일(전체 이력 확보). 정기 실행은 upsert 멱등이라 재조회 안전.
-  const LOOKBACK = Number(process.env.LOOKBACK_DAYS || 400);
+  //  수동 입력(lookback_days)은 숫자 1~800 만 — 빈 값·이상한 값은 400(예약 실행은 늘 빈 값)
+  const lb = Number(process.env.LOOKBACK_DAYS);
+  const LOOKBACK = Number.isInteger(lb) && lb >= 1 && lb <= 800 ? lb : 400;
   const to = new Date();
   const from = new Date(Date.now() - LOOKBACK * 864e5);
   const browser = await chromium.launch({ headless: true });
