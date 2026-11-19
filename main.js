@@ -3931,6 +3931,8 @@ class BhasApp {
             const nav = this._viewNav(view);
             //  상품·생산: 왼쪽 맨 위 중분류(생산 관리·작업지시서·재고로 창 안에서 이동) + 그 아래 그 화면 거르기
             if (g.head === 'items') return `<aside class="appside appside-filter production-work-nav">${this._midNav(view)}${nav || ''}</aside>`;
+            //  설정 10개(11-19 P4): 왼쪽 설정 중분류 + 가운데 그 칸 — 카드 하나만 뜨던 2단을 3단 틀로
+            if (g.head === 'settings') return `<aside class="appside appside-filter settings-work-nav">${this._midNav(view)}${nav || ''}</aside>`;
             return nav ? `<aside class="appside appside-filter">${nav}</aside>` : '';
         }
         return `<aside class="appside">
@@ -3952,7 +3954,10 @@ class BhasApp {
         return { color: brand?.brand_color || palette[seed % palette.length], cls: 'brand' };
     }
     _snsShell(inner) {
-        const side = this._snsSideHtml || '';
+        //  마케팅 6개(11-19 P3): 왼쪽 맨 위 마케팅 중분류(같은 창 전환) + 그 아래 브랜드·분류 거르기
+        const mid = this.macMode ? this._midNav(this.currentView === 'news' ? 'news' : 'sns') : '';
+        const raw = this._snsSideHtml || '';
+        const side = !mid ? raw : raw ? raw.replace(/^<aside class="m3-side sns3-filter-side">/, m => m + mid) : `<aside class="m3-side sns3-filter-side sns3-mid-only">${mid}</aside>`;
         return `<div class="m3 sns3-layout${side ? '' : ' no-side'}${this.snsMobileDetail ? ' detail' : ''}">${side}${inner}</div>`;
     }
     setSnsMode(k) {
@@ -7756,7 +7761,7 @@ class BhasApp {
             const todoRows = todo.map(r => `<tr class="sns-dash-task${detailPick?.key === r.key ? ' on' : ''}" onclick="app.selectSnsItem('${esc(r.key)}')"><td><span class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</span></td><td class="sns-dash-name" title="${esc(r.title)}">${esc(r.title)}</td><td>${esc(this._snsBrandLabel(r.brand_id))}</td><td class="n">${esc(cpfTxt(r))}</td><td class="n">${esc(wonTxt(r.set.spend3))}</td></tr>`).join('');
             const todoFilters = this._fltBadge('sns_dashboard');
             const noAd = rows.postRows.filter(r => !r.kind).slice(0, 8);
-            return `<section class="m3-list sns-dashboard-list">${mobileHead}<div class="m3-lbar"><div><b>SNS 대시보드</b><span>브랜드별 광고·게시물 오늘 보기</span></div></div><div class="sns-dashboard-cards">${summary}<h3>오늘 할 일 ${todo.length}건</h3>${todoFilters ? `<div class="sns3-active-filters">${todoFilters}</div>` : ''}<div class="sns-dash-tablewrap"><table class="sns-dash-table"><thead><tr>${todoHead}</tr></thead><tbody>${todoRows || '<tr><td colspan="5" class="m3-none">중단·증액할 광고가 없습니다.</td></tr>'}</tbody></table></div><h3>광고 안 붙은 새 게시물</h3>${noAd.map(r => `<div class="m3-r"><b>${esc(r.title)}</b><div class="sub"><span>${esc(this._snsBrandLabel(r.brand_id))}</span></div></div>`).join('') || '<div class="m3-none">확인할 새 게시물이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><b>광고 상세</b></div>${setDetail || '<div class="m3-none mid">오늘 확인할 광고가 없습니다.</div>'}</section>`;
+            return `<section class="m3-list sns-dashboard-list">${mobileHead}<div class="m3-lbar"><div><b>SNS 대시보드</b><span>브랜드별 광고·게시물 오늘 보기</span></div></div><div class="sns-dashboard-cards">${summary}<h3>오늘 할 일 ${todo.length}건</h3>${todoFilters ? `<div class="sns3-active-filters">${todoFilters}</div>` : ''}<div class="sns-dash-tablewrap"><table class="sns-dash-table"><thead><tr>${todoHead}</tr></thead><tbody>${todoRows || '<tr><td colspan="5" class="m3-none">중단·증액할 광고가 없습니다.</td></tr>'}</tbody></table></div><h3>광고 안 붙은 새 게시물</h3>${noAd.map(r => `<div class="m3-r"><b>${esc(r.title)}</b><div class="sub"><span>${esc(this._snsBrandLabel(r.brand_id))}</span></div></div>`).join('') || '<div class="m3-none">확인할 새 게시물이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 오늘 보기</button><b>광고 상세</b></div>${setDetail || '<div class="m3-none mid">오늘 확인할 광고가 없습니다.</div>'}</section>`;
         }
         if (topMode === 'posts') {
             const tab = this.snsPostTab === 'review' ? 'review' : 'own';
@@ -9155,7 +9160,9 @@ class BhasApp {
         const items = (p.app.items || []).filter(x => this._sideOk(x[0]));
         return `<nav class="mid-nav category-work-nav" aria-label="${esc(p.group.label)} 중분류"><div class="m3-h">${esc(p.group.label)}</div>${items.map(x => {
             const on = x === p.cur;
-            return `<button class="m3-s${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''} onclick="app.switchAppTab('${esc(win)}','${x[0]}')"><i class="ph ${x[2]}" style="color:#0a84ff"></i><span>${esc(x[1])}</span></button>`;
+            //  마케팅 6개는 한 화면(sns)의 모드 — 같은 창을 sns 로 두고 모드만 바꾼다
+            const go = x[3] ? `app.switchAppTab('${esc(win)}','${x[0]}');app.setSnsMode('${x[3]}')` : `app.switchAppTab('${esc(win)}','${x[0]}')`;
+            return `<button class="m3-s${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''} onclick="${go}"><i class="ph ${x[2]}" style="color:#0a84ff"></i><span>${esc(x[1])}</span></button>`;
         }).join('')}</nav>`;
     }
     _macTitle(view) {

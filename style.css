@@ -6196,3 +6196,16 @@ b.sp-nm.dup{color:#ff453a}
 .mid-nav{display:block;padding:0 0 8px;margin:0 0 8px;border-bottom:1px solid var(--card-border)}
 .mid-nav .m3-h{margin-top:0}
 .mid-nav .m3-s{display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:8px;min-height:34px;font-size:13px}
+/* 11-19 C 반려: 901~1100 에서 마케팅 3단 가운데 칸 최소 300px — 좌·우를 줄이고, 현황 숫자 칸은 칸 폭에 맞춰 줄 수를 바꾼다(글자 세로 파손 금지) */
+/*   901~1100: 오른쪽 상세는 고르기 전엔 접고(가운데가 다 씀), 고르면 오른쪽에 겹쳐 연다 — 사장님 원문 4절 '겹쳐 열기'·5절 '좁으면 상세 접기' */
+@media (min-width:901px) and (max-width:1100px){
+  .sns3-layout:not(.no-side){--c1:200px;grid-template-columns:200px minmax(0,1fr)}
+  .sns3-layout.no-side{grid-template-columns:minmax(0,1fr)}
+  .sns3-layout>.m3-doc{display:none}
+  .sns3-layout.detail>.m3-doc{display:flex;position:absolute;top:0;right:0;bottom:0;width:min(340px,48%);z-index:30;border-left:1px solid var(--card-border);box-shadow:-12px 0 32px rgba(0,0,0,.18)}
+  .sns3-layout.detail>.m3-doc .sns3-back{display:inline-flex!important;align-items:center;gap:4px;font-size:12px!important;width:auto!important}
+}
+.sns-dashboard-cards .sns3-kpis{grid-template-columns:repeat(auto-fill,minmax(128px,1fr))}
+.sns-dashboard-cards .sns3-kpis>div{min-width:0}
+.sns-dashboard-cards .sns3-kpis span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sns-dashboard-cards .sns3-kpis b{word-break:keep-all;overflow-wrap:normal}

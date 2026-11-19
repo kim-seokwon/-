@@ -58,6 +58,20 @@ test('상품·생산 4개·업무·자료 5개 — 왼쪽 중분류가 지금 �
     assert.ok(!mk({ _sideOk: k => k !== 'inventory' })._midNav('items').includes("'inventory'"));
 });
 
+test('마케팅 6개·설정 10개(P3·P4) — 왼쪽 중분류 강조, 마케팅은 sns 로 두고 모드 전환', () => {
+    for (const it of items().filter(i => i.g === '마케팅' || i.g === '설정')) {
+        const html = mk({ snsMode: it.mode || 'dashboard' })._midNav(it.k);
+        const on = [...html.matchAll(/<button class="m3-s on"[^>]*onclick="([^"]+)"[^>]*>[\s\S]*?<span>([^<]+)<\/span>/g)];
+        assert.equal(on.length, 1, it.label); assert.equal(on[0][2], esc(it.label));
+        assert.equal((html.match(/class="m3-s/g) || []).length, it.g === '마케팅' ? 6 : 10, it.label);
+        if (it.mode) assert.equal(on[0][1], `app.switchAppTab('w1','sns');app.setSnsMode('${it.mode}')`);
+        else assert.equal(on[0][1], `app.switchAppTab('w1','${it.k}')`);
+    }
+    assert.match(mk({ snsMode: 'news' })._midNav('news'), /m3-s on"[^>]*setSnsMode\('news'\)/, '조간 창(news)도 뉴스·조간 강조');
+    assert.match(src, /g\.head === 'settings'\) return `<aside class="appside appside-filter settings-work-nav">\$\{this\._midNav\(view\)\}/);
+    assert.match(src, /_snsShell\(inner\) \{[\s\S]{0,400}this\._midNav\(this\.currentView === 'news' \? 'news' : 'sns'\)/);
+});
+
 test('붙는 자리 — 상품·생산 창 왼쪽(작업지시서 포함)·업무·자료 5개 사이드, 창 바 제목', () => {
     assert.match(src, /g\.head === 'items'\) return `<aside class="appside appside-filter production-work-nav">\$\{this\._midNav\(view\)\}/);
     for (const [cls, v] of [['nt-side', 'notes'], ['rm-side', 'reminders'], ['cal-side', 'calendar'], ['fd-side', 'documents'], ['m3-side', 'contacts']]) {
@@ -66,4 +80,25 @@ test('붙는 자리 — 상품·생산 창 왼쪽(작업지시서 포함)·업�
     }
     assert.match(src, /<b>\$\{esc\(this\._macWinTitle\(w\.view\)\)\}<\/b>/);
     assert.match(css, /\.mid-nav\{[^}]*border-bottom/);
+});
+
+test('C 반려 11-19 — 901~1100 마케팅: 상세는 고르기 전 접고 고르면 겹쳐 연다(가운데 최소 300px), 현황 숫자 칸은 폭 맞춰 줄바꿈', async () => {
+    const fs = await import('node:fs');
+    const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+    const src = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+    const m = css.match(/@media \(min-width:901px\) and \(max-width:1100px\)\{([\s\S]*?)\n\}/);
+    assert.ok(m, '901~1100 규칙');
+    assert.match(m[1], /\.sns3-layout:not\(\.no-side\)\{--c1:200px;grid-template-columns:200px minmax\(0,1fr\)\}/);
+    assert.match(m[1], /\.sns3-layout>\.m3-doc\{display:none\}/);
+    assert.match(m[1], /\.sns3-layout\.detail>\.m3-doc\{display:flex;position:absolute;[^}]*width:min\(340px,48%\)/);
+    assert.match(m[1], /\.sns3-layout\.detail>\.m3-doc \.sns3-back\{display:inline-flex!important/);
+    //  1024 창 실측: 가운데 570px(옛 210px) — 200(왼쪽)+340(겹친 상세) 빼도 가운데 목록은 그대로
+    const winW = 815, side = 200; assert.ok(winW - side >= 300 + 260, '가운데 최소 300px');
+    assert.match(css, /\.sns-dashboard-cards \.sns3-kpis\{grid-template-columns:repeat\(auto-fill,minmax\(128px,1fr\)\)\}/);
+    //  겹친 상세는 어느 마케팅 창이든 닫기 버튼이 있다(오늘 보기 상세 포함)
+    const docs = src.match(/<section class="m3-doc"><div class="m3-tools">.{0,40}/g) || [];
+    const sns = docs.filter(d => /광고 상세|계정 게시물|동종업계|조간 상세|게시물 상세|피로도|속성 상세|브랜드 상세/.test(d) || d.includes('sns3-back'));
+    assert.ok(sns.length >= 7);
+    assert.ok(!src.includes('<section class="m3-doc"><div class="m3-tools"><b>광고 상세</b>'), '오늘 보기 상세 닫기 버튼');
+    assert.match(src, /setSnsMode\(k\) \{[\s\S]{0,900}this\.snsMobileDetail = false;/, '창 바꾸면 겹친 상세 닫힘');
 });

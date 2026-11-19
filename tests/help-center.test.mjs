@@ -145,7 +145,7 @@ test('사용설명서: 지금 보는 화면 카드 + 타일 격자(요약·아�
     assert.ok(!h0.includes('hc-here'), '지금 화면이 없으면 카드 생략');
     assert.equal((h0.match(/class="hc-tile"/g) || []).length, MANUAL.length);
     assert.equal(opened(h0).length, 0, '처음엔 다 접힘');
-    assert.match(h0, /src="icons\/sales\.png"[\s\S]*<b>판매<\/b><small>주문·송장·CS·재고·정산<\/small>/);
+    assert.match(h0, /src="icons\/sales\.png"[\s\S]*<b>판매<\/b><small>주문·배송·교환·반품·고객 분석<\/small>/);
     const h1 = manualListHTML(ms({ here: 'orders' }));
     assert.match(h1, /^<article class="hc-card hc-here">[\s\S]*지금 보는 화면[\s\S]*<b>판매<\/b>[\s\S]*①<[\s\S]*②<[\s\S]*③</, '맨 위 카드에 판매가 펼쳐짐');
     assert.match(h1, /<\/article><div class="hc-sub">전체 화면<\/div><div class="hc-tiles">/);
@@ -310,4 +310,15 @@ test('사용설명서 상품·생산 항목은 새 메뉴명을 쓴다(옛 제�
     assert.match(m.lines[0], /견적서는 재무/);
     //  옛 이름으로 찾아도 이 항목이 나온다
     for (const q of ['샘플', '견적', '상품 관리']) assert.ok(searchManual(q).some(x => x.id === 'items'), q);
+});
+
+test('사용설명서 마케팅·설정·업무·자료도 지금 메뉴 이름(11-19 C) — 옛 이름은 찾기 낱말로만', async () => {
+    const { MANUAL, searchManual } = await import('../helpDict.js');
+    const by = id => MANUAL.find(m => m.id === id);
+    assert.equal(by('sns').title, '마케팅'); assert.equal(by('calendar').title, '통합 캘린더'); assert.equal(by('contacts').title, '거래처');
+    const shown = MANUAL.flatMap(m => [m.title, m.summary, ...m.lines]).join('\n');
+    for (const old of ['SNS', '연락처', '불편사항', '몰·인스타 연동', '광고 판정 기준', '화면·도구', '조직 정보', ' 재고 · 정산']) assert.ok(!shown.includes(old), old);
+    for (const k of ['광고 관리', '알림 설정', '불편접수', '운영 기준']) assert.ok(shown.includes(k), k);
+    for (const [q, id] of [['SNS', 'sns'], ['연락처', 'contacts'], ['캘린더', 'calendar'], ['불편사항', 'settings']])
+        assert.ok(searchManual(q).some(m => m.id === id), q);
 });

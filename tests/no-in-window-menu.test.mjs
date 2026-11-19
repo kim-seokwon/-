@@ -29,7 +29,8 @@ test('맥 창 왼쪽은 자기 보기만 두되 판매·재무는 중분류를 �
     assert.match(mac, /return nav \? `<aside class="appside appside-filter">\$\{nav\}<\/aside>` : '';/);
     assert.match(css, /\.appwrap\.no-appside\{grid-template-columns:1fr\}/);
     const shell = between('    _snsShell(', '    setSnsMode(');
-    assert.match(shell, /const side = this\._snsSideHtml \|\| ''/);
+    assert.match(shell, /const raw = this\._snsSideHtml \|\| ''/);
+    assert.match(shell, /this\._midNav\(/, '11-19 P3 마케팅 중분류');
     assert.match(shell, /side \? '' : ' no-side'/);
 });
 

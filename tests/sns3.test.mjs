@@ -141,7 +141,7 @@ test('SNS 대시보드: 할 일은 필터 표, 오른쪽은 중복 없는 근거
     assert.match(main, /_applyTbl\('sns_dashboard', todoBase, dashVal, todoBase\)/);
     assert.match(main, /_thead\('sns_dashboard', \[\['verdict','판정'\],\['name','광고명'\],\['brand','브랜드'\],\['cpf','팔로워당 비용'\],\['spend','3일 지출'\]\]\)/);
     assert.match(main, /class="sns-dash-task[\s\S]*?app\.selectSnsItem/);
-    assert.match(main, /<div class="m3-tools"><b>광고 상세<\/b><\/div>\$\{setDetail/);
+    assert.match(main, /<div class="m3-tools"><button class="sns3-back" onclick="app\.closeSnsDetail\(\)"><i class="ph ph-caret-left"><\/i> 오늘 보기<\/button><b>광고 상세<\/b><\/div>\$\{setDetail/);   // 11-19: 901~1100 겹친 상세 닫기
     assert.match(main, /const todoSets = currentSets\.filter/);
     assert.doesNotMatch(main, /class="sns3-brand-kpi"/);
     assert.doesNotMatch(main, /<b>\$\{brandActive\(b\)\}\/5<\/b>/);

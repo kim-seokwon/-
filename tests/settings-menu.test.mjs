@@ -24,9 +24,11 @@ test('설정 칸 권한: 마스터 전용은 직원·파트너에게 안 보이�
     assert.match(main, /이 계정으로는 볼 수 없는 칸입니다/);
 });
 
-test('설정 창 안에는 설정 메뉴 목록을 다시 그리지 않는다(전역 사이드바 몫, 사장님 11-18)', () => {
+//  11-19 P4(팀장 3단점검): 11-18 '창 안 설정 목록 금지'를 바꿔, 왼쪽에 설정 중분류(_midNav, 전역 사이드바와 같은 원본) + 가운데 그 칸.
+test('설정 창 왼쪽은 전역 사이드바와 같은 설정 중분류(_midNav)만 — "설정 메뉴" 제목·따로 만든 목록 없음', () => {
     const bar = between('    _appTabBar(', '    // SNS 3단');
-    assert.doesNotMatch(bar, /설정 메뉴|g\.head === 'settings'/);
+    assert.doesNotMatch(bar, /설정 메뉴/);
+    assert.match(bar, /g\.head === 'settings'\) return `<aside class="appside appside-filter settings-work-nav">\$\{this\._midNav\(view\)\}/);
     assert.match(main, /settings3 \? ' settings3' : ''/);
     assert.match(style, /\.settings3 \.appside \.m3-h\{font-size:12px/);
 });
