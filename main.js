@@ -9204,14 +9204,16 @@ class BhasApp {
         return `${p.group.label} › ${own || p.cur[1]}`;
     }
     //  창 왼쪽 맨 위 = 같은 대분류의 중분류 목록(지금 화면 강조). 누르면 같은 창에서 바뀐다(판매·재무 창과 같은 방식).
-    _midNav(view) {
+    //  icons: 메모 창처럼 왼쪽이 자기 트리로 꽉 찬 화면은 한 줄 아이콘 바(이름은 마우스 올리면) — 11-19 Q 사장님 '너무 복잡'
+    _midNav(view, { icons = false } = {}) {
         const p = this._midPlace(view); if (!p) return '';
         const esc = s => this._vesc(s), win = this._renderingWin || '';
         const items = (p.app.items || []).filter(x => this._sideOk(x[0]));
-        return `<nav class="mid-nav category-work-nav" aria-label="${esc(p.group.label)} 중분류"><div class="m3-h">${esc(p.group.label)}</div>${items.map(x => {
+        return `<nav class="mid-nav category-work-nav${icons ? ' mid-icons' : ''}" aria-label="${esc(p.group.label)} 중분류">${icons ? '' : `<div class="m3-h">${esc(p.group.label)}</div>`}${items.map(x => {
             const on = x === p.cur;
             //  마케팅 6개는 한 화면(sns)의 모드 — 같은 창을 sns 로 두고 모드만 바꾼다
             const go = x[3] ? `app.switchAppTab('${esc(win)}','${x[0]}');app.setSnsMode('${x[3]}')` : `app.switchAppTab('${esc(win)}','${x[0]}')`;
+            if (icons) return `<button class="m3-s${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''} onclick="${go}" title="${esc(x[1])}" aria-label="${esc(x[1])}"><i class="ph ${x[2]}"></i></button>`;
             return `<button class="m3-s${on ? ' on' : ''}"${on ? ' aria-current="page"' : ''} onclick="${go}"><i class="ph ${x[2]}" style="color:#0a84ff"></i><span>${esc(x[1])}</span></button>`;
         }).join('')}</nav>`;
     }
@@ -11626,7 +11628,9 @@ class BhasApp {
         else if (seaF !== 'ALL') list = list.filter(n => String(n.product_id) === String(seaF));
         const sel = list.find(n => n.id === this.noteSel) || list[0];
         this._noteShown = sel ? sel.id : null;   // 지금 화면에 떠 있는 메모
-        const cnt = (fn) => all.filter(fn).length;
+        //  폴더 숫자 = 그 폴더를 눌렀을 때 나오는 메모 수. 제품 기록장(item_id)은 목록에서 빠지므로 숫자에서도 뺀다
+        //  (11-19 Q: '모든 메모 175' vs '122개의 메모' — 운영 제품 기록장 53장 차이)
+        const cnt = (fn) => all.filter(n => !n.item_id && fn(n)).length;
         // 맥 메모의 날짜 묶음: 오늘 · 어제 · 이전 7일 · 이전 30일 · 월 · 연도
         const bucket = (t) => {
             if (!t) return '이전 항목';
@@ -11697,7 +11701,7 @@ class BhasApp {
             const kids = (brand && open) ? `<div class="nt-kids">` + seas.map(p => `<div class="nt-sea2${this.noteSea === String(p.id) ? ' on' : ''}${this._isTestSeason(p) ? ' test-season' : ''}"
                 onclick="app.pickBrandSeason('${key}','${p.id}')" oncontextmenu="app.projectMenu(event,'${p.id}')">
                 <i class="ph ph-calendar-blank"></i><span>${esc(p.name)}</span>
-                <em>${all.filter(n2 => String(n2.product_id) === String(p.id)).length}</em></div>`).join('') + `</div>` : '';
+                <em>${cnt(n2 => String(n2.product_id) === String(p.id))}</em></div>`).join('') + `</div>` : '';
             return head + kids;
         };
         //  브랜드 폴더 + 공용은 메모가 없어도 늘 자리를 지킨다
@@ -11710,7 +11714,7 @@ class BhasApp {
         return `
         <div class="nt${this.noteListSheet === 'side' ? ' side-on' : (this.noteListSheet ? ' list-on' : '')}">
             <aside class="nt-side">
-                ${this._midNav('notes')}
+                ${this._midNav('notes', { icons: true })}
                 <div class="nt-shead tog${this.notePrivOpen !== false ? ' on' : ''}" onclick="app.togglePrivFolders()">
                     <i class="ph ph-caret-right"></i>개인
                     <button class="nt-add" title="새 개인 폴더" onclick="event.stopPropagation();app.addPrivateFolder()">＋</button></div>
@@ -11719,7 +11723,7 @@ class BhasApp {
                     fold('pf:' + f, 'ph-folder-simple', f, cnt(n => n.scope === 'private' && n.owner === me && (n.folder || '개인') === f), '#ffb340')).join('')}
                 <div class="nt-shead">워크스페이스
                     <button class="nt-add" title="새 폴더" onclick="app.addNoteFolder()">＋</button></div>
-                ${fold('all', 'ph-tray', '모든 메모', all.length, '#8e8e93')}
+                ${fold('all', 'ph-tray', '모든 메모', cnt(() => true), '#8e8e93')}
                 ${otherFolders.map(f => {
                     const fx = (this.noteFolders || []).find(x => x.name === f);
                     const locked = fx && fx.access === 'members';

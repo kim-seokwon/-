@@ -37,7 +37,8 @@ test('맥 창 왼쪽은 자기 보기만 두되 판매·재무는 중분류를 �
 test('협업 창은 자기 목록을 왼쪽에 둔다 — 메모 폴더·할 일 목록·캘린더·연락처 구분·자료실 즐겨찾기', () => {
     //  11-19 3단 접근: 업무·자료 창 5개는 맨 위에 같은 중분류(_midNav)만 두고, 형제 버튼을 따로 그리지 않는다
     const notes = between('            <aside class="nt-side">', '</aside>');
-    assert.match(notes, /^\s*<aside class="nt-side">\s*\$\{this\._midNav\('notes'\)\}/);
+    //  11-19 Q: 메모 창은 같은 중분류를 한 줄 아이콘 바로(_midNav icons)
+    assert.match(notes, /^\s*<aside class="nt-side">\s*\$\{this\._midNav\('notes', \{ icons: true \}\)\}/);
     assert.doesNotMatch(notes, /switchAppTab/);
     assert.match(main, /<aside class="rm-side">/);
     assert.match(main, /<aside class="cal-side">/);

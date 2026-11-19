@@ -74,9 +74,10 @@ test('마케팅 6개·설정 10개(P3·P4) — 왼쪽 중분류 강조, 마케�
 
 test('붙는 자리 — 상품·생산 창 왼쪽(작업지시서 포함)·업무·자료 5개 사이드, 창 바 제목', () => {
     assert.match(src, /g\.head === 'items'\) return `<aside class="appside appside-filter production-work-nav">\$\{this\._midNav\(view\)\}/);
-    for (const [cls, v] of [['nt-side', 'notes'], ['rm-side', 'reminders'], ['cal-side', 'calendar'], ['fd-side', 'documents'], ['m3-side', 'contacts']]) {
+    //  메모 창만 한 줄 아이콘 바(11-19 Q). 나머지 넷은 글자 목록 그대로
+    for (const [cls, v, arg] of [['nt-side', 'notes', ", { icons: true }"], ['rm-side', 'reminders', ''], ['cal-side', 'calendar', ''], ['fd-side', 'documents', ''], ['m3-side', 'contacts', '']]) {
         const a = src.indexOf(`<aside class="${cls}">`); assert.ok(a >= 0, cls);
-        assert.ok(src.slice(a, a + 400).includes(`\${this._midNav('${v}')}`), cls);
+        assert.ok(src.slice(a, a + 400).includes(`\${this._midNav('${v}'${arg})}`), cls);
     }
     assert.match(src, /<b>\$\{esc\(this\._macWinTitle\(w\.view\)\)\}<\/b>/);
     assert.match(css, /\.mid-nav\{[^}]*border-bottom/);
@@ -101,4 +102,28 @@ test('C 반려 11-19 — 901~1100 마케팅: 상세는 고르기 전 접고 고�
     assert.ok(sns.length >= 7);
     assert.ok(!src.includes('<section class="m3-doc"><div class="m3-tools"><b>광고 상세</b>'), '오늘 보기 상세 닫기 버튼');
     assert.match(src, /setSnsMode\(k\) \{[\s\S]{0,900}this\.snsMobileDetail = false;/, '창 바꾸면 겹친 상세 닫힘');
+});
+
+test('11-19 Q 메모 창 — 업무·자료 5개를 한 줄 아이콘 바로(지금 위치 강조·이름은 마우스 올리면·같은 창에서 이동)', () => {
+    const html = mk()._midNav('notes', { icons: true });
+    assert.match(html, /class="mid-nav category-work-nav mid-icons"/);
+    assert.ok(!html.includes('m3-h'), '머리글(업무·자료) 줄 없음');
+    assert.ok(!html.includes('<span>'), '글자 없음 — 아이콘만');
+    const btns = [...html.matchAll(/<button class="m3-s( on)?"[^>]*onclick="app\.switchAppTab\('w1','([a-z_]+)'\)" title="([^"]+)" aria-label="([^"]+)"><i class="ph [^"]+"><\/i><\/button>/g)];
+    assert.deepEqual(btns.map(m => m[3]), ['할 일', '통합 캘린더', '메모', '자료실', '거래처']);
+    assert.deepEqual(btns.filter(m => m[1]).map(m => m[2]), ['notes'], '메모만 강조');
+    assert.match(html, /m3-s on" aria-current="page"/);
+    //  나머지 화면은 그대로(글자 목록)
+    assert.equal(mk()._midNav('notes'), mk()._midNav('notes', { icons: false }));
+    assert.match(mk()._midNav('reminders'), /<div class="m3-h">업무·자료<\/div>/);
+    assert.match(css, /\.mid-nav\.mid-icons\{display:flex/);
+    assert.match(css, /\.mid-nav\.mid-icons \.m3-s\.on\{/);
+});
+
+test('11-19 Q 메모 폴더 숫자 = 눌렀을 때 목록 수 — 제품 기록장(item_id)은 빼고 센다', () => {
+    const a = src.indexOf('    renderNotes() {'), r = src.slice(a, src.indexOf('\n    }\n', a));
+    assert.match(r, /const cnt = \(fn\) => all\.filter\(n => !n\.item_id && fn\(n\)\)\.length;/);
+    assert.match(r, /fold\('all', 'ph-tray', '모든 메모', cnt\(\(\) => true\)/);
+    assert.ok(!/fold\('all'[^\n]*all\.length/.test(r), '모든 메모 숫자에 all.length 금지');
+    assert.match(r, /if \(n\.item_id\) return false;/, '목록도 제품 기록장을 뺀다(숫자와 같은 기준)');
 });
