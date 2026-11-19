@@ -1,0 +1,39 @@
+name: 광고 중단선 알림
+
+# 광고 판정 '중단'인데 세트 아래 광고가 아직 켜진 세트를 하루 1번 텔레그램으로 알린다. 광고는 끄지 않는다(알림만).
+#  규칙: adStopAlerts.js(판정은 화면 adPanel.buildPanel 최근 3일) · 스크립트: channel-bots/telegram/ad-stop-alert.mjs
+#  같은 세트는 판정이 바뀔 때까지 1번만(ad_stop_alert, 121). 보내기 스위치는 운영 보고서와 같은 TELEGRAM_READY.
+on:
+  schedule:
+    - cron: '30 0 * * *'   # 09:30 KST — 09시 광고 수집 뒤
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '보내지 않고 표만 찍기'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ad-stop-alert
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    if: ${{ vars.TELEGRAM_READY == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 알림
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          #  조직 격리 — 저장소 변수 AD_ALERT_ORG_ID(이 텔레그램 방이 받을 조직). 기본값 없음, 비면 스크립트가 거부.
+          ORG_ID: ${{ vars.AD_ALERT_ORG_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        #  스크립트 기본은 드라이런 — 예약 실행과 dry_run=false 수동 실행만 --send
+        run: node channel-bots/telegram/ad-stop-alert.mjs ${{ (github.event_name != 'workflow_dispatch' || !inputs.dry_run) && '--send' || '' }}

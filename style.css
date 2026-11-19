@@ -6141,6 +6141,27 @@ b.sp-nm.dup{color:#ff453a}
 .sns-news-fail-list{padding:28px 16px}
 .sns-news-fail-list .sns-news-retry{display:none}
 @media (max-width:900px){.sns-news-fail-list .sns-news-retry{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 20px}}
+/* 업계 동향 — 자사·경쟁사 팔로워 증가속도(같은 %축, 날짜별 경쟁사 중앙값) */
+.sns-growth{margin:10px;border:1px solid var(--card-border);border-radius:12px;background:rgba(127,127,127,.035);padding:12px;min-width:0}
+.sns-growth-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
+.sns-growth-head>div:first-child{display:flex;flex-direction:column;gap:3px;min-width:0}
+.sns-growth-head b{font-size:15px;line-height:1.3}.sns-growth-head span{font-size:12px;color:var(--text-muted)}
+.sns-growth-period{display:flex!important;flex-direction:row!important;gap:3px!important;flex:none}
+.sns-growth-period button{min-height:30px;padding:0 10px;border:1px solid var(--card-border);border-radius:7px;background:transparent;color:var(--text-muted);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.sns-growth-period button.on{border-color:var(--primary);background:rgba(10,132,255,.1);color:var(--primary)}
+.sns-growth-chart{position:relative;width:100%;height:238px;overflow:hidden}.sns-growth-chart svg{display:block;width:100%;height:100%}
+.sns-growth-grid line{stroke:var(--card-border);stroke-width:1;vector-effect:non-scaling-stroke}
+.sns-growth-y{position:absolute;inset:0;pointer-events:none}.sns-growth-y span{position:absolute;left:0;transform:translateY(-50%);font-size:12px;line-height:14px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.sns-growth-dates{position:absolute;left:6.67%;right:2.5%;bottom:0;display:flex;justify-content:space-between;pointer-events:none}.sns-growth-dates span{font-size:12px;line-height:14px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.sns-growth-peer{fill:none;stroke:#94a3b8;stroke-width:1.1;opacity:.22;vector-effect:non-scaling-stroke}
+.sns-growth-median{fill:none;stroke:#f59e0b;stroke-width:2.4;stroke-dasharray:7 5;vector-effect:non-scaling-stroke}
+.sns-growth-own{fill:none;stroke:var(--line);stroke-width:3;vector-effect:non-scaling-stroke}
+.sns-growth-legend{display:flex;flex-wrap:wrap;gap:7px 12px;margin-top:6px;font-size:12px;line-height:1.35;color:var(--text-muted)}
+.sns-growth-legend span{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:normal}
+.sns-growth-legend i{display:inline-block;width:18px;height:3px;border-radius:2px;background:var(--line,#94a3b8);flex:none}
+.sns-growth-legend .peer i{height:1px;background:#94a3b8}.sns-growth-legend .median i{height:2px;background:repeating-linear-gradient(90deg,#f59e0b 0 6px,transparent 6px 9px)}
+.sns-growth-short,.sns-growth-empty{font-size:12px;color:var(--text-muted);line-height:1.5}.sns-growth-short{margin-top:8px}.sns-growth-empty{padding:28px 10px;text-align:center}
+@media(max-width:900px){.sns-growth{margin:8px;padding:10px}.sns-growth-chart{height:210px}.sns-growth-head{align-items:center}.sns-growth-head b{font-size:14px}}
 
 /* 116 광고 판정선 수정 — 설정 표 입력칸 · 영향 한 줄 · 광고현황 머리 */
 .adr-tbl .adr-in{width:84px;padding:5px 7px;border:1px solid var(--card-border);border-radius:6px;background:var(--bg-input,transparent);color:inherit;font:inherit;text-align:right;font-variant-numeric:tabular-nums}

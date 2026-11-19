@@ -31,6 +31,7 @@ import { bodyWithText, changedFields, stageOf, groupRows, planStageRows, once } 
 import { makeBrandResolver, calBrandMatch, calBrandValid, CAL_BRAND_ALL, CAL_BRAND_NONE } from './calBrand.js';
 import { uploadAlerts, uploadChipsHtml, buildCards, filterCards, cardHtml, reportHtml, detailHtml, kstDay, addDays as arAddDays } from './adReport.js';
 import { buildPanel, sns3Rows, snsSetDetailHtml, excludedNote } from './adPanel.js';
+import { buildFollowerGrowth, loadFollowerSnapshots } from './followerGrowth.js';
 import { DEFAULT_RULE as ADR_DEFAULT, validateRule, ruleChanged, ruleImpact, ruleLine, saveErrorText as adrSaveErrorText } from './adRuleEdit.js';
 import { formatOf as insightFormat, productOf as insightProduct, weekdayOf as insightWeekday, firstLineOf as insightFirstLine, attrTable as insightAttrTable, brandSentences as insightBrandSentences } from './supabase/functions/_shared/ad-insight.js';
 import { groupShipments, shipSummary, courierShort, trackUrl, optionText } from './csShipments.js';
@@ -269,6 +270,7 @@ class BhasApp {
                     gte: (k, v) => { r = r.filter(x => String(x[k] || '') >= v); return b; },
                     order: (k, o) => { r.sort((x, y) => (x[k] == null) - (y[k] == null) || String(y[k] ?? '').localeCompare(String(x[k] ?? '')) * (o && o.ascending ? -1 : 1)); return b; },
                     limit: (n) => { r = r.slice(0, n); return b; },
+                    range: (from, to) => { r = r.slice(from, to + 1); return b; },
                     then: (ok, ng) => Promise.resolve({ data: r, error: null }).then(ok, ng),
                 };
                 return b;
@@ -3974,6 +3976,7 @@ class BhasApp {
         }
         this.snsPick = null; this.snsNewsPick = null; this.snsNewsAccount = null; this.snsMobileDetail = false;
         if (['posts','industry','news'].includes(this.snsMode) && !this._newsLoaded && !this._newsLoading) this.loadNews();
+        if (this.snsMode === 'industry' && !this._igLoaded && !this._igLoading) this.loadIG();
         if (this.snsMode === 'ads' && ['performance','fatigue'].includes(this.snsAdsTab) && !this._adInsightLoaded && !this._adInsightLoading) this.loadAdInsight();
         this.requestRender();
     }
@@ -3988,6 +3991,7 @@ class BhasApp {
     }
     setSnsPostTab(k) { this.snsPostTab = k === 'review' ? 'review' : 'own'; this.snsPick = null; this.requestRender(); }
     setSnsIndustryView(k) { this.snsIndustryView = ['all','today','empty'].includes(k) ? k : 'all'; this.snsNewsAccount = null; this.snsMobileDetail = false; this.requestRender(); }
+    setSnsGrowthDays(days) { this.snsGrowthDays = Number(days) === 30 ? 30 : 7; this.requestRender(); }
     setSnsPaperView(k) { this.snsPaperView = ['all','today','past'].includes(k) ? k : 'all'; this.snsMobileDetail = false; this.requestRender(); }
     setSnsAcc(k) {
         this.snsAcc = k;
@@ -7456,6 +7460,47 @@ class BhasApp {
         return out;
     }
 
+    _snsFollowerGrowthPanel() {
+        const esc = s => this._vesc(s);
+        const days = this.snsGrowthDays === 30 ? 30 : 7;
+        if (!this._igLoaded) return `<section class="sns-growth"><div class="sns-growth-head"><div><b>팔로워 증가속도 비교</b><span>자사와 경쟁사를 같은 증가율 축으로 비교합니다</span></div></div><div class="sns-growth-empty">자사 팔로워 기록을 불러오는 중...</div></section>`;
+        const ownAccounts = (this.igAccounts || []).map(a => ({ ...a, label: a.username ? `@${a.username}` : this._snsBrandLabel(a.brand_id) }));
+        const model = buildFollowerGrowth({
+            ownAccounts, ownSnapshots: this.igSnapshots || [], competitors: this.competitors || [], competitorSnapshots: this.compSnaps || [], days,
+        });
+        const allLines = [...model.own, ...model.competitors];
+        const values = [...allLines.flatMap(l => l.points.map(p => p.value)), ...model.median.map(p => p.value)].filter(Number.isFinite);
+        const controls = `<div class="sns-growth-period"><button class="${days === 7 ? 'on' : ''}" onclick="app.setSnsGrowthDays(7)">7일</button><button class="${days === 30 ? 'on' : ''}" onclick="app.setSnsGrowthDays(30)">30일</button></div>`;
+        const head = `<div class="sns-growth-head"><div><b>팔로워 증가속도 비교</b><span>${model.start && model.end ? `${esc(model.start.slice(5).replace('-', '/'))}~${esc(model.end.slice(5).replace('-', '/'))} · 기간 시작 대비` : '같은 증가율(%) 축'}</span></div>${controls}</div>`;
+        if (!model.dates.length || !values.length) {
+            const shortage = model.insufficient.length ? ` · 자료 부족 ${model.insufficient.length}계정` : '';
+            return `<section class="sns-growth">${head}<div class="sns-growth-empty">비교할 시작·종료 팔로워 기록이 없습니다${shortage}</div></section>`;
+        }
+        const W = 720, H = 238, L = 48, R = 18, T = 16, B = 34;
+        let min = Math.min(0, ...values), max = Math.max(0, ...values);
+        if (max - min < 0.2) { max += 0.1; min -= 0.1; }
+        const x = i => L + (W - L - R) * (model.dates.length <= 1 ? 0 : i / (model.dates.length - 1));
+        const y = v => T + (H - T - B) * (max - v) / (max - min);
+        const path = points => {
+            let d = '', open = false;
+            points.forEach((p, i) => { if (!Number.isFinite(p.value)) { open = false; return; } d += `${open ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`; open = true; });
+            return d;
+        };
+        const competitorPaths = model.competitors.map(line => `<path class="sns-growth-peer" d="${path(line.points)}"/>`).join('');
+        const ownPaths = model.own.map((line, i) => {
+            const tone = this._snsBrandTone(line.brand_id, line.label), color = tone.color;
+            return `<path class="sns-growth-own" style="--line:${color}" d="${path(line.points)}"/>`;
+        }).join('');
+        const medianPath = path(model.median);
+        const ticks = [...new Set([min, 0, max].map(v => Number(v.toFixed(2))))].sort((a, b) => b - a);
+        const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>`).join('');
+        const yLabels = ticks.map(v => `<span style="top:${(y(v) / H * 100).toFixed(2)}%">${v > 0 ? '+' : ''}${v.toFixed(1)}%</span>`).join('');
+        const ownLegend = model.own.map(line => { const color = this._snsBrandTone(line.brand_id, line.label).color; return `<span><i style="--line:${color}"></i>${esc(line.label)}</span>`; }).join('');
+        const shortageOwn = model.insufficient.filter(x => x.kind === 'own').length, shortageComp = model.insufficient.filter(x => x.kind === 'competitor').length;
+        const shortage = (shortageOwn || shortageComp) ? `<div class="sns-growth-short">자료 부족: ${[shortageOwn ? `자사 ${shortageOwn}` : '', shortageComp ? `경쟁사 ${shortageComp}` : ''].filter(Boolean).join(' · ')}계정 — 시작·종료 기록 또는 기준 팔로워 없음</div>` : '';
+        return `<section class="sns-growth">${head}<div class="sns-growth-chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${days}일 팔로워 증가율 비교 차트"><g class="sns-growth-grid">${grid}</g>${competitorPaths}${medianPath ? `<path class="sns-growth-median" d="${medianPath}"/>` : ''}${ownPaths}</svg><div class="sns-growth-y">${yLabels}</div><div class="sns-growth-dates"><span>${esc(model.start.slice(5).replace('-', '/'))}</span><span>${esc(model.end.slice(5).replace('-', '/'))}</span></div></div><div class="sns-growth-legend">${ownLegend}<span class="peer"><i></i>경쟁사 ${model.competitors.length}계정</span><span class="median"><i></i>경쟁사 중앙값</span></div>${shortage}</section>`;
+    }
+
     _snsTopNav(active) {
         const items = [['dashboard','대시보드'],['ads','광고현황'],['posts','게시물기록'],['followers','팔로워'],['industry','동종업계'],['news','뉴스']];
         return `<div class="sns3-mobile-nav">${items.map(([k,l]) => `<button class="${active === k ? 'on' : ''}" onclick="app.setSnsMode('${k}')">${l}</button>`).join('')}</div>`;
@@ -7510,6 +7555,7 @@ class BhasApp {
         this._snsSideHtml = `<aside class="m3-side sns3-filter-side"><div class="m3-h">계정 분류</div>${industryRows.map(([k,l,n]) => `<button class="sns-brand-nav${industryView === k ? ' on' : ''}" onclick="app.setSnsIndustryView('${k}')" style="--bc:#64748b"><i></i><span><b>${l}</b><small>${n}계정</small></span></button>`).join('')}</aside>`;
         const accountList = visibleAccounts.map(a => `<div class="sns-news-account-row${account === a ? ' on' : ''}"><button class="m3-r sns-news-row sns-news-account" onclick="app.selectSnsNewsAccount('${esc(a.id)}')"><b>${esc(a.name)}</b><div class="sub"><span>${a.handle ? '@' + esc(a.handle) + ' · ' : ''}오늘 ${a.posts.filter(isToday).length}건 · 최근 ${esc(stamp(a.posts[0]) || '게시물 없음')}</span></div></button><button title="핸들 고치기" onclick="app.editCompetitorHandle('${esc(a.id)}')"><i class="ph ph-pencil-simple"></i></button><button title="삭제" onclick="app.delCompetitor('${esc(a.id)}')"><i class="ph ph-trash"></i></button></div>`).join('');
         const list = kind === 'brands' ? accountList : rows.map((x, i) => `<button class="m3-r sns-news-row${selected === x ? ' on' : ''}" onclick="app.selectSnsNews(${i})"><b>${esc(x.title || String(x.snippet || '').slice(0, 70))}</b><div class="sub"><span>${esc(source(x))}${stamp(x) ? ` · ${esc(stamp(x))}` : ''}</span></div></button>`).join('');
+        const growthPanel = this._snsFollowerGrowthPanel();
         const todayTop = accounts.map(a => ({ ...a, today: a.posts.filter(isToday).length })).filter(a => a.today).sort((a, b) => b.today - a.today).slice(0, 8);
         const summary = `<div class="sns-news-summary"><div class="sns-news-summary-head"><div><b>오늘 많이 올린 계정</b><span>${new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' })}</span></div><button onclick="app.openPaper()"><i class="ph ph-newspaper"></i> 조간 카드뉴스</button></div><div class="sns-news-rank">${todayTop.map((a, i) => `<button onclick="app.selectSnsNewsAccount('${esc(a.id)}')"><b>${i + 1}. ${esc(a.name)}</b><span>오늘 ${a.today}건 · 최근 ${esc(stamp(a.posts[0]))}</span></button>`).join('') || '<div class="m3-none">오늘 새 게시물이 없습니다.</div>'}</div></div>`;
         const safeUrl = selected?.url && /^https?:\/\//i.test(selected.url) ? selected.url : '';
@@ -7519,7 +7565,7 @@ class BhasApp {
             <h2>${esc(selected.title || '제목 없음')}</h2>${this._photo(selected.thumb, 'sns-news-photo')}
             ${selected.snippet ? `<p>${esc(selected.snippet)}</p>` : '<p class="m3-none">본문 요약이 없습니다.</p>'}
             ${safeUrl ? `<a class="mbtn pri" href="${esc(safeUrl)}" target="_blank" rel="noopener">원문 안전하게 열기 <i class="ph ph-arrow-square-out"></i></a>` : ''}</article>` : `<div class="m3-page">${summary}<div class="sns3-queue-note">${kind === 'brands' ? '가운데 계정을 선택하면 중복 없는 게시물을 날짜별로 봅니다.' : '가운데 기사를 선택하면 출처·요약·원문 링크를 확인할 수 있습니다.'}</div></div>`);
-        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>경쟁사 계정</b><span>${visibleAccounts.length}계정</span></div><button class="m3-new" onclick="app.addCompetitor()" title="핸들 추가"><i class="ph ph-plus"></i> 핸들 추가</button></div><div class="m3-rows">${list || '<div class="m3-none">표시할 계정이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 계정 목록</button>${account ? '<b>계정 게시물</b>' : '<b>동종업계 요약</b>'}</div>${detail}</section>`;
+        return `<section class="m3-list">${mobileNav}<div class="m3-lbar"><div><b>경쟁사 계정</b><span>${visibleAccounts.length}계정</span></div><button class="m3-new" onclick="app.addCompetitor()" title="핸들 추가"><i class="ph ph-plus"></i> 핸들 추가</button></div><div class="m3-rows">${growthPanel}${list || '<div class="m3-none">표시할 계정이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 계정 목록</button>${account ? '<b>계정 게시물</b>' : '<b>동종업계 요약</b>'}</div>${detail}</section>`;
     }
 
     renderSnsMorning() {
@@ -16443,12 +16489,13 @@ class BhasApp {
     async loadNews() {
         this._newsLoading = true;
         try {
+            const snapSince = arAddDays(kstDay(Date.now()), -35);
             const [cols, items, comps, snaps, igLog] = await Promise.all([
                 this._newsColumns(),
                 this.supabase.from('news_items').select('*').in('kind', ['resale', 'competitor_post'])
                     .order('published_at', { ascending: false, nullsFirst: false }).limit(400),
                 this.supabase.from('competitors').select('*').order('name'),
-                this.supabase.from('competitor_snapshots').select('*').order('snap_date', { ascending: false }).limit(600),
+                loadFollowerSnapshots(this.supabase, snapSince).catch(() => []),
                 //  '조회 불가' 핸들(수집기가 sync_log 에 남김) — 못 읽어도 뉴스는 그대로 뜬다
                 Promise.resolve(this.supabase.from('sync_log').select('run_at,detail').eq('type', 'ig:competitors')
                     .order('run_at', { ascending: false }).limit(1)).catch(() => ({ data: [] })),
@@ -16461,7 +16508,7 @@ class BhasApp {
                 resale: this.newsItems.filter(i => i.kind === 'resale'),
                 competitor: this.newsItems.filter(i => i.kind === 'competitor_post') };
             this.competitors = comps.data || [];
-            this.compSnaps = (snaps && snaps.data) || [];
+            this.compSnaps = snaps || [];
             this._newsError = null;
             this._newsLoaded = true;
         } catch (e) {
