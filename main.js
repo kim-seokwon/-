@@ -3018,19 +3018,11 @@ class BhasApp {
                 `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0"><span style="color:var(--text-muted)">상태</span><b>${this._orderLabel(o, stateLabel[stt] || stt || '-')}</b></div>` +
                 `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--card-border);color:var(--text-muted)">${this._vesc(this._orderItemsSummary(o))}</div>`,
                 link: { label: '주문 전체', action: "app.switchView('orders')" } };
-            return `<div onclick="app._pop(event,'ord_${_oi}')" style="padding:7px 0 7px 10px;border-top:1px solid var(--card-border);border-left:3px solid ${bcol};margin-left:1px;cursor:pointer">
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px">
-                    <span style="display:flex;align-items:baseline;gap:6px;min-width:0;flex:1">
-                        <span style="font-size:0.77rem;font-weight:700;color:${bcol};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(br)}</span>
-                        <span style="font-size:0.64rem;color:var(--text-muted);font-weight:500;white-space:nowrap">${dtStr}</span>
-                    </span>
-                    ${chip(ch, ccol)}
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:0.78rem">
-                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)">${this._vesc(this._orderItemsSummary(o))}</span>
-                    <span style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${won(o.pay_amount || 0)}원</span>
-                    <span style="color:var(--text-muted);white-space:nowrap;max-width:60px;overflow:hidden;text-overflow:ellipsis">${this._vesc(o.receiver_name || o.buyer_name || '-')}</span>
-                </div>
+            return `<div class="home-order-row" onclick="app._pop(event,'ord_${_oi}')" style="border-top:1px solid var(--card-border);border-left:3px solid ${bcol};margin-left:1px;cursor:pointer">
+                <span class="home-order-brand" style="color:${bcol}" title="${this._vesc(br)}">${this._vesc(br)}</span>
+                <span class="home-order-time">${dtStr}</span>
+                <span class="home-order-product" title="${this._vesc(this._orderItemsSummary(o))}">${this._vesc(this._orderItemsSummary(o))}</span>
+                <span class="home-order-price">${won(o.pay_amount || 0)}원</span>
             </div>`;
         }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem;padding:10px 0">주문 없음</div>';
 
@@ -3135,10 +3127,12 @@ class BhasApp {
         // 채널별 스택바(브랜드 색상 비율) — chanBrand는 위에서 서버집계로 계산됨
         const chanTot = c => Object.values(chanBrand[c]).reduce((s, v) => s + v, 0);
         const chanMaxT = Math.max(1, ...CHAN_FIXED.map(chanTot));
-        const chanStacked = CHAN_FIXED.map(c => { const total = chanTot(c); const on = total > 0; const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div onclick="app.switchView('sales')" style="margin-bottom:0.55rem;cursor:pointer">
-            <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${c}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;color:${on ? 'var(--text-main)' : 'var(--text-muted)'}">${on ? won(total) + '원' : '—'}</span></div>
-            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${on ? Math.max(3, total / chanMaxT * 100) : 0}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
-        </div>`; }).join('');
+        const chanWithSales = CHAN_FIXED.filter(c => chanTot(c) > 0);
+        const chanWithoutSales = CHAN_FIXED.filter(c => chanTot(c) <= 0);
+        const chanStacked = chanWithSales.map(c => { const total = chanTot(c); const segs = Object.entries(chanBrand[c]).sort((a, b) => b[1] - a[1]).map(([b, v]) => `<div style="width:${(v / total * 100).toFixed(1)}%;background:${brandColor[b] || '#94a3b8'}" title="${this._vesc(b)} ${won(v)}원"></div>`).join(''); return `<div onclick="app.switchView('sales')" style="margin-bottom:0.55rem;cursor:pointer">
+            <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.81rem;margin-bottom:3px"><span style="font-weight:600;color:var(--text-main)">${c}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;color:var(--text-main)">${won(total)}원</span></div>
+            <div style="height:9px;border-radius:5px;background:rgba(148,163,184,0.14);overflow:hidden"><div style="height:100%;width:${Math.max(3, total / chanMaxT * 100)}%;border-radius:5px;overflow:hidden;display:flex">${segs}</div></div>
+        </div>`; }).join('') + (chanWithoutSales.length ? `<div class="home-zero-channels">매출 없음: ${chanWithoutSales.join(' · ')}</div>` : '');
         // 브랜드 색상 범례(채널 스택바 해설)
         const brandChips = brandArr.map(([b], i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--text-muted);margin-right:10px"><span style="width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]}"></span>${this._vesc(b)}</span>`).join('');
         // 주문상태 3개 개별 블록
@@ -3209,9 +3203,9 @@ class BhasApp {
             </section>
 
             <section class="home-mode-pane" data-pane="sales"${homeMode === 'sales' ? ' data-cur' : ''}>
-            <!-- ═══ 블록 1: 매출 개요 + 최근 주문 ═══ -->
-            <div class="home-sales-recent">
-                <div class="home-sales-overview">
+            <!-- 매출 홈: 왼쪽(KPI→채널) · 오른쪽(최근 주문→브랜드 비율) 독립 세로 열 -->
+            <div class="home-sales-board">
+                <div class="home-sales-column home-sales-left">
                 ${sectionHead('ph-chart-line-up', '매출 개요', `${mm}월 실적 · ${syncBadge}`)}
                 <div class="hk-grid hk-grid5 home-sales-kpis">
                     ${kpiCard('오늘 매출', wonF(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
@@ -3224,16 +3218,19 @@ class BhasApp {
                     ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', deltaBadge((sa.prevM >= sa.thisM * 0.05 && sa.prevM > 0) ? sa.mom : null, 'vs 전월'), '#8b5cf6', 'sales')}
                     ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', [nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}` : '', nr?.unk ? `미분류 ${nr.unk.toLocaleString()}` : '', `객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원`], '#10b981', 'orders')}
                 </div>
+                <div class="home-channel-panel">
+                    ${panel(`채널·브랜드별 매출 ${tipHTML('channel_basis', TIPS)} <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>`, `<div class="home-chan-bars">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>`)}
                 </div>
+                </div>
+                <div class="home-sales-column home-sales-right">
                 <div class="home-recent-orders">
                     ${panel('최근 주문', recentList,
                         `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">주문 전체 →</span>`)}
                 </div>
-            </div>
-            <!-- 채널·브랜드별 매출: 위 매출 개요·최근 주문과 같은 2:1 격자 — 막대는 왼쪽, 도넛·브랜드 범례는 오른쪽(사장님 11-19 '가로로 너무 길다') -->
-            <div class="home-chan-row">
-                ${panel(`채널·브랜드별 매출 ${tipHTML('channel_basis', TIPS)} <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>`, `<div class="home-chan-bars">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>`)}
-                ${panel('브랜드별 비율 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div class="home-chan-donut"><div style="position:relative;display:flex;justify-content:center;margin-bottom:0.5rem">${donut(brandArr, palette)}${brandArr.length ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none"><div style="font-size:1.05rem;font-weight:800;line-height:1;color:${palette[0]}">${Math.round(brandArr[0][1] / brandGrand * 100)}%</div><div style="font-size:0.58rem;color:var(--text-muted);max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(brandArr[0][0])}</div></div>` : ''}</div>${brandTotals}</div>`)}
+                <div class="home-brand-ratio">
+                    ${panel('브랜드별 비율 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div class="home-chan-donut"><div style="position:relative;display:flex;justify-content:center">${donut(brandArr, palette)}${brandArr.length ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none"><div style="font-size:1.05rem;font-weight:800;line-height:1;color:${palette[0]}">${Math.round(brandArr[0][1] / brandGrand * 100)}%</div><div style="font-size:0.58rem;color:var(--text-muted);max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(brandArr[0][0])}</div></div>` : ''}</div><div class="home-brand-totals">${brandTotals}</div></div>`)}
+                </div>
+                </div>
             </div>
             </section>
 

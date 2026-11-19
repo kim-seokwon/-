@@ -35,22 +35,22 @@ test('홈은 한 화면 대시보드 — 매출·주문 구역이 hidden 아님,
     assert.equal(home.split('${statBlocks}').length - 1, 1, 'statBlocks 1회');
     assert.equal((home.match(/\b_warn\b/g) || []).length, 1, '알림 1회');
     assert.equal((home.match(/panel\('최근 주문', recentList/g) || []).length, 1, '최근 주문은 매출 개요 오른쪽 1회');
-    assert.match(home, /class="home-sales-recent"[\s\S]*?class="home-sales-overview"[\s\S]*?매출 개요[\s\S]*?class="home-recent-orders"[\s\S]*?최근 주문/);
-    assert.match(style, /\.home-sales-recent\{display:grid;grid-template-columns:minmax\(0,2fr\) minmax\(320px,1fr\)/);
-    assert.match(style, /\.hk-grid5\.home-sales-kpis \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
-    assert.match(style, /@media screen and \(max-width: 1080px\) \{ \.home-sales-recent\{grid-template-columns:1fr\}/);
+    assert.match(home, /class="home-sales-board"[\s\S]*?class="home-sales-column home-sales-left"[\s\S]*?매출 개요[\s\S]*?class="home-sales-column home-sales-right"[\s\S]*?최근 주문/);
+    assert.match(style, /\.home-sales-board\{display:grid;grid-template-columns:minmax\(0,2fr\) minmax\(320px,1fr\)/);
+    assert.match(style, /@media screen and \(max-width:1080px\)\{[\s\S]*?\.home-sales-board\{grid-template-columns:1fr\}/);
 });
 
-test('홈 채널·브랜드별 매출은 2:1 격자(막대 왼쪽·도넛 오른쪽)로 가로로 늘어지지 않고, 지표 5칸은 빈 칸 없이 3+2', () => {
-    //  사장님 11-19 "채널 브랜드별 매출 창이 가로로 너무 길다" · 실측 캡처 .work/개발자/홈채널폭/cap.mjs
-    const i = main.indexOf('<div class="home-chan-row">'); assert.ok(i > 0, '채널 줄');
+test('홈 매출은 왼쪽 KPI→채널, 오른쪽 최근 주문→브랜드 비율이고 1440 5칸·1024 3+2·390 2열', () => {
+    const i = main.indexOf('<div class="home-sales-board">'); assert.ok(i > 0, '매출 보드');
     const row = main.slice(i, main.indexOf('</section>', i));
     assert.ok(row.indexOf('${chanStacked}') < row.indexOf('${donut(brandArr, palette)}'), '막대 → 도넛 순');
+    assert.ok(row.indexOf('home-sales-kpis') < row.indexOf('home-channel-panel'), '왼쪽 KPI → 채널');
+    assert.ok(row.indexOf('home-recent-orders') < row.indexOf('home-brand-ratio'), '오른쪽 최근 주문 → 비율');
     assert.match(row, /class="home-chan-bars">\$\{chanStacked\}[\s\S]*?\$\{brandChips\}/);
     assert.match(row, /class="home-chan-donut">[\s\S]*?\$\{donut\(brandArr, palette\)\}[\s\S]*?\$\{brandTotals\}/);
     assert.doesNotMatch(row, /하이헤이호|로하이|토비/, '브랜드 하드코딩 금지');
-    assert.match(style, /\.home-chan-row\{display:grid;grid-template-columns:minmax\(0,2fr\) minmax\(320px,1fr\)/);
-    assert.match(style, /\.hk-grid5\.home-sales-kpis\{grid-template-columns:repeat\(6,minmax\(0,1fr\)\)\}/);
-    assert.match(style, /\.hk-grid5\.home-sales-kpis>:nth-child\(n\+4\)\{grid-column:span 3\}/);
-    assert.match(style, /@media screen and \(max-width:640px\)\{\.home-chan-row\{grid-template-columns:1fr\}\}/);
+    assert.match(style, /\.hk-grid5\.home-sales-kpis\{grid-template-columns:repeat\(5,minmax\(0,1fr\)\)\}/);
+    assert.match(style, /@media screen and \(max-width:1080px\)\{[\s\S]*?\.hk-grid5\.home-sales-kpis\{grid-template-columns:repeat\(6,minmax\(0,1fr\)\)\}[\s\S]*?:nth-child\(n\+4\)\{grid-column:span 3\}/);
+    assert.match(style, /@media screen and \(max-width:768px\)\{[\s\S]*?\.hk-grid5\.home-sales-kpis\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
+    assert.match(main, /home-zero-channels">매출 없음: \$\{chanWithoutSales\.join\(' · '\)\}/);
 });
