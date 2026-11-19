@@ -6254,3 +6254,176 @@ body:not(.light) .mid-nav.mid-icons .m3-s::after{background:rgba(242,242,247,.95
 .sns-name-brand{display:none}
 /* F 11-19: 광고 표 위 요약줄(개수·일예산·중단) — 왼쪽 브랜드 목록에서 옮김 */
 .sns3-head .sns3-sum{display:block;margin:2px 0;font-weight:700;color:var(--text-main);font-variant-numeric:tabular-nums}
+
+/* ── 오와열 공통 틀 (11-19 팀장 합의안 .work/사용성점검/합의안.md) ──
+   창 안 3칸 폭을 화면마다 따로 두지 않고 토큰 하나로: 메뉴 200 · 가운데 가변 · 상세 300.
+   사용자가 끌어서 바꾼 폭(인라인 --c1/--c3)은 그대로 이긴다. 넓은 화면(>1100)에서만. */
+:root{--pane-side:200px;--pane-det:300px}
+@media (min-width:1101px){
+  .appwrap{--c1:var(--pane-side)}
+  .appwrap.three{--c3:var(--pane-det)}
+  .appwrap.sales3,.appwrap.production3{--c1:var(--pane-side);--c3:var(--pane-det)}
+  .appwrap.sales3.empty-detail{--c3:var(--pane-det)}
+  .appwrap.three{grid-template-columns:var(--c1) minmax(0,1fr) var(--c3)}
+  .fd{--c1:var(--pane-side);--c3:var(--pane-det)}
+  .cal{grid-template-columns:var(--pane-side) minmax(0,1fr) var(--pane-det)}
+  .m3.ct3{grid-template-columns:var(--c1,var(--pane-side)) minmax(0,1fr) var(--pane-det)}
+  .m3.sns3-layout:not(.no-side){--c1:var(--pane-side);grid-template-columns:var(--c1) minmax(0,1fr) var(--pane-det)}
+}
+/* 오와열 ② 판매: CS 유형 배지("교…") 잘림 · 상태 선택칸 넘침 */
+.sales3 .it-tbl:has(.cs-order-no) th:nth-child(2){width:64px}
+.sales3 .it-tbl:has(.cs-order-no) th:nth-child(7){width:108px}
+
+/* ── 코덱스 맞춤 (11-19 사용성 A · 개발자) — 위 공통·기존 블록은 건드리지 않고 덮어쓴다 ──
+   ① 메모·할 일 3칸 폭 ② 390 마케팅 탭 ③ 캘린더 모바일 ④ 거래처 표 계약·390 카드 ⑤ 외부연동 390 카드 ⑥ 운영기준 오류 패널 */
+
+/* ① 넓은 화면: 메뉴 200 · 가운데 가변 · 오른쪽 300. 메모는 끌어 바꾼 폭(인라인 --c1/--c2)이 이긴다 */
+@media (min-width:1101px){
+  .rm{grid-template-columns:var(--pane-side) minmax(0,1fr) var(--pane-det)}
+  .nt{grid-template-columns:var(--c1,var(--pane-side)) var(--c2,minmax(0,1fr)) var(--pane-det)}
+}
+
+/* ④ 거래처 표 — 열 폭은 colgroup 비율로 고정(내용 길이가 열을 밀지 않는다) */
+.ct3-tbl .it-tbl.ct3-fixed{table-layout:fixed}
+.ct3-tbl .it-tbl.ct3-fixed td{overflow:hidden;text-overflow:ellipsis}
+.ct3-tbl .it-tbl.ct3-fixed td.ct3-name,.ct3-tbl .it-tbl.ct3-fixed td.ct3-who{white-space:normal;min-width:0}
+.ct3-c2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;word-break:keep-all;overflow-wrap:anywhere}
+.ct3-tbl .it-tbl.ct3-fixed td.ct3-mail,.ct3-tbl .it-tbl.ct3-fixed td.ct3-addr,.ct3-tbl .it-tbl.ct3-fixed td.ct3-memo{white-space:nowrap;min-width:0}
+.ct3-tbl .it-tbl.ct3-fixed :is(th,td).ck-status{text-align:center}
+
+@media (max-width:900px){
+  /* ② 마케팅 가로 탭: 잘리지 않게 줄바꿈 */
+  .sns3-layout .sns3-mobile-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow-x:visible}
+  .sns3-layout .sns3-mobile-nav button{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sns-dashboard-cards .sns-dash-tablewrap{overflow-x:auto}
+
+  /* ③ 캘린더: 브랜드 칩 줄바꿈, 월간 칸은 점으로(제목은 아래 하루 목록에서) */
+  .cal .cal-brands{flex-wrap:wrap;overflow-x:visible}
+  .cal .cal-grid .cal-cell{min-height:58px;padding:3px 3px;flex-direction:row;flex-wrap:wrap;align-content:flex-start;gap:3px}
+  .cal .cal-grid .cal-d{flex-basis:100%}
+  .cal .cal-grid .cal-chip{width:7px;height:7px;padding:0;border-radius:50%;font-size:0!important;color:transparent!important;flex:none}
+  .cal .cal-grid .cal-more{font-size:9px;line-height:7px}
+
+  /* ④ 거래처 390: 행 하나 = 2줄 카드 (업체명·상태 / 담당자·휴대폰), 카드 전체 누름, 오른쪽 꺾쇠 */
+  .ct3 .ct3-tbl{padding:0 10px 16px;overflow-x:hidden}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed,.ct3 .ct3-tbl .it-tbl.ct3-fixed tbody{display:block;width:100%}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed thead,.ct3 .ct3-tbl .it-tbl.ct3-fixed colgroup{display:none}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row{display:grid;grid-template-columns:minmax(0,1fr) auto 14px;grid-template-areas:"nm st cv" "wh mb cv";
+    column-gap:8px;row-gap:3px;align-items:center;padding:10px 4px 10px 6px;border-bottom:.5px solid var(--card-border);cursor:pointer;position:relative}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row>td{display:none;padding:0!important;border:0!important;background:none!important;min-width:0;min-height:0;line-height:1.35}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row>td.ck-name{display:block;grid-area:nm;font-size:15px!important}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row>td.ck-status{display:block;grid-area:st;text-align:right}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row>td.ck-contact{display:block;grid-area:wh;font-size:13px!important;color:var(--text-muted)}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row>td.ck-mobile{display:block;grid-area:mb;font-size:13px!important;color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row>td.ck-contact .ct3-c2{-webkit-line-clamp:1}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row::after{content:'';grid-area:cv;width:7px;height:7px;border-right:1.5px solid var(--text-muted);border-top:1.5px solid var(--text-muted);transform:rotate(45deg);opacity:.6;justify-self:center}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row.on{background:rgba(10,132,255,.12);border-radius:8px}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr.it-row:active{background:rgba(127,127,127,.12)}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr:not(.it-row){display:block}
+  .ct3 .ct3-tbl .it-tbl.ct3-fixed tr:not(.it-row)>td{display:block}
+
+  /* ⑤ 외부연동 390: 브랜드마다 카드, 채널은 '이름 | 상태' 줄 */
+  .settings3 .glass:has(>.integ-tbl){padding:0!important;background:transparent;border:0;box-shadow:none;overflow:visible!important}
+  .integ-tbl{min-width:0!important;display:block}
+  .integ-tbl colgroup,.integ-tbl thead{display:none}
+  .integ-tbl tbody{display:flex;flex-direction:column;gap:12px}
+  .integ-tbl tr{display:block;border:.5px solid var(--card-border)!important;border-radius:14px;background:var(--card-bg);overflow:hidden}
+  .integ-tbl td{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px!important;text-align:left!important;border:0!important;border-top:.5px solid var(--card-border)!important}
+  .integ-tbl td.integ-brand{border-top:0!important;font-size:15px!important;padding:12px 14px!important}
+  .integ-tbl td[data-l]::before{content:attr(data-l);font-size:13px;font-weight:600;color:var(--text-main);flex:none}
+  .integ-tbl td[data-l]>div{align-items:flex-end!important;text-align:right;max-width:62%}
+  .integ-tbl td[colspan]{display:block;text-align:center!important}
+}
+
+/* ⑥ 운영기준 판정선 — 처음부터 못 불러옴(오류 패널) · 새로고침 실패(마지막 정상값 배너) · 확인 시각 */
+.adr-fail{padding:18px 18px 16px;display:flex;flex-direction:column;align-items:flex-start;gap:8px;border-color:rgba(217,48,37,.35);background:rgba(217,48,37,.05)}
+.adr-fail-t{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:#c5221f}
+.adr-fail-t i{font-size:18px}
+.adr-fail .set-note{margin:0}
+.adr-retry{display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:inherit;font:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.adr-retry.pri{background:var(--primary);border-color:var(--primary);color:#fff;margin-top:4px}
+.adr-retry:hover:not([disabled]){filter:brightness(.96)}
+.adr-retry[disabled]{opacity:.6;cursor:progress}
+.adr-stale{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 12px;padding:10px 12px;border-radius:10px;border:1px solid rgba(217,119,6,.35);background:rgba(245,158,11,.10);color:#92400e;font-size:13px;font-weight:600}
+.adr-stale>i{font-size:16px;flex:none}
+.adr-stale>span{flex:1 1 180px;min-width:0}
+.adr-stale .adr-retry{color:#92400e;border-color:rgba(217,119,6,.45)}
+.adr-at{font-size:11px;font-weight:600;color:var(--text-muted);margin-left:8px;font-variant-numeric:tabular-nums}
+body:not(.light) .adr-fail{border-color:rgba(255,99,88,.35);background:rgba(255,99,88,.08)}
+body:not(.light) .adr-fail-t{color:#ff8a80}
+body:not(.light) .adr-stale{border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.12);color:#fcd34d}
+body:not(.light) .adr-stale .adr-retry{color:#fcd34d;border-color:rgba(251,191,36,.45)}
+/* 오와열 ② 판매·상품·재무: 머리줄 높이 52 하나 · 표 머리 36 · 주문표도 다른 표처럼 꽉 찬 표(둥근 카드·들여쓰기 없음) */
+@media (min-width:1101px){
+  .appwrap .mp-top{min-height:52px;box-sizing:border-box}
+  .appwrap .it-tbl th,.appwrap .ord-tbl th{height:36px;box-sizing:border-box;vertical-align:middle}
+  .appwrap.sales3 .mp-body>.table-container:has(>.ord-tbl){margin-left:-14px!important;margin-right:-14px!important;border-left:0!important;border-right:0!important;border-radius:0!important;box-shadow:none!important}
+}
+/* 오와열 ② 주문표: 숫자 오른쪽 · 상태 가운데 (머리·본문 같이) */
+@media (min-width:1101px){
+  .appwrap.sales3 .ord-tbl th:nth-child(8),.appwrap.sales3 .ord-tbl td:nth-child(8){text-align:right!important}
+  .appwrap.sales3 .ord-tbl th:nth-child(9),.appwrap.sales3 .ord-tbl td:nth-child(9){text-align:center!important}
+}
+/* 오와열 ⑤ 폰(≤768): 창은 화면 꽉 채우고 독은 숨긴다 — 앱 전환은 왼쪽 위 ≡ 메뉴로 */
+@media (max-width:768px){
+  .mac-desktop .macwin:not(.min){left:0!important;top:28px!important;width:100vw!important;height:calc(100dvh - 28px)!important;border-radius:0!important;border-left:0!important;border-right:0!important;border-bottom:0!important}
+  .mac-desktop:has(.macwin:not(.min)) .mac-dock{display:none!important}
+}
+/* ── 코덱스 맞춤 반려1 (11-19 · 개발자) — 390 마케팅 할 일 카드 · 판정선 브랜드 카드 · 빈 메모 폴더 */
+.nt-empty{display:flex;flex-direction:column;align-items:center;gap:12px}
+.nt-empty-new{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border:0;border-radius:8px;background:var(--primary,#0a84ff);color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+@media (max-width:900px){
+  .sns-dashboard-cards .sns-dash-tablewrap{overflow-x:visible}
+  .sns-dashboard-cards .sns-dash-table,.sns-dashboard-cards .sns-dash-table tbody{display:block;width:100%}
+  .sns-dashboard-cards .sns-dash-table thead,.sns-dashboard-cards .sns-dash-table colgroup{display:none}
+  .sns-dashboard-cards .sns-dash-table tr.sns-dash-task{display:grid;grid-template-columns:48px minmax(0,1fr) auto auto;grid-template-areas:"v nm nm nm" "b b cpf sp";gap:4px 10px;align-items:center;padding:10px 12px;border-bottom:.5px solid var(--card-border)}
+  .sns-dashboard-cards .sns-dash-table tr.sns-dash-task>td{display:block;padding:0!important;border:0!important;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sns-dashboard-cards .sns-dash-table td.sns-dash-v{grid-area:v}
+  .sns-dashboard-cards .sns-dash-table td.sns-dash-name{grid-area:nm;font-weight:600}
+  .sns-dashboard-cards .sns-dash-table td.sns-dash-b{grid-area:b;color:var(--text-muted);font-size:12px!important}
+  .sns-dashboard-cards .sns-dash-table td.sns-dash-cpf{grid-area:cpf;justify-self:end;text-align:right}
+  .sns-dashboard-cards .sns-dash-table td.sns-dash-sp{grid-area:sp;text-align:right}
+  .sns-dashboard-cards .sns-dash-table td[data-l]::before{content:attr(data-l) " ";color:var(--text-muted);font-size:11px;font-weight:400;margin-right:3px}
+  .sns-dashboard-cards .sns-dash-table tr:not(.sns-dash-task),.sns-dashboard-cards .sns-dash-table tr:not(.sns-dash-task)>td{display:block;width:100%;white-space:normal}
+  .mpane .set-scroll:has(>.adr-tbl){overflow-x:visible}
+  .mpane .adr-tbl{display:block;width:100%;min-width:0!important}
+  .mpane .adr-tbl tbody{display:flex;flex-direction:column;gap:10px}
+  .mpane .adr-tbl thead{display:none}
+  .mpane .adr-tbl tr.adr-row{display:block;border:.5px solid var(--card-border);border-radius:10px;padding:4px 12px}
+  .mpane .adr-tbl tr.adr-row>td{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0!important;border:0!important;border-top:.5px solid var(--card-border)!important;text-align:left}
+  .mpane .adr-tbl tr.adr-row>td.adr-brand{border-top:0!important;font-weight:700;font-size:15px!important;justify-content:flex-start}
+  .mpane .adr-tbl tr.adr-row>td[data-l]::before{content:attr(data-l);color:var(--text-muted);font-size:13px;flex:1 1 auto;min-width:0}
+  .mpane .adr-tbl tr.adr-row>td[data-l]{flex-wrap:wrap}
+  .mpane .adr-tbl tr.adr-row>td .adr-in{width:120px;flex:none}
+  .mpane .adr-tbl tr.adr-row>td .adr-err{flex-basis:100%;text-align:right}
+  .mpane .adr-tbl tr.adr-impact,.mpane .adr-tbl tr.adr-impact>td{display:block;width:100%}
+}
+/* 오와열 ⑤ 폰(≤768) 판매·상품 표 → 카드 행: 가로 스크롤·잘린 열 없이 한 화면에 값이 다 보이게 (주문표와 같은 방식) */
+@media (max-width:768px){
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-scroll{overflow-x:hidden!important}
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-tbl{display:block!important;width:100%!important;min-width:0!important}
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-tbl thead{display:none!important}
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-tbl tbody{display:flex!important;flex-direction:column;gap:8px;padding:10px 12px}
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-tbl tbody>tr{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid var(--card-border);border-radius:11px;background:var(--card-bg);height:auto!important}
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-tbl tbody>tr>td{display:block;width:auto!important;min-width:0!important;max-width:100%!important;height:auto!important;padding:0!important;border:0!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;text-align:left!important}
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-tbl tbody>tr>td:empty{display:none}
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-tbl tbody>tr>td[colspan]{width:100%!important;text-align:center!important;color:var(--text-muted)}
+  .appwrap:is(.sales3,.production3,:has(.prod-tbl)) .it-tbl tbody>tr:has(>td[colspan]){border:0;background:none}
+}
+@media (max-width:768px){
+  .appwrap .it-tbl tbody>tr>td[data-l]::before{content:attr(data-l) ' ';font-size:11px;font-weight:500;color:var(--text-muted)}
+}
+/* 오와열 ⑥ 분석 창: 브랜드 세로 레일(4단처럼 보임) → 머리줄 아래 칩 한 줄. 요약 카드는 큰 카드 1줄 + 작은 카드 3열 (혼자 남는 칸 없음) */
+@media (min-width:769px){
+  .macwin .appwrap .analysis-layout{flex-direction:column!important;align-items:stretch!important;gap:12px!important}
+  .macwin .appwrap .analysis-brandbar{width:auto!important;flex-direction:row!important;flex-wrap:wrap;gap:6px!important}
+  .macwin .appwrap .analysis-brandbar>div:first-child{display:none}
+  .macwin .appwrap .analysis-brandbar button{flex:0 0 auto;width:auto!important;padding:6px 12px!important;border-radius:999px!important}
+  .macwin .appwrap .analysis-content{width:100%}
+}
+@container (max-width:900px){
+  .sv-ov{grid-template-columns:repeat(3,minmax(0,1fr))}.sv-hero{grid-column:1/-1}
+}
+@container (max-width:480px){
+  .sv-ov{grid-template-columns:1fr 1fr}
+}

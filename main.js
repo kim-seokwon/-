@@ -3434,13 +3434,19 @@ class BhasApp {
             </div></div>`;
     }
     renderSetAdRules() {
-        if (!this._arLoaded) { if (!this._arLoading) this.loadAdReport().then(() => this.requestRender()); return this._loadingSkeleton('광고 판정 기준'); }
-        const r = this.adReport || {};
-        if (r.error) return `<div class="mpane"><div class="mcard"><div class="set-note">판정 기준을 불러오지 못했습니다.</div></div></div>`;
+        const st = this._arRulesSt();
+        if (!this._arLoaded && !st.list) { if (!this._arLoading) this.loadAdReport().then(() => this.requestRender()); return this._loadingSkeleton('광고 판정 기준'); }
+        const head = `<div class="mpane-top"><h2><i class="ph ph-gauge"></i> 광고 판정 기준</h2></div>`;
+        //  정상값이 한 번도 없을 때만 오류 패널 — 카드·수집 상태 실패는 여기와 무관(광고 화면에서 처리)
+        if (!st.list) return `<div class="mpane">${head}<div class="mcard adr-fail" role="alert"><div class="adr-fail-t"><i class="ph ph-warning-circle"></i> 판정 기준을 불러오지 못했습니다</div>
+            <div class="set-note">잠시 뒤 다시 시도해 주세요. 계속되면 관리자에게 알려 주세요.</div>${this._adrRetryBtn('adr-retry pri')}</div></div>`;
+        const r = { ...(this.adReport || {}), rules: st.list };
+        const stale = st.err ? `<div class="adr-stale" role="status"><i class="ph ph-warning"></i><span>새로고침 실패 · 마지막 정상 기준 표시 중${st.at ? ` (확인 ${this._adrAt(st.at)})` : ''}</span>${this._adrRetryBtn('adr-retry')}</div>` : '';
         //  116: 브랜드 행별 증액선·유지선·최소일수·최소지출을 바로 고쳐 저장(RPC set_ad_report_rule). 행 없는 브랜드는 공통 기본값.
         const won = n => Number(n || 0).toLocaleString('ko-KR');
         const ed = this._adrEdit || (this._adrEdit = {});
-        const cell = (bid, k, v, err) => `<td class="n"><input class="adr-in${err ? ' bad' : ''}" inputmode="numeric" value="${this._vesc(ed[bid]?.[k] ?? v)}" data-b="${this._vesc(bid)}" data-k="${k}" oninput="app.adrInput(this)" onchange="app.requestRender()" onkeydown="if(event.key==='Enter')this.blur()" aria-label="${k}">${err ? `<div class="adr-err">${this._vesc(err)}</div>` : ''}</td>`;
+        const ADR_L = { up_max: '증액선 (이하 증액)', stop_over: '유지선 (넘으면 중단)', min_days: '최소 일수', min_spend: '최소 지출' };
+        const cell = (bid, k, v, err) => `<td class="n" data-l="${ADR_L[k]}"><input class="adr-in${err ? ' bad' : ''}" inputmode="numeric" value="${this._vesc(ed[bid]?.[k] ?? v)}" data-b="${this._vesc(bid)}" data-k="${k}" oninput="app.adrInput(this)" onchange="app.requestRender()" onkeydown="if(event.key==='Enter')this.blur()" aria-label="${k}">${err ? `<div class="adr-err">${this._vesc(err)}</div>` : ''}</td>`;
         const rows = (mockData.brands || []).filter(b => b.status !== 'closed').map(b => {
             const own = (r.rules || []).find(x => String(x.brand_id) === String(b.id));
             const x = { ...ADR_DEFAULT, ...(own || {}) }, bid = String(b.id), draft = ed[bid];
@@ -3448,16 +3454,16 @@ class BhasApp {
             const saving = this._adrSaving === bid;
             const impact = dirty && chk.ok ? this._adrImpact(bid, chk.value) : '';   // 저장 전 '바뀌면' 한 줄
             const e = chk?.errors || {};
-            return `<tr class="${dirty ? 'adr-dirty' : ''}"><td>${this._vesc(b.name)}${own ? '' : ' <span class="mpill gray">기본값</span>'}</td>
+            return `<tr class="adr-row${dirty ? ' adr-dirty' : ''}"><td class="adr-brand">${this._vesc(b.name)}${own ? '' : ' <span class="mpill gray">기본값</span>'}</td>
                 ${cell(bid, 'up_max', x.up_max, e.up_max)}${cell(bid, 'stop_over', x.stop_over, e.stop_over)}${cell(bid, 'min_days', x.min_days, e.min_days)}${cell(bid, 'min_spend', x.min_spend, e.min_spend)}
-                <td class="n">${won(x.test_daily_budget)}</td><td class="n">×${x.early_mult}</td>
+                <td class="n" data-l="테스트 하루 예산">${won(x.test_daily_budget)}</td><td class="n" data-l="초반 배수">×${x.early_mult}</td>
                 </tr>
                 ${dirty ? `<tr class="adr-impact"><td colspan="7"><div class="adr-bar"><span class="adr-say">${chk.ok ? `<i class="ph ph-arrows-left-right"></i> 바뀌면: ${this._vesc(impact)}` : '<i class="ph ph-warning"></i> 값을 고쳐야 저장할 수 있습니다'}</span>
                     <span class="adr-act"><button class="adr-save" ${chk.ok && !saving ? '' : 'disabled'} onclick="app.adrSave('${this._vesc(bid)}')">${saving ? '저장 중...' : '저장'}</button><button class="adr-undo" onclick="app.adrReset('${this._vesc(bid)}')">취소</button></span></div></td></tr>` : ''}`;
         }).join('');
         return `<div class="mpane">
-            <div class="mpane-top"><h2><i class="ph ph-gauge"></i> 광고 판정 기준</h2></div>
-            <div class="mcard"><div class="mcard-h">브랜드별 판정선 (팔로워 1명당 원)</div>
+            ${head}${stale}
+            <div class="mcard"><div class="mcard-h">브랜드별 판정선 (팔로워 1명당 원)${st.at && !st.err ? `<span class="adr-at">마지막 확인 ${this._adrAt(st.at)}</span>` : ''}</div>
                 <div class="set-scroll"><table class="set-tbl adr-tbl"><thead><tr><th>브랜드</th><th>증액선 (이하 증액)</th><th>유지선 (넘으면 중단)</th><th>최소 일수</th><th>최소 지출</th>
                     <th>테스트 하루 예산</th><th>초반 배수</th></tr></thead><tbody>${rows}</tbody></table></div>
                 <div class="set-note">SNS › 광고현황 판정이 이 값을 씁니다. 저장하면 바로 판정에 반영되고, 누가·언제 바꿨는지 기록됩니다. 조직 관리자만 저장할 수 있습니다.</div>
@@ -3472,21 +3478,21 @@ class BhasApp {
     _adrImpact(bid, next) {
         const r = this.adReport || {};
         if (!r.daily) return '광고 수치를 불러오지 못해 영향은 계산하지 못했습니다';
-        const rulesBy = Object.fromEntries((mockData.brands || []).map(b => [String(b.id), { ...ADR_DEFAULT, ...((r.rules || []).find(x => String(x.brand_id) === String(b.id)) || {}) }]));
+        const rulesBy = Object.fromEntries((mockData.brands || []).map(b => [String(b.id), { ...ADR_DEFAULT, ...(this._adrRulesList().find(x => String(x.brand_id) === String(b.id)) || {}) }]));
         const brands = (mockData.brands || []).map(b => ({ id: b.id, name: b.name, ad_prefixes: rulesBy[String(b.id)]?.ad_prefixes || [] }));
         return ruleImpact({ links: r.links || [], daily: r.daily, brands, rulesBy, brandId: bid, next, period: 'three', now: Date.now() }).text;
     }
     //  116 — 광고현황 표 머리: 지금 쓰는 판정선(행 없으면 기본값). 전체 보기에서는 브랜드마다 다르니 안 붙인다.
     _adrHeadLine(bid, cls = 'adr-line') {
         if (bid == null) return '';
-        const own = ((this.adReport || {}).rules || []).find(x => String(x.brand_id) === String(bid));
+        const own = this._adrRulesList().find(x => String(x.brand_id) === String(bid));
         const line = ruleLine({ ...ADR_DEFAULT, ...(own || {}) });
         const can = ['MASTER', 'STAFF'].includes(this.currentUser?.role);
         return `<span class="${cls}">판정선 ${line}${own ? '' : ' (기본값)'}${can ? ` · <a class="adr-go" onclick="app.switchView('set_adrules')">바꾸기</a>` : ''}</span>`;
     }
     async adrSave(bid) {
         if (this._adrSaving) return;
-        const r = this.adReport || {}, cur = { ...ADR_DEFAULT, ...((r.rules || []).find(x => String(x.brand_id) === String(bid)) || {}) };
+        const r = this.adReport || {}, cur = { ...ADR_DEFAULT, ...(this._adrRulesList().find(x => String(x.brand_id) === String(bid)) || {}) };
         const chk = validateRule(this._adrEdit?.[bid], cur);
         if (!chk.ok) { this.requestRender(); return; }
         this._adrSaving = bid; this.requestRender();
@@ -3495,8 +3501,11 @@ class BhasApp {
             const { data, error } = await this.supabase.rpc('set_ad_report_rule', { p_brand_id: bid, p_up_max: v.up_max, p_stop_over: v.stop_over, p_min_days: v.min_days, p_min_spend: v.min_spend });
             if (error) throw error;
             const row = Array.isArray(data) ? data[0] : data;
-            const list = (r.rules || []).filter(x => String(x.brand_id) !== String(bid));
-            this.adReport = { ...r, rules: [...list, { ...cur, ...(row || v), brand_id: row?.brand_id || bid }] };
+            const list = this._adrRulesList().filter(x => String(x.brand_id) !== String(bid));
+            const next = [...list, { ...cur, ...(row || v), brand_id: row?.brand_id || bid }];
+            //  저장 성공만 캐시를 바꾼다 — 저장 실패는 조회 캐시를 건드리지 않는다
+            const st = this._arRulesSt(); st.list = next; st.at = Date.now(); st.err = null;
+            this.adReport = r.error ? r : { ...r, rules: next };
             delete this._adrEdit[bid];
             this.showToast('판정선을 저장했습니다 · 광고현황 판정에 바로 반영');
         } catch (e) { this.showToast(adrSaveErrorText(e)); }
@@ -3905,7 +3914,7 @@ class BhasApp {
                         : `<i class="ph ph-squares-four" style="color:#0a84ff"></i>`}
                 <span>${esc(label)}</span><em>${count}</em></div>`;
         const sec = (name, key, inner, add) => {
-            const open = (this.itemNavOpen || {})[key] !== false;
+            const open = this._itemNavIsOpen(key);
             return `<div class="m3-h tog${open ? ' on' : ''}" onclick="app.toggleItemNav('${key}')">
                 <i class="ph ph-caret-right"></i>${esc(name)}
                 ${add ? `<button class="nav-add" title="${esc(add.t)}" onclick="event.stopPropagation();${add.run}">＋</button>` : ''}
@@ -3930,9 +3939,11 @@ class BhasApp {
                 n(i => String(i.brand_id) === String(b.id)), `app.itemNavPick('brd','${b.id}')`, 1, b.brand_color)).join('')
                 + (n(i => !i.brand_id) ? row(curB === 'NONE', '브랜드 없음', n(i => !i.brand_id), "app.itemNavPick('brd','NONE')", 1) : ''))}`;
     }
+    // 상태 목록(10줄)은 기본 접힘 — 펼치면 창 밖으로 넘쳐 시즌별이 잘린다(11-19 오와열)
+    _itemNavIsOpen(k) { const v = (this.itemNavOpen || {})[k]; return v === undefined ? k !== 'st' : v !== false; }
     toggleItemNav(k) {
         this.itemNavOpen = this.itemNavOpen || {};
-        this.itemNavOpen[k] = this.itemNavOpen[k] === false;
+        this.itemNavOpen[k] = !this._itemNavIsOpen(k);
         this.requestRender();
     }
     itemNavPick(kind, id) {
@@ -4857,8 +4868,7 @@ class BhasApp {
         //  판매는 목록과 상세의 위치가 선택 전후로 흔들리지 않게 세 번째 칸을 유지한다.
         const empty = () => {
             if (!sales3 && !production3) return '';
-            // 주문표는 상세를 닫으면 오른쪽 칸 자체를 없애 본문 폭을 돌려준다.
-            if (view === 'orders') return '';
+            // 11-19 합의안 1항: 주문도 안 골랐을 때 오른쪽 300 칸을 유지하고 '선택하세요'를 보인다(칸이 생겼다 사라지면 열이 흔들린다).
             //  생산은 안 골랐을 때 빈칸 대신 그 화면 요약을 보여 준다.
             if (production3) { const sm = this._prodSummary(view); if (sm) return wrap(sm.title, sm.sub, sm.body, ''); }
             const name = ({ orders: '주문', cs: 'CS 건', inventory: '재고 품목', items: '생산 물품', vendors: '생산처', tech_packs: '작업지시서', sample_maker: '작업지시서', quotes: '견적' })[view] || '항목';
@@ -5129,10 +5139,26 @@ class BhasApp {
                     `<button class="mbtn pri" onclick="app.setSalesBrand('${this._vesc(b.name).replace(/'/g, '&#39;')}')">브랜드 상세</button>`);
             }
         }
-        if (view === 'sales' || view === 'expenses') {
+        if (view === 'expenses') {
+            // 지출 화면 오른쪽 = 지출 요약(이 달 합계·회사별·미처리). 매출 분석 안내문을 그대로 쓰지 않는다.
+            const all = this.expList || [];
+            const months = [...new Set(all.map(e => (e.spent_on || '').slice(0, 7)).filter(Boolean))].sort().reverse();
+            const month = this.expMonth || months[0] || new Date().toISOString().slice(0, 7);
+            const list = all.filter(e => (e.spent_on || '').startsWith(month));
+            const won = n => `${(Number(n) || 0).toLocaleString('ko-KR')}원`;
+            const total = list.reduce((s, e) => s + Number(e.amount || 0), 0);
+            const byCo = {}; list.forEach(e => { const k = e.company || '미지정'; byCo[k] = (byCo[k] || 0) + Number(e.amount || 0); });
+            const undone = list.filter(e => !e.done);
+            const coRows = Object.entries(byCo).sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => `<div class="dt-li"><span>${this._vesc(k)}</span><b>${won(v)}</b></div>`).join('');
+            return wrap('지출 요약', month, `
+                ${f('합계', won(total))}${f('건수', `${list.length}건`)}${f('미처리', undone.length ? `${undone.length}건 · ${won(undone.reduce((s, e) => s + Number(e.amount || 0), 0))}` : '없음')}
+                <div class="dt-sec">회사별</div>${coRows || '<div class="dt-memo">이 달 기록이 없습니다.</div>'}`, '');
+        }
+        if (view === 'sales') {
             const brand = this.salesViewBrand && this.salesViewBrand !== 'ALL' ? this.salesViewBrand : '전체 브랜드';
             const period = [this.salesViewYear, this.salesViewMonth && this.salesViewMonth !== 'ALL' ? `${this.salesViewMonth}월` : '전체 월'].filter(Boolean).join(' · ');
-            return wrap('정산 요약', view === 'expenses' ? '지출 보기' : '매출 보기', `
+            return wrap('매출 요약', '매출 보기', `
                 ${f('브랜드', brand)}${f('기간', period || '전체 기간')}
                 <div class="dt-sec">보는 법</div><div class="dt-memo">가운데에서 브랜드와 기간을 고르면 같은 기준으로 정산 자료가 바뀝니다.</div>`, '');
         }
@@ -6189,7 +6215,7 @@ class BhasApp {
             const shown = names.slice(0, 3).map(n => this._vesc(n)).join(' · ');
             const salesWord = names.length ? `판매 브랜드(${shown}${names.length > 3 ? ` 외 ${names.length - 3}개` : ''})` : '판매 브랜드';
             return `<div class="mp">
-                ${this._mpTop('정산', '매출', this._moneyTabs('sales'))}
+                ${this._mpTop('매출 분석', '매출', this._moneyTabs('sales'))}
                 <div class="mp-body"><div class="mnone">매출 자료가 없습니다.<br>${salesWord}는 몰 주문이 수집되면, 컨설팅은 세금계산서(견적)가 등록되면 저절로 쌓입니다.</div></div>
             </div>`;
         }
@@ -6364,7 +6390,7 @@ class BhasApp {
                 <div class="sv-v">${svWon(thisM)}</div>
                 <div class="sv-cmp">${cmpPct == null ? `<em>${cmpLabel} 매출 없음 — 비교 불가</em>`
                     : `<span class="sv-pill ${cmpPct >= 0 ? 'up' : 'dn'}">${cmpPct >= 0 ? '▲' : '▼'} ${Math.abs(cmpPct)}%</span><em>${cmpLabel} ${svWon(cmpPrev)} 대비</em>`}${_cl && (exclCnt || exchCnt) ? `<em>${[exclCnt ? `취소·반품 ${exclCnt}건 제외` : '', exchCnt ? `교환 ${exchCnt}건 포함` : ''].filter(Boolean).map(x => ` · ${x}`).join('')}</em>` : ''}</div></article>
-            <article class="sv-card sv-m"><div class="sv-eb">${ico('stack')} 전체 누적 주문</div><strong>${cumOrders.toLocaleString()}건</strong><small>전 채널 · 전체 기간</small></article>
+            <article class="sv-card sv-m"><div class="sv-eb">${ico('stack')} 전체 누적 주문</div><strong>${(this.salesAggData?.monthly || []).length ? `${cumOrders.toLocaleString()}건` : '—'}</strong><small>${(this.salesAggData?.monthly || []).length ? '전 채널 · 전체 기간' : '누적 집계 준비 중'}</small></article>
             <article class="sv-card sv-m"><div class="sv-eb">${ico('receipt')} 주문 · 객단가</div><strong>${ordersThisMonth.toLocaleString()}건</strong><small>주문당 ${svWon(aov)}</small></article>
             <article class="sv-card sv-m"><div class="sv-eb">${ico('arrow-u-up-left')} 반품·교환</div><strong>${_cl ? `${retPct}%` : '—'}</strong>
                 <small class="${_cl && retPct >= 15 ? 'bad' : ''}">${_cl ? `${cancelThisCnt}건 · 환불 ${wonMan(cancelThisAmt)}원` : _clNote}</small></article>
@@ -6607,7 +6633,7 @@ class BhasApp {
         </div>`;
 
         return `<div class="mp">
-            ${this._mpTop(bf === 'ALL' ? '정산' : bf, bf === 'ALL' ? `전체 브랜드 통합 · ${periodLabel}` : `브랜드 상세 · ${periodLabel}`, `
+            ${this._mpTop(bf === 'ALL' ? '매출 분석' : bf, bf === 'ALL' ? `전체 브랜드 통합 · ${periodLabel}` : `브랜드 상세 · ${periodLabel}`, `
                     ${this._moneyTabs('sales')}
                     <select onchange="app.setSalesYear(this.value)" style="padding:7px 11px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--text-main);font-size:0.85rem;font-weight:700;cursor:pointer">
                         ${yearsAvail.map(y => `<option value="${y}" ${y === selY ? 'selected' : ''}>${y}년</option>`).join('')}
@@ -6741,7 +6767,7 @@ class BhasApp {
     _anaSetErr(k, e) { this._anaErr = { ...(this._anaErr || {}), [k]: e ? String(e.message || e) : null }; }
     _anaFailHTML(k) {
         const m = (this._anaErr || {})[k]; if (!m) return '';
-        return `<span class="ana-fail" style="color:#ef4444">불러오지 못했습니다</span> <span style="font-size:12px">(${this._vesc(m.slice(0, 80))})</span>
+        return `<span class="ana-fail" style="color:#ef4444">불러오지 못했습니다</span> <span style="font-size:12px" title="${this._vesc(m.slice(0, 200))}">(${/permission denied|42501|not allowed/i.test(m) ? '이 계정에 볼 권한이 없습니다 — 관리자에게 문의' : /timeout|시간|abort/i.test(m) ? '응답이 늦습니다' : /fetch|network/i.test(m) ? '인터넷 연결을 확인하세요' : '잠시 뒤 다시 시도'})</span>
             <button class="ana-retry" onclick="app.retryAnalysis()" style="margin-left:6px;padding:3px 10px;border-radius:7px;border:1px solid var(--primary);background:transparent;color:var(--primary);cursor:pointer">다시 시도</button>`;
     }
     retryAnalysis() {
@@ -7296,15 +7322,43 @@ class BhasApp {
                 //  판정판(세트별 팔로우당 비용) — 누적은 세트 시작일부터라 넉넉히 120일
                 this.supabase.from('ad_daily').select('ad_id,day,spend,follows').gte('day', arAddDays(kstDay(Date.now()), -120)),
             ]);
-            const err = [cards, rules, state].find(r => r.error);
+            //  사용성 A: 판정선(rules)은 카드·수집 상태와 따로 본다 — 카드가 실패해도 설정 > 판정 기준 표는 산다
+            this._adrRulesSet(rules);
+            const list = this._arRulesSt().list;
+            const err = [cards, state].find(r => r.error) || (list ? null : rules.error);
             this.adReport = err ? { error: true } : {
-                cards: cards.data || [], rules: rules.data || [], state: (state.data || [])[0] || null,
+                cards: cards.data || [], rules: list || [], state: (state.data || [])[0] || null,
                 media: media.data || [], links: links.data || [], daily: daily.error ? null : (daily.data || []),
             };
-        } catch (e) { this.adReport = { error: true }; }
+        } catch (e) { this.adReport = { error: true }; if (!this._arRulesSt().list) this._adrRulesSet({ error: e }); }
         this._arLoaded = true; this._arLoading = false;
         this.requestRender();
     }
+
+    //  사용성 A — 판정선 조회 상태: list(마지막 정상값, 실패로 덮지 않음) · at(확인 시각) · err(코드만) · loading.
+    //  메모리에만 둔다(DB·localStorage 쓰기 없음). 원시 오류 문구·URL·토큰은 화면·콘솔에 남기지 않는다.
+    _arRulesSt() { return this._arRules || (this._arRules = { list: null, at: null, err: null, loading: false }); }
+    _adrErrCode(e) { const c = String(e?.code || e?.status || '').trim(); return /^[A-Za-z0-9_-]{1,12}$/.test(c) ? c : 'NETWORK'; }
+    _adrRulesSet(res) {
+        const st = this._arRulesSt();
+        if (res && !res.error && Array.isArray(res.data)) { st.list = res.data; st.at = Date.now(); st.err = null; }
+        else { st.err = this._adrErrCode(res?.error); console.warn('[판정선] 조회 실패', st.err); }
+        if (st.list && this.adReport && !this.adReport.error) this.adReport = { ...this.adReport, rules: st.list };
+    }
+    async retryAdRules() {
+        const st = this._arRulesSt();
+        if (st.loading) return;                       // 다시 시도 중복 클릭 — 요청은 하나만
+        st.loading = true; this.requestRender();
+        try { this._adrRulesSet(await this.supabase.from('ad_report_rules').select('*')); }
+        catch (e) { this._adrRulesSet({ error: e }); }
+        st.loading = false; this.requestRender();
+    }
+    _adrRulesList() { return this._arRulesSt().list || (this.adReport || {}).rules || []; }
+    _adrRetryBtn(cls) {
+        const busy = this._arRulesSt().loading;
+        return `<button class="${cls}" onclick="app.retryAdRules()" ${busy ? 'disabled aria-busy="true"' : ''}><i class="ph ph-arrow-clockwise"></i> ${busy ? '다시 불러오는 중...' : '다시 시도'}</button>`;
+    }
+    _adrAt(t) { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
 
     // 110 광고 인사이트 뷰는 운영 적용 전에는 존재하지 않는다. 조회 실패를 SNS 전체 오류로 번지게 하지 않는다.
     async loadAdInsight() {
@@ -7835,7 +7889,7 @@ class BhasApp {
             const dashVal = (r, k) => ({ verdict: verdict(r.kind), name: r.title || '', brand: this._snsBrandLabel(r.brand_id), cpf: cpfBad(r), spend: Number(r.set.spend3 || 0) }[k]);
             const todo = this._applyTbl('sns_dashboard', todoBase, dashVal, todoBase);
             const todoHead = this._thead('sns_dashboard', [['verdict','판정'],['name','광고명'],['brand','브랜드'],['cpf','팔로워당 비용'],['spend','3일 지출']]);
-            const todoRows = todo.map(r => `<tr class="sns-dash-task${detailPick?.key === r.key ? ' on' : ''}" onclick="app.selectSnsItem('${esc(r.key)}')"><td><span class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</span></td><td class="sns-dash-name" title="${esc(r.title)}">${esc(r.title)}</td><td>${esc(this._snsBrandLabel(r.brand_id))}</td><td class="n">${esc(cpfTxt(r))}</td><td class="n">${esc(wonTxt(r.set.spend3))}</td></tr>`).join('');
+            const todoRows = todo.map(r => `<tr class="sns-dash-task${detailPick?.key === r.key ? ' on' : ''}" onclick="app.selectSnsItem('${esc(r.key)}')"><td class="sns-dash-v"><span class="sns3-pill ${esc(r.kind)}">${esc(verdict(r.kind))}</span></td><td class="sns-dash-name" title="${esc(r.title)}">${esc(r.title)}</td><td class="sns-dash-b">${esc(this._snsBrandLabel(r.brand_id))}</td><td class="n sns-dash-cpf" data-l="팔로워당">${esc(cpfTxt(r))}</td><td class="n sns-dash-sp" data-l="3일 지출">${esc(wonTxt(r.set.spend3))}</td></tr>`).join('');
             const todoFilters = this._fltBadge('sns_dashboard');
             const noAd = rows.postRows.filter(r => !r.kind).slice(0, 8);
             return `<section class="m3-list sns-dashboard-list">${mobileHead}<div class="m3-lbar"><div><b>SNS 대시보드</b><span>브랜드별 광고·게시물 오늘 보기</span></div></div><div class="sns-dashboard-cards">${summary}<h3>오늘 할 일 ${todo.length}건</h3>${todoFilters ? `<div class="sns3-active-filters">${todoFilters}</div>` : ''}<div class="sns-dash-tablewrap"><table class="sns-dash-table"><thead><tr>${todoHead}</tr></thead><tbody>${todoRows || '<tr><td colspan="5" class="m3-none">중단·증액할 광고가 없습니다.</td></tr>'}</tbody></table></div><h3>광고 안 붙은 새 게시물</h3>${noAd.map(r => `<div class="m3-r"><b>${esc(r.title)}</b><div class="sub"><span>${esc(this._snsBrandLabel(r.brand_id))}</span></div></div>`).join('') || '<div class="m3-none">확인할 새 게시물이 없습니다.</div>'}</div></section><section class="m3-doc"><div class="m3-tools"><button class="sns3-back" onclick="app.closeSnsDetail()"><i class="ph ph-caret-left"></i> 오늘 보기</button><b>광고 상세</b></div>${setDetail || '<div class="m3-none mid">오늘 확인할 광고가 없습니다.</div>'}</section>`;
@@ -11818,7 +11872,7 @@ class BhasApp {
                               onblur="app.noteBlur()">${esc(this._noteText(sel))}</textarea>`
                         : this._noteLiveHTML(sel)}
                     ${this._noteItemsHTML(sel)}
-                </div>` : `<button class="nt-loc solo" onclick="app.toggleNoteList(true)"><i class="ph ph-caret-left"></i> 목록</button><div class="nt-none big">이 폴더에는 메모가 없습니다</div>`}
+                </div>` : `<button class="nt-loc solo" onclick="app.toggleNoteList(true)"><i class="ph ph-caret-left"></i> 목록</button><div class="nt-none big nt-empty"><div>이 폴더에는 메모가 없습니다</div><button class="nt-empty-new" onclick="app.addNote()"><i class="ph ph-note-pencil"></i> 새 메모</button></div>`}
             </section>
         </div>`;
     }
@@ -13071,7 +13125,7 @@ class BhasApp {
             .map(([k, v]) => `<span class="sum-b"><em>${esc(k)}</em>${won(v)}원</span>`).join('');
 
         return `<div class="mp">
-            ${this._mpTop('정산', `지출 · ${esc(month)} 합계 ${won(total)}원 · ${list.length}건`, `
+            ${this._mpTop('지출 관리', `지출 · ${esc(month)} 합계 ${won(total)}원 · ${list.length}건`, `
                 ${this._moneyTabs('expenses')}
                 <select class="it-sel it-season" onchange="app.setExpMonth(this.value)">
                     ${months.slice(0, 24).map(m => `<option value="${m}"${m === month ? ' selected' : ''}>${m}</option>`).join('')}
@@ -13687,8 +13741,8 @@ class BhasApp {
             ${this._mpTop('주문 · 배송', '', `
                 <button class="mbtn" id="oms-sync-btn"><i class="ph ph-arrows-clockwise"></i> 주문 수집</button>
                 <button class="mbtn" id="oms-export-btn"><i class="ph ph-download-simple"></i> 송장양식</button>
-                <button class="mbtn pri" id="oms-epost-btn" disabled title="발번할 주문을 먼저 체크하세요"><i class="ph ph-package"></i> 우체국 발번+등록 <span class="oms-epost-n"></span></button>
                 <button class="mbtn" id="oms-upload-btn"><i class="ph ph-upload-simple"></i> 송장 업로드</button>
+                <button class="mbtn pri" id="oms-epost-btn" disabled title="발번할 주문을 먼저 체크하세요"><i class="ph ph-package"></i> 우체국 발번+등록 <span class="oms-epost-n"></span></button>
                 <input type="file" id="oms-invoice-file" accept=".csv,text/csv" style="display:none">`)}
             <div class="mp-body">
             <label class="sales-mobile-work"><span>판매 업무</span><select onchange="app.switchAppTab('${this._vesc(this._renderingWin || '')}',this.value)"><option value="orders" selected>주문·배송</option><option value="cs">교환·반품·CS</option><option value="analysis">고객 분석</option></select></label>
@@ -14287,9 +14341,9 @@ class BhasApp {
                 <td class="bd" title="${this._vesc(i.name || '')}">${this._vesc(i.name || '')}</td>
                 <td title="${this._vesc(i.option_name || '')}">${this._vesc(i.option_name || '')}</td>
                 <td>${this._vesc(this._brandNameById(i.brand_id))}</td>
-                <td class="num"><b style="${Number(i.on_hand) < 0 ? 'color:#ff453a;background:rgba(255,69,58,.14);padding:1px 7px;border-radius:7px' : (low ? 'color:#ff453a' : '')}"
+                <td class="num" data-l="현재고"><b style="${Number(i.on_hand) < 0 ? 'color:#ff453a;background:rgba(255,69,58,.14);padding:1px 7px;border-radius:7px' : (low ? 'color:#ff453a' : '')}"
                     ${Number(i.on_hand) < 0 ? 'title="마이너스 재고 — 판매는 나갔는데 입고가 안 잡혔습니다"' : ''}>${i.on_hand}</b></td>
-                <td class="num mu">${i.safety_stock}</td>
+                <td class="num mu" data-l="안전">${i.safety_stock}</td>
                 <td class="it-c">${map && map.channel_variant_code
                     ? `<span class="it-tag" style="--c:#30d158">연결됨</span>`
                     : `<span class="it-tag" style="--c:#8e8e93">미매핑</span>`}</td>
@@ -14311,7 +14365,7 @@ class BhasApp {
 
         return `
         <div class="mp">
-            ${this._mpTop('재고', `완제품 ${items.length}품목`, `
+            ${this._mpTop('재고 관리', `완제품 ${items.length}품목`, `
                 ${this._invTabs()}
                 <button class="mbtn" id="inv-cafe24-pull-btn"><i class="ph ph-download-simple"></i> 재고 불러오기</button>
                 <button class="mbtn" id="inv-cafe24-btn"><i class="ph ph-plug-charging"></i> 카페24 설정</button>
@@ -16800,10 +16854,13 @@ class BhasApp {
             mobile: phonesOf(v).mobile, phone: phonesOf(v).phone, email: v.email || '',
             address: v.address || '', fax: v.fax || '', cert: v.biz_file_path ? '있음' : '없음', memo: v.memo || '',
         })[k] ?? '', base);
-        //  열 표시(전체점검-1117 ⑤) — 기본 8열, 팩스·등록증·메모는 '열' 버튼으로 켠다. 업체명은 끌 수 없다.
+        //  열 표시 — 사용성 A: 기본 5열(업체명·구분·상태·담당자·휴대폰), 나머지는 '열' 버튼이나 오른쪽 상세에서. 업체명은 끌 수 없다.
         const CT_COLS = this._contactCols();
         const cols = CT_COLS.filter(c => c.on);
         const ncol = cols.length;
+        //  열 폭은 내용 길이가 아니라 colgroup 비율로 고정(table-layout:fixed) — 머리·본문이 같은 colgroup 을 쓴다
+        const wsum = cols.reduce((t, c) => t + c.w, 0);
+        const colgroup = `<colgroup>${cols.map(c => `<col class="cw-${c.k}" style="width:${+(c.w * 100 / wsum).toFixed(2)}%">`).join('')}</colgroup>`;
         const cnt = c => all.filter(v => (v.category || '기타') === c).length;
         const initial = n => (String(n || '?').trim()[0] || '?');
         const statusColor = s => ({ '거래중': '#22c55e', '보류': '#f59e0b', '거래중단': '#94a3b8' })[s] || '#94a3b8';
@@ -16823,10 +16880,10 @@ class BhasApp {
         const rows = shownList.map(v => {
             const p = phonesOf(v);
             const td = {
-                name: `<td class="bd ct3-name" title="${esc(v.name || '')}">${esc(v.name || '')}</td>`,
+                name: `<td class="bd ct3-name" title="${esc(v.name || '')}"><span class="ct3-c2">${esc(v.name || '')}</span></td>`,
                 cat: `<td class="ct3-cat">${esc(v.category || '기타')}</td>`,
                 status: `<td class="ct3-st">${badge(v.status || '거래중')}</td>`,
-                contact: `<td>${esc(v.contact_name || '')}</td>`,
+                contact: `<td class="ct3-who" title="${esc(v.contact_name || '')}"><span class="ct3-c2">${esc(v.contact_name || '')}</span></td>`,
                 mobile: `<td class="nw">${esc(p.mobile)}</td>`,
                 phone: `<td class="nw ct3-tel">${esc(p.phone)}</td>`,
                 email: `<td class="ct3-mail" title="${esc(v.email || '')}">${esc(v.email || '')}</td>`,
@@ -16848,12 +16905,12 @@ class BhasApp {
                 <div class="m3-lbar"><div><b>${esc(cur === '전체' ? (makers ? '모든 생산처' : '모든 거래처') : makerSet ? makerSet.join('·') : cur)}</b><span>${list.length}곳${list.length !== all.length ? ` / 전체 ${all.length}` : ''}</span></div>
                     <select class="ct3-mcat" aria-label="구분" onchange="app.setContactCat(this.value)">
                         ${['전체', ...(makerSet ? ['@makers'] : []), ...showCats.map(c => c.name)].map(c => `<option value="${esc(c)}"${cur === c ? ' selected' : ''}>${esc(c === '전체' ? '모든 구분' : c === '@makers' ? makerSet.join('·') : c)}</option>`).join('')}</select>
-                    <button class="m3-new ct3-colbtn" onclick="app.openContactCols(event)" title="열 표시 — 팩스·주소·등록증·메모"><i class="ph ph-columns"></i></button>
+                    <button class="m3-new ct3-colbtn" onclick="app.openContactCols(event)" title="열 표시 — 전화·이메일·주소·팩스·등록증·메모"><i class="ph ph-columns"></i></button>
                     <button class="m3-new" onclick="app.newContact()" title="새 거래처"><i class="ph ph-plus"></i></button></div>
                 <div class="m3-find"><i class="ph ph-magnifying-glass"></i>
                     <input placeholder="업체명·담당자·휴대폰·전화·이메일·주소" value="${esc(this.contactQ || '')}" oninput="app.contactFind(this.value)"></div>
                 ${stChip || fb ? `<div class="ct3-flt">${stChip}${fb}</div>` : ''}
-                <div class="ct3-tbl"><table class="it-tbl"><thead><tr>
+                <div class="ct3-tbl"><table class="it-tbl ct3-fixed">${colgroup}<thead><tr>
                     ${this._thead('contacts', cols.map(c => [c.k, c.label, 'ck-' + c.k]))}
                 </tr></thead><tbody>${rows || `<tr><td colspan="${ncol}" class="it-none">${filtered ? '찾는 거래처가 없습니다' : '등록된 거래처가 없습니다 — 위 ＋'}</td></tr>`}</tbody></table></div>
             </section>`;
@@ -16875,18 +16932,19 @@ class BhasApp {
             </section>
         </div>`;
     }
-    //  연락처 표 열 — 기본 8열(업체명~이메일·주소), 팩스·등록증·메모는 끄인 채로 시작. 고른 것은 이 브라우저에만 기억.
+    //  연락처 표 열 — 사용성 A: 기본 5열. w = 폭 비율(기본 5열 합 100 = 업체명 28·구분 14·상태 14·담당자 18·휴대폰 26).
+    //  고른 것은 이 브라우저에만 기억. 키를 ct3-cols2 로 바꿔 옛 8열 저장값 대신 새 기본 5열에서 시작한다.
     _contactCols() {
-        const ALL = [['name', '업체명', 1], ['cat', '구분', 1], ['status', '상태', 1], ['contact', '담당자', 1], ['mobile', '휴대폰', 1],
-            ['phone', '전화', 1], ['email', '이메일', 1], ['address', '주소', 1], ['fax', '팩스', 0], ['cert', '등록증', 0], ['memo', '메모', 0]];
-        if (!this.contactColOn) { try { this.contactColOn = JSON.parse(localStorage.getItem('ct3-cols') || 'null'); } catch (e) { this.contactColOn = null; } }
+        const ALL = [['name', '업체명', 1, 28], ['cat', '구분', 1, 14], ['status', '상태', 1, 14], ['contact', '담당자', 1, 18], ['mobile', '휴대폰', 1, 26],
+            ['phone', '전화', 0, 22], ['email', '이메일', 0, 28], ['address', '주소', 0, 34], ['fax', '팩스', 0, 20], ['cert', '등록증', 0, 14], ['memo', '메모', 0, 28]];
+        if (!this.contactColOn) { try { this.contactColOn = JSON.parse(localStorage.getItem('ct3-cols2') || 'null'); } catch (e) { this.contactColOn = null; } }
         const on = this.contactColOn;
-        return ALL.map(([k, label, def]) => ({ k, label, on: k === 'name' || (on && k in on ? !!on[k] : !!def) }));
+        return ALL.map(([k, label, def, w]) => ({ k, label, w, on: k === 'name' || (on && k in on ? !!on[k] : !!def) }));
     }
     toggleContactCol(k, v) {
         const cur = Object.fromEntries(this._contactCols().map(c => [c.k, c.on]));
         cur[k] = v; this.contactColOn = cur;
-        try { localStorage.setItem('ct3-cols', JSON.stringify(cur)); } catch (e) { /* 저장 못 해도 이번 화면엔 반영 */ }
+        try { localStorage.setItem('ct3-cols2', JSON.stringify(cur)); } catch (e) { /* 저장 못 해도 이번 화면엔 반영 */ }
         //  끈 열에 걸려 있던 거르기는 같이 푼다 — 안 보이는 열이 몰래 행을 줄이지 않게
         if (!v && this.tblFilt?.contacts?.[k]) delete this.tblFilt.contacts[k];
         this.requestRender();
@@ -18684,7 +18742,7 @@ class BhasApp {
         const listTitle = vKey !== 'ALL' ? (vKey === 'NONE' ? '생산처 미정' : ((vendors.find(v => String(v.id) === String(vKey)) || {}).name || '생산처'))
             : sKey !== 'ALL' ? ((seasons.find(p => String(p.id) === String(sKey)) || {}).name || '시즌 없음')
             : bKey !== 'ALL' ? (this._brandNameById(bKey) !== '-' ? this._brandNameById(bKey) : '브랜드 없음')
-            : '진행 물품';
+            : '상품 관리';
 
         return `<div class="mp it-wrap">
             <div class="mp-top">
@@ -18868,9 +18926,9 @@ class BhasApp {
         if (srtI.k && srtI.k.startsWith('ch:')) { const ch = channels.find(c => c.key === srtI.k.slice(3));
             shown.sort((a, b) => ((ST_RANK[stOf(a, ch)] ?? 9) - (ST_RANK[stOf(b, ch)] ?? 9)) * srtI.dir || String(a.name).localeCompare(String(b.name), 'ko')); }
         const rows = shown.length ? shown.map(b => `<tr style="border-bottom:1px solid var(--card-border)">
-            <td style="padding:14px 10px;font-weight:600">${this._vesc(b.name)}</td>
-            ${channels.map(ch => `<td style="padding:14px 10px;text-align:center">${cell(b, ch)}</td>`).join('')}
-            <td style="padding:14px 10px;text-align:center">${courierCell(b)}</td>
+            <td class="integ-brand" style="padding:14px 10px;font-weight:600">${this._vesc(b.name)}</td>
+            ${channels.map(ch => `<td data-l="${this._vesc(ch.label)}" style="padding:14px 10px;text-align:center">${cell(b, ch)}</td>`).join('')}
+            <td data-l="택배사" style="padding:14px 10px;text-align:center">${courierCell(b)}</td>
         </tr>`).join('') : `<tr><td colspan="${channels.length + 2}" style="padding:2.5rem;text-align:center;color:var(--text-muted)">${brands.length ? '검색·거르기에 맞는 브랜드가 없습니다' : '브랜드가 없습니다. [브랜드 추가]로 시작하세요.'}</td></tr>`;
         const ep = this._epostHealth;
         const epColor = ep?.ok ? '#22c55e' : (ep?.error ? '#ef4444' : '#f59e0b');
@@ -18886,7 +18944,7 @@ class BhasApp {
                 <div style="display:flex;gap:8px;flex-wrap:wrap"><button id="integ-epost-test" class="btn-secondary" style="padding:8px 14px;border-radius:9px" ${ep?.loading ? 'disabled' : ''}><i class="ph ph-plugs-connected"></i> ${ep?.loading ? '확인 중...' : '연결 테스트'}</button><button id="integ-epost-safe-test" class="btn-primary" style="padding:8px 14px;border-radius:9px" ${ep?.safeLoading ? 'disabled' : ''}><i class="ph ph-shield-check"></i> ${ep?.safeLoading ? '테스트 중...' : '안전 테스트 발번'}</button></div>
             </div>
             <div class="glass" style="padding:1.2rem;border-radius:16px;overflow-x:auto">
-                <table class="mtbl" style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px">
+                <table class="mtbl integ-tbl" style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px">
                     <colgroup><col style="width:16%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:14%"></colgroup>
                     <thead><tr class="integ-th" style="color:var(--text-muted);text-align:left">
                         ${this._thead('integrations', [['brand', '브랜드']].concat(channels.map(ch => ['ch:' + ch.key, ch.label, 'c']), [['courier', '택배사', 'c']]))}
