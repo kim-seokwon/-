@@ -78,7 +78,7 @@ test('재구성: brands 테이블 순서·이름·색을 그대로 필터와 왼
     assert.match(main, /const coreBrands = pool\.map\(b => \(\{ \.\.\.b, label: b\.name/);
     assert.doesNotMatch(main, /missing:\$\{w\.key\}/);
     assert.match(main, /const sideRows = \[\{ id: '전체'[\s\S]*?\.\.\.brandSummaryBase\.map/);
-    assert.match(main, /const sideMeta = r => topMode === 'followers'/);
+    assert.match(main, /const headMeta = r => !r \? '' : topMode === 'followers'/);
     assert.match(main, /m3-list sns3-tablepane/);
     assert.match(main, /topMode === 'dashboard'[\s\S]*?detailPick = [\s\S]*?todoSets\[0\]/);
     assert.match(main, /this\._snsBrandNav = coreBrands\.map/);

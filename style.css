@@ -6026,8 +6026,13 @@ b.sp-nm.dup{color:#ff453a}
   .sns3-layout:not(.no-side){--c1:240px;grid-template-columns:240px minmax(0,1fr) 320px}
   .sns3-tablepane .sns3-table{table-layout:fixed}
   .sns3-tablepane .sns3-table th,.sns3-tablepane .sns3-table td{box-sizing:border-box}
-  .sns3-layout .sns3-tablepane .sns3-table th:nth-child(1){width:42px}.sns3-layout .sns3-tablepane .sns3-table th:nth-child(2){width:50px}.sns3-layout .sns3-tablepane .sns3-table th:nth-child(3){width:90px}.sns3-layout .sns3-tablepane .sns3-table th:nth-child(4){width:74px}.sns3-layout .sns3-tablepane .sns3-table th:nth-child(6){width:74px}.sns3-layout .sns3-tablepane .sns3-table th:nth-child(8){width:76px}.sns3-layout .sns3-tablepane .sns3-table th:nth-child(9){width:48px}.sns3-layout .sns3-tablepane .sns3-table th:nth-child(10){width:90px}.sns3-layout .sns3-tablepane .sns3-table th:nth-child(11){width:64px}
-  .sns3-tablepane .sns-th-media{width:42px}.sns3-tablepane .sns-th-state{width:50px}.sns3-tablepane .sns-th-name{width:auto}.sns3-tablepane .sns-th-brand{width:74px}.sns3-tablepane .sns-th-period{width:74px}.sns3-tablepane .sns-th-spend{width:76px}.sns3-tablepane .sns-th-result{width:48px}.sns3-tablepane .sns-th-cpf{width:90px}.sns3-tablepane .sns-th-verdict{width:64px}
+  /* F 11-19: 열 폭은 클래스로만(숨은 열 때문에 nth-child 위치가 어긋나 겹침) · 세트명만 남는 폭을 다 가져간다 */
+  .sns3-layout .sns3-tablepane .sns3-table th{padding-right:32px!important}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-media{width:74px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-state{width:64px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-name{width:auto}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-brand{width:124px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-period{width:100px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-spend{width:104px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-result{width:66px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-cpf{width:100px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-verdict{width:72px}
+  .sns3-layout .sns3-tablepane .sns3-table td{overflow:hidden}.sns3-layout .sns3-tablepane .sns3-table .sns-td-brand{white-space:nowrap;text-overflow:ellipsis}.sns3-layout .sns3-tablepane .sns3-table .sns-td-name b{overflow-wrap:anywhere;word-break:normal}
+  /* 좁은 표(1440 상세 열림·1024): 열을 display:none 으로 빼면 colspan 행 때문에 빈 열이 생긴다 → 폭 0 으로 접고, 브랜드는 세트명 아래 작은 글씨로 */
+  .sns3-tablepane .sns3-tablewrap{container:adtbl/inline-size}
+  @container adtbl (max-width:900px){.sns3-layout .sns3-tablepane .sns3-table th.sns-th-brand,.sns3-layout .sns3-tablepane .sns3-table td.sns-td-brand{width:0;padding:0!important;border:0;overflow:hidden;font-size:0}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-brand .th-f{display:none}.sns3-tablepane .sns-name-brand{display:block;margin-top:2px;font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-state{width:58px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-period{width:86px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-spend{width:92px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-result{width:64px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-cpf{width:88px}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-verdict{width:64px}}
+  @container adtbl (max-width:700px){.sns3-layout .sns3-tablepane .sns3-table th.sns-th-media,.sns3-layout .sns3-tablepane .sns3-table td.sns-td-media{width:0;padding:0!important;border:0;overflow:hidden}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-media>*,.sns3-layout .sns3-tablepane .sns3-table td.sns-td-media>*{display:none}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-state,.sns3-layout .sns3-tablepane .sns3-table td.sns-td-state{padding-left:14px!important}.sns3-layout .sns3-tablepane .sns3-table th.sns-th-state{width:74px}.sns3-layout .sns3-tablepane .sns3-table {min-width:560px}}
   .sns3-tablepane .sns-th-cpf{white-space:normal!important;line-height:1.15;word-break:keep-all}
 }
 @media (max-width:900px){
@@ -6209,3 +6214,8 @@ b.sp-nm.dup{color:#ff453a}
 .sns-dashboard-cards .sns3-kpis>div{min-width:0}
 .sns-dashboard-cards .sns3-kpis span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sns-dashboard-cards .sns3-kpis b{word-break:keep-all;overflow-wrap:normal}
+
+/* 세트명 아래 브랜드는 넓은 화면의 좁은 표(@container adtbl)에서만 — 모바일 카드는 브랜드 칩이 따로 있다 */
+.sns-name-brand{display:none}
+/* F 11-19: 광고 표 위 요약줄(개수·일예산·중단) — 왼쪽 브랜드 목록에서 옮김 */
+.sns3-head .sns3-sum{display:block;margin:2px 0;font-weight:700;color:var(--text-main);font-variant-numeric:tabular-nums}
