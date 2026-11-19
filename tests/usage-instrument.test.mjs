@@ -54,7 +54,7 @@ test('판매 창이 CS 탭일 때 독 판매 → 창을 더 만들지 않고 그
     assert.deepEqual(await sent(app), ['orders:open', 'cs:open', 'cs:open'], '보이는 화면(cs)을 연 것으로 남긴다');
 });
 
-test('바탕화면·링크로 다른 탭 화면을 부르면 → 같은 묶음 창을 그 탭으로 바꾼다(새 창 없음)', async () => {
+test('바탕화면·링크는 같은 묶음은 탭 전환, 재고는 상품·생산 창으로 연다', async () => {
     const app = mkApp();
     app.macOpen('orders');
     const w = app.wins[0];
@@ -65,7 +65,9 @@ test('바탕화면·링크로 다른 탭 화면을 부르면 → 같은 묶음 �
     assert.equal(app.wins.length, 1); assert.equal(w.view, 'orders');
     assert.ok(app.renders > r0, '탭이 바뀌면 다시 그린다');
     app.tick(); app.macOpen('inventory');
-    assert.equal(w.view, 'inventory');
+    assert.equal(w.view, 'orders');
+    assert.equal(app.wins.length, 2);
+    assert.equal(app.wins[1].view, 'inventory');
     assert.deepEqual(await sent(app), ['orders:open', 'cs:open', 'orders:open', 'inventory:open']);
 });
 

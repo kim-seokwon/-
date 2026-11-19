@@ -40,3 +40,17 @@ test('홈은 한 화면 대시보드 — 매출·주문 구역이 hidden 아님,
     assert.match(style, /\.hk-grid5\.home-sales-kpis \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
     assert.match(style, /@media screen and \(max-width: 1080px\) \{ \.home-sales-recent\{grid-template-columns:1fr\}/);
 });
+
+test('홈 채널·브랜드별 매출은 2:1 격자(막대 왼쪽·도넛 오른쪽)로 가로로 늘어지지 않고, 지표 5칸은 빈 칸 없이 3+2', () => {
+    //  사장님 11-19 "채널 브랜드별 매출 창이 가로로 너무 길다" · 실측 캡처 .work/개발자/홈채널폭/cap.mjs
+    const i = main.indexOf('<div class="home-chan-row">'); assert.ok(i > 0, '채널 줄');
+    const row = main.slice(i, main.indexOf('</section>', i));
+    assert.ok(row.indexOf('${chanStacked}') < row.indexOf('${donut(brandArr, palette)}'), '막대 → 도넛 순');
+    assert.match(row, /class="home-chan-bars">\$\{chanStacked\}[\s\S]*?\$\{brandChips\}/);
+    assert.match(row, /class="home-chan-donut">[\s\S]*?\$\{donut\(brandArr, palette\)\}[\s\S]*?\$\{brandTotals\}/);
+    assert.doesNotMatch(row, /하이헤이호|로하이|토비/, '브랜드 하드코딩 금지');
+    assert.match(style, /\.home-chan-row\{display:grid;grid-template-columns:minmax\(0,2fr\) minmax\(320px,1fr\)/);
+    assert.match(style, /\.hk-grid5\.home-sales-kpis\{grid-template-columns:repeat\(6,minmax\(0,1fr\)\)\}/);
+    assert.match(style, /\.hk-grid5\.home-sales-kpis>:nth-child\(n\+4\)\{grid-column:span 3\}/);
+    assert.match(style, /@media screen and \(max-width:640px\)\{\.home-chan-row\{grid-template-columns:1fr\}\}/);
+});

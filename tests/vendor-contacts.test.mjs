@@ -142,7 +142,7 @@ test('고치기 — 휴대폰·전화 따로, 109 전 행은 휴대폰 칸으로
 test('3단 규칙 — 왼쪽은 구분 목록(협업 메뉴 아님), 거래중단은 종료 접기', () => {
     const html = render(ctx({ vendors: [...ctx().vendors, { id: 'z', name: '끊긴 업체', category: '봉제', status: '거래중단' }] }));
     assert.doesNotMatch(html, /c3-menu|협업 메뉴|data-menu=/);
-    assert.match(html, /<aside class="m3-side">[\s\S]*?구분[\s\S]*?모든 연락처[\s\S]*?구분을 우클릭해 관리/);
+    assert.match(html, /<aside class="m3-side">[\s\S]*?구분[\s\S]*?모든 거래처[\s\S]*?구분을 우클릭해 관리/);
     assert.doesNotMatch(html, /ct3-tabs/);
     assert.match(html, /종료\(거래중단\) 1곳/); assert.doesNotMatch(html, /끊긴 업체/, '접혀 있으면 안 보인다');
     assert.match(render(ctx({ contactShowDone: true, vendors: [{ id: 'z', name: '끊긴 업체', status: '거래중단' }] })), /끊긴 업체/);
@@ -154,7 +154,7 @@ test('구분·상태·검색 거르기 — 검색은 휴대폰도 찾는다', ()
     assert.match(render(ctx({ contactStatus: '보류' })), /1곳 \/ 전체 2/);
     const h = render(ctx({ contactQ: '1234-5678' }));
     assert.match(h, /성수봉제/); assert.doesNotMatch(h, /동대문 원단<\/span>/);
-    assert.match(render(ctx({ contactQ: '없는말' })), /찾는 연락처가 없습니다/);
+    assert.match(render(ctx({ contactQ: '없는말' })), /찾는 거래처가 없습니다/);
 });
 
 //  저장 — 휴대폰 칸 · 109 전 폴백 · 등록증 올리기/실패 정리
@@ -292,4 +292,23 @@ test('⑤ 열 표시 — 팩스·등록증·메모를 켜면 11열, 업체명은
     assert.match(html, /<td class="ck-cert ct3-cert">/);
     const off = render(ctx({ contactColOn: { email: false, address: false } }));
     assert.deepEqual([...off.matchAll(/<th data-k="(\w+)">/g)].map(m => m[1]), ['name', 'cat', 'status', 'contact', 'mobile', 'phone']);
+});
+
+test('옛 생산처(makers) 링크 — 생산처·봉제가 같이 있으면(118 충돌로 건너뜀) 둘 다 보이고 봉제 거래처가 빠지지 않는다', () => {
+    const cats2 = [{ name: '생산처', color: '#00f' }, { name: '봉제', color: '#f00' }, { name: '원단', color: '#0f0' }];
+    const vendors = [...ctx().vendors, { id: 'v9', name: '새 공장', category: '생산처', status: '거래중' }];
+    const mk = c => { const t = ctx({ vendors, _vendorCategories: () => c }); for (const n of ['_makerCats', '_makerLinkCat', '_makerCat']) t[n] = method(n); return t; };
+    //  공존: '@makers' 묶음으로 연다
+    const t = mk(cats2);
+    assert.deepEqual(t._makerCats(), ['생산처', '봉제']);
+    assert.equal(t._makerLinkCat(), '@makers');
+    t.contactCat = t._makerLinkCat();
+    const h = render(t);
+    assert.match(h, /성수봉제/); assert.match(h, /새 공장/); assert.doesNotMatch(h, /동대문 원단<\/td>/);
+    assert.match(h, /생산처·봉제<\/b><span>2곳/);
+    //  하나만 있으면 그 분류 이름 그대로(118 적용 뒤 · 적용 전)
+    assert.equal(mk([{ name: '생산처' }, { name: '원단' }])._makerLinkCat(), '생산처');
+    assert.equal(mk([{ name: '봉제' }, { name: '원단' }])._makerLinkCat(), '봉제');
+    //  switchView·macOpen 둘 다 이 값을 쓴다
+    assert.equal((src.match(/this\.contactCat = this\._makerLinkCat\(\); (viewId|view) = 'contacts'/g) || []).length, 2);
 });

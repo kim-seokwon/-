@@ -111,7 +111,8 @@ test('반려1: 주문 검색 입력은 돋보기 오른쪽에서 시작한다', 
 });
 
 test('개편 1단계: 전역 판매는 대분류만, 배송상태는 가운데 보기 탭이다', () => {
-    assert.match(main, /label: '판매'[\s\S]*?view: 'orders', direct: true/);
+    assert.match(main, /label: '판매'[\s\S]*?view: 'orders'[\s\S]*?items:/);
+    assert.doesNotMatch(main, /label: '판매'[^\n]*direct: true/);
     assert.match(main, /if \(a\.direct\)[\s\S]*?app\.sideOpen/);
     assert.match(main, /class="mp-seg oms-tabrow order-view-tabs"/);
     assert.doesNotMatch(main, /order-view-tabs[^\n]*취소·반품·교환/);

@@ -118,11 +118,13 @@ test('대분류 > 중분류 > 상세: 왼쪽 SNS 메뉴와 가운데 브랜드 �
     assert.doesNotMatch(shell, /sns-brand-nav|_snsBrandNav/);
 });
 
-test('판매 5개 중분류는 고객·정산의 하위 탭을 합쳐 유지한다', () => {
-    const tabs = main.slice(main.indexOf("{ head: 'orders'"), main.indexOf('] },', main.indexOf("{ head: 'orders'")) + 4);
-    for (const token of ["{ k: 'orders', t: '주문' }", "{ k: 'cs', t: 'CS' }", "{ k: 'inventory', t: '재고' }",
-        "{ k: 'analysis', t: '고객' }", "{ k: 'crm', t: '고객 CRM', hidden: true }",
-        "{ k: 'sales', t: '정산' }", "{ k: 'expenses', t: '지출', hidden: true }"]) assert.ok(tabs.includes(token), token);
+test('판매·상품생산·재무 중분류는 view id를 유지한 채 이관된다', () => {
+    const orders = main.slice(main.indexOf("{ head: 'orders'"), main.indexOf('] },', main.indexOf("{ head: 'orders'")) + 4);
+    for (const token of ["{ k: 'orders', t: '주문·배송' }", "{ k: 'cs', t: '교환·반품·CS' }",
+        "{ k: 'analysis', t: '고객 분석' }", "{ k: 'crm', t: '고객 CRM', hidden: true }"]) assert.ok(orders.includes(token), token);
+    const finance = main.slice(main.indexOf("{ head: 'sales'"), main.indexOf('] },', main.indexOf("{ head: 'sales'")) + 4);
+    for (const token of ["{ k: 'sales', t: '매출 분석' }", "{ k: 'expenses', t: '지출 관리' }", "{ k: 'quotes', t: '견적서' }"])
+        assert.ok(finance.includes(token), token);
     const bar = main.slice(main.indexOf('    _appTabBar('), main.indexOf('    // SNS 3단', main.indexOf('    _appTabBar(')));
     assert.doesNotMatch(bar, /appside-sales-menu/); assert.doesNotMatch(bar, /sales-section-nav/);
     assert.match(main, /appwrap\$\{side[\s\S]*?\$\{detail \|\| ''\}/);

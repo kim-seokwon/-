@@ -19,11 +19,11 @@ test('형제 화면 버튼 목록(협업·생산·판매·설정·SNS 메뉴) �
         assert.ok(!main.includes(t), t);
 });
 
-test('맥 창 왼쪽은 자기 보기만 두되 주문 시범은 판매 업무 중분류를 둔다', () => {
+test('맥 창 왼쪽은 자기 보기만 두되 판매·재무는 중분류를 둔다', () => {
     const bar = between('    _appTabBar(', '    // SNS 3단');
     const mac = bar.slice(bar.indexOf('if (this.macMode)'), bar.indexOf('        return `<aside class="appside">'));
-    assert.match(mac, /if \(view === 'orders'\)[\s\S]*?sales-work-nav[\s\S]*?switchAppTab/);
-    assert.doesNotMatch(mac, /g\.tabs/);
+    assert.match(mac, /g\.head === 'orders' \|\| g\.head === 'sales'[\s\S]*?category-work-nav[\s\S]*?switchAppTab/);
+    assert.match(mac, /const tabs = g\.tabs\.filter\(t => !t\.hidden\)/);
     assert.match(mac, /const nav = this\._viewNav\(view\);\s*return nav \? `<aside class="appside appside-filter">\$\{nav\}<\/aside>` : '';/);
     assert.match(css, /\.appwrap\.no-appside\{grid-template-columns:1fr\}/);
     const shell = between('    _snsShell(', '    setSnsMode(');
@@ -76,4 +76,13 @@ test('메모 좁은 화면 — 본문 목록 버튼으로 메모 목록, 메모 
     assert.match(css, /\.nt>\.nt-side,\.nt>\.nt-list\{display:none!important\}/);
     assert.match(css, /\.nt\.list-on \.nt-list\{display:flex!important/);
     assert.match(css, /\.nt-loc,\.nt-lclose\{display:none\}/, '넓은 화면엔 안 보임');
+});
+
+test('메모 390 — 범위 칩(개인·시즌·공용)은 도구줄 가로 스크롤 전에 첫 화면에 온전히 보인다(목록 바로 뒤)', () => {
+    //  실측(헤드리스 390·360·1440 칩 rect.right ≤ 화면폭): .work/개발자/개편2-B/memo390.mjs
+    const m = css.match(/@media \(max-width:820px\)\{\s*\.nt-doc \.nt-tools>\*\{order:2\}\s*\.nt-doc \.nt-tools>\.nt-loc\{order:0\}\s*\.nt-doc \.nt-tools>\.nt-scope\{([^}]*)\}/);
+    assert.ok(m, '모바일에서 칩을 목록 뒤로 당기는 규칙');
+    assert.match(m[1], /order:1/); assert.match(m[1], /margin-left:0/); assert.match(m[1], /flex:0 0 auto/);
+    const bar = between('<div class="nt-tools">', '</div>');
+    assert.ok(bar.indexOf('nt-loc') < bar.indexOf('nt-scope'), '칩은 도구줄 안에 그대로(넓은 화면은 오른쪽 끝)');
 });

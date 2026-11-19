@@ -31,18 +31,22 @@ test('설정 창 안에는 설정 메뉴 목록을 다시 그리지 않는다(�
     assert.match(style, /\.settings3 \.appside \.m3-h\{font-size:12px/);
 });
 
-test('런처: 연동·계정·브랜드·불편사항·지출은 빠지고, 찾기로는 여전히 걸린다', () => {
+test('런처: 지출은 재무로 이관하고 설정 상세는 찾기로 연다', () => {
     const launch = between('    LAUNCH = [', '    // ====');
-    for (const id of ['integrations', 'user_management', 'brand_management', 'feedback', 'expenses'])
+    for (const id of ['integrations', 'user_management', 'brand_management', 'feedback'])
         assert.doesNotMatch(launch, new RegExp(`\\['${id}',`), id);
-    assert.match(launch, /\['makers', '생산처'/);
+    assert.match(launch, /\['expenses', '지출 관리'/);
+    assert.doesNotMatch(launch, /\['(?:sample_maker|makers)',/);
     assert.match(main, /sec\.g === '설정' && k\) items = \[\.\.\.items, \.\.\.this\._setLaunchItems\(\)\]/);
 });
 
 test('생산처 = 연락처 같은 행 중 기타가 아닌 분류(복사본 아님)', () => {
-    assert.match(main, /\{ k: 'quotes', t: '견적' \}, \{ k: 'makers', t: '생산처' \}/);
+    assert.match(main, /\{ k: 'makers', t: '생산처', hidden: true \}/);
     assert.match(main, /const makers = this\.currentView === 'makers';\s*let base = makers \? all\.filter\(v => \(v\.category \|\| '기타'\) !== '기타'\) : all;/);
     assert.match(main, /this\.currentView === 'contacts' \|\| this\.currentView === 'makers'\) return this\.renderContacts\(\)/);
+    //  개편 2단계 B: 생산처 중분류는 없어지고 옛 makers 링크는 거래처(생산처 분류)로 넘긴다 — 같은 원본
+    assert.match(main, /if \(viewId === 'makers'\) \{ this\.contactCat = this\._makerLinkCat\(\); viewId = 'contacts'; \}/);
+    assert.match(main, /if \(view === 'makers'\) \{ this\.contactCat = this\._makerLinkCat\(\); view = 'contacts'; \}/);
 });
 
 test('새 설정 칸은 읽기만 한다 — DB 쓰기 호출이 없다', () => {
