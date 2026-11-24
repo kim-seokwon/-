@@ -6207,14 +6207,23 @@ b.sp-nm.dup{color:#ff453a}
 /* 홈 매출: 두 열을 따로 쌓아 최근 주문 높이가 KPI 아래 빈 행을 만들지 않게 한다. */
 .home-sales-board{display:grid;grid-template-columns:minmax(0,2fr) minmax(320px,1fr);gap:.9rem;align-items:stretch}
 .home-sales-column{display:flex;flex-direction:column;gap:.9rem;min-width:0}
-.home-sales-left>div:first-child{margin:1.6rem 0 0!important}
-.home-sales-right{padding-top:1.6rem}
+/* 제목은 두 열 위 한 줄 — 오른쪽 최근 주문 위끝이 오늘 매출 카드 위끝과 맞는다(11-24) */
+.home-sales-head{grid-column:1/-1;min-width:0}
+.home-sales-head>div:first-child{margin:1.6rem 0 0!important}
 .home-channel-panel,.home-brand-ratio{display:block;min-height:0}
 .home-channel-panel>.glass,.home-brand-ratio>.glass{min-width:0;box-sizing:border-box}
 .home-chan-bars{min-width:0}
 .home-chan-donut{display:flex;flex-direction:column;gap:.55rem;max-width:280px;margin:0 auto}
 .home-brand-totals{min-width:0;width:100%}
 .home-brand-totals>div>span:nth-child(2){overflow:visible!important;text-overflow:clip!important;white-space:normal!important}
+/* 11-24 사장님: 채널 막대를 줄이고 그 옆에 브랜드 비율 · 최근 주문은 왼쪽 두 줄(KPI+채널) 높이에 딱 맞춘다.
+   contain:size — 오른쪽 열이 행 높이를 키우지 못하게 하고 왼쪽 높이에 늘어나 채운다. 넘치는 주문은 목록 안에서 스크롤. */
+.home-sales-lower{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(250px,1fr);gap:.9rem;align-items:stretch;flex:1}
+.home-sales-lower>div>.glass{height:100%}
+.home-sales-right{contain:size}
+.home-recent-orders{flex:1;min-height:0;display:flex;flex-direction:column}
+.home-recent-orders>.glass{flex:1;min-height:0;overflow:hidden}
+.home-recent-orders .home-recent-list{flex:1;overflow-y:auto}
 /* 홈 매출 비율: 1440은 5칸 한 줄, 1024는 3+2, 폰은 2열. */
 .hk-grid5.home-sales-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
 .home-sales-kpis .hk-card{padding:.85rem .75rem}
@@ -6224,12 +6233,15 @@ b.sp-nm.dup{color:#ff453a}
 @media screen and (max-width:1080px){
   .home-sales-board{grid-template-columns:1fr}
   .home-sales-right{padding-top:0}
+  .home-sales-right{contain:none}
+  .home-recent-orders .home-recent-list{max-height:420px}
   .hk-grid5.home-sales-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
   .hk-grid5.home-sales-kpis>*{grid-column:span 2}
   .hk-grid5.home-sales-kpis>:nth-child(n+4){grid-column:span 3}
 }
 @media screen and (max-width:768px){
   .hk-grid5.home-sales-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .home-sales-lower{grid-template-columns:1fr}
   .hk-grid5.home-sales-kpis>*,.hk-grid5.home-sales-kpis>:nth-child(n+4){grid-column:auto}
 }
 /* 3단 접근(11-19): 창 왼쪽 맨 위 중분류 목록 — 상품·생산·업무·자료 창. 아래 그 화면 거르기와 줄로 나눈다 */

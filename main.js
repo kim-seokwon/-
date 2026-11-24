@@ -3149,7 +3149,7 @@ class BhasApp {
 
         // ── 최근 주문 표 (브랜드·주문내용·가격·채널·고객명) ──
         const stateLabel = { pre: '배송전', shipping: '배송중', done: '배송완료', cancel: '취소', return: '반품', exchange: '교환' };
-        const recentCompact = (this.orders || []).slice(0, 6).map((o, _oi) => {
+        const recentCompact = (this.orders || []).slice(0, 12).map((o, _oi) => {
             const ch = channelOf(o), br = brandOf(o) || '-', bcol = brandColor[br] || CHCOL[ch] || '#6366f1', ccol = CHCOL[ch] || '#6366f1';
             const stt = this._orderState(o);
             const _od = o.order_date ? new Date(o.order_date) : null;
@@ -3186,9 +3186,12 @@ class BhasApp {
             const t = new Date().toISOString().slice(0, 10);
             //  할 일은 '체크해서 끝내는 것' 만. 생산 작업·시즌 마감은 캘린더에만 둔다.
             const open = allDue.filter(x => !x.done && ['rem', 'todo', 'note', 'step'].includes(x.kind)).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
-            const soon = open.filter(x => x.date && x.date <= t).concat(open.filter(x => !x.date || x.date > t)).slice(0, 12);
-            if (!soon.length) return '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">할 일을 넣으면 여기 모입니다</div>';
-            return soon.map(x => {
+            //  지난 것·오늘까지인 것은 '오늘 처리할 일'(todayQueue — 날짜 ≤ 오늘)에 이미 있다 → 여기선 다가오는 것·날짜 없는 것만(11-24 사장님 "중복데이터 아닌가?")
+            const soon = open.filter(x => !x.date || String(x.date).slice(0, 10) > t).slice(0, 12);
+            const dueNow = open.length - open.filter(x => !x.date || String(x.date).slice(0, 10) > t).length;
+            const nowNote = dueNow ? `<div class="due-now-note" onclick="app._scrollHomePane('today')" style="font-size:.74rem;color:var(--text-muted);padding:0 0 .4rem;cursor:pointer">지난 것·오늘까지 ${dueNow}건은 위 '오늘 처리할 일'에</div>` : '';
+            if (!soon.length) return nowNote + '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">다가오는 할 일이 없습니다</div>';
+            return nowNote + soon.map(x => {
                 const dd = dday(x.date);
                 const col = dd == null ? 'var(--text-muted)' : (dd < 0 ? '#ef4444' : (dd === 0 ? '#0a84ff' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)')));
                 const go = x.go || `app.switchView('${x.view || 'reminders'}')`;
@@ -3396,11 +3399,11 @@ class BhasApp {
             </section>
 
             <section class="home-mode-pane" data-pane="sales"${homeMode === 'sales' ? ' data-cur' : ''}${this._ordersDenied ? ' data-denied' : ''}>
-            <!-- 매출 홈: 왼쪽(KPI→채널) · 오른쪽(최근 주문→브랜드 비율) 독립 세로 열 -->
+            <!-- 매출 홈(11-24 사장님): 왼쪽 = KPI / 채널 막대 + 브랜드 비율 나란히 · 오른쪽 = 최근 주문이 왼쪽 두 줄 높이를 꽉 채운다 -->
 ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var(--text-muted);font-size:0.85rem">권한 없음 — 주문·매출 메뉴가 꺼진 계정입니다. 필요하면 관리자에게 요청하세요.</div>' : ''}
             <div class="home-sales-board">
+                <div class="home-sales-head">${sectionHead('ph-chart-line-up', '이번 달 실적', `${mm}월 1일~오늘(${todayStr}) · 주문일 기준 실결제 · ${syncBadge}`)}</div>
                 <div class="home-sales-column home-sales-left">
-                ${sectionHead('ph-chart-line-up', '이번 달 실적', `${mm}월 1일~오늘(${todayStr}) · 주문일 기준 실결제 · ${syncBadge}`)}
                 <div class="hk-grid hk-grid5 home-sales-kpis">
                     ${kpiCard('오늘 매출', wonF(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
                     ${hasFinancial
@@ -3412,17 +3415,19 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
                     ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', [deltaBadge(_momS ? _momS.pct : null, _momS ? _momS.label : '전월 같은 기간'), `비교: ${mm}월 1–${today.getDate()}일 vs 전월 같은 날짜 · 주문일·실결제`], '#8b5cf6', 'sales')}
                     ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', [nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}` : '', nr?.unk ? `미분류 ${nr.unk.toLocaleString()}` : '', `객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원`], '#10b981', 'orders')}
                 </div>
+                <div class="home-sales-lower">
                 <div class="home-channel-panel">
                     ${panel(`채널·브랜드별 매출 ${tipHTML('channel_basis', TIPS)} <span style="font-size:0.72rem;color:var(--text-muted)">(이번달 · 막대 색상 = 브랜드 비율)</span>`, `<div class="home-chan-bars">${chanStacked}<div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--card-border)">${brandChips}</div></div>`)}
+                </div>
+                <div class="home-brand-ratio">
+                    ${panel('브랜드별 비율 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div class="home-chan-donut"><div style="position:relative;display:flex;justify-content:center">${donut(brandArr, palette)}${brandArr.length ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none"><div style="font-size:1.05rem;font-weight:800;line-height:1;color:${palette[0]}">${Math.round(brandArr[0][1] / brandGrand * 100)}%</div><div style="font-size:0.58rem;color:var(--text-muted);max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(brandArr[0][0])}</div></div>` : ''}</div><div class="home-brand-totals">${brandTotals}</div></div>`)}
+                </div>
                 </div>
                 </div>
                 <div class="home-sales-column home-sales-right">
                 <div class="home-recent-orders">
                     ${panel('최근 주문', recentList,
                         `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('orders')">주문 전체 →</span>`)}
-                </div>
-                <div class="home-brand-ratio">
-                    ${panel('브랜드별 비율 <span style="font-size:0.72rem;color:var(--text-muted)">(이번달)</span>', `<div class="home-chan-donut"><div style="position:relative;display:flex;justify-content:center">${donut(brandArr, palette)}${brandArr.length ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none"><div style="font-size:1.05rem;font-weight:800;line-height:1;color:${palette[0]}">${Math.round(brandArr[0][1] / brandGrand * 100)}%</div><div style="font-size:0.58rem;color:var(--text-muted);max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._vesc(brandArr[0][0])}</div></div>` : ''}</div><div class="home-brand-totals">${brandTotals}</div></div>`)}
                 </div>
                 </div>
             </div>
@@ -3432,7 +3437,7 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
             <!-- ═══ 블록 2: 할 일 · 통합 캘린더 ═══ -->
             ${sectionHead('ph-list-checks', '할 일 · 통합 캘린더', '메모 체크 · 시즌 할 일 · 생산 작업 · 시즌 마감까지 한데')}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;align-items:stretch">
-                ${panel('할 일', remList,
+                ${panel('다가오는 할 일', remList,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('reminders')">전체 →</span>`, true)}
                 ${panel(`${mm}월 통합 캘린더`, calendar,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('calendar')">캘린더 →</span>`)}
@@ -18109,9 +18114,11 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
         try { await this.openPaper(true); } catch (_e) { this.paper = null; this.requestRender(); }
     }
     async openPaper(auto) {
-        // 조간을 펼친 뒤 닫아도 사용자는 별도 뉴스 앱이 아니라 SNS>뉴스에 남는다.
-        this.snsMode = 'news';
-        if (this.currentUser && this.currentView !== 'sns') {
+        // 직접 펼친 조간은 닫으면 SNS>뉴스에 남는다.
+        //  아침 자동 조간은 밑에 창을 열지 않는다 — 닫으면 바로 홈(11-24 사장님 "아침에 끄면 홈으로 바로 연결되어야지 조간창이 왜 떠있냐").
+        //  조간은 앱 칸 밖의 전용 자리에 그려져 어느 화면 위든 덮으므로 밑 창이 필요 없다.
+        if (!auto) this.snsMode = 'news';
+        if (!auto && this.currentUser && this.currentView !== 'sns') {
             if (this.macMode) this.macOpen('sns'); else this.currentView = 'sns';
         }
         if (!this._newsLoaded && !this._newsLoading) this.loadNews();
