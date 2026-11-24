@@ -92,7 +92,7 @@ export function judge(card, rules, { state = null, now = Date.now() } = {}) {
     const mult = num(rules.early_mult) || 2;
     if (days === 1 && budget > 0 && spend >= budget && (fol === 0 || cpf > stopOver * mult)) {
         return out('stop', { cpf, early: true, provisional, label: '중단 추천 · 1일차',
-            reason: `${rangeTxt} 1일차 · 지출 ${won(spend)}원 ÷ 팔로우 ${won(fol)}${cpf != null ? ` = ${won(cpf)}원 > ${won(stopOver * mult)}원(종료선 ${mult}배)` : ''} → 조기 중단 추천${stamp}${tail}` });
+            reason: `${rangeTxt} 1일차 · 지출 ${won(spend)}원 ÷ 팔로우 ${won(fol)}${cpf != null ? ` = ${won(cpf)}원 > ${won(stopOver * mult)}원(유지선 ${mult}배)` : ''} → 조기 중단 추천${stamp}${tail}` });
     }
     return out('wait', { cpf, provisional, reason: `완결 ${Math.min(days, minDays)}/${minDays}일 · 지출 ${won(spend)}/${won(minSpend)}원${cpf != null ? ` · 현재 팔로워당 비용 ${won(cpf)}원(참고)` : ''}${stamp}` });
 }

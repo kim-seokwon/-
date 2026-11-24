@@ -12,6 +12,7 @@
 //                         DROP_CONTACT="010-0000-0000"
 // ============================================================
 import { requireUser } from "../_shared/auth.ts";
+import { orgOfRow, withOrgId } from "../_shared/org.ts";
 import { serviceKey } from "../_shared/keys.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -78,7 +79,7 @@ Deno.serve(async (req) => {
       status: out.status || "requested",
     };
     await db.from("vendor_jobs").update({ quick_status: result }).eq("id", jobId);
-    await db.from("operation_audit").insert({ actor_id: auth.id, actor_email: auth.email, action: "quick.request", entity_type: "vendor_job", entity_id: String(jobId), result: "ok", detail: { trackingNo: result.trackingNo } });
+    await db.from("operation_audit").insert(withOrgId({ actor_id: auth.id, actor_email: auth.email, action: "quick.request", entity_type: "vendor_job", entity_id: String(jobId), result: "ok", detail: { trackingNo: result.trackingNo } }, await orgOfRow(db, "vendor_jobs", jobId)));
     return j(result);
   } catch (e) {
     return j({ ok: false, error: String(e) }, 500);

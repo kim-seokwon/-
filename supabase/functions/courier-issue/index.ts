@@ -16,6 +16,7 @@ import { checkOrder, orderFields, plain } from "./fields.ts";
 import { epostOrderNo, EXT_TIMEOUT_MS, issueOne, type ResInfo } from "./issue.ts";
 import type { Mode } from "../_shared/ship-unknown.ts";
 import { requireUser } from "../_shared/auth.ts";
+import { orgForUser, withOrgId } from "../_shared/org.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const BASE = "http://ship.epost.go.kr";
@@ -162,12 +163,12 @@ Deno.serve(async (req) => {
         printYn: "N",
       }, "Y");
       const failureMessage = "message" in result ? result.message : "테스트 실패";
-      await db.from("operation_audit").insert({
+      await db.from("operation_audit").insert(withOrgId({
         actor_id: auth.id, actor_email: auth.email, action: "epost.safe_test",
         entity_type: "epost", entity_id: testOrderNo,
         result: result.ok ? "ok" : "failed",
         detail: { testYn: "Y", message: result.ok ? "test response received" : failureMessage },
-      });
+      }, await orgForUser(db, auth.id, body.org_id)));
       return j({
         ok: result.ok,
         test: true,

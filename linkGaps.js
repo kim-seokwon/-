@@ -83,7 +83,7 @@ export function prefillVendorJob(item) {
     if (!s(item?.tech_pack_id)) missing.push('tech_pack');
     if (missing.length) return { ok: false, missing };
     return { ok: true, missing, row: { vendor_id: item.vendor_id, title: s(item.name) || '무제', stage: '진행중',
-        due_date: item.ship_date || null, tech_pack_id: item.tech_pack_id, item_id: item.id } };
+        due_date: null, tech_pack_id: item.tech_pack_id, item_id: item.id } };   // C-c ③ 납기 원본 = 제품 출고예정일(사본 안 적음)
 }
 //  확인 후 생성 — 이미 그 제품의 작업이 있거나 저장 중이면 만들지 않는다(중복 생성 방지).
 //  store = { jobsOf(itemId): Promise<jobs[]>, insertJob(row): Promise<{error}> }  (테스트는 합성 store)

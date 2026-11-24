@@ -4,6 +4,8 @@
 //  · main.js(BhasApp)에서 import 하여 'sample_maker' 뷰로 사용. DB 미접근(read-only).
 // ============================================================================
 
+import { specOf, gradeRows, specEditorHTML, specPrintParts, patternScope, patternScopeHTML, confirmLine } from './techPackSpec.js';  // 8 작업지시서
+
 // ---------------------------------------------------------------------------
 // 색상 팔레트 (아동복 상용 컬러)
 // ---------------------------------------------------------------------------
@@ -156,6 +158,57 @@ export const SAMPLE_GARMENTS = [
       { key: 'cargo',      label: '카고 포켓',   draw: true,  def: false },
       { key: 'drawstring', label: '허리끈',      draw: true,  def: false },
       { key: 'kneePatch',  label: '무릎 보강',   draw: true,  def: false },
+    ],
+  },
+  //  8 품목별 양식 — 니트·오버롤·모자 (작업지시서 칸은 techPackSpec.TP_FORMS)
+  {
+    id: 'knit', label: '니트', icon: 'ph-t-shirt', category: 'top',
+    measure: [
+      { key: 'shoulder',    label: '어깨너비',   def: 30, min: 20, max: 50 },
+      { key: 'chest',       label: '가슴단면',   def: 38, min: 26, max: 60 },
+      { key: 'length',      label: '총장',       def: 44, min: 30, max: 80 },
+      { key: 'sleeve',      label: '소매길이',   def: 38, min: 20, max: 65 },
+      { key: 'cuffOpening', label: '소매부리(리브)', def: 8, min: 5, max: 14 },
+      { key: 'hem',         label: '밑단(리브)', def: 34, min: 22, max: 56 },
+      { key: 'neck',        label: '목너비',     def: 15, min: 10, max: 24 },
+    ],
+    details: [
+      { key: 'rib',        label: '넥/소매/밑단 리브', draw: true,  def: true },
+      { key: 'button',     label: '가디건 앞단추',     draw: true,  def: false },
+      { key: 'cable',      label: '꽈배기 조직',       draw: false, def: false },
+    ],
+  },
+  {
+    id: 'overall', label: '오버롤', icon: 'ph-pants', category: 'pants',
+    measure: [
+      { key: 'waist',     label: '허리단면',     def: 26, min: 14, max: 44 },
+      { key: 'hip',       label: '엉덩이단면',   def: 34, min: 18, max: 52 },
+      { key: 'thigh',     label: '허벅지단면',   def: 22, min: 12, max: 38 },
+      { key: 'rise',      label: '밑위',         def: 24, min: 12, max: 36 },
+      { key: 'length',    label: '총장(허리~밑단)', def: 62, min: 30, max: 100 },
+      { key: 'hem',       label: '밑단부리',     def: 16, min: 8,  max: 30 },
+      { key: 'bibHeight', label: '가슴받이 높이', def: 18, min: 10, max: 30 },
+      { key: 'bibWidth',  label: '가슴받이 폭',   def: 20, min: 12, max: 32 },
+      { key: 'strap',     label: '멜빵 길이',     def: 42, min: 25, max: 70 },
+    ],
+    details: [
+      { key: 'pocket',     label: '옆 주머니',     draw: true,  def: true },
+      { key: 'bibPocket',  label: '가슴받이 포켓', draw: true,  def: true },
+      { key: 'banding',    label: '뒤허리 밴딩',   draw: false, def: true },
+      { key: 'kneePatch',  label: '무릎 보강',     draw: true,  def: false },
+    ],
+  },
+  {
+    id: 'cap', label: '모자', icon: 'ph-baseball-cap', category: 'cap',
+    measure: [
+      { key: 'headCirc',  label: '머리둘레', def: 52, min: 44, max: 62 },
+      { key: 'capDepth',  label: '깊이',     def: 15, min: 10, max: 22 },
+      { key: 'brimLen',   label: '챙 길이',  def: 6.5, min: 3, max: 10 },
+      { key: 'brimWidth', label: '챙 폭',    def: 17, min: 12, max: 24 },
+    ],
+    details: [
+      { key: 'eyelet',    label: '통풍 구멍',   draw: true, def: true },
+      { key: 'topButton', label: '정수리 단추', draw: true, def: true },
     ],
   },
 ];
@@ -901,6 +954,10 @@ export const PLACEMENT_POSITIONS = {
     { key: 'leftThigh', label: '좌허벅지' }, { key: 'rightThigh', label: '우허벅지' },
     { key: 'leftAnkle', label: '좌밑단' }, { key: 'rightAnkle', label: '우밑단' },
   ],
+  cap: [
+    { key: 'capFront', label: '앞 중앙' }, { key: 'capLeft', label: '왼쪽 옆' },
+    { key: 'capRight', label: '오른쪽 옆' }, { key: 'capBack', label: '뒤 중앙' },
+  ],
 };
 export function placementKindMeta(kind) { return PLACEMENT_KINDS.find(k => k.kind === kind) || PLACEMENT_KINDS[0]; }
 export function placementPosLabel(cfg, posKey) {
@@ -1001,7 +1058,56 @@ function svgWrap(inner, mode) {
 }
 
 function drawView(cfg, mode, view, interactive) {
-  return garmentDef(cfg.type).category === 'pants' ? drawPantsView(cfg, mode, view, interactive) : drawTopView(cfg, mode, view, interactive);
+  const cat = garmentDef(cfg.type).category;
+  if (cat === 'cap') return drawCapView(cfg, mode, view, interactive);
+  if (cat === 'pants') return drawPantsView(cfg, mode, view, interactive) + (cfg.type === 'overall' ? drawBib(cfg, mode, view) : '');
+  return drawTopView(cfg, mode, view, interactive);
+}
+
+//  8 오버롤 — 바지 그림 위에 가슴받이·멜빵(도식은 바지 기준 + 가슴받이)
+function drawBib(cfg, mode, view) {
+  const M = cfg.measure || {}, SX = 3.0, SY = 3.4, cx = 200, waistY = 70;
+  const flat = mode === 'flat', base = cfg.color ? cfg.color.hex : '#cccccc';
+  const fill = flat ? '#ffffff' : base, line = flat ? '#1f1f1f' : shade(base, isLight(base) ? -30 : -18);
+  const bw = (Number(M.bibWidth) || 20) * SX / 2, bh = Math.min(64, (Number(M.bibHeight) || 18) * SY * 0.55);
+  const top = waistY - bh;
+  let s = `<path d="M ${cx - bw} ${waistY + 2} L ${cx - bw + 3} ${top} L ${cx + bw - 3} ${top} L ${cx + bw} ${waistY + 2} Z" fill="${fill}" stroke="${line}" stroke-width="${flat ? 1.8 : 1.5}"/>`;
+  s += `<path d="M ${cx - bw + 6} ${top + 4} L ${cx + bw - 6} ${top + 4}" stroke="${flat ? '#8a8a8a' : line}" stroke-width="0.9" stroke-dasharray="3 2" fill="none"/>`;
+  [[-1], [1]].forEach(([k]) => {
+    const x0 = cx + k * (bw - 6);
+    s += `<path d="M ${x0 - 4} ${top} L ${x0 + k * 18 - 4} ${8} L ${x0 + k * 18 + 4} ${8} L ${x0 + 4} ${top} Z" fill="${fill}" stroke="${line}" stroke-width="1.2"/>`;
+    if (view !== 'back') s += `<circle cx="${x0}" cy="${top + 6}" r="3.2" fill="#fff" stroke="${line}" stroke-width="1"/>`;
+  });
+  if (view !== 'back' && (cfg.details || {}).bibPocket) s += `<rect x="${cx - bw * 0.5}" y="${top + 12}" width="${bw}" height="${bh * 0.5}" rx="2" fill="none" stroke="${line}" stroke-width="1.1"/>`;
+  if (flat && view !== 'back') s += `<text x="${cx}" y="${top - 6}" text-anchor="middle" font-size="10" fill="#d11" font-weight="700">가슴받이 ${M.bibWidth}×${M.bibHeight} · 멜빵 ${M.strap}</text>`;
+  return s;
+}
+
+//  8 모자 — 앞/뒤 단순 도식(크라운 + 챙). 치수는 글로 표시
+function drawCapView(cfg, mode, view, interactive) {
+  const M = cfg.measure || {}, d = cfg.details || {}, flat = mode === 'flat', back = view === 'back';
+  const base = cfg.color ? cfg.color.hex : '#cccccc';
+  const fill = flat ? '#ffffff' : base, line = flat ? '#1f1f1f' : shade(base, isLight(base) ? -30 : -18);
+  const cx = 200, baseY = 330, hw = Math.max(90, Math.min(150, (Number(M.headCirc) || 52) * 2.3)), h = Math.max(110, Math.min(190, (Number(M.capDepth) || 15) * 9));
+  let s = `<path d="M ${cx - hw} ${baseY} C ${cx - hw} ${baseY - h * 1.1}, ${cx + hw} ${baseY - h * 1.1}, ${cx + hw} ${baseY} Z" fill="${fill}" stroke="${line}" stroke-width="${flat ? 1.8 : 1.5}"/>`;
+  s += `<path d="M ${cx} ${baseY - h * 0.83} L ${cx} ${baseY}" stroke="${line}" stroke-width="1"/>`;
+  [-0.55, 0.55].forEach(k => { s += `<path d="M ${cx} ${baseY - h * 0.83} Q ${cx + k * hw * 0.9} ${baseY - h * 0.7} ${cx + k * hw * 0.92} ${baseY}" stroke="${line}" stroke-width="1" fill="none"/>`; });
+  if (d.topButton) s += `<circle cx="${cx}" cy="${baseY - h * 0.83}" r="6" fill="${fill}" stroke="${line}" stroke-width="1.2"/>`;
+  if (d.eyelet) [-0.42, 0.42].forEach(k => { s += `<circle cx="${cx + k * hw}" cy="${baseY - h * 0.5}" r="3" fill="none" stroke="${line}" stroke-width="1"/>`; });
+  if (!back) {
+    const bl = (Number(M.brimLen) || 6.5) * 9, bw = (Number(M.brimWidth) || 17) * 7;
+    s += `<path d="M ${cx - bw} ${baseY} Q ${cx} ${baseY + bl * 1.4} ${cx + bw} ${baseY} Q ${cx} ${baseY + bl * 0.35} ${cx - bw} ${baseY} Z" fill="${fill}" stroke="${line}" stroke-width="${flat ? 1.8 : 1.5}"/>`;
+    for (let i = 1; i <= 3; i++) s += `<path d="M ${cx - bw + i * 8} ${baseY + i * 2} Q ${cx} ${baseY + bl * 1.4 - i * 7} ${cx + bw - i * 8} ${baseY + i * 2}" stroke="${flat ? '#8a8a8a' : line}" stroke-width="0.7" stroke-dasharray="3 2" fill="none"/>`;
+  } else {
+    s += `<rect x="${cx - 26}" y="${baseY - 22}" width="52" height="22" rx="10" fill="${flat ? '#fff' : 'rgba(0,0,0,0.12)'}" stroke="${line}" stroke-width="1.2"/>`;
+    s += `<rect x="${cx - 14}" y="${baseY - 6}" width="28" height="10" rx="2" fill="none" stroke="${line}" stroke-width="1.2"/>`;
+  }
+  if (flat && !back) s += `<text x="${cx}" y="${baseY + 110}" text-anchor="middle" font-size="11" fill="#d11" font-weight="700">머리둘레 ${M.headCirc} · 깊이 ${M.capDepth} · 챙 ${M.brimLen}×${M.brimWidth}</text>`;
+  const anchors = back ? { capBack: { x: cx, y: baseY - h * 0.45 } }
+    : { capFront: { x: cx, y: baseY - h * 0.45 }, capLeft: { x: cx - hw * 0.7, y: baseY - h * 0.35 }, capRight: { x: cx + hw * 0.7, y: baseY - h * 0.35 } };
+  const pls = (cfg.placements || []).filter(p => back ? p.pos === 'capBack' : p.pos !== 'capBack');
+  s += renderPlacements({ ...cfg, placements: pls }, anchors, mode, line, 3.0, interactive && !back);
+  return s;
 }
 
 // 미리보기: 앞면만 (컬러). interactive=true면 편집 핸들 포함(인쇄 X)
@@ -1253,6 +1359,8 @@ function patternCell(piece, ox, oy, cw, ch, sa) {
 }
 
 export function garmentPatternSVG(cfg) {
+  const sc = patternScope(specOf(cfg, garmentDef(cfg.type)).form);
+  if (!sc.supported) return `<svg viewBox="0 0 900 200" class="sm-svg sm-svg-pattern" xmlns="http://www.w3.org/2000/svg"><rect width="900" height="200" fill="#fff"/><text x="450" y="90" text-anchor="middle" font-size="20" font-weight="700" fill="#b45309">${sc.title}</text><text x="450" y="125" text-anchor="middle" font-size="13" fill="#555">이 화면의 패턴 그리기는 상의(앞·뒤판·소매)·바지만 지원합니다.</text></svg>`;
   const raw = garmentDef(cfg.type).category === 'pants' ? pantsPatternPieces(cfg) : topPatternPieces(cfg);
   const pieces = raw.flatMap(explodePiece);
   const cols = pieces.length, cw = 300, ch = 460, W = cols * cw, H = ch;
@@ -1260,6 +1368,7 @@ export function garmentPatternSVG(cfg) {
   const hasCut = (cfg.cutlines || []).some(c => (c.pts || []).length >= 2);
   s += `<text x="12" y="20" font-size="13" font-weight="700" fill="#111">패턴 (1차 드래프트 · 곡선 반영) — 실선=완성선 / 점선=시접 1cm${hasCut ? ' / <tspan fill="#e3000f">절개선 기준 조각 분리 · 각 조각 시접 1cm 별도</tspan>' : ''}</text>`;
   pieces.forEach((p, i) => { s += patternCell(p, i * cw, 30, cw, ch, 9); });
+  if (cfg.type === 'overall') s += `<text x="12" y="${H + 22}" font-size="11" fill="#b45309">가슴받이·멜빵 패턴은 그리지 않습니다 — 바지 부분만</text>`;
   s += `</svg>`;
   return s;
 }
@@ -1295,8 +1404,9 @@ function placementRows(cfg) {
 export function techPackSummaryHTML(cfg) {
   const def = garmentDef(cfg.type);
   const c = cfg.color || { name: '-', hex: '#ccc' };
+  const sp = specOf(cfg, def);   // 8 허용오차·측정 위치는 생산 사양(⑩)에서
   const measureRows = def.measure.map(m => `
-    <tr><td>${m.label}</td><td class="sm-tp-num">${cfg.measure[m.key]}</td><td class="sm-tp-num">±${m.key === 'length' ? '1.0' : '0.5'}</td></tr>`).join('');
+    <tr><td title="${_smEsc(sp.points[m.key]?.how || '')}">${m.label}</td><td class="sm-tp-num">${cfg.measure[m.key]}</td><td class="sm-tp-num">±${sp.points[m.key]?.tol ?? 0.5}</td></tr>`).join('');
   const details = selectedDetailLabels(cfg);
   const pls = placementRows(cfg);
   const plBlock = pls.length ? `
@@ -1344,20 +1454,14 @@ export function techPackSummaryHTML(cfg) {
 }
 
 // 사이즈 그레이딩 (기준 치수 → 90/100/110/120)
+//  8 사이즈 전개·편차·직접 입력은 생산 사양(cfg.spec)을 따른다
 function gradedSizes(cfg) {
-  const def = garmentDef(cfg.type);
-  const sizes = ['90', '100', '110', '120'], baseIdx = 2;
-  const stepFor = key => (key === 'length') ? 3 : (key === 'sleeve') ? 2.5 : (['neck', 'cuffOpening'].includes(key)) ? 1 : (key === 'rise') ? 1.5 : 2;
-  const rows = def.measure.map(m => ({
-    label: m.label,
-    vals: sizes.map((_, i) => +(Number(cfg.measure[m.key]) + (i - baseIdx) * stepFor(m.key)).toFixed(1)),
-    tol: (m.key === 'length' || m.key === 'sleeve') ? '1.0' : '0.5',
-  }));
-  return { sizes, baseIdx, rows };
+  const g = gradeRows(cfg, garmentDef(cfg.type));
+  return { sizes: g.sizes, baseIdx: g.baseIdx, rows: g.rows.map(r => ({ label: r.label, vals: r.vals.map(v => v.v ?? ''), tol: r.tol })) };
 }
 
-// 원·부자재 산출
-function materialsList(cfg) {
+// 원·부자재 산출 (8: 부자재 편집의 자동 목록으로도 쓴다)
+export function materialsList(cfg) {
   const d = cfg.details || {}, t = cfg.type, list = [];
   list.push({ item: '겉감', spec: cfg.fabric || '면 100%', qty: '요척별' });
   if (d.fleece) list.push({ item: '기모가공', spec: '안기모 처리', qty: '1식' });
@@ -1377,14 +1481,31 @@ function materialsList(cfg) {
     else if (p.kind === 'logo') list.push({ item: '로고(워펜/라벨)', spec: `${pos} ${p.sizeCm}cm`, qty: '1ea' });
     else if (p.kind === 'label') list.push({ item: '데코라벨', spec: pos, qty: '1ea' });
   });
-  list.push({ item: '메인라벨', spec: '후넥 중앙', qty: '1ea' });
-  list.push({ item: '케어라벨', spec: '좌측 사이드시임', qty: '1ea' });
+  const lb = specOf(cfg, garmentDef(t)).labels;   // 8 라벨 위치는 생산 사양에서
+  list.push({ item: '메인라벨', spec: lb.main, qty: '1ea' });
+  list.push({ item: '케어라벨', spec: lb.care, qty: '1ea' });
   list.push({ item: '행택+택끈', spec: '브랜드 기본', qty: '1set' });
   list.push({ item: '폴리백', spec: '사이즈별 규격', qty: '1ea' });
   return list;
 }
 
-export function buildTechPackPrintHTML(cfg) {
+//  인쇄·미리보기 HTML 에 들어가는 값은 전부 이스케이프(⑦ 반려 1 — 스타일명에 </title><img onerror> 를 넣으면 실행됐다).
+//  사진(dataUrl)은 data:image base64 만 통과, 그 밖의 주소는 버린다.
+const _TP_DATA_URL = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/i;
+export function tpSafeCfg(v, k) {
+  if (typeof v === 'string') return k === 'dataUrl' ? (_TP_DATA_URL.test(v) ? v : null)
+    : v.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  if (Array.isArray(v)) return v.map(x => tpSafeCfg(x));
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([kk, x]) => [kk, tpSafeCfg(x, kk)]));
+  return v;
+}
+//  meta(8) = 저장된 작업지시서 행: { doc_no, version, status, confirmed_at, confirmed_by, updated_at, updated_by, diff:[{sec,label,from,to}], prevVersion }
+export function buildTechPackPrintHTML(cfg0, meta0) {
+  const cfg = tpSafeCfg(cfg0 || {});
+  const meta = tpSafeCfg(meta0 || {});
+  const SP = specPrintParts(cfg0 || {}, garmentDef((cfg0 || {}).type), materialsList(cfg0 || {}).filter(m => m.item !== '겉감'));   // 자체 이스케이프 — 원본 cfg 로
+  const PS = patternScope(SP.sp.form);
+  const SPe = tpSafeCfg(SP.sp);   // 화면에 바로 찍는 사양 글자는 이스케이프본으로
   const def = garmentDef(cfg.type);
   const c = cfg.color || { name: '-', hex: '#ccc' };
   const flat = garmentFlatSVG(cfg);
@@ -1395,8 +1516,13 @@ export function buildTechPackPrintHTML(cfg) {
   const today = '____ . __ . __';
 
   const sizeHead = grade.sizes.map((sz, i) => `<th class="${i === grade.baseIdx ? 'base' : ''}">${sz}</th>`).join('');
-  const sizeRows = grade.rows.map(r => `<tr><td class="lbl">${r.label}</td>${r.vals.map((v, i) => `<td class="${i === grade.baseIdx ? 'base' : ''}">${v}</td>`).join('')}<td class="tol">±${r.tol}</td></tr>`).join('');
-  const matRows = mats.map(m => `<tr><td class="lbl">${m.item}</td><td>${m.spec}</td><td class="qty">${m.qty}</td></tr>`).join('');
+  const sizeRows = SP.sizeRows;
+  const matRows = SP.matRows; void mats;
+  const docLine = [meta.doc_no, meta.version ? `v${meta.version}` : '', meta.status || '저장 전'].filter(Boolean).join(' · ');
+  const confirm = meta0 ? confirmLine(meta0).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch])) : '저장 전 — 확정본 아님';
+  const diffRows = (meta.diff || []).slice(0, 40).map(x => `<tr><td>${x.sec}</td><td class="lbl">${x.label}</td><td>${x.from}</td><td><b>${x.to}</b></td></tr>`).join('');
+  const diffBlock = meta.prevVersion ? `<div class="sechd">이전 버전(v${meta.prevVersion}) 대비 변경 ${(meta.diff || []).length}건</div>${diffRows ? `<table><thead><tr><th>구분</th><th>항목</th><th>이전</th><th>이번</th></tr></thead><tbody>${diffRows}</tbody></table>${(meta.diff || []).length > 40 ? '<div class="note" style="min-height:0">… 40건까지만 표시</div>' : ''}` : '<div class="note" style="min-height:0">바뀐 값 없음</div>'}`
+    : `<div class="sechd">변경 이력</div><div class="note" style="min-height:0">첫 버전 — 비교할 이전 버전 없음</div>`;
   const colorRow = `<tr><td class="lbl">${c.name}</td>${grade.sizes.map(() => '<td></td>').join('')}<td></td></tr>`;
   const plsRows = pls.length ? pls.map(p => `<tr><td>${p.kind}</td><td>${p.pos}</td><td>${p.size}cm</td><td>${p.dataUrl ? `<img src="${p.dataUrl}" class="plimg">` : (p.file || '-')}</td></tr>`).join('') : `<tr><td colspan="4" style="color:#999">배치 요소 없음</td></tr>`;
   const refsPage = (cfg.references || []).length ? `
@@ -1405,7 +1531,7 @@ export function buildTechPackPrintHTML(cfg) {
     <div style="padding:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
       ${cfg.references.map(r => `<figure style="margin:0;border:1px solid #bbb;">
         <img src="${r.dataUrl}" style="width:100%;height:155px;object-fit:contain;background:#f7f7f7;display:block;">
-        <figcaption style="padding:4px 6px;font-size:9.5px;border-top:1px solid #bbb;min-height:15px;white-space:pre-wrap;line-height:1.4;">${_smEsc(r.note || '')}</figcaption>
+        <figcaption style="padding:4px 6px;font-size:9.5px;border-top:1px solid #bbb;min-height:15px;white-space:pre-wrap;line-height:1.4;">${r.note || ''}</figcaption>
       </figure>`).join('')}
     </div>
   </div>` : '';
@@ -1462,11 +1588,16 @@ export function buildTechPackPrintHTML(cfg) {
   .plimg { width:26px; height:26px; object-fit:contain; vertical-align:middle; }
   .foot { border-top:1.5px solid #111; padding:5px 8px; font-size:9px; color:#444; line-height:1.6; }
   .foot b { color:#111; }
+  td.man { color:#b45309; font-weight:700; }
+  .pscope { padding:5px 8px; font-size:9.5px; line-height:1.55; background:#fff8e6; border-bottom:1px solid #bbb; }
+  .pscope b { color:#b45309; }
+  .spec2 { display:grid; grid-template-columns: 1.3fr 1fr; }
+  .spec2 > div { border-right:1px solid #bbb; }
 </style></head><body>
   <div class="tp">
     <!-- 헤더 -->
     <div class="hd">
-      <div class="hd-logo"><span class="mark"></span><b>더하임<br>PROMOTION</b></div>
+      <div class="hd-logo"><span class="mark"></span><b>이일칠구<br>2179</b></div>
       <div class="hd-title">작 업 지 시 서</div>
       <div class="approve">
         ${['디자이너', 'MD', '대표'].map(r => `<div class="ab"><div class="t">${r}</div><div class="v"></div></div>`).join('')}
@@ -1475,14 +1606,14 @@ export function buildTechPackPrintHTML(cfg) {
     <!-- 정보 그리드 + 스와치 -->
     <div class="meta">
       <div class="grid">
-        <div class="cell lbl-cell">담당</div><div class="cell">디자인팀</div>
+        <div class="cell lbl-cell">문서</div><div class="cell">${docLine}</div>
         <div class="cell lbl-cell">품번</div><div class="cell">${cfg.styleNo || '-'}</div>
         <div class="cell lbl-cell">아이템</div><div class="cell">${def.label}</div>
         <div class="cell lbl-cell">스타일명</div><div class="cell">${cfg.styleName || '-'}</div>
-        <div class="cell lbl-cell">시즌</div><div class="cell">2026 S/S</div>
-        <div class="cell lbl-cell">작성일</div><div class="cell">${today}</div>
+        <div class="cell lbl-cell">확정</div><div class="cell">${confirm}</div>
+        <div class="cell lbl-cell">작성·수정</div><div class="cell">${meta.updated_at ? String(meta.updated_at).slice(0, 10) + ' ' + (meta.updated_by || '') : today}</div>
         <div class="cell lbl-cell">기준사이즈</div><div class="cell">${cfg.size || '110'}</div>
-        <div class="cell lbl-cell">원단</div><div class="cell">${cfg.fabric || '면 100%'}</div>
+        <div class="cell lbl-cell">원단</div><div class="cell">${[cfg.fabric || '면 100%', SPe.fabric.weight, SPe.fabric.width].filter(Boolean).join(' · ')}</div>
         <div class="cell lbl-cell">발주수량</div><div class="cell" style="border-bottom:none"></div>
       </div>
       <div class="swatchbox">
@@ -1498,8 +1629,9 @@ export function buildTechPackPrintHTML(cfg) {
         <table><thead><tr><th class="lbl" style="text-align:left">컬러</th>${sizeHead}<th>합계</th></tr></thead><tbody>${colorRow}</tbody></table>
         <div class="sechd">디테일</div>
         <div class="chips">${details.length ? details.map(t => `<span>${t}</span>`).join('') : '<span style="color:#999">-</span>'}</div>
-        <div class="sechd">비고 / 봉제지시</div>
-        <div class="note">${(cfg.note || '').replace(/</g, '&lt;') || '· 시접 1cm\n· 밑단/소매 더블 스티치\n· 넥 리브 2x1'}</div>
+        <div class="sechd">봉제 지시</div>
+        <div class="note">${SPe.sewing}</div>
+        ${cfg.note ? `<div class="sechd">비고</div><div class="note">${cfg.note}</div>` : ''}
       </div>
       <!-- 중: 도식 FRONT/BACK -->
       <div class="col col-mid">
@@ -1518,13 +1650,37 @@ export function buildTechPackPrintHTML(cfg) {
     </div>
     <!-- 푸터 -->
     <div class="foot">
-      <b>봉제 지시</b> · 본봉 시접 1cm, 오바록 마감 · 밑단·소매부리 더블 스티치(1/4") · 넥 리브 2x1 골지 · 라벨 위치 후넥 중앙 &nbsp;|&nbsp;
-      <b>검품</b> 치수 편차 ±0.5~1.0cm 허용 · 컬러 견본 대조 후 진행 &nbsp;|&nbsp; 더하임프로모션 아동복 사업부
+      <b>검품</b> 부위별 허용오차는 2쪽 '측정 위치 · 허용오차' 표 기준 · 컬러 견본 대조 후 진행 &nbsp;|&nbsp; <b>양식</b> ${SPe.formLabel} &nbsp;|&nbsp; 이일칠구
     </div>
   </div>
   <div class="tp" style="margin-top:8px;page-break-before:always;">
-    <div class="hd"><div class="hd-logo"><span class="mark"></span><b>더하임<br>PROMOTION</b></div><div class="hd-title" style="font-size:18px;letter-spacing:8px;">패 턴 · PATTERN</div><div class="approve"><div class="ab"><div class="t">패턴사</div><div class="v"></div></div></div></div>
-    <div style="padding:8px;"><div style="font-size:10px;color:#555;margin-bottom:4px;">※ 1차 드래프트 — 편집된 곡선 반영 · 실선=완성선 · 점선=시접 1cm · 식서방향 ↕ · 다림질/요척 확인 후 본작업</div>
+    <div class="hd"><div class="hd-logo"><span class="mark"></span><b>이일칠구<br>2179</b></div><div class="hd-title" style="font-size:18px;letter-spacing:8px;">생산 사양 · SPEC</div><div class="approve"><div class="ab"><div class="t">확인</div><div class="v"></div></div></div></div>
+    <div class="spec2">
+      <div>
+        <div class="sechd">측정 위치 · 허용오차</div>
+        <table><thead><tr><th class="lbl" style="text-align:left">부위</th><th>측정 위치</th><th>허용</th></tr></thead><tbody>${SP.howRows}</tbody></table>
+        ${SP.extraRows ? `<div class="sechd">${SPe.formLabel} 전용 사양</div><table><tbody>${SP.extraRows}</tbody></table>` : ''}
+        ${diffBlock}
+      </div>
+      <div>
+        <div class="sechd">원단 규격 · 가공</div>
+        <table><tbody>
+          <tr><td class="lbl">혼용률</td><td style="text-align:left">${SPe.fabric.comp ? cfg.fabric : '—'}</td></tr>
+          <tr><td class="lbl">중량 / 폭</td><td style="text-align:left">${[SPe.fabric.weight, SPe.fabric.width].filter(Boolean).join(' / ') || '—'}</td></tr>
+          <tr><td class="lbl">수축률</td><td style="text-align:left">${(SPe.fabric.shrink || '—')}</td></tr>
+          <tr><td class="lbl">가공</td><td style="text-align:left">${(SPe.process || '—')}</td></tr>
+        </tbody></table>
+        <div class="sechd">라벨 위치</div>
+        <table><tbody>${SP.labelRows}</tbody></table>
+        <div class="sechd">패턴 범위</div>
+        <div class="pscope"><b>${PS.title}</b><br>${PS.ok.length ? '검증된 범위: ' + PS.ok.join(' · ') + '<br>' : ''}지원 안 함: ${PS.no.join(' · ')}<br>${PS.note}</div>
+      </div>
+    </div>
+  </div>
+  <div class="tp" style="margin-top:8px;page-break-before:always;">
+    <div class="hd"><div class="hd-logo"><span class="mark"></span><b>이일칠구<br>2179</b></div><div class="hd-title" style="font-size:18px;letter-spacing:8px;">패 턴 · PATTERN</div><div class="approve"><div class="ab"><div class="t">패턴사</div><div class="v"></div></div></div></div>
+    <div class="pscope"><b>${PS.title}</b> — ${PS.ok.length ? '검증된 범위: ' + PS.ok.join(' · ') + ' / ' : ''}지원 안 함: ${PS.no.join(' · ')}. ${PS.note}</div>
+    <div style="padding:8px;"><div style="font-size:10px;color:#555;margin-bottom:4px;">※ 실선=완성선 · 점선=시접 1cm · 편집된 곡선 반영</div>
       <div style="width:100%;">${garmentPatternSVG(cfg).replace('<svg ', '<svg style="width:100%;height:auto;max-height:460px;" ')}</div>
     </div>
   </div>
@@ -1671,9 +1827,14 @@ export function renderSampleMaker(cfg) {
         </div>
 
         <div class="sm-group">
-          <h4>⑦ 원단 / 비고</h4>
+          <h4>⑨ 원단 / 비고</h4>
           <div class="sm-field"><label>원단</label><input type="text" id="sm-fabric" placeholder="면 100% / 폴리혼방 등" value="${cfg.fabric || ''}"></div>
-          <textarea id="sm-note" rows="3" placeholder="부자재, 봉제 지시, 특이사항">${cfg.note || ''}</textarea>
+          <textarea id="sm-note" rows="3" placeholder="특이사항(봉제 지시·라벨·부자재는 ⑩ 생산 사양에)">${cfg.note || ''}</textarea>
+        </div>
+
+        <div class="sm-group" id="sm-spec-group">
+          <h4>⑩ 생산 사양 <span class="sm-hint">(사이즈별 치수·측정 위치·허용오차·원단·부자재·라벨·봉제)</span></h4>
+          ${specEditorHTML(cfg, def, materialsList(cfg).filter(m => m.item !== '겉감'))}
         </div>
       </aside>
 
@@ -1693,7 +1854,7 @@ export function renderSampleMaker(cfg) {
           ${cfg.editMode ? '<div class="sm-edit-hint">네모=치수 · 파란원=곡선 · 박스=배치 드래그 / 휠=확대, 빈곳 드래그=이동 <button id="sm-reset-curve" class="sm-reset-btn">곡선 초기화</button></div>' : ''}
           <div id="sm-preview" class="sm-pane" style="${cfg.activeTab !== 'flat' && cfg.activeTab !== 'pattern' ? '' : 'display:none'}">${garmentPreviewSVG(cfg, true)}</div>
           <div id="sm-flat" class="sm-pane sm-pane-flat" style="${cfg.activeTab === 'flat' ? '' : 'display:none'}">${garmentFlatSVG(cfg, true)}</div>
-          <div id="sm-pattern" class="sm-pane sm-pane-flat" style="${cfg.activeTab === 'pattern' ? '' : 'display:none'}">${garmentPatternSVG(cfg)}</div>
+          <div id="sm-pattern" class="sm-pane sm-pane-flat" style="${cfg.activeTab === 'pattern' ? '' : 'display:none'}">${patternScopeHTML(specOf(cfg, def).form)}${garmentPatternSVG(cfg)}</div>
           <div id="sm-clean" class="sm-clean-preview" style="${cfg.editMode && cfg.activeTab !== 'pattern' ? '' : 'display:none'}"><span class="sm-clean-label"><i class="ph ph-eye"></i> 기준 미리보기 · 선 없음</span>${garmentPreviewSVG({ ...cfg, cutlines: [], points: [], editMode: false }, false)}</div>
         </div>
         <div id="sm-techpack" class="sm-techpack glass">${techPackSummaryHTML(cfg)}</div>

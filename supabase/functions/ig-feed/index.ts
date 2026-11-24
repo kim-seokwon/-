@@ -1,10 +1,11 @@
 // 인스타그램 피드 미리보기용 — 특정 IG 비즈니스 계정의 최근 게시물 썸네일을 반환.
 //  톤앤매너 미리보기(대시보드 SNS 탭)에서 기존 피드 그리드를 그리는 데 사용.
 //  토큰: ig_token(사용자 장기토큰) → me/accounts 페이지토큰 확보 → /{ig_id}/media 조회.
-//  로그인 사용자면 누구나 조회 가능(피드 이미지 = 비민감).
+//  128: 직원 이상 + 소속 조직·담당 브랜드의 계정만(토큰 꺼내기 전에 확인).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { serviceKey } from "../_shared/keys.ts";
-import { requireUser } from "../_shared/auth.ts";
+import { canBrand, requireUser } from "../_shared/auth.ts";
+import { ORG_2179 } from "../_shared/org.ts";
 
 const GRAPH = "https://graph.facebook.com/v20.0";
 const cors = (h: HeadersInit = {}) => ({ "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Content-Type": "application/json", ...h });
@@ -12,7 +13,8 @@ const admin = () => createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { 
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
-  const auth = await requireUser(req);
+  // 128: 직원 이상만(고객사 계정은 남의 인스타를 못 부른다)
+  const auth = await requireUser(req, { roles: ["MASTER", "STAFF"] });
   if (auth instanceof Response) return auth;
   const j = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: cors() });
 
@@ -23,6 +25,14 @@ Deno.serve(async (req) => {
     if (!igId) return j({ ok: false, error: "ig_business_id 필요" }, 400);
 
     const db = admin();
+    // 128: 우리가 등록한 계정 중 부른 사람의 조직·담당 브랜드 것만(아무 ig_business_id 나 넣어 남의 계정을 못 보게)
+    const { data: reg } = await db.from("ig_accounts").select("org_id, brand_id").eq("ig_business_id", igId);
+    if (!reg?.length) return j({ ok: false, error: "등록되지 않은 인스타 계정입니다" }, 403);
+    const { data: mem } = await db.from("org_memberships").select("org_id").eq("user_id", auth.id);
+    const orgs = ((mem || []) as { org_id: string }[]).map((r) => r.org_id);
+    const mine = (reg as { org_id: string | null; brand_id: string | null }[])
+      .some((r) => orgs.includes(r.org_id || ORG_2179) && canBrand(auth, r.brand_id));
+    if (!mine) return j({ ok: false, error: "권한 없음 — 소속 조직·담당 브랜드의 인스타 계정이 아닙니다" }, 403);
     const { data: trow } = await db.from("ig_token").select("token").eq("id", 1).maybeSingle();
     const userTok = trow?.token || Deno.env.get("META_IG_TOKEN") || "";
     if (!userTok) return j({ ok: false, error: "메타 토큰 미설정" }, 200);

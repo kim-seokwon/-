@@ -11,6 +11,7 @@
 //     매핑 로직·발행 파라미터는 팝빌 Taxinvoice 규격 기준.
 // ============================================================
 import { requireUser } from "../_shared/auth.ts";
+import { orgOfRow, withOrgId } from "../_shared/org.ts";
 import { serviceKey } from "../_shared/keys.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -58,7 +59,20 @@ async function getToken(): Promise<string> {
 }
 
 // 견적 → 팝빌 Taxinvoice 매핑
+//  24 — 공급자 정보는 company_profile(139) 원본. 단 사업자번호가 팝빌 연동 번호와 같을 때만 쓴다
+//  (설정에서 번호를 잘못 고쳐도 다른 사업자 이름으로 발행되지 않게). 표가 없거나 다르면 아래 기본값.
+const SUPPLIER_DEFAULT = { corp_name: "주식회사 이일칠구", ceo_name: "김석원", address: "인천광역시 하늘중앙로 225번길 20, 507-8호",
+  biz_type: "서비스", biz_class: "경영컨설팅", contact_name: "방보경", contact_tel: "010-9072-7003" };
+export function pickSupplier(row: Record<string, any> | null | undefined) {
+  const ok = row && String(row.biz_no || "").replace(/[^0-9]/g, "") === CORPNUM && row.corp_name && row.ceo_name && row.address;
+  if (!ok) return { ...SUPPLIER_DEFAULT };
+  const v = (k: string) => (row![k] == null || row![k] === "" ? (SUPPLIER_DEFAULT as any)[k] : String(row![k]));
+  return { corp_name: v("corp_name"), ceo_name: v("ceo_name"), address: v("address"), biz_type: v("biz_type"),
+    biz_class: v("biz_class"), contact_name: v("contact_name"), contact_tel: v("contact_tel") };
+}
+
 function mapTaxinvoice(q: Record<string, any>, opt: Record<string, any>) {
+  const sp = opt.supplier || SUPPLIER_DEFAULT;
   const items = Array.isArray(q.items) ? q.items : [];
   const writeDate = (opt.supplyDate || q.tax_supply_date || q.quote_date || "").replace(/-/g, "");
   return {
@@ -69,13 +83,13 @@ function mapTaxinvoice(q: Record<string, any>, opt: Record<string, any>) {
     taxType: "과세",
     // 공급자(2179)
     invoicerCorpNum: CORPNUM,
-    invoicerCorpName: "주식회사 이일칠구",
-    invoicerCEOName: "김석원",
-    invoicerAddr: "인천광역시 하늘중앙로 225번길 20, 507-8호",
-    invoicerBizType: "서비스",
-    invoicerBizClass: "경영컨설팅",
-    invoicerContactName: "방보경",
-    invoicerTEL: "010-9072-7003",
+    invoicerCorpName: sp.corp_name,
+    invoicerCEOName: sp.ceo_name,
+    invoicerAddr: sp.address,
+    invoicerBizType: sp.biz_type,
+    invoicerBizClass: sp.biz_class,
+    invoicerContactName: sp.contact_name,
+    invoicerTEL: sp.contact_tel,
     // 공급받는자(고객사)
     invoiceeType: "사업자",
     invoiceeCorpNum: (q.client_biz_no || "").replace(/[^0-9]/g, ""),
@@ -112,6 +126,9 @@ Deno.serve(async (req) => {
     if (!quote_id) return j({ ok: false, error: "quote_id 없음" }, 400);
     const { data: quote, error: quoteErr } = await db.from("quotes").select("*").eq("id", quote_id).single();
     if (quoteErr || !quote) return j({ ok: false, error: "견적을 찾을 수 없습니다" }, 404);
+    //  12 반려1 — 확정된 판매 견적만 발행(원가 견적·작성중·발송은 서버가 막는다. claim_tax_invoice 도 같은 조건)
+    if (quote.purpose === "cost") return j({ ok: false, error: "원가(매입) 견적은 우리가 발행하는 세금계산서 대상이 아닙니다" }, 400);
+    if (quote.status !== "confirmed") return j({ ok: false, error: "확정된 견적만 세금계산서를 발행할 수 있습니다" }, 400);
     if (!quote?.client_biz_no) return j({ ok: false, error: "공급받는자 사업자번호 없음" }, 400);
     if (!email) return j({ ok: false, error: "공급받는자 이메일 없음" }, 400);
     if (!supplyDate) return j({ ok: false, error: "작성일자(공급일) 없음" }, 400);
@@ -123,11 +140,12 @@ Deno.serve(async (req) => {
     }
     const { data: claimed, error: claimErr } = await db.rpc("claim_tax_invoice", { p_quote_id: quote_id });
     if (claimErr) return j({ ok: false, error: claimErr.message }, 500);
-    if (!claimed) return j({ ok: false, error: "이미 발행됐거나 다른 발행 작업이 진행 중입니다" }, 409);
+    if (!claimed) return j({ ok: false, error: "이미 발행됐거나 다른 발행 작업이 진행 중입니다(또는 확정된 판매 견적이 아님)" }, 409);
     activeQuoteId = quote_id;
 
     const mgtKey = "Q" + (quote.id || "").replace(/-/g, "").slice(0, 23);
-    const invoice = mapTaxinvoice(quote, { email, supplyDate, purposeType });
+    const { data: cp } = await db.from("company_profile").select("*").eq("id", 1).maybeSingle();   // 139 전이면 오류 → 기본값
+    const invoice = mapTaxinvoice(quote, { email, supplyDate, purposeType, supplier: pickSupplier(cp) });
     const token = await getToken();
     // RegistIssue: 즉시발행
     const res = await fetch(`${SVC_BASE}/Taxinvoice/${CORPNUM}?ID=${encodeURIComponent(mgtKey)}`, {
@@ -149,7 +167,7 @@ Deno.serve(async (req) => {
       tax_status: "issued", tax_mgtkey: mgtKey, tax_supply_date: supplyDate,
       tax_issued_at: new Date().toISOString(), tax_last_error: null,
     }).eq("id", quote_id);
-    await db.from("operation_audit").insert({ actor_id: auth.id, actor_email: auth.email, action: "taxinvoice.issue", entity_type: "quote", entity_id: quote_id, result: "ok", detail: { mgtKey } });
+    await db.from("operation_audit").insert(withOrgId({ actor_id: auth.id, actor_email: auth.email, action: "taxinvoice.issue", entity_type: "quote", entity_id: quote_id, result: "ok", detail: { mgtKey } }, await orgOfRow(db, "quotes", quote_id)));
     return j({ ok: true, mgtKey, ntsConfirmNum: out.ntsConfirmNum, result: out });
   } catch (e) {
     if (activeQuoteId) await db.from("quotes").update({ tax_status: "failed", tax_last_error: String(e) }).eq("id", activeQuoteId).eq("tax_status", "issuing");

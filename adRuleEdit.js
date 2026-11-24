@@ -52,3 +52,45 @@ export function saveErrorText(err) {
     if (/증액선|최소 일수|최소 지출|브랜드가 없습니다/.test(m)) return m;
     return '저장하지 못했습니다 · 잠시 뒤 다시 시도해 주세요';
 }
+
+//  30 광고 판정 기준 — 항목 이름·단위·뜻·예시(화면에 내부 변수명 대신 보인다). edit = 이 화면에서 바꿀 수 있는지
+export const RULE_FIELDS = [
+    { k: 'up_max', name: '증액선', unit: '원', per: '팔로워 1명당 광고비', edit: true,
+      desc: '팔로워 1명을 이 금액 이하로 얻으면 예산을 늘릴 광고로 봅니다', ex: '1,000 → 1명에 1,000원 이하면 증액' },
+    { k: 'stop_over', name: '유지선', unit: '원', per: '팔로워 1명당 광고비', edit: true,
+      desc: '증액선과 이 금액 사이면 유지, 넘으면 중단 후보입니다', ex: '1,600 → 1명에 1,600원 넘으면 중단' },
+    { k: 'min_days', name: '최소 일수', unit: '일', edit: true,
+      desc: '이만큼 돌기 전에는 판정하지 않고 지켜봅니다', ex: '2 → 이틀은 돌린 뒤 판정' },
+    { k: 'min_spend', name: '최소 지출', unit: '원', edit: true,
+      desc: '이만큼 쓰기 전에는 판정하지 않고 지켜봅니다', ex: '10,000 → 1만 원은 쓴 뒤 판정' },
+    { k: 'test_daily_budget', name: '테스트 하루 예산', unit: '원', edit: false,
+      desc: '새 광고를 시험할 때 하루 예산 — 첫날 조기 중단 판단에 씁니다', ex: '10,000 → 하루 1만 원' },
+    { k: 'early_mult', name: '첫날 조기 중단 배수', unit: '배', edit: false,
+      desc: '첫날 하루 예산을 다 쓰고 팔로워가 0이거나 1명당 광고비가 유지선 × 배수를 넘으면 조기 중단 표시', ex: '2 → 유지선 1,600이면 3,200원 넘을 때' },
+];
+const FIELD = Object.fromEntries(RULE_FIELDS.map(f => [f.k, f]));
+export const fieldValueText = (k, v) => {
+    const f = FIELD[k]; if (v == null || v === '') return '-';
+    return f?.unit === '배' ? `×${v}` : `${Number(v).toLocaleString('ko-KR')}${f?.unit || ''}`;
+};
+
+//  변경 기록(ad_report_rule_log) 한 줄 → 사람 말. before 가 없으면 처음 저장(그 전엔 기본값).
+export function logChange(row) {
+    const b = { ...DEFAULT_RULE, ...(row?.before || {}) }, a = { ...b, ...(row?.after || {}) };
+    const parts = EDIT_FIELDS.filter(k => Number(b[k]) !== Number(a[k]))
+        .map(k => `${FIELD[k].name} ${fieldValueText(k, b[k])} → ${fieldValueText(k, a[k])}`);
+    return { first: !row?.before, text: parts.join(' · ') || '값 변화 없음', undo: Object.fromEntries(EDIT_FIELDS.map(k => [k, Number(b[k])])) };
+}
+//  되돌리기 가능 = 그 브랜드의 가장 최근 기록이고, 지금 값이 그 기록의 '바꾼 뒤'와 같을 때만
+//  (그 뒤에 또 바뀌었는데 옛 기록을 되돌리면 나중 변경까지 조용히 지워진다)
+export function undoableIds(log, rulesByBrand) {
+    const seen = new Set(), ok = new Set();
+    for (const r of [...(log || [])].sort((x, y) => String(y.changed_at).localeCompare(String(x.changed_at)))) {
+        const bid = String(r.brand_id);
+        if (seen.has(bid)) continue;
+        seen.add(bid);
+        const cur = { ...DEFAULT_RULE, ...(rulesByBrand?.[bid] || {}) }, aft = { ...DEFAULT_RULE, ...(r.before || {}), ...(r.after || {}) };
+        if (EDIT_FIELDS.every(k => Number(cur[k]) === Number(aft[k]))) ok.add(r.id);
+    }
+    return ok;
+}

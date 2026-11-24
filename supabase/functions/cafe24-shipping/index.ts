@@ -4,17 +4,32 @@
 //  - dry_run=false: 카페24에 운송장 등록 → 배송대기(standby) → 브하스도 갱신
 //    (배송대기라 우리 주문은 status 'ready'(송장 있음)로 두고 배송중 탭엔 넣지 않는다. 배송중은 카페24 동기화가 가져온다)
 import { admin, cafe24Fetch, cors, ensureToken, getMall, log } from "../_shared/cafe24.ts";
-import { requireUser } from "../_shared/auth.ts";
+import { type AuthedUser, canBrand, canDo, canMenu, requireUser } from "../_shared/auth.ts";
+import { ORG_2179 } from "../_shared/org.ts";
 import { courierCodeOf } from "./couriers.ts";
 import { EXT_TIMEOUT_MS, registerOne } from "./register.ts";
 import type { Mode } from "../_shared/ship-unknown.ts";
 
+
+//  몰이 부른 사람의 조직 소속이고(org_memberships) 그 몰 브랜드를 맡았는지(can_access_brand 와 같은 규칙)
+export async function mallInUserOrg(db: any, user: AuthedUser, mallKey: string): Promise<boolean> {
+  const { data: mall } = await db.from("malls").select("org_id, brand_id").eq("mall_key", mallKey).maybeSingle();
+  if (!mall) return false;
+  const { data: mem } = await db.from("org_memberships").select("org_id").eq("user_id", user.id);
+  const orgs = ((mem || []) as { org_id: string }[]).map((r) => r.org_id);
+  if (!orgs.includes(mall.org_id || ORG_2179)) return false;
+  return canBrand(user, mall.brand_id);
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
   // 카페24 운송장 등록 = 고객 주문에 송장이 붙는 외부 쓰기 → 로그인 사용자만
   const auth = await requireUser(req, { roles: ["MASTER", "STAFF"] });
   if (auth instanceof Response) return auth;
+  // 128: 송장 권한(perms.invoice)·주문 메뉴가 꺼진 직원은 막는다
+  if (!canMenu(auth, "orders") || !canDo(auth, "invoice")) {
+    return new Response(JSON.stringify({ ok: false, error: "권한 없음 — 송장 등록 권한이 없습니다" }), { status: 403, headers: cors({ "Content-Type": "application/json" }) });
+  }
   const db = admin();
 
   let payload: { mall?: string; mode?: string; orders?: Array<{ order_id: string; courier_code?: string; courier_name?: string; invoice_no: string }> };
@@ -26,6 +41,10 @@ Deno.serve(async (req) => {
   if (!mallKey) return new Response(JSON.stringify({ ok: false, error: "mall 필요" }), { status: 400, headers: cors({ "Content-Type": "application/json" }) });
   if (!list.length) return new Response(JSON.stringify({ ok: false, error: "no_orders" }), { status: 400, headers: cors({ "Content-Type": "application/json" }) });
 
+  // 128: 몰이 부른 사람의 조직 소속인지 서버에서 확인(service 키는 RLS 를 건너뛴다)
+  if (!(await mallInUserOrg(db, auth, mallKey))) {
+    return new Response(JSON.stringify({ ok: false, error: `[${mallKey}] 권한 없음 — 소속 조직·담당 브랜드의 몰이 아닙니다` }), { status: 403, headers: cors({ "Content-Type": "application/json" }) });
+  }
   const st = await getMall(db, mallKey);
   if (!st || !st.access_token) return new Response(JSON.stringify({ ok: false, error: `[${mallKey}] no_token` }), { status: 400, headers: cors({ "Content-Type": "application/json" }) });
 

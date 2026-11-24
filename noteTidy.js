@@ -132,3 +132,83 @@ export function once(map, key, fn) {
   map.set(key, p);
   return p;
 }
+
+// ============================================================
+//  C-a 메모 화면(21) — 시작 범위 · 범위 표시 · 정리 후보
+//  (화면·DB 없음 → tests/note-scope.test.mjs)
+// ============================================================
+
+//  시작 폴더 — 예전엔 늘 '개인 메모'로 열려 공용 메모 174장이 첫 화면에서 안 보였다.
+//  명시한 폴더(링크·버튼으로 연 것) > 마지막에 고른 폴더(아직 있으면) > '모든 메모'
+export function startFolder({ explicit, saved, valid } = {}) {
+  if (explicit) return explicit;
+  const ok = (k) => {
+    if (!k || typeof k !== 'string') return false;
+    if (k === 'all' || k === 'private' || k === 'shared') return true;
+    return typeof valid === 'function' ? !!valid(k) : false;
+  };
+  return ok(saved) ? saved : 'all';
+}
+
+//  범위 표시 — 누가 보는 메모인가. access 는 그 폴더 note_folders.access
+//  문구는 실제 서버 권한 그대로(040 can_see_note · 045 can_see_folder):
+//   - private: 작성자 + MASTER, 시즌(product_id)에 붙었으면 그 시즌 담당자(products.members)도 본다 → '나만' 이 아니다
+//   - 폴더 access=members: 폴더 멤버 + MASTER
+//   - 시즌·브랜드에 붙은 메모는 그 시즌·브랜드를 볼 수 있는 사람만(can_access_project/brand)
+export function scopeInfo(note, access) {
+  const s = note && note.scope;
+  const onSeason = !!(note && note.product_id), onBrand = !!(note && note.brand_id);
+  if (s === 'private') return { k: 'private', label: '개인', sub: onSeason ? '나 · 마스터 · 시즌 담당자' : '나 · 마스터', icon: 'ph-lock-simple' };
+  if (s === 'project') return { k: 'project', label: '시즌', sub: '시즌을 볼 수 있는 사람', icon: 'ph-calendar-blank' };
+  if (access === 'members') return { k: 'members', label: '멤버', sub: '폴더 멤버 · 마스터', icon: 'ph-users' };
+  if (onSeason) return { k: 'shared', label: '공용', sub: '시즌을 볼 수 있는 사람', icon: 'ph-users-three' };
+  if (onBrand) return { k: 'shared', label: '공용', sub: '브랜드를 볼 수 있는 사람', icon: 'ph-users-three' };
+  return { k: 'shared', label: '공용', sub: '워크스페이스 전체', icon: 'ph-users-three' };
+}
+
+//  기본 제목 — 정확히 같을 때만. '나염/자수 테스트 도안 전달' 처럼 낱말이 섞인 실업무 메모는 아니다
+const DEFAULT_TITLES = new Set(['', '새 메모', '제목 없음', '테스트', '스모크테스트', '스모크 테스트', 'test', 'smoke', 'smoke test']);
+export function isDefaultTitle(title) {
+  return DEFAULT_TITLES.has(String(title ?? '').trim().toLowerCase());
+}
+const textOf = (body) => String(body || '').replace(NOTE_META_RE, '').trim();
+
+//  정리 후보 — 지우지 않는다. 이유를 붙여 보여 주고, '고르기' 만 돕는다(삭제는 사람이 확인 후)
+//   - default: 기본 제목(빈 제목·새 메모·테스트…) — empty=true 면 글도 비어 있음
+//   - dup: 같은 제목이 2장 이상(제품 기록장 item_id 제외). same=true 면 글까지 같음
+//  돌려줌 { rows: [{ note, reasons:[{k,label}] }], dupGroups: [{title, notes, same}], pickable: { emptyDefault:[id], sameDup:[id] } }
+export function tidyCandidates(notes) {
+  const list = (notes || []).filter(n => n && !n.item_id);
+  const byTitle = new Map();
+  for (const n of list) {
+    const t = String(n.title ?? '').trim();
+    if (isDefaultTitle(t)) continue;
+    if (!byTitle.has(t)) byTitle.set(t, []);
+    byTitle.get(t).push(n);
+  }
+  const reasons = new Map();
+  const add = (n, r) => { const k = String(n.id); if (!reasons.has(k)) reasons.set(k, { note: n, reasons: [] }); reasons.get(k).reasons.push(r); };
+  const emptyDefault = [];
+  for (const n of list) {
+    if (!isDefaultTitle(n.title)) continue;
+    const empty = !textOf(n.body);
+    add(n, { k: 'default', label: empty ? '기본 제목 · 빈 메모' : '기본 제목' });
+    if (empty) emptyDefault.push(String(n.id));
+  }
+  const dupGroups = [], sameDup = [];
+  for (const [title, ns] of byTitle) {
+    if (ns.length < 2) continue;
+    //  최신 것이 맨 앞 — '같은 글 중복 고르기' 는 최신 한 장을 남긴다
+    const sorted = ns.slice().sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+    const same = sorted.every(n => textOf(n.body) === textOf(sorted[0].body));
+    dupGroups.push({ title, notes: sorted, same });
+    sorted.forEach((n, i) => {
+      add(n, { k: 'dup', label: `같은 제목 ${ns.length}장${same ? ' · 글도 같음' : ''}${i === 0 ? ' · 최신' : ''}` });
+      if (same && i > 0) sameDup.push(String(n.id));
+    });
+  }
+  const rows = [...reasons.values()].sort((a, b) =>
+    String(a.note.title || '').localeCompare(String(b.note.title || '')) ||
+    String(b.note.updated_at || '').localeCompare(String(a.note.updated_at || '')));
+  return { rows, dupGroups, pickable: { emptyDefault, sameDup } };
+}

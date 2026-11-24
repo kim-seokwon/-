@@ -9,29 +9,10 @@
 //       POST <func-url> {restatus:false}       → 재동기화 건너뛰기
 //       POST <func-url> {mode:"restatus", restatus_from:"2025-01-01"}  → 재동기화만 전체기간
 import { admin, cafe24Fetch, cors, ensureToken, getActiveMalls, getMall, log, MallState, saveMall } from "../_shared/cafe24.ts";
-import { publishableKey, serviceKey } from "../_shared/keys.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireUser } from "../_shared/auth.ts";
 
-// Dashboard 개별 함수 배포는 _shared/auth.ts를 번들에 포함하지 못하는 경우가 있어
-// 동일한 인증 검증을 함수 내부에 둔다. publishable 키 자체는 사용자 세션이 아니므로 getUser로 확인한다.
-async function requireUser(req: Request, opts: { master?: boolean } = {}) {
-  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  const deny = (error: string) => new Response(JSON.stringify({ ok: false, error }), {
-    status: 401, headers: cors({ "Content-Type": "application/json" }),
-  });
-  if (!token) return deny("인증 필요 — 로그인 후 이용하세요");
-  const anon = createClient(Deno.env.get("SUPABASE_URL")!, publishableKey(), { auth: { persistSession: false } });
-  const { data, error } = await anon.auth.getUser(token);
-  if (error || !data?.user) return deny("유효한 로그인 세션이 아닙니다");
-  if (opts.master) {
-    const service = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
-    const username = (data.user.email || "").split("@")[0];
-    const { data: profile } = await service.from("companies").select("role").eq("username", username).maybeSingle();
-    if (profile?.role !== "MASTER") return deny("권한 없음 — 마스터 계정만 가능합니다");
-  }
-  return { id: data.user.id };
-}
-
+// 사용자 확인은 공용 _shared/auth.ts(다른 함수와 같은 계약: 401 권한없음 / 503 권한 확인 일시 실패).
+//  이 함수는 이미 _shared/cafe24.ts·keys.ts 를 번들에 넣으므로 공용 auth 도 같이 들어간다.
 function ymd(d: Date) { return d.toISOString().slice(0, 10); }
 
 function money(v: unknown): number {
@@ -202,6 +183,17 @@ interface SyncOpts { from?: string; to?: string; restatus?: boolean; restatus_da
 
 // 카페24를 총재고 기준으로 쓰는 초기/실사 동기화.
 // 이미 매핑된 품목만 읽어 오므로, 미매핑 상품이나 카페24 수량에는 절대 쓰지 않는다.
+// 카페24 기준 스냅샷 저장. supabase-js 는 DB 오류를 reject 가 아니라 { error } 로 돌려주므로 직접 검사한다.
+// 127 미적용(칸 없음: 42703 / PostgREST 스키마 캐시 PGRST204)만 건너뛰고, 그 밖의 오류는 throw 한다.
+// deno-lint-ignore no-explicit-any
+export async function saveCafe24Snapshot(db: any, itemId: string, qty: number, now: Date = new Date()) {
+  const { error } = await db.from("inventory_items")
+    .update({ cafe24_qty: qty, cafe24_checked_at: now.toISOString() }).eq("id", itemId);
+  if (!error) return "saved";
+  if (error.code === "42703" || error.code === "PGRST204") return "no-column";
+  throw new Error(`카페24 기준 스냅샷 저장 실패: ${error.code || ""} ${error.message || ""}`.trim());
+}
+
 async function pullInventoryMall(db: ReturnType<typeof admin>, mall: MallState) {
   const token = await ensureToken(db, mall);
   const { data: listings } = await db.from("channel_listings")
@@ -210,6 +202,9 @@ async function pullInventoryMall(db: ReturnType<typeof admin>, mall: MallState) 
     .not("channel_product_no", "is", null).not("channel_variant_code", "is", null);
   let checked = 0, adjusted = 0, skipped = 0;
   const examples: Array<Record<string, unknown>> = [];
+  //  9(141): 판매가능이 마이너스인 품목은 덮지 않는다 — 원인 확인 없이 adjust 로 덮으면 빠진 입고·중복 차감 원인이 사라진다.
+  //  목록만 돌려주고, 사람이 품목별 원인 확인·실사 보정(neg_cause 기록)한 뒤 다시 불러오면 그때 맞춘다.
+  const negative_skipped: Array<Record<string, unknown>> = [];
   for (const listing of (listings || []) as any[]) {
     try {
       const data = await cafe24Fetch(mall.cafe24_mall_id!, token,
@@ -217,9 +212,12 @@ async function pullInventoryMall(db: ReturnType<typeof admin>, mall: MallState) 
       const inv = data.inventory || (Array.isArray(data.inventories) ? data.inventories[0] : null) || data;
       const target = Number(inv?.quantity);
       if (!Number.isFinite(target) || target < 0) { skipped++; continue; }
-      const { data: item } = await db.from("inventory_items").select("on_hand, safety_stock").eq("id", listing.inventory_item_id).maybeSingle();
+      const { data: item } = await db.from("inventory_items").select("on_hand, safety_stock, sku, name").eq("id", listing.inventory_item_id).maybeSingle();
       if (!item) { skipped++; continue; }
-      const delta = target - Number(item.on_hand || 0);
+      const negative = Number(item.on_hand || 0) < 0;
+      if (negative) negative_skipped.push({ inventory_item_id: listing.inventory_item_id, sku: item.sku ?? null, name: item.name ?? null,
+        variant_code: listing.channel_variant_code, on_hand: Number(item.on_hand), cafe24_qty: target });
+      const delta = negative ? 0 : target - Number(item.on_hand || 0);
       if (delta !== 0) {
         const { error } = await db.from("inventory_ledger").insert([{
           inventory_item_id: listing.inventory_item_id, delta, reason: "adjust",
@@ -232,12 +230,14 @@ async function pullInventoryMall(db: ReturnType<typeof admin>, mall: MallState) 
       if (Number.isFinite(Number(inv?.safety_inventory))) {
         await db.from("inventory_items").update({ safety_stock: Number(inv.safety_inventory) }).eq("id", listing.inventory_item_id);
       }
+      // 카페24 기준 스냅샷 — 차이가 0이어도 성공 조회마다 갱신(127 칸). 실패하면 throw → skipped·warn 로 남는다.
+      await saveCafe24Snapshot(db, listing.inventory_item_id, target);
       checked++;
       if (examples.length < 20) examples.push({ variant_code: listing.channel_variant_code, before: item.on_hand, after: target });
     } catch (e) { skipped++; if (examples.length < 20) examples.push({ variant_code: listing.channel_variant_code, error: String(e) }); }
   }
-  await log(db, mall.mall_key, "pull_inventory", skipped ? "warn" : "ok", { checked, adjusted, skipped, examples });
-  return { mall: mall.mall_key, checked, adjusted, skipped, examples };
+  await log(db, mall.mall_key, "pull_inventory", skipped || negative_skipped.length ? "warn" : "ok", { checked, adjusted, skipped, negative_skipped, examples });
+  return { mall: mall.mall_key, checked, adjusted, skipped, negative_skipped, examples };
 }
 
 async function syncMall(db: ReturnType<typeof admin>, mall: MallState, opts: SyncOpts = {}) {

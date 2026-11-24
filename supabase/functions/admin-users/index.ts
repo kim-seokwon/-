@@ -89,6 +89,7 @@ Deno.serve(async (req) => {
 
       const { data: company, error: dbErr } = await db.from("companies").insert([{
         name, username, role: role || "CLIENT",
+        auth_user_id: created.user.id,   // 128: 본인 확인은 auth id 로
         brand_id: body.brand_id || null,
         menu_access: body.menu_access ?? null,
         brand_access: body.brand_access ?? null,
@@ -126,9 +127,29 @@ Deno.serve(async (req) => {
       if (!c?.username) return j({ ok: false, error: "대상 계정을 찾을 수 없습니다" }, 404);
       const email = emailOf(c.username);
       if (await findAuthUser(db, email)) return j({ ok: false, error: "이미 로그인 계정이 있습니다" }, 409);
-      const { error } = await db.auth.admin.createUser({ email, password, email_confirm: true });
+      const { data: made, error } = await db.auth.admin.createUser({ email, password, email_confirm: true });
       if (error) return j({ ok: false, error: `연결 실패: ${error.message}` }, 400);
+      await db.from("companies").update({ auth_user_id: made.user.id }).eq("id", body.company_id);
       return j({ ok: true, email });
+    }
+
+    // 128 퇴사·복귀: 행과 이력은 그대로 두고 로그인만 막는다(삭제 대신 이걸 쓴다)
+    if (action === "set-active") {
+      const active = body.active !== false;
+      const { data: c } = await db.from("companies").select("username, auth_user_id").eq("id", body.company_id).maybeSingle();
+      if (!c) return j({ ok: false, error: "대상 계정을 찾을 수 없습니다" }, 404);
+      if (!active && (c.auth_user_id === auth.id || c.username === (auth.email || "").split("@")[0])) {
+        return j({ ok: false, error: "본인 계정은 비활성화할 수 없습니다" }, 400);
+      }
+      const { error: upErr } = await db.from("companies")
+        .update({ active, deactivated_at: active ? null : new Date().toISOString() }).eq("id", body.company_id);
+      if (upErr) return j({ ok: false, error: `상태 저장 실패: ${upErr.message}` }, 400);
+      const uid = c.auth_user_id || (await findAuthUser(db, emailOf(c.username)))?.id;
+      if (uid) {   // 이미 받은 세션도 갱신 때 끊기게 로그인 자체를 정지(복귀 시 해제)
+        const { error: banErr } = await db.auth.admin.updateUserById(uid, { ban_duration: active ? "none" : "876000h" });
+        if (banErr) return j({ ok: false, error: `로그인 정지 실패: ${banErr.message} — DB 에선 이미 막혔습니다` }, 400);
+      }
+      return j({ ok: true, active });
     }
 
     if (action === "delete") {

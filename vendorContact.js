@@ -73,3 +73,21 @@ export function contactSummary(list, cats = []) {
         .sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at))).slice(0, 5);
     return { total: rows.length, status, catRows, missing, recent };
 }
+
+//  ── 개선요청 ㉓ 거래처 ─────────────────────────────────────────────
+//  추가 담당자(131 contacts jsonb) — [{name, role, mobile, email}]. 빈 줄·이상한 값은 버린다. 최대 10명.
+export function vendorContacts(v) {
+    const arr = Array.isArray(v?.contacts) ? v.contacts : [];
+    return arr.filter(c => c && typeof c === 'object')
+        .map(c => ({ name: String(c.name ?? '').trim(), role: String(c.role ?? '').trim(), mobile: String(c.mobile ?? '').trim(), email: String(c.email ?? '').trim() }))
+        .filter(c => c.name || c.mobile || c.email).slice(0, 10);
+}
+//  필수 정보 빠짐 — 담당자 · 연락처(휴대폰·전화·이메일 중 하나, 추가 담당자 포함) · 주소. 빠진 칸 이름 목록.
+export function vendorMissing(v) {
+    if (!v) return [];
+    const p = phonesOf(v), extra = vendorContacts(v), out = [];
+    if (!String(v.contact_name ?? '').trim() && !extra.some(c => c.name)) out.push('담당자');
+    if (!(p.mobile || p.phone || String(v.email ?? '').trim() || extra.some(c => c.mobile || c.email))) out.push('연락처');
+    if (!String(v.address ?? '').trim()) out.push('주소');
+    return out;
+}

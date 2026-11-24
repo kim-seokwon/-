@@ -2,6 +2,7 @@
 //  DB 는 092_help_center.sql: notices · notice_reads · feedback_reports · 버킷 feedback(private, 5MB, png/jpeg/webp/gif).
 //  누가 무엇을 보나: 관리자(MASTER) 3탭 전부 + 공지 쓰기·불편 상태 바꾸기 / 직원(STAFF) 3탭, 불편은 본인 것만 / 고객사(CLIENT) 사용설명서만.
 import { escHTML as esc, tipHTML } from './helpWidget.js';
+import { FB_STEPS_MAX, fromNew } from './feedbackInbox.js';
 
 export const FB_MAX = 2000;
 export const FB_IMG_MAX = 5 * 1024 * 1024;
@@ -151,8 +152,9 @@ function feedbackHTML(s) {
     const list = s.feedback;
     const form = `<div class="hc-form">
         <textarea class="hc-in" id="hc-fb-body" rows="4" maxlength="${FB_MAX}" placeholder="어디서 무엇이 불편했는지 적어주세요"></textarea>
+        <textarea class="hc-in" id="hc-fb-steps" rows="2" maxlength="${FB_STEPS_MAX}" placeholder="다시 생기게 하는 순서(선택) — 예: 주문·배송 → 배송대상 → 체크 → 발번"></textarea>
         <label class="hc-file"><input type="file" id="hc-fb-img" accept="image/png,image/jpeg,image/webp,image/gif"><i class="ph ph-image"></i> <span id="hc-fb-img-name">화면 사진 붙이기(선택 · 5MB 까지)</span></label>
-        <div class="hc-meta">지금 화면(${esc(s.screen || '-')})이 함께 남습니다.</div>
+        <div class="hc-meta">지금 화면(${esc(s.screen || '-')})·버전(${esc(s.ver || '-')})·창 크기가 함께 남습니다.</div>
         <div class="hc-row end"><button type="button" class="hc-btn pri" data-hc="fb-send"${s.busy ? ' disabled' : ''}><i class="ph ph-paper-plane-tilt"></i> 접수</button></div>
     </div>`;
     const items = !list ? '<div class="hc-empty">불러오는 중…</div>'
@@ -160,14 +162,16 @@ function feedbackHTML(s) {
         : list.map(f => `<article class="hc-card">
             <div class="hc-card-h"><span class="hc-st ${STATUS_CLS[f.status] || ''}">${esc(f.status)}</span>${admin ? `<b>${esc(f.username)}</b>` : ''}${f.screen ? `<span class="hc-meta">${esc(f.screen)}</span>` : ''}<span class="hc-when">${when(f.created_at)}</span></div>
             <div class="hc-text">${esc(f.body)}</div>
+            ${(r => r.steps || r.ver ? `<div class="hc-meta">${r.steps ? `재현: ${esc(r.steps)}` : ''}${r.steps && r.ver ? ' · ' : ''}${r.ver ? `버전 ${esc(r.ver)}${r.size ? ` · ${esc(r.size)}` : ''}` : ''}</div>` : '')(fromNew(f))}
             ${f.image_path ? `<button type="button" class="hc-btn sm" data-hc="fb-img" data-id="${esc(f.id)}"><i class="ph ph-image"></i> 사진 보기</button>` : ''}
             ${f.admin_note && !admin ? `<div class="hc-note">답: ${esc(f.admin_note)}</div>` : ''}
             ${admin ? `<div class="hc-row">${FB_STATUS.map(st => `<button type="button" class="hc-btn sm${st === f.status ? ' on' : ''}" data-hc="fb-st" data-id="${esc(f.id)}" data-st="${st}"${st === f.status ? ' aria-pressed="true"' : ''}>${st}</button>`).join('')}</div>` : ''}
         </article>`).join('');
-    return form + `<div class="hc-sub">${admin ? '전체 접수' : '내 접수'}</div>` + items;
+    const inbox = admin ? `<div class="hc-row end"><button type="button" class="hc-btn sm" data-hc="fb-inbox"><i class="ph ph-tray"></i> 설정 › 불편접수에서 전체 보기(옛 접수 포함)</button></div>` : '';
+    return form + `<div class="hc-sub">${admin ? '전체 접수' : '내 접수'}</div>` + inbox + items;
 }
 
-//  ? 도움말 버튼(오른쪽 아래) — 안 읽은 공지가 있으면 점
+//  도움말 버튼(맨 위 메뉴 막대 오른쪽) — 안 읽은 공지가 있으면 점
 export function helpFabHTML(unread) {
     return `<button type="button" class="help-fab" onclick="app.toggleHelp()" title="도움말·공지·불편접수" aria-label="도움말${unread ? `, 안 읽은 공지 ${unread}건` : ''}"><i class="ph ph-question"></i><span>도움말</span>${unread ? '<i class="hc-dot"></i>' : ''}</button>`;
 }
