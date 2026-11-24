@@ -13573,7 +13573,7 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
         const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
         const late = csOverdue(t, today);
         return `<div class="dt-sec">처리 단계${csStageOf(t, CS_STAGES[0]) == null && viewStatus(t) === '완료' ? ' <em class="cs-stg-old">이관 전 완료 — 단계 기록 없음</em>' : ''}</div>
-            <div class="cs-stg">${CS_STAGES.map(s => sel(s.k, s.opts, csStageOf(t, s), s.label)).join('')}</div>
+            <div class="cs-stg">${CS_STAGES.map(s => sel(s.k, s.opts, csStageOf(t, s), s.k === 'refund_stage' && t.refund_auto_at && t.refund_stage === '환불완료' ? '환불 · 카페24 자동' : s.label)).join('')}</div>
             <div class="cs-stg">
                 <label class="cs-stg-f"><span>담당</span><select class="it-sel" data-cs-field="assignee_id" title="${esc(csAssigneeLabel(mockData.companies, t) || '미지정')}"
                     onchange="app.setCSField('${id}','assignee_id',this.value)">${who.map(o => `<option value="${esc(o.v)}"${o.v === cur ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select></label>
