@@ -6842,3 +6842,17 @@ body[data-density="loose"] .macwin-body table td,body[data-density="loose"] .mac
 .rel-list li{display:flex;gap:8px}
 .rel-list li span{flex:none;color:var(--text-muted);font-variant-numeric:tabular-nums}
 @media (max-width:600px){.rel-notes{flex-direction:column}.rel-list{max-width:100%}}
+
+/* 홈 좌우 여백 10%(사장님 11-25 "너무 풀화면이라 답답하다 한 10%씩만") — 넓은 화면만, 폰·좁은 창은 그대로 */
+@media (min-width:901px){.mac-deskboard>.home-view{padding-left:10%!important;padding-right:10%!important}}
+/* 여백 때문에 매출 왼쪽 열이 좁아지면(카드 1장 140px 미만) KPI 5칸 → 3+2 */
+.home-sales-column{container-type:inline-size}
+@container (max-width:720px){
+  .hk-grid5.home-sales-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .hk-grid5.home-sales-kpis>*{grid-column:span 2}
+  .hk-grid5.home-sales-kpis>:nth-child(n+4){grid-column:span 3}
+}
+@container (max-width:360px){
+  .hk-grid5.home-sales-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hk-grid5.home-sales-kpis>*,.hk-grid5.home-sales-kpis>:nth-child(n+4){grid-column:auto}
+}
