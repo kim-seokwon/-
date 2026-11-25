@@ -5,7 +5,7 @@ import { TIPS, MANUAL, searchManual } from './helpDict.js';
 import { orgScopedClient, pickActiveOrg, ORG_KEY, ORG_FLAG } from './org-scope.js';
 import { tipHTML, initTips } from './helpWidget.js';
 import { brandAccessOf, brandUserGroups, brandDeleteImpact } from './brandScope.js';
-import { todayQueue, queueCounts, dueLabel, ageLabel, taskTitle, isRefundWaiting, csOpenBreakdown } from './homeQueue.js';   //  ① 홈 미처리/실적 분리
+import { dueLabel, taskTitle, csOpenBreakdown } from './homeQueue.js';   //  ① 홈 미처리/실적 분리
 import { shipKey, shipRowInfo, bundleGroups, bundleSource, bundleMates, bundleIndexStale, ageText, shipRunRows, shipSteps, epostDisabledReason } from './shipFlow.js';
 import { docSeriesKey, docBrandId, docCopyOf, fileVersionMap, docActions, docAccess } from './docLibrary.js';
 import { PURPOSE, PURPOSE_HINT, purposeOf, PAY_TERMS, quoteProblems, validity as quoteValidity, quoteChain } from './quoteFlow.js';   //  12 견적서 용도·검증·확정 뒤 연결
@@ -2940,8 +2940,7 @@ class BhasApp {
     renderHome(products) {
         //  홈은 _appShell 을 거치지 않는다 → 수집 끊김 띠를 여기서 따로 넣는다.
         //  (가장 많이 보는 화면에 경고가 없으면 경고를 단 뜻이 없다)
-        const _warn = this._syncWarnBar();
-        const homeMode = ['today', 'todos', 'sales', 'orders', 'alerts', 'paper'].includes(this.homeMode) ? this.homeMode : 'sales';
+        const homeMode = ['todos', 'sales', 'orders'].includes(this.homeMode) ? this.homeMode : 'sales';
         //  ① 홈: 열린 CS·환불 대기를 미처리 업무에 넣으려면 CS 가 있어야 한다(전엔 CS 화면을 열어야 불러왔다)
         if (!this._csLoaded && !this._csLoading && (this._canMenu('cs') || this._canMenu('orders'))) setTimeout(() => this.loadCS?.(), 0);
         products = products || mockData.products || [];
@@ -3186,12 +3185,10 @@ class BhasApp {
             const t = new Date().toISOString().slice(0, 10);
             //  할 일은 '체크해서 끝내는 것' 만. 생산 작업·시즌 마감은 캘린더에만 둔다.
             const open = allDue.filter(x => !x.done && ['rem', 'todo', 'note', 'step'].includes(x.kind)).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
-            //  지난 것·오늘까지인 것은 '오늘 처리할 일'(todayQueue — 날짜 ≤ 오늘)에 이미 있다 → 여기선 다가오는 것·날짜 없는 것만(11-24 사장님 "중복데이터 아닌가?")
-            const soon = open.filter(x => !x.date || String(x.date).slice(0, 10) > t).slice(0, 12);
-            const dueNow = open.length - open.filter(x => !x.date || String(x.date).slice(0, 10) > t).length;
-            const nowNote = dueNow ? `<div class="due-now-note" onclick="app._scrollHomePane('today')" style="font-size:.74rem;color:var(--text-muted);padding:0 0 .4rem;cursor:pointer">지난 것·오늘까지 ${dueNow}건은 위 '오늘 처리할 일'에</div>` : '';
-            if (!soon.length) return nowNote + '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">다가오는 할 일이 없습니다</div>';
-            return nowNote + soon.map(x => {
+            //  지난 것·오늘까지 → 다가오는 것 순으로 한데(11-25 사장님 "오늘처리할일 없이 기존처럼 할일 통합캘린더로 통합운영")
+            const soon = open.filter(x => x.date && String(x.date).slice(0, 10) <= t).concat(open.filter(x => !x.date || String(x.date).slice(0, 10) > t)).slice(0, 12);
+            if (!soon.length) return '<div style="color:var(--text-muted);font-size:0.82rem;padding:1rem 0;text-align:center">할 일을 넣으면 여기 모입니다</div>';
+            return soon.map(x => {
                 const dd = dday(x.date);
                 const col = dd == null ? 'var(--text-muted)' : (dd < 0 ? '#ef4444' : (dd === 0 ? '#0a84ff' : (dd <= 3 ? '#f59e0b' : 'var(--text-muted)')));
                 const go = x.go || `app.switchView('${x.view || 'reminders'}')`;
@@ -3350,35 +3347,6 @@ class BhasApp {
         this._homePops.st_exchange = listPop(`교환 · ${mm}월`, stExchange, o => this._orderState(o) === 'exchange' && localYMD(o.order_date).startsWith(monthKey), '');
         this._homePops.st_refund = listPop(`환불 · ${mm}월`, stRefund, o => Number(o.refund_amount) > 0 && o.raw?.paid !== 'F' && o.fin_unpaid !== true && localYMD(o.refunded_at || o.order_date).startsWith(monthKey), `환불총액 ${won(refundTotal)}원`);
 
-        //  ── ① 오늘 처리할 일(미처리 업무) — 실적과 섞지 않는다. 행마다 담당·경과일·바로가기 ──
-        const _remOwner = new Map((this.remList || []).map(r => [String(r.id), r.assignee || '']));
-        const _q = todayQueue({
-            today: todayStr, cs: this._csDenied ? [] : (this.csList || []), companies: mockData.companies || [],
-            preOrders: this._shipTargets(statOrders), preCount: this._ordersDenied ? 0 : stOrder,
-            tasks: allDue.filter(x => ['rem', 'todo', 'note', 'step'].includes(x.kind)).map(x => ({ ...x, owner: x.kind === 'rem' ? _remOwner.get(String(x.sid)) : '' })),
-            jobs: activeJobs.map(j => ({ ...j, go: (this.vendors || []).find(v => v._jid === j.id) ? '' : "app.switchView('vendors')" })),
-        });
-        const _qc = queueCounts(_q);
-        const _qGrpCol = { 'CS': '#f59e0b', '환불 대기': '#a855f7', '출고': '#6366f1', '생산': '#ef4444' };
-        const _qRows = _q.slice(0, 14).map(r => {
-            const col = _qGrpCol[r.grp] || '#0a84ff';
-            const when = r.dd != null ? dueLabel(r.dd) : (r.age != null ? (r.agePrefix || '') + ageLabel(r.age) : '');
-            const late = r.dd != null && r.dd < 0;
-            return `<div class="hq-row" onclick="${r.go}" title="눌러서 바로 처리">
-                <span class="hq-grp" style="color:${col};background:${col}1f">${this._vesc(r.grp)}</span>
-                <span class="hq-t">${this._vesc(r.title)}</span>
-                <span class="hq-own${r.owner === '미지정' ? ' none' : ''}">${this._vesc(r.owner)}</span>
-                <span class="hq-when${late ? ' late' : ''}">${this._vesc(when)}${r.age != null && r.dd != null ? ` · ${ageLabel(r.age)}` : ''}</span>
-                <span class="hq-go">바로가기 ›</span>
-            </div>`;
-        }).join('');
-        const _qMore = _q.length > 14 ? `<div class="hq-more">외 ${_q.length - 14}건 — 각 메뉴에서</div>` : '';
-        const _qHead = Object.entries(_qc).map(([g, n]) => `<span class="hq-chip" style="color:${_qGrpCol[g] || '#0a84ff'}">${this._vesc(g)} ${n}</span>`).join('');
-        const _csNote = this._csDenied ? '' : (!this._csLoaded ? '<div class="hq-more">CS 불러오는 중…</div>' : '');
-        const todayPane = `${sectionHead('ph-check-square-offset', '오늘 처리할 일', `미처리 업무 · 지난 것·오늘까지인 것·열린 CS · 기준 ${todayStr}`)}
-            ${panel(`지금 남은 일 <span style="font-size:0.74rem;color:var(--text-muted);font-weight:600">${_q.length}건</span>`,
-                `<div class="hq-head">${_qHead}</div><div class="hq-cols"><span>구분</span><span>할 일</span><span>담당</span><span>기한·경과</span><span></span></div>${_qRows || '<div class="home-empty">지금 처리할 일이 없습니다.</div>'}${_qMore}${_csNote}`)}`;
-
         return `
         <div class="fade-in home-view" data-home-mode="${homeMode}" style="padding:1.3rem 1.5rem;max-width:1240px;margin:0 auto">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:0.6rem">
@@ -3388,15 +3356,6 @@ class BhasApp {
                     <button onclick="app.refreshData()" ${this._refreshing ? 'disabled' : ''} title="최신 주문·매출로 동기화" style="display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:9px;border:1px solid var(--primary);background:rgba(99,102,241,0.1);color:var(--primary);font-size:0.8rem;font-weight:700;cursor:${this._refreshing ? 'wait' : 'pointer'}"><i class="ph ph-arrows-clockwise" style="${this._refreshing ? 'animation:spin 0.8s linear infinite' : ''}"></i> ${this._refreshing ? '동기화 중…' : '동기화'}</button>
                 </div>
             </div>
-
-            <section class="home-mode-pane" data-pane="today"${homeMode === 'today' ? ' data-cur' : ''}>
-            ${todayPane}
-            </section>
-
-            <section class="home-mode-pane" data-pane="orders"${homeMode === 'orders' ? ' data-cur' : ''}>
-            ${sectionHead('ph-package', '미처리 주문·CS', '지금 남은 건수 · 이번 달 환불 완료·교환 접수는 이번 달 실적에')}
-            ${this._ordersDenied ? '<div class="home-denied" style="padding:0.8rem 0;color:var(--text-muted);font-size:0.85rem">권한 없음 — 주문·CS 메뉴가 꺼진 계정입니다.</div>' : `<div class="hk-grid hk-grid4" style="margin-bottom:0.9rem">${statBlocks}</div>`}
-            </section>
 
             <section class="home-mode-pane" data-pane="sales"${homeMode === 'sales' ? ' data-cur' : ''}${this._ordersDenied ? ' data-denied' : ''}>
             <!-- 매출 홈(11-24 사장님): 왼쪽 = KPI / 채널 막대 + 브랜드 비율 나란히 · 오른쪽 = 최근 주문이 왼쪽 두 줄 높이를 꽉 채운다 -->
@@ -3433,26 +3392,22 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
             </div>
             </section>
 
+            <section class="home-mode-pane" data-pane="orders"${homeMode === 'orders' ? ' data-cur' : ''}>
+            ${sectionHead('ph-package', '미처리 주문·CS', '지금 남은 건수 · 이번 달 환불 완료·교환 접수는 이번 달 실적에')}
+            ${this._ordersDenied ? '<div class="home-denied" style="padding:0.8rem 0;color:var(--text-muted);font-size:0.85rem">권한 없음 — 주문·CS 메뉴가 꺼진 계정입니다.</div>' : `<div class="hk-grid hk-grid4" style="margin-bottom:0.9rem">${statBlocks}</div>`}
+            </section>
+
             <section class="home-mode-pane" data-pane="todos"${homeMode === 'todos' ? ' data-cur' : ''}>
             <!-- ═══ 블록 2: 할 일 · 통합 캘린더 ═══ -->
             ${sectionHead('ph-list-checks', '할 일 · 통합 캘린더', '메모 체크 · 시즌 할 일 · 생산 작업 · 시즌 마감까지 한데')}
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0.9rem;align-items:stretch">
-                ${panel('다가오는 할 일', remList,
+                ${panel('할 일', remList,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('reminders')">전체 →</span>`, true)}
                 ${panel(`${mm}월 통합 캘린더`, calendar,
                     `<span style="font-size:0.76rem;color:var(--primary);cursor:pointer" onclick="app.switchView('calendar')">캘린더 →</span>`)}
             </div>
             </section>
 
-            <section class="home-mode-pane" data-pane="alerts"${homeMode === 'alerts' ? ' data-cur' : ''}>
-            ${sectionHead('ph-bell-ringing', '이상 알림', '수집 지연과 운영상 확인할 항목')}
-            ${panel('현재 알림', _warn || '<div class="home-empty">지금 확인할 이상 알림이 없습니다.</div>')}
-            </section>
-
-            <section class="home-mode-pane" data-pane="paper"${homeMode === 'paper' ? ' data-cur' : ''}>
-            ${sectionHead('ph-newspaper', '오늘 조간', '지난 조간은 SNS · 뉴스에서 다시 볼 수 있습니다')}
-            ${panel('2179 아침 조간', '<div class="home-paper"><i class="ph ph-newspaper-clipping"></i><div><b>오늘의 조간을 펼쳐 확인하세요</b><span>뉴스와 운영 이슈를 카드로 모아 봅니다.</span></div><button onclick="app.openPaper()">조간 펼치기</button></div>')}
-            </section>
         </div>`;
     }
 
