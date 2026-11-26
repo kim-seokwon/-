@@ -3362,7 +3362,6 @@ class BhasApp {
 ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var(--text-muted);font-size:0.85rem">권한 없음 — 주문·매출 메뉴가 꺼진 계정입니다. 필요하면 관리자에게 요청하세요.</div>' : ''}
             <div class="home-sales-board">
                 <div class="home-sales-head">${sectionHead('ph-chart-line-up', '이번 달 실적', `${mm}월 1일~오늘(${todayStr}) · 주문일 기준 실결제 · ${syncBadge}`)}</div>
-                <div class="home-sales-column home-sales-left">
                 <div class="hk-grid hk-grid5 home-sales-kpis">
                     ${kpiCard('오늘 매출', wonF(todaySales), '원', deltaBadge(todayDelta, 'vs 어제'), '#f59e0b', 'sales')}
                     ${hasFinancial
@@ -3373,6 +3372,12 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
                         : `${mm}월 환불일 기준`, `교환 접수 ${stExchange.toLocaleString()}건`], '#a855f7', "app._pop(event,'k_refund')")}
                     ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', [deltaBadge(_momS ? _momS.pct : null, _momS ? _momS.label : '전월 같은 기간'), `비교: ${mm}월 1–${today.getDate()}일 vs 전월 같은 날짜 · 주문일·실결제`], '#8b5cf6', 'sales')}
                     ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', [nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}` : '', nr?.unk ? `미분류 ${nr.unk.toLocaleString()}` : '', `객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원`], '#10b981', 'orders')}
+                </div>
+                <div class="home-sales-column home-sales-left">
+                <!-- 11-26 사장님: 실적 KPI는 맨 위 한 줄 전체 · 미처리 주문·CS는 그 아래 왼쪽(최근 주문 옆) -->
+                <div class="home-orders-block" data-pane="orders"${homeMode === 'orders' ? ' data-cur' : ''}>
+                    <div class="home-orders-head"><i class="ph ph-package"></i><b>미처리 주문·CS</b><span>지금 남은 건수</span></div>
+                    <div class="hk-grid hk-grid4">${statBlocks}</div>
                 </div>
                 <div class="home-sales-lower">
                 <div class="home-channel-panel">
@@ -3390,11 +3395,6 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
                 </div>
                 </div>
             </div>
-            </section>
-
-            <section class="home-mode-pane" data-pane="orders"${homeMode === 'orders' ? ' data-cur' : ''}>
-            ${sectionHead('ph-package', '미처리 주문·CS', '지금 남은 건수 · 이번 달 환불 완료·교환 접수는 이번 달 실적에')}
-            ${this._ordersDenied ? '<div class="home-denied" style="padding:0.8rem 0;color:var(--text-muted);font-size:0.85rem">권한 없음 — 주문·CS 메뉴가 꺼진 계정입니다.</div>' : `<div class="hk-grid hk-grid4" style="margin-bottom:0.9rem">${statBlocks}</div>`}
             </section>
 
             <section class="home-mode-pane" data-pane="todos"${homeMode === 'todos' ? ' data-cur' : ''}>

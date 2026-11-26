@@ -6856,3 +6856,14 @@ body[data-density="loose"] .macwin-body table td,body[data-density="loose"] .mac
   .hk-grid5.home-sales-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .hk-grid5.home-sales-kpis>*,.hk-grid5.home-sales-kpis>:nth-child(n+4){grid-column:auto}
 }
+
+/* 11-26 사장님 "미처리 주문 CS를 이 자리에 · 이번달 실적을 맨위에 풀로": 실적 KPI = 보드 한 줄 전체, 미처리 주문·CS = 왼쪽 열 맨 위 */
+.home-sales-board>.home-sales-kpis{grid-column:1/-1;min-width:0}
+.home-sales-board{container-type:inline-size}
+.home-orders-head{display:flex;align-items:baseline;gap:8px;margin:.2rem 0 .6rem;font-size:1rem}
+.home-orders-head i{color:var(--primary);align-self:center}
+.home-orders-head span{font-size:.78rem;color:var(--text-muted)}
+.home-orders-block .hk-card{padding:.85rem .75rem}
+.home-orders-block .hk-num{font-size:clamp(1.05rem,1.25vw,1.25rem)}
+@container (max-width:520px){.home-orders-block .hk-grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media screen and (max-width:768px){.home-orders-block .hk-grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}
