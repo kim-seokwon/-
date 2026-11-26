@@ -6306,7 +6306,8 @@ body:not(.light) .mid-nav.mid-icons .m3-s::after{background:rgba(242,242,247,.95
 /* ① 넓은 화면: 메뉴 200 · 가운데 가변 · 오른쪽 300. 메모는 끌어 바꾼 폭(인라인 --c1/--c2)이 이긴다 */
 @media (min-width:1101px){
   .rm{grid-template-columns:var(--pane-side) minmax(0,1fr) var(--pane-det)}
-  .nt{grid-template-columns:var(--c1,var(--pane-side)) var(--c2,minmax(0,1fr)) var(--pane-det)}
+  /* 11-26 사장님 "메모 폭왜이래" — 메모는 편집 칸이 본문이라 남는 폭을 다 쓴다(300 고정이면 목록 폭을 끌었을 때 오른쪽이 빈다) */
+  .nt{grid-template-columns:var(--c1,var(--pane-side)) var(--c2,292px) minmax(var(--pane-det),1fr)}
 }
 
 /* ④ 거래처 표 — 열 폭은 colgroup 비율로 고정(내용 길이가 열을 밀지 않는다) */
@@ -6860,7 +6861,10 @@ body[data-density="loose"] .macwin-body table td,body[data-density="loose"] .mac
 /* 11-26 사장님 "미처리 주문 CS를 이 자리에 · 이번달 실적을 맨위에 풀로": 실적 KPI = 보드 한 줄 전체, 미처리 주문·CS = 왼쪽 열 맨 위 */
 .home-sales-board>.home-sales-kpis{grid-column:1/-1;min-width:0}
 .home-sales-board{container-type:inline-size}
-.home-orders-head{display:flex;align-items:baseline;gap:8px;margin:.2rem 0 .6rem;font-size:1rem}
+.home-orders-head{grid-column:1;display:flex;align-items:baseline;gap:8px;margin:.3rem 0 -.3rem;font-size:1rem;min-width:0}
+.home-sales-board>.home-sales-left{grid-column:1}
+.home-sales-board>.home-sales-right{grid-column:2}
+@media screen and (max-width:1080px){.home-orders-head,.home-sales-board>.home-sales-left,.home-sales-board>.home-sales-right{grid-column:1/-1}}
 .home-orders-head i{color:var(--primary);align-self:center}
 .home-orders-head span{font-size:.78rem;color:var(--text-muted)}
 .home-orders-block .hk-card{padding:.85rem .75rem}

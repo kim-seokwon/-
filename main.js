@@ -3373,10 +3373,11 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
                     ${kpiCard(`${mm}월 매출 ${tipHTML('net_sales', TIPS)}`, wonF(monthSales), '원', [deltaBadge(_momS ? _momS.pct : null, _momS ? _momS.label : '전월 같은 기간'), `비교: ${mm}월 1–${today.getDate()}일 vs 전월 같은 날짜 · 주문일·실결제`], '#8b5cf6', 'sales')}
                     ${kpiCard(`${mm}월 주문 ${tipHTML('new_repeat', TIPS)}`, monthOrdersCnt.toLocaleString(), '건', [nr ? `신규 ${nr.neu.toLocaleString()} · 재구매 ${nr.rep.toLocaleString()}` : '', nr?.unk ? `미분류 ${nr.unk.toLocaleString()}` : '', `객단가 ${won(monthOrdersCnt ? Math.round(monthSales / monthOrdersCnt) : 0)}원`], '#10b981', 'orders')}
                 </div>
+                <!-- 11-26 사장님: 실적 KPI는 맨 위 한 줄 전체 · 미처리 주문·CS는 그 아래 왼쪽(최근 주문 옆)
+                     제목은 보드 한 줄로 빼서 최근 주문 위끝이 미처리 카드 위끝과 맞는다 -->
+                <div class="home-orders-head" data-pane="orders"${homeMode === 'orders' ? ' data-cur' : ''}><i class="ph ph-package"></i><b>미처리 주문·CS</b><span>지금 남은 건수</span></div>
                 <div class="home-sales-column home-sales-left">
-                <!-- 11-26 사장님: 실적 KPI는 맨 위 한 줄 전체 · 미처리 주문·CS는 그 아래 왼쪽(최근 주문 옆) -->
-                <div class="home-orders-block" data-pane="orders"${homeMode === 'orders' ? ' data-cur' : ''}>
-                    <div class="home-orders-head"><i class="ph ph-package"></i><b>미처리 주문·CS</b><span>지금 남은 건수</span></div>
+                <div class="home-orders-block">
                     <div class="hk-grid hk-grid4">${statBlocks}</div>
                 </div>
                 <div class="home-sales-lower">
