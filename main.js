@@ -8059,7 +8059,7 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
                 try { const { data } = await this.supabase.auth.getSession(); await this._loadOrgScope(data?.session?.user?.id); } catch (_e) { /* 그대로 null */ }
             }
             const org = this._activeOrg || null, byOrg = q => org ? q.eq('org_id', org) : q;
-            const [cards, rules, state, media, links, daily, snaps] = await Promise.all([
+            const [cards, rules, state, media, links, daily, snaps, autoP] = await Promise.all([
                 this.supabase.from('ad_post_cards').select('*'),
                 this.supabase.from('ad_report_rules').select('*'),
                 this.supabase.from('ad_report_state').select('*').limit(1),
@@ -8073,6 +8073,9 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
                 //  주간 소재 확정 기록(142) — 표 미적용이면 '확정 기록 준비 전'(전부 잠정), 그 밖의 오류면 끝난 주는 비우고 '불러오기 실패'(반려2-2)
                 !org ? Promise.resolve({ data: [], error: null }) : fetchAllPages((a, b) => this.supabase.from('ad_weekly_verdicts').select('*').eq('org_id', org).gte('week_start', arAddDays(kstDay(Date.now()), -70))
                     .order('week_start', { ascending: true }).order('adset_id', { ascending: true }).range(a, b)),
+                //  자동 끄기 기록(144) — 판정판 '자동 중단' 표시용. 표 미적용·오류면 표시만 빠진다(판정판은 산다)
+                byOrg(this.supabase.from('ad_auto_pause_log').select('adset_id,created_at,reason,spend,follows,cpf,result').eq('result', 'paused')
+                    .gte('created_at', arAddDays(kstDay(Date.now()), -30)).order('created_at', { ascending: false }).limit(500)),
             ]);
             //  사용성 A: 판정선(rules)은 카드·수집 상태와 따로 본다 — 카드가 실패해도 설정 > 판정 기준 표는 산다
             this._adrRulesSet(rules);
@@ -8083,7 +8086,7 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
             this.adReport = {
                 cards: cards.data || [], rules: list || [], state: st0,
                 media: media.data || [], links: links.data || [], daily: daily.error ? null : (daily.data || []),
-                snaps: snaps.error ? [] : (snaps.data || []), snapsState: snapsLoadState(snaps.error), org,
+                snaps: snaps.error ? [] : (snaps.data || []), snapsState: snapsLoadState(snaps.error), org, autoPaused: autoP?.error ? [] : (autoP?.data || []),
             };
             //  원본 수집 성공 = ad_report_state.last_ok_at(ad-report-sync). 없으면 null
             this.ds = this.ds || {}; this.ds.ads = dsSucceed(this._ds('ads'), new Date(), st0?.last_ok_at || null);
@@ -8260,7 +8263,7 @@ ${this._ordersDenied ? '<div class="home-denied" style="padding:1.2rem;color:var
             { ...defaultRule, ...((r.rules || []).find(x => String(x.brand_id) === String(b.id)) || {}) }]));
         //  세트명 접두사는 판정선 행(ad_report_rules.ad_prefixes, 115)에서 — 브랜드 이름은 adPanel 이 늘 같이 본다
         const panelBrands = allBrands.map(b => ({ ...b, ad_prefixes: rulesBy[b.id]?.ad_prefixes || [] }));
-        const groups = r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: panelBrands, period: 'three', now: Date.now() }) : [];
+        const groups = r.daily ? buildPanel({ links, daily: r.daily, rulesBy, brands: panelBrands, period: 'three', now: Date.now(), autoPaused: r.autoPaused || [] }) : [];
         const posts = filterCards(this._arCache, { brand: this.arBrand || 'all', period: this.arPeriod || 'active', now: Date.now() });
         return { groups, posts, error: !r.daily, allBrands, panelBrands, alerts, report: reportHtml({ list: this._arCache, alerts, state: r.state, brands, brand: this.arBrand || 'all', period: this.arPeriod || 'active',
             activeAds: links.filter(l => l.effective_status === 'ACTIVE').length, unlinked: links.filter(l => !l.media_id),

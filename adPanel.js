@@ -40,7 +40,18 @@ export function brandOfLink(l, brands = []) {
 //  period: 'yesterday' = 어제(KST) 하루 · 'three' = 최근 3일 · 'cum' = 세트 시작일(KST) ~ 어제
 //  제외(108 ad_links.excluded — 목표 잘못 설정한 세트)는 판정·합계에서 빼고 반환 배열의 .excluded 로 따로 준다(숨긴 사실을 화면에 보이게).
 //  반환: [{ brand_id, name, rules, spend, follows, cpf, kind, sets: [{ adset_id, name, status, budget, end, spend, follows, cpf, kind }] }]
-export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], period = 'yesterday', now = Date.now() } = {}) {
+//  자동 끄기 기록(144 ad_auto_pause_log, result='paused') → { adset_id: 가장 최근 행 }
+export function autoPauseMap(rows = []) {
+    const m = new Map();
+    for (const r of rows || []) {
+        if (r?.result !== 'paused' || !r.adset_id) continue;
+        const k = String(r.adset_id), cur = m.get(k);
+        if (!cur || String(r.created_at) > String(cur.created_at)) m.set(k, r);
+    }
+    return m;
+}
+//  autoPaused = ad_auto_pause_log 행. 세트가 지금 꺼져 있을 때만 s.auto 로 붙인다(사람이 다시 켜면 표시 안 함).
+export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], period = 'yesterday', now = Date.now(), autoPaused = [] } = {}) {
     const yday = addDays(kstDay(now), -1);
     const sets = new Map(), adSet = new Map();
     const ex = { sets: new Set(), spend: 0, follows: 0, reason: null }, exAd = new Map();
@@ -102,6 +113,8 @@ export function buildPanel({ links = [], daily = [], rulesBy = {}, brands = [], 
     //  브랜드 순서 = 판정선 행의 sort_order(115) → 넘겨받은 브랜드 순서 → 이름. 미지정은 맨 뒤.
     const rank = g => { const o = Number(rulesBy[g.brand_id]?.sort_order); if (Number.isFinite(o) && rulesBy[g.brand_id]?.sort_order != null) return o;
         const i = brands.findIndex(b => b.id === g.brand_id); return i < 0 ? 1e6 : 1e3 + i; };
+    const auto = autoPauseMap(autoPaused);
+    for (const s of sets.values()) { const a = auto.get(String(s.adset_id)); if (a && s.status !== 'ACTIVE') s.auto = a; }
     const out = [...groups.values()].map(g => {
         g.sets.sort((a, b) => { const x = key(a), y = key(b); return x[0] - y[0] || x[1] - y[1] || String(a.name).localeCompare(String(b.name)); });
         g.cpf = cpfOf(g.spend, g.follows); g.kind = panelVerdict(g.spend, g.follows, g.rules);
@@ -120,6 +133,14 @@ const STATUS = { ACTIVE: ['가동', '#059669'], PAUSED: ['꺼짐', '#64748b'], A
     PENDING_REVIEW: ['검토중', '#d97706'], WITH_ISSUES: ['문제', '#dc2626'], DISAPPROVED: ['거절', '#dc2626'], ARCHIVED: ['보관', '#64748b'], DELETED: ['삭제', '#64748b'] };
 const md = d => d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : '—';
 const badge = k => { const v = PANEL_VERDICT[k] || PANEL_VERDICT.none; return `<span class="ap-badge" style="color:${v.color};background:${v.bg}">${v.label}</span>`; };
+//  '자동 중단' — 팔로우당 ₩2,000 넘어 ad-auto-pause 가 끈 세트. 마우스를 올리면 언제·얼마에 껐는지
+export function autoBadge(a) {
+    if (!a) return '';
+    const t = new Date(a.created_at);
+    const when = isNaN(t) ? '' : new Date(t.getTime() + 9 * 3600e3).toISOString().replace('T', ' ').slice(5, 16);
+    const tip = `${when} 자동 중단 · ${a.reason === 'today' ? '오늘' : '3일'} ${won(a.spend)}원 ÷ ${won(a.follows)}명 = ${a.cpf == null ? '∞' : won(a.cpf) + '원'}`;
+    return ` <span class="ap-badge ap-auto" title="${esc(tip)}">자동 중단</span>`;
+}
 const cpfTxt = (cpf, spend) => num(spend) <= 0 ? '—' : cpf == null ? '∞' : won(cpf) + '원';
 
 export const AP_CSS = `<style>
@@ -163,6 +184,7 @@ export const AP_CSS = `<style>
 .ap-sum .ap-sc{font-size:.68rem;color:var(--text-muted);font-variant-numeric:tabular-nums}
 @media (max-width:640px){.ap-sum{grid-template-columns:1fr}.ap-sum a{display:grid;grid-template-columns:1fr auto;align-items:center}.ap-sum .ap-sv{margin:0;grid-row:1/span 2;grid-column:2}}
 .ap-ex{display:inline-block;color:#b45309;font-weight:700}
+.ap-auto{color:#b91c1c;background:rgba(220,38,38,.12);margin-left:4px}
 .ap-empty{padding:14px;color:var(--text-muted);font-size:.82rem;text-align:center}
 </style>`;
 
@@ -180,14 +202,14 @@ export function panelHtml({ groups = [], period = 'yesterday', now = Date.now(),
             const [stt, stc] = STATUS[s.status] || [s.status || '—', '#64748b'];
             return `<tr data-set="${esc(s.adset_id)}">
                 <td class="ap-n" title="${esc(s.name)}">${esc(s.name)}</td>
-                <td><span class="ap-st" style="color:${stc}">${esc(stt)}</span></td>
+                <td><span class="ap-st" style="color:${stc}">${esc(stt)}</span>${autoBadge(s.auto)}</td>
                 <td>${s.budget != null ? won(s.budget) : '—'}</td>
                 <td>${md(s.end)}</td>
                 <td>${won(s.spend)}</td>
                 <td>${won(s.follows)}</td>
                 <td class="ap-c">${cpfTxt(s.cpf, s.spend)}</td>
                 <td class="ap-v">${badge(s.kind)}</td>
-                <td class="ap-m"><b>${cpfTxt(s.cpf, s.spend)}</b> · 지출 ${won(s.spend)} · 팔로우 ${won(s.follows)}<br><span style="color:${stc}">${esc(stt)}</span> · 일예산 ${s.budget != null ? won(s.budget) : '—'} · 종료 ${md(s.end)}</td>
+                <td class="ap-m"><b>${cpfTxt(s.cpf, s.spend)}</b> · 지출 ${won(s.spend)} · 팔로우 ${won(s.follows)}<br><span style="color:${stc}">${esc(stt)}</span>${autoBadge(s.auto)} · 일예산 ${s.budget != null ? won(s.budget) : '—'} · 종료 ${md(s.end)}</td>
             </tr>`;
         }).join('');
         return `<div class="ap-brand" data-brand="${esc(g.name)}">
